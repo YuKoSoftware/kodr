@@ -481,7 +481,7 @@ else fail "while loop codegen"; fi
 if grep -q " for " "$GEN_TESTER" 2>/dev/null; then pass "for loop codegen"
 else fail "for loop codegen"; fi
 
-if grep -q "std.debug.assert" "$GEN_TESTER" 2>/dev/null; then pass "@assert codegen"
+if grep -q "std.testing.expect" "$GEN_TESTER" 2>/dev/null; then pass "@assert codegen"
 else fail "@assert codegen"; fi
 
 if grep -q "KodrNullable" "$GEN_TESTER" 2>/dev/null; then pass "null union codegen"

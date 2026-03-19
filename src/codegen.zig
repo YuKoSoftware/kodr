@@ -21,6 +21,7 @@ pub const CodeGen = struct {
     in_error_union_func: bool, // current function returns (Error | T)
     in_null_union_func: bool, // current function returns (null | T)
     null_vars: std.StringHashMapUnmanaged(void), // variables with (null | T) type
+    in_test_block: bool, // inside a test { } block — @assert uses std.testing.expect
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
@@ -34,6 +35,7 @@ pub const CodeGen = struct {
             .in_error_union_func = false,
             .in_null_union_func = false,
             .null_vars = .{},
+            .in_test_block = false,
         };
     }
 
@@ -449,7 +451,9 @@ pub const CodeGen = struct {
 
     fn generateTest(self: *CodeGen, t: parser.TestDecl) anyerror!void {
         try self.writeFmt("test {s} ", .{t.description});
+        self.in_test_block = true;
         try self.generateBlock(t.body);
+        self.in_test_block = false;
         try self.write("\n");
     }
 
@@ -903,7 +907,12 @@ pub const CodeGen = struct {
             .ptr_expr => |p| {
                 try self.generatePtrExpr(p);
             },
-            else => try self.write("/* unsupported expr */"),
+            else => {
+                const msg = try std.fmt.allocPrint(self.allocator, "internal codegen error: unhandled expression kind '{s}'", .{@tagName(node.*)});
+                defer self.allocator.free(msg);
+                try self.reporter.report(.{ .message = msg });
+                return error.CompileError;
+            },
         }
     }
 
@@ -976,9 +985,6 @@ pub const CodeGen = struct {
                 const target_type = try self.typeToZig(cf.args[0]);
                 const target_is_float = target_type.len > 0 and target_type[0] == 'f';
                 const source_is_float_literal = cf.args[1].* == .float_literal;
-                const source_is_float_var = !source_is_float_literal and !target_is_float and
-                    cf.args[1].* == .identifier; // best-effort: handled below
-                _ = source_is_float_var;
                 try self.writeFmt("@as({s}, ", .{target_type});
                 if (target_is_float and source_is_float_literal) {
                     // float literal to float type — direct cast
@@ -1014,8 +1020,11 @@ pub const CodeGen = struct {
             // @move(x) — explicit move, same as value in Zig
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
         } else if (std.mem.eql(u8, cf.name, "assert")) {
-            // @assert(x) → std.debug.assert(x) or try std.testing.expect(x) in tests
-            try self.write("std.debug.assert(");
+            if (self.in_test_block) {
+                try self.write("try std.testing.expect(");
+            } else {
+                try self.write("std.debug.assert(");
+            }
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write(")");
         } else if (std.mem.eql(u8, cf.name, "swap")) {

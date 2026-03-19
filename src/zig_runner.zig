@@ -168,6 +168,58 @@ pub const ZigRunner = struct {
         try stderr.flush();
     }
 
+    /// Format Zig test output into clean PASS/FAIL lines
+    fn formatTestOutput(self: *ZigRunner, stderr: []const u8, all_passed: bool) !void {
+        var buf: [4096]u8 = undefined;
+        var w = std.fs.File.stderr().writer(&buf);
+        const out = &w.interface;
+
+        var lines = std.mem.splitScalar(u8, stderr, '\n');
+        var passed: usize = 0;
+        var failed: usize = 0;
+        var failed_names = std.ArrayListUnmanaged([]const u8){};
+        defer failed_names.deinit(self.allocator);
+
+        // Parse Zig test output lines like:
+        // "test\n+- run test 2/2 passed" or "'module.test.name' failed"
+        while (lines.next()) |line| {
+            // Detect passed tests: "N/M passed"
+            if (std.mem.indexOf(u8, line, " passed") != null) {
+                if (std.mem.indexOf(u8, line, "/")) |slash_pos| {
+                    const before_slash = line[0..slash_pos];
+                    var i = before_slash.len;
+                    while (i > 0 and before_slash[i - 1] >= '0' and before_slash[i - 1] <= '9') i -= 1;
+                    passed = std.fmt.parseInt(usize, before_slash[i..], 10) catch passed;
+                }
+            }
+            // Detect failed test name: "'module.test.NAME' failed"
+            if (std.mem.indexOf(u8, line, "' failed:") != null or
+                std.mem.indexOf(u8, line, "' failed") != null)
+            {
+                if (std.mem.indexOf(u8, line, ".test.")) |test_pos| {
+                    const name_start = test_pos + 6;
+                    const name_end = std.mem.indexOf(u8, line[name_start..], "'") orelse line[name_start..].len;
+                    const name = try self.allocator.dupe(u8, line[name_start .. name_start + name_end]);
+                    try failed_names.append(self.allocator, name);
+                    failed += 1;
+                }
+            }
+        }
+
+        // Print clean results
+        if (all_passed) {
+            try out.print("  PASS  all tests passed\n", .{});
+        } else {
+            for (failed_names.items) |name| {
+                try out.print("  FAIL  {s}\n", .{name});
+                self.allocator.free(name);
+            }
+            const pass_count = if (passed > failed) passed - failed else 0;
+            try out.print("\n{d} passed, {d} failed\n", .{ pass_count, failed });
+        }
+        try out.flush();
+    }
+
     /// Parse Zig compiler errors and reformat as Kodr errors
     /// This should ideally never trigger in a correct compiler implementation
     fn reformatZigErrors(self: *ZigRunner, stderr: []const u8) !void {
@@ -185,8 +237,41 @@ pub const ZigRunner = struct {
         }
     }
 
+    /// Run all test blocks in the generated Zig project
+    pub fn runTests(self: *ZigRunner, module_name: []const u8, project_name: []const u8) !bool {
+        // Generate build.zig with test step included
+        try self.generateBuildZigWithTests(module_name, "exe", project_name);
+
+        var args: std.ArrayListUnmanaged([]const u8) = .{};
+        defer args.deinit(self.allocator);
+        try args.append(self.allocator, self.zig_path);
+        try args.append(self.allocator, "build");
+        try args.append(self.allocator, "test");
+
+        var result = try self.runZigIn(args.items, cache.GENERATED_DIR);
+        defer result.deinit(self.allocator);
+
+        if (self.show_zig_output) {
+            try self.printRaw(result.stdout);
+            try self.printRaw(result.stderr);
+            return result.success;
+        }
+
+        try self.formatTestOutput(result.stderr, result.success);
+        return result.success;
+    }
+
     /// Generate the build.zig file for the generated Zig project
     pub fn generateBuildZig(
+        self: *ZigRunner,
+        module_name: []const u8,
+        build_type: []const u8,
+        project_name: []const u8,
+    ) !void {
+        return self.generateBuildZigWithTests(module_name, build_type, project_name);
+    }
+
+    fn generateBuildZigWithTests(
         self: *ZigRunner,
         module_name: []const u8,
         build_type: []const u8,
@@ -241,6 +326,23 @@ pub const ZigRunner = struct {
             defer self.allocator.free(lib_chunk);
             try buf.appendSlice(self.allocator, lib_chunk);
         }
+
+        // Always include test step so `kodr test` works
+        const test_chunk = try std.fmt.allocPrint(self.allocator,
+            \\    const unit_tests = b.addTest(.{{
+            \\        .root_module = b.createModule(.{{
+            \\            .root_source_file = b.path("{s}.zig"),
+            \\            .target = target,
+            \\            .optimize = optimize,
+            \\        }}),
+            \\    }});
+            \\    const run_tests = b.addRunArtifact(unit_tests);
+            \\    const test_step = b.step("test", "Run tests");
+            \\    test_step.dependOn(&run_tests.step);
+            \\
+        , .{module_name});
+        defer self.allocator.free(test_chunk);
+        try buf.appendSlice(self.allocator, test_chunk);
 
         try buf.appendSlice(self.allocator,
             \\}

@@ -624,9 +624,39 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
     try comp_cache.saveDeps();
 
     if (cli.command == .@"test") {
-        // For test command, just run zig test
-        // (simplified — full impl would run Kodr test blocks)
-        return "";
+        var runner = zig_runner.ZigRunner.init(allocator, reporter, cli.show_zig) catch |err| {
+            if (err == error.ZigNotFound) return null;
+            return err;
+        };
+        defer runner.deinit();
+
+        var root_module_name: []const u8 = "main";
+        var project_name: []const u8 = "";
+        var mod_it2 = mod_resolver.modules.iterator();
+        while (mod_it2.next()) |entry| {
+            const mod = entry.value_ptr;
+            if (!mod.is_root) continue;
+            root_module_name = mod.name;
+            if (mod.ast) |ast| {
+                for (ast.program.metadata) |meta| {
+                    if (std.mem.endsWith(u8, meta.metadata.field, ".name")) {
+                        if (meta.metadata.value.* == .string_literal) {
+                            const raw = meta.metadata.value.string_literal;
+                            if (raw.len >= 2 and raw[0] == '"') {
+                                project_name = raw[1 .. raw.len - 1];
+                            } else {
+                                project_name = raw;
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+        }
+        const binary_name2 = if (project_name.len > 0) project_name else root_module_name;
+        try runner.generateBuildZig(root_module_name, "exe", binary_name2);
+        const passed = try runner.runTests(root_module_name, binary_name2);
+        return if (passed) try allocator.dupe(u8, binary_name2) else null;
     }
 
     // ── Pass 12: Zig Compiler ──────────────────────────────────
