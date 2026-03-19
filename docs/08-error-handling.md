@@ -2,7 +2,7 @@
 
 ## Error Handling
 
-Functions that can fail return a union of `Error` and the success type. No exceptions, no monads — just a union and a type check. An error is a message string with a distinct type. If unhandled before scope exit, the program crashes and prints the message. That crash is the signal — the programmer sees exactly what went wrong and where.
+Functions that can fail return a union of `Error` and the success type. No exceptions, no monads — just a union and a type check. An error is a message `String` with a distinct type. If unhandled before scope exit, the program crashes and prints the message. That crash is the signal — the programmer sees exactly what went wrong and where.
 
 ```
 const ErrDivByZero = Error("division by zero")
@@ -24,7 +24,7 @@ var value: i32 = result.i32
 
 Inline errors are fine for one-off cases:
 ```
-func readFile(path: string) (Error | string) {
+func readFile(path: String) (Error | String) {
     return Error("could not open file")
 }
 ```

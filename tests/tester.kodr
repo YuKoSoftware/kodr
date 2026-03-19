@@ -23,11 +23,11 @@ pub struct Vec2 {
 
 struct Internal {
     value: i32
-    name: string
+    name: String
 }
 
 pub struct WithDefaults {
-    pub name: string
+    pub name: String
     pub value: i32 = 42
     pub flag: bool = true
 }
@@ -103,8 +103,8 @@ pub func is_positive(n: i32) bool {
     return n > 0
 }
 
-// function with string
-pub func greeting() string {
+// function with String
+pub func greeting() String {
     return "hello" ++ " " ++ "world"
 }
 
@@ -334,9 +334,9 @@ pub func first_over(limit: i32) i32 {
 
 // ─── Concatenation ───────────────────────────────────────────
 
-pub func concat_test() string {
-    const a: string = "foo"
-    const b: string = "bar"
+pub func concat_test() String {
+    const a: String = "foo"
+    const b: String = "bar"
     return a ++ b
 }
 

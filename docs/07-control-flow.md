@@ -86,7 +86,7 @@ match s {
 match value {
     0       => { }    // exact integer
     4..8    => { }    // inclusive range
-    "hello" => { }    // string
+    "hello" => { }    // String
     North   => { }    // enum variant, no type prefix
     _       => { }    // catch-all
 }
@@ -101,7 +101,7 @@ func process(val: any) void {
     match @type(val) {
         i32    => { console.print("integer") }
         f32    => { console.print("float") }
-        string => { console.print("string") }
+        String => { console.print("String") }
         Player => { console.print("player") }
         _      => { console.print("unknown") }
     }
@@ -110,8 +110,8 @@ func process(val: any) void {
 // matching on type parameter in compt function
 compt func describe(T: any) type {
     match T {
-        i32 => { return @type(struct { value: i32, label: string }) }
-        f32 => { return @type(struct { value: f32, label: string }) }
+        i32 => { return @type(struct { value: i32, label: String }) }
+        f32 => { return @type(struct { value: f32, label: String }) }
         _   => { }
     }
 }

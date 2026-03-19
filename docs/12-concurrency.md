@@ -23,11 +23,11 @@ my_thread.cancel()    // cancel the thread
 
 OS parks and wakes on IO completion. Use for network, file, database operations.
 ```
-Async(string) my_request {
+Async(String) my_request {
     return fetch(url)
 }
 
-my_request.value      // blocks until done, returns string
+my_request.value      // blocks until done, returns String
 my_request.finished   // bool
 my_request.wait()
 my_request.cancel()

@@ -62,14 +62,14 @@ enum Shape(u32) {
 
 // --- STRUCTS ---
 struct Player {
-    pub name: string
+    pub name: String
     health: f32 = MAX_HEALTH
     score: i32 = 0
 
     const maxPlayers: i32 = 64
     var activeCount: i32 = 0
 
-    func create(name: string) Player {
+    func create(name: String) Player {
         Player.activeCount = Player.activeCount + 1
         return Player(name: name)
     }
@@ -196,7 +196,7 @@ func main() void {
     console.println(max)
 
     // --- COMPT PAIR TYPE ---
-    var pair: Pair(i32, string) = Pair(i32, string)(first: 42, second: "hello")
+    var pair: Pair(i32, String) = Pair(i32, String)(first: 42, second: "hello")
     console.println(pair.first)
 
     // --- LOOPS ---
@@ -248,7 +248,7 @@ func main() void {
     var rightResult: []i32 = thread_b.value
 
     // async IO
-    Async(string) my_request {
+    Async(String) my_request {
         return "fetched data"
     }
     var response = my_request.value

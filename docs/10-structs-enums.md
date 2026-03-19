@@ -4,7 +4,7 @@
 
 ```
 struct Player {
-    pub name: string        // pub = accessible outside module
+    pub name: String        // pub = accessible outside module
     health: f32             // private by default
     score: i32
 
@@ -12,7 +12,7 @@ struct Player {
     var defaultHealth: f32 = 100.0
 
     // static method — no self, called on type name
-    func create(name: string) Player {
+    func create(name: String) Player {
         return Player(name: name, score: 0, health: Player.defaultHealth)
     }
 
@@ -37,7 +37,7 @@ struct Player {
 Fields can have default values using `=`. Any field with a default can be omitted during instantiation:
 ```
 struct Player {
-    pub name: string
+    pub name: String
     health: f32 = 100.0      // default value
     score: i32 = 0           // default value
     position: Vec2f = Vec2f(x: 0.0, y: 0.0)
@@ -53,7 +53,7 @@ var p: Player = Player(name: "hero", health: 50.0)
 Default values also work for enum variants, tuple fields, and function parameters:
 ```
 // function parameter defaults
-func greet(name: string, greeting: string = "hello") void { }
+func greet(name: String, greeting: String = "hello") void { }
 greet("world")              // uses default greeting
 greet("world", "hi")        // overrides default
 
@@ -85,13 +85,13 @@ Player.maxPlayers = 128               // compile error, const
 Explicit only — no automatic method forwarding:
 ```
 struct Animal {
-    name: string
+    name: String
     func speak(self: const &Animal) void { }
 }
 
 struct Dog {
     animal: Animal
-    breed: string
+    breed: String
 }
 
 var d: Dog = Dog(animal: Animal(name: "rex"), breed: "labrador")
@@ -113,14 +113,6 @@ enum Direction(u32) {
     West
 }
 
-// bitfield enum — compiler assigns powers of 2 automatically
-enum Permissions(u32, bitfield) {
-    Read      // 0b0001
-    Write     // 0b0010
-    Execute   // 0b0100
-    Delete    // 0b1000
-}
-
 // data-carrying enum — explicit backing type
 enum Shape(u32) {
     Circle(radius: f32)
@@ -134,16 +126,6 @@ The enum type name is declared once on the variable — never repeated on the ri
 ```
 var d: Direction = North
 var s: Shape = Circle(radius: 5.0)
-```
-
-### Bitfield Enum Operations
-Bitfield enums natively support flag operations. The underlying mechanism is standard bitwise operators on the backing integer type — `|` is bitwise OR, `&` is bitwise AND etc. The compiler knows the type is a bitfield enum and provides named convenience methods. Type safe — mixing flags from different enums is a hard compiler error.
-```
-var p: Permissions = Read | Write    // combine flags — bitwise OR on u32
-p.has(Read)                          // check if set — bool, uses bitwise AND
-p.set(Execute)                       // add flag — bitwise OR
-p.clear(Write)                       // remove flag — bitwise AND NOT
-p.toggle(Read)                       // toggle flag — bitwise XOR
 ```
 
 ### Methods on Enums
@@ -163,3 +145,36 @@ enum Shape(u32) {
     }
 }
 ```
+
+---
+
+## Bitfields
+
+A `bitfield` is its own declaration keyword — distinct from `enum`. Use it for named bit flags backed by an integer. The compiler assigns powers of 2 to each flag automatically.
+
+```
+bitfield Permissions(u32) {
+    Read      // 0b0001
+    Write     // 0b0010
+    Execute   // 0b0100
+    Delete    // 0b1000
+}
+```
+
+### Instantiation
+Pass any combination of flags to the constructor — order does not matter:
+```
+var p: Permissions = Permissions(Read, Write)
+var q: Permissions = Permissions()             // empty — all flags off
+```
+
+### Operations
+Four methods, no bitwise operators needed:
+```
+p.has(Read)       // bool — is this flag set?
+p.set(Execute)    // add a flag
+p.clear(Write)    // remove a flag
+p.toggle(Read)    // flip a flag
+```
+
+Type safe — passing a flag from a different `bitfield` type is a hard compiler error.

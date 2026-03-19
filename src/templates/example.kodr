@@ -43,11 +43,11 @@ pub struct Point {
 
 // struct with methods
 pub struct Player {
-    pub name: string
+    pub name: String
     health: f32
 
     // static method — no self, called on type name
-    pub func create(n: string) Player {
+    pub func create(n: String) Player {
         return Player(name: n, health: 100.0)
     }
 
@@ -81,6 +81,23 @@ pub enum Direction(u8) {
 func go_north() Direction {
     const d: Direction = North
     return d
+}
+
+// ─── Bitfields ───────────────────────────────────────────────────────────────
+
+// bitfield — named bit flags backed by an integer, compiler assigns powers of 2
+bitfield FileMode(u8) {
+    Read
+    Write
+    Execute
+}
+
+// constructor takes any combination of flags
+func open_rw() FileMode {
+    var mode: FileMode = FileMode(Read, Write)
+    mode.set(Execute)
+    mode.clear(Write)
+    return mode
 }
 
 // ─── Functions ───────────────────────────────────────────────────────────────
@@ -135,7 +152,7 @@ func shift_ops(a: i32) i32 {
 }
 
 // concatenation: ++ (strings and arrays, never arithmetic)
-func greet(name: string) string {
+func greet(name: String) String {
     return "Hello, " ++ name ++ "!"
 }
 

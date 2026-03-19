@@ -28,7 +28,7 @@ Type annotation can be omitted when the right hand side unambiguously determines
 
 ```
 // type can be omitted — unambiguous
-var name = "hello"                  // clearly string
+var name = "hello"                  // clearly String
 var p = Player.create("hero")       // clearly Player
 var s = Circle(radius: 5.0)         // clearly Shape
 var flag = true                     // clearly bool
@@ -42,4 +42,4 @@ var f = 3.14            // resolves to f32/f64 based on main.bitsize
 var b: u8 = 255         // explicit override
 ```
 
-**The rule:** function calls, struct instantiation, enum variants, string literals, bool literals, and other variables — type can be inferred. Numeric literals — resolve to the project's `main.bitsize` default, or must be explicitly typed if `main.bitsize` is not set.
+**The rule:** function calls, struct instantiation, enum variants, `String` literals, bool literals, and other variables — type can be inferred. Numeric literals — resolve to the project's `main.bitsize` default, or must be explicitly typed if `main.bitsize` is not set.

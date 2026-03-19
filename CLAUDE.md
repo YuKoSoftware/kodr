@@ -257,7 +257,7 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 
 ## Current Status
 
-**Phase 2** — full pipeline working end-to-end. 108 tests passing.
+**Phase 2** — full pipeline working end-to-end. 113 tests passing.
 
 **Working:**
 - `kodr init <n>`, `kodr build`, `kodr run`, `kodr test`, `kodr initstd`, `kodr debug`
@@ -267,11 +267,13 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 - `++` concatenation (strings and arrays), `main.bitsize` numeric literal defaults
 - Structs — instantiation, methods (static/const/var), default field values
 - Enums — instantiation, matching, methods
+- Bitfields — `bitfield Name(T) { Flag }`, constructor, `.has()/.set()/.clear()/.toggle()`
 - Named tuples — `(min: i32, max: i32)`, destructuring `const min, max = expr`
-- Fixed-size arrays `[N]T`, slices `[]T`, for/index/range loops, while with continue
+- Fixed-size arrays `[N]T`, slices `[]T`, `arr[a..b]` slice expressions
+- For/index/range loops, while with continue
 - `@cast` — int/float/int-to-float/float-to-int
 - Function pointers — `*const fn(T) R`
-- Error handling — `Error("msg")`, `(Error | T)`, error is a distinct string type
+- Error handling — `Error("msg")`, `(Error | T)`, error is a distinct `String` type
 - Null handling — `(null | T)` unions
 - `is` / `is not` — type comparison keywords (`result is Error`, `result is not null`)
 - `@type`, `@typename`, `@typeid`, `@cast`, `@copy`, `@move`, `@assert`, `@size`, `@align`
@@ -279,8 +281,8 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 - Pass 9 propagation — `(Error|T)` and `(null|T)` detection
 
 **Next:**
-- Pointers — `Ptr(T)`, `RawPtr(T)`
-- Heap allocation — `alloc`, `free`
+- Overflow helpers — `overflow()`, `wrap()`, `sat()`
+- Extern func sidecar validation (clear errors for missing `.zig` files)
 - Pass 8 (thread safety) — sendability checks
 
 **Priority rule:** Focus on getting the core language working. Don't flesh out std,

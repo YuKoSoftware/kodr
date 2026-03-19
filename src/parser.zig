@@ -20,6 +20,7 @@ pub const NodeKind = enum {
     func_decl,
     struct_decl,
     enum_decl,
+    bitfield_decl,
     const_decl,
     var_decl,
     compt_decl,
@@ -85,6 +86,7 @@ pub const Node = union(NodeKind) {
     func_decl: FuncDecl,
     struct_decl: StructDecl,
     enum_decl: EnumDecl,
+    bitfield_decl: BitfieldDecl,
     const_decl: VarDecl,
     var_decl: VarDecl,
     compt_decl: VarDecl,
@@ -180,8 +182,14 @@ pub const StructDecl = struct {
 pub const EnumDecl = struct {
     name: []const u8,
     backing_type: *Node,
-    is_bitfield: bool,
     members: []*Node,
+    is_pub: bool,
+};
+
+pub const BitfieldDecl = struct {
+    name: []const u8,
+    backing_type: *Node,
+    members: [][]const u8,  // flag names only — no data fields
     is_pub: bool,
 };
 
@@ -648,6 +656,7 @@ pub const Parser = struct {
             .kw_compt => try self.parseComptDecl(),
             .kw_struct => try self.parseStructDecl(false),
             .kw_enum => try self.parseEnumDecl(false),
+            .kw_bitfield => try self.parseBitfieldDecl(false),
             .kw_const => try self.parseConstDecl(false),
             .kw_var => try self.parseVarDecl(false),
             .kw_pub => try self.parsePubDecl(),
@@ -671,12 +680,13 @@ pub const Parser = struct {
         _ = self.advance(); // consume 'pub'
         const tok = self.peek();
         return switch (tok.kind) {
-            .kw_func   => try self.parseFuncDecl(true, false),
-            .kw_extern => try self.parseExternDecl(),  // pub extern func
-            .kw_struct => try self.parseStructDecl(true),
-            .kw_enum   => try self.parseEnumDecl(true),
-            .kw_const  => try self.parseConstDecl(true),
-            .kw_var    => try self.parseVarDecl(true),
+            .kw_func      => try self.parseFuncDecl(true, false),
+            .kw_extern    => try self.parseExternDecl(),  // pub extern func
+            .kw_struct    => try self.parseStructDecl(true),
+            .kw_enum      => try self.parseEnumDecl(true),
+            .kw_bitfield  => try self.parseBitfieldDecl(true),
+            .kw_const     => try self.parseConstDecl(true),
+            .kw_var       => try self.parseVarDecl(true),
             .kw_compt  => blk: {
                 var node = try self.parseComptDecl();
                 // Mark the inner decl as pub
@@ -885,16 +895,6 @@ pub const Parser = struct {
         const name_tok = try self.expect(.identifier);
         _ = try self.expect(.lparen);
         const backing = try self.parseType();
-
-        var is_bitfield = false;
-        if (self.check(.comma)) {
-            _ = self.advance();
-            const bf_tok = self.peek();
-            if (bf_tok.kind == .identifier and std.mem.eql(u8, bf_tok.text, "bitfield")) {
-                _ = self.advance();
-                is_bitfield = true;
-            }
-        }
         _ = try self.expect(.rparen);
         _ = try self.expect(.lbrace);
         self.skipNewlines();
@@ -917,7 +917,34 @@ pub const Parser = struct {
         return self.newNode(.{ .enum_decl = .{
             .name = name_tok.text,
             .backing_type = backing,
-            .is_bitfield = is_bitfield,
+            .members = try members.toOwnedSlice(self.alloc()),
+            .is_pub = is_pub,
+        }});
+    }
+
+    fn parseBitfieldDecl(self: *Parser, is_pub: bool) anyerror!*Node {
+        _ = try self.expect(.kw_bitfield);
+        const name_tok = try self.expect(.identifier);
+        _ = try self.expect(.lparen);
+        const backing = try self.parseType();
+        _ = try self.expect(.rparen);
+        _ = try self.expect(.lbrace);
+        self.skipNewlines();
+
+        var members: std.ArrayListUnmanaged([]const u8) = .{};
+        while (!self.check(.rbrace) and !self.check(.eof)) {
+            self.skipNewlines();
+            if (self.check(.rbrace)) break;
+            const flag_tok = try self.expect(.identifier);
+            try members.append(self.alloc(), flag_tok.text);
+            try self.expectNewlineOrEof();
+            self.skipNewlines();
+        }
+        _ = try self.expect(.rbrace);
+
+        return self.newNode(.{ .bitfield_decl = .{
+            .name = name_tok.text,
+            .backing_type = backing,
             .members = try members.toOwnedSlice(self.alloc()),
             .is_pub = is_pub,
         }});
@@ -2063,7 +2090,7 @@ test "parser - extern func" {
     const alloc = std.testing.allocator;
     var lex = lexer.Lexer.init((
         \\module console
-        \\pub extern func print(msg: string) void
+        \\pub extern func print(msg: String) void
         \\
     ));
     var tokens = try lex.tokenize(alloc);

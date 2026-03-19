@@ -11,12 +11,12 @@ f16, bf16, f32, f64, f128         // floating point
                                   // bf16 — bfloat16, AI training
                                   // f128 — maps to C long double
 bool                              // true or false
-string                            // immutable text — shorthand for []const u8
+String                            // immutable text — shorthand for []const u8
                                   // always copies (cheap — just a pointer + length, 16 bytes)
                                   // for mutable byte manipulation, use []u8
 ```
 
-`string` is a special convenience type. Under the hood it is `[]const u8` — an immutable slice. Copying a string copies the pointer, not the data, so it is always cheap. For mutable byte buffers, use `[]u8` which follows normal move semantics.
+`String` is a higher-level type. Under the hood it is `[]const u8` — an immutable slice. Copying a `String` copies the pointer, not the data, so it is always cheap. For mutable byte buffers, use `[]u8` which follows normal move semantics.
 
 `u8` doubles as a byte and character type — interpreted based on usage context.
 
@@ -24,7 +24,7 @@ string                            // immutable text — shorthand for []const u8
 
 ## String Literals & Escape Sequences
 
-String literals are enclosed in double quotes. Escape sequences follow universal convention:
+`String` literals are enclosed in double quotes. Escape sequences follow universal convention:
 
 ```
 "hello world"       // basic string
@@ -36,7 +36,7 @@ String literals are enclosed in double quotes. Escape sequences follow universal
 "carriage\rreturn" // carriage return
 ```
 
-Multiline strings use `\n` — no special multiline syntax needed. Strings are immutable `[]const u8` under the hood.
+Multiline strings use `\n` — no special multiline syntax needed. `String` is immutable `[]const u8` under the hood.
 
 ---
 

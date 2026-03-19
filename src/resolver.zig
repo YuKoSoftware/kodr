@@ -135,6 +135,13 @@ pub const TypeResolver = struct {
                     }
                 }
             },
+            .bitfield_decl => |b| {
+                try scope.define(b.name, b.name);
+                // Register flag names in scope so the resolver doesn't error on them
+                for (b.members) |flag_name| {
+                    try scope.define(flag_name, b.name);
+                }
+            },
             .const_decl => |v| {
                 const type_str = if (v.type_annotation) |t| self.typeNodeStr(t) else "inferred";
                 try scope.define(v.name, type_str);
@@ -279,7 +286,7 @@ pub const TypeResolver = struct {
                 64 => "f64",
                 else => "float_literal",
             } else "float_literal",
-            .string_literal => "string",
+            .string_literal => "String",
             .bool_literal => "bool",
             .null_literal => "null",
             .error_literal => "Error",
@@ -379,7 +386,7 @@ pub const TypeResolver = struct {
                 // @type returns a type, @size returns usize, etc.
                 if (std.mem.eql(u8, cf.name, "size") or std.mem.eql(u8, cf.name, "align")) return "usize";
                 if (std.mem.eql(u8, cf.name, "typeid")) return "usize";
-                if (std.mem.eql(u8, cf.name, "typename")) return "string";
+                if (std.mem.eql(u8, cf.name, "typename")) return "String";
                 return "type";
             },
 
@@ -442,7 +449,7 @@ fn isPrimitive(name: []const u8) bool {
         "u8", "u16", "u32", "u64", "u128",
         "isize", "usize",
         "f16", "bf16", "f32", "f64", "f128",
-        "bool", "string",
+        "bool", "String",
     };
     for (primitives) |p| {
         if (std.mem.eql(u8, name, p)) return true;
@@ -452,7 +459,7 @@ fn isPrimitive(name: []const u8) bool {
 
 test "resolver - primitive check" {
     try std.testing.expect(isPrimitive("i32"));
-    try std.testing.expect(isPrimitive("string"));
+    try std.testing.expect(isPrimitive("String"));
     try std.testing.expect(!isPrimitive("Player"));
     try std.testing.expect(!isPrimitive("MyStruct"));
 }

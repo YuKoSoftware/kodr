@@ -17,10 +17,10 @@ The compiler emits nothing for `extern func` bodies — it uses the paired `.zig
 // console.kodr — public Kodr interface
 module console
 
-pub extern func print(msg: string) void
-pub extern func println(msg: string) void
-pub extern func debugPrint(msg: string) void
-pub extern func get() (Error | string)
+pub extern func print(msg: String) void
+pub extern func println(msg: String) void
+pub extern func debugPrint(msg: String) void
+pub extern func get() (Error | String)
 ```
 
 ```zig
@@ -65,7 +65,7 @@ When an `extern func` returns `(Error | T)`, the Zig sidecar must return a union
 by tag name, so the Zig type name does not need to match exactly.
 
 ```zig
-// sidecar pattern for (Error | string) return
+// sidecar pattern for (Error | String) return
 const GetError = struct { message: []const u8 };
 const GetResult = union(enum) { ok: []const u8, err: GetError };
 

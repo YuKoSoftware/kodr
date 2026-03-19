@@ -29,7 +29,7 @@ import std::mem
 
 // Structs with methods
 struct Player {
-    pub name: string
+    pub name: String
     health: f32 = 100.0
 
     func isAlive(self: const &Player) bool {

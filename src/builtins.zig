@@ -118,7 +118,7 @@ pub const ZigMapping = struct {
     pub fn primitiveToZig(kodr_type: []const u8) []const u8 {
         // Most primitives map 1:1 with Zig
         const mappings = [_][2][]const u8{
-            .{ "string", "[]const u8" },
+            .{ "String", "[]const u8" },
             .{ "bool",   "bool" },
             .{ "i8",     "i8" },
             .{ "i16",    "i16" },
@@ -161,7 +161,7 @@ test "compiler func detection" {
 }
 
 test "primitive mapping" {
-    try std.testing.expectEqualStrings("[]const u8", ZigMapping.primitiveToZig("string"));
+    try std.testing.expectEqualStrings("[]const u8", ZigMapping.primitiveToZig("String"));
     try std.testing.expectEqualStrings("i32", ZigMapping.primitiveToZig("i32"));
     try std.testing.expectEqualStrings("f16", ZigMapping.primitiveToZig("bf16"));
 }

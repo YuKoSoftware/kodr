@@ -111,6 +111,7 @@ pub const PropChecker = struct {
                     if (member.* == .func_decl) try self.checkTopLevel(member);
                 }
             },
+            .bitfield_decl => {},
             else => {},
         }
     }

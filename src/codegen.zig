@@ -70,6 +70,12 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// Check if a name is a declared bitfield type
+    fn isBitfieldType(self: *const CodeGen, name: []const u8) bool {
+        const decls = self.decls orelse return false;
+        return decls.bitfields.contains(name);
+    }
+
     pub fn deinit(self: *CodeGen) void {
         for (self.type_strings.items) |s| self.allocator.free(s);
         self.type_strings.deinit(self.allocator);
@@ -269,6 +275,7 @@ pub const CodeGen = struct {
             .func_decl => |f| try self.generateFunc(f),
             .struct_decl => |s| try self.generateStruct(s),
             .enum_decl => |e| try self.generateEnum(e),
+            .bitfield_decl => |b| try self.generateBitfield(b),
             .const_decl => |v| try self.generateConst(v),
             .var_decl => |v| try self.generateVar(v),
             .compt_decl => |v| try self.generateCompt(v),
@@ -415,61 +422,59 @@ pub const CodeGen = struct {
 
         const backing = try self.typeToZig(e.backing_type);
 
-        if (e.is_bitfield) {
-            // Bitfield enum — generate as packed struct with bool fields
-            try self.writeFmt("const {s} = packed struct({s}) {{\n", .{ e.name, backing });
-            self.indent += 1;
+        // Regular enum
+        try self.writeFmt("const {s} = enum({s}) {{\n", .{ e.name, backing });
+        self.indent += 1;
 
-            var bit: usize = 0;
-            for (e.members) |member| {
-                if (member.* == .enum_variant) {
+        for (e.members) |member| {
+            switch (member.*) {
+                .enum_variant => |v| {
                     try self.writeIndent();
-                    try self.writeFmt("{s}: bool = false, // bit {d}\n", .{ member.enum_variant.name, bit });
-                    bit += 1;
-                }
+                    if (v.fields.len > 0) {
+                        // Data-carrying variant — generate as tagged union
+                        try self.writeFmt("{s},\n", .{v.name});
+                    } else {
+                        try self.writeFmt("{s},\n", .{v.name});
+                    }
+                },
+                .func_decl => |f| try self.generateFunc(f),
+                else => {},
             }
-
-            // Pad remaining bits
-            const total_bits: usize = switch (backing[0]) {
-                'u' => std.fmt.parseInt(usize, backing[1..], 10) catch 32,
-                else => 32,
-            };
-            if (bit < total_bits) {
-                try self.writeIndent();
-                try self.writeFmt("_padding: u{d} = 0,\n", .{total_bits - bit});
-            }
-
-            // Convenience methods
-            try self.writeIndent();
-            try self.writeFmt("pub fn has(self: {s}, flag: {s}) bool {{ return @field(self, @tagName(flag)); }}\n",
-                .{ e.name, e.name });
-
-            self.indent -= 1;
-            try self.write("};\n");
-        } else {
-            // Regular enum
-            try self.writeFmt("const {s} = enum({s}) {{\n", .{ e.name, backing });
-            self.indent += 1;
-
-            for (e.members) |member| {
-                switch (member.*) {
-                    .enum_variant => |v| {
-                        try self.writeIndent();
-                        if (v.fields.len > 0) {
-                            // Data-carrying variant — generate as tagged union
-                            try self.writeFmt("{s},\n", .{v.name});
-                        } else {
-                            try self.writeFmt("{s},\n", .{v.name});
-                        }
-                    },
-                    .func_decl => |f| try self.generateFunc(f),
-                    else => {},
-                }
-            }
-
-            self.indent -= 1;
-            try self.write("};\n");
         }
+
+        self.indent -= 1;
+        try self.write("};\n");
+    }
+
+    fn generateBitfield(self: *CodeGen, b: parser.BitfieldDecl) anyerror!void {
+        if (b.is_pub) try self.write("pub ");
+        const backing = try self.typeToZig(b.backing_type);
+
+        try self.writeFmt("const {s} = struct {{\n", .{b.name});
+        self.indent += 1;
+
+        // Named flag constants — powers of 2
+        for (b.members, 0..) |flag_name, i| {
+            try self.writeIndent();
+            try self.writeFmt("pub const {s}: {s} = {d};\n", .{ flag_name, backing, @as(u64, 1) << @intCast(i) });
+        }
+
+        // value field
+        try self.writeIndent();
+        try self.writeFmt("value: {s} = 0,\n", .{backing});
+
+        // methods
+        try self.writeIndent();
+        try self.writeFmt("pub fn has(self: {s}, flag: {s}) bool {{ return (self.value & flag) != 0; }}\n", .{ b.name, backing });
+        try self.writeIndent();
+        try self.writeFmt("pub fn set(self: *{s}, flag: {s}) void {{ self.value |= flag; }}\n", .{ b.name, backing });
+        try self.writeIndent();
+        try self.writeFmt("pub fn clear(self: *{s}, flag: {s}) void {{ self.value &= ~flag; }}\n", .{ b.name, backing });
+        try self.writeIndent();
+        try self.writeFmt("pub fn toggle(self: *{s}, flag: {s}) void {{ self.value ^= flag; }}\n", .{ b.name, backing });
+
+        self.indent -= 1;
+        try self.write("};\n");
     }
 
     // ============================================================
@@ -1126,6 +1131,25 @@ pub const CodeGen = struct {
                         }
                     }
                 }
+                // Bitfield constructor: Permissions(Read, Write) → Permissions{ .value = Permissions.Read | Permissions.Write }
+                if (c.callee.* == .identifier and self.isBitfieldType(c.callee.identifier)) {
+                    const type_name = c.callee.identifier;
+                    try self.writeFmt("{s}{{ .value = ", .{type_name});
+                    if (c.args.len == 0) {
+                        try self.write("0");
+                    } else {
+                        for (c.args, 0..) |arg, i| {
+                            if (i > 0) try self.write(" | ");
+                            if (arg.* == .identifier) {
+                                try self.writeFmt("{s}.{s}", .{ type_name, arg.identifier });
+                            } else {
+                                try self.generateExpr(arg);
+                            }
+                        }
+                    }
+                    try self.write(" }");
+                    return;
+                }
                 if (c.arg_names.len > 0) {
                     // Named arguments → struct instantiation: Type{ .field = value, ... }
                     try self.generateExpr(c.callee);
@@ -1536,7 +1560,7 @@ fn isResultValueField(name: []const u8) bool {
         "u8", "u16", "u32", "u64", "u128",
         "isize", "usize",
         "f16", "bf16", "f32", "f64", "f128",
-        "bool", "string", "void",
+        "bool", "String", "void",
     };
     for (primitives) |p| {
         if (std.mem.eql(u8, name, p)) return true;
@@ -1713,7 +1737,7 @@ test "codegen - type to zig" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    var str_type = parser.Node{ .type_named = "string" };
+    var str_type = parser.Node{ .type_named = "String" };
     try std.testing.expectEqualStrings("[]const u8", try gen.typeToZig(&str_type));
 
     var i32_type = parser.Node{ .type_named = "i32" };

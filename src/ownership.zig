@@ -422,7 +422,7 @@ fn isPrimitiveName(name: []const u8) bool {
         "u8", "u16", "u32", "u64", "u128",
         "isize", "usize",
         "f16", "bf16", "f32", "f64", "f128",
-        "bool", "string", "void",
+        "bool", "String", "void",
     };
     for (primitives) |p| {
         if (std.mem.eql(u8, name, p)) return true;
@@ -496,7 +496,7 @@ test "ownership - string is copy type" {
     defer scope.deinit();
 
     // Define 'name' as string (primitive — copies, never moves)
-    try scope.define("name", isPrimitiveName("string"));
+    try scope.define("name", isPrimitiveName("String"));
 
     var id1 = parser.Node{ .identifier = "name" };
     try checker.checkExpr(&id1, &scope, false);

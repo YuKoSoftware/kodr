@@ -6,7 +6,7 @@ func add(a: i32, b: i32) i32 {
     return a + b
 }
 
-func log(msg: string) void {
+func log(msg: String) void {
     // returns nothing
 }
 ```
@@ -45,7 +45,7 @@ compt func Pair(A: any, B: any) type {
 }
 
 var pos: Vec2(f32) = Vec2(f32)(x: 1.0, y: 2.0)
-var p: Pair(i32, string) = Pair(i32, string)(first: 42, second: "hello")
+var p: Pair(i32, String) = Pair(i32, String)(first: 42, second: "hello")
 ```
 
 Note: `type` as a keyword is distinct from `@type()` as a compiler function:
@@ -82,7 +82,7 @@ Compiler functions are instructions to the compiler — not real function calls.
 
 ```
 @type(x)                 // returns the actual type of x — usable in type positions
-@typename(x)             // returns the type name as a string — usable for display
+@typename(x)             // returns the type name as a String — usable for display
 @typeid(x)               // returns unique compiler assigned integer ID — fast identity check
 @cast(T, x)              // converts x to target type T — always explicit
 @copy(x)                 // explicitly copies a non-primitive, original stays valid
@@ -114,8 +114,8 @@ result is not Error    // sugar for @type(result) != Error
 result is not null     // sugar for @type(result) != null
 ```
 
-### `@typename` — type name as string
-Returns the name of the type as a string. Useful for debugging, logging, and serialization. Cannot be used in type positions.
+### `@typename` — type name as `String`
+Returns the name of the type as a `String`. Useful for debugging, logging, and serialization. Cannot be used in type positions.
 ```
 @typename(x)              // "Player"
 @typename(42)             // "i32"
@@ -167,7 +167,7 @@ Returns the alignment requirement of a type or value in bytes. Essential for cus
 Always available without any import. Have a real runtime presence — produce actual code in the output binary.
 
 ### Error
-`Error` is a distinct string type. An error is just a message — the string carries all the information needed to trace and fix the problem. Can be created inline or stored as a named constant for reuse.
+`Error` is a distinct `String` type. An error is just a message — the `String` carries all the information needed to trace and fix the problem. Can be created inline or stored as a named constant for reuse.
 
 ```
 // inline
@@ -226,7 +226,7 @@ Preferred(Version(2, 4, 1))
 ### Dependency
 Declares an external dependency with a URL and version rule:
 ```
-Dependency(url: string, rule: VersionRule)
+Dependency(url: String, rule: VersionRule)
 ```
 
 ```
