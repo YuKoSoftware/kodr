@@ -1085,7 +1085,7 @@ pub const Parser = struct {
         if (self.check(.colon)) {
             _ = self.advance();
             _ = try self.expect(.lparen);
-            continue_expr = try self.parseExpr();
+            continue_expr = try self.parseAssignExpr();
             _ = try self.expect(.rparen);
         }
 
@@ -1233,6 +1233,31 @@ pub const Parser = struct {
         }});
     }
 
+    // Like parseExprOrAssignment but no trailing newline required.
+    // Used for while continue expressions: while(cond) : (i += 1)
+    fn parseAssignExpr(self: *Parser) anyerror!*Node {
+        const expr = try self.parseExpr();
+        if (self.check(.assign)) {
+            _ = self.advance();
+            const value = try self.parseExpr();
+            return self.newNode(.{ .assignment = .{ .op = "=", .left = expr, .right = value } });
+        }
+        const tok = self.peek();
+        const op: ?[]const u8 = switch (tok.kind) {
+            .plus_assign => "+=",
+            .minus_assign => "-=",
+            .star_assign => "*=",
+            .slash_assign => "/=",
+            else => null,
+        };
+        if (op) |o| {
+            _ = self.advance();
+            const value = try self.parseExpr();
+            return self.newNode(.{ .assignment = .{ .op = o, .left = expr, .right = value } });
+        }
+        return expr;
+    }
+
     fn parseExprOrAssignment(self: *Parser) anyerror!*Node {
         const expr = try self.parseExpr();
 
@@ -1278,7 +1303,17 @@ pub const Parser = struct {
     // ============================================================
 
     pub fn parseExpr(self: *Parser) anyerror!*Node {
-        return self.parseOrExpr();
+        return self.parseRangeExpr();
+    }
+
+    fn parseRangeExpr(self: *Parser) anyerror!*Node {
+        const left = try self.parseOrExpr();
+        if (self.check(.dotdot)) {
+            _ = self.advance();
+            const right = try self.parseOrExpr();
+            return self.newNode(.{ .range_expr = .{ .op = "..", .left = left, .right = right } });
+        }
+        return left;
     }
 
     fn parseOrExpr(self: *Parser) anyerror!*Node {
@@ -2129,4 +2164,33 @@ test "parser - compt for" {
     const body = prog.program.top_level[0].func_decl.body;
     try std.testing.expect(body.block.statements[0].* == .for_stmt);
     try std.testing.expect(body.block.statements[0].for_stmt.is_compt);
+}
+
+test "parser - for with range" {
+    const alloc = std.testing.allocator;
+    var lex = lexer.Lexer.init((
+        \\module main
+        \\func test_fn() void {
+        \\for(0..10) |i| {
+        \\var x: i32 = 0
+        \\}
+        \\}
+        \\
+    ));
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var p = Parser.init(tokens.items, alloc, &reporter);
+    defer p.deinit();
+
+    const prog = try p.parseProgram();
+    try std.testing.expect(!reporter.hasErrors());
+    const body = prog.program.top_level[0].func_decl.body;
+    const for_node = body.block.statements[0];
+    try std.testing.expect(for_node.* == .for_stmt);
+    try std.testing.expect(for_node.for_stmt.iterables[0].* == .range_expr);
+    try std.testing.expectEqualStrings("i", for_node.for_stmt.variables[0]);
 }

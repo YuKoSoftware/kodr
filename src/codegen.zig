@@ -558,7 +558,7 @@ pub const CodeGen = struct {
                 try self.write(")");
                 if (w.continue_expr) |c| {
                     try self.write(" : (");
-                    try self.generateExpr(c);
+                    try self.generateContinueExpr(c);
                     try self.write(")");
                 }
                 try self.write(" ");
@@ -567,19 +567,54 @@ pub const CodeGen = struct {
             .for_stmt => |f| {
                 // Kodr for(arr, 0..) |val, idx| → Zig for (arr, 0..) |val, idx|
                 // compt for → inline for
+                //
+                // Range iterables: Zig range-for produces usize loop vars.
+                // When any iterable is a range_expr, use internal names and
+                // declare user vars as i32 casts at the top of the block.
+                const has_range = for (f.iterables) |it| {
+                    if (it.* == .range_expr) break true;
+                } else false;
+
                 if (f.is_compt) try self.write("inline ");
                 try self.write("for (");
                 for (f.iterables, 0..) |it, i| {
                     if (i > 0) try self.write(", ");
-                    try self.generateExpr(it);
+                    if (it.* == .range_expr) {
+                        try self.writeRangeExpr(it.range_expr);
+                    } else {
+                        try self.generateExpr(it);
+                    }
                 }
                 try self.write(") |");
                 for (f.variables, 0..) |v, i| {
                     if (i > 0) try self.write(", ");
-                    try self.write(v);
+                    if (has_range) {
+                        // Use internal name; user var declared inside block
+                        try self.writeFmt("_kodr_{s}", .{v});
+                    } else {
+                        try self.write(v);
+                    }
                 }
-                try self.write("| ");
-                try self.generateBlock(f.body);
+                if (has_range) {
+                    // Open block manually, inject casts before body statements
+                    try self.write("| {\n");
+                    self.indent += 1;
+                    for (f.variables) |v| {
+                        try self.writeIndent();
+                        try self.writeFmt("const {s}: i32 = @intCast(_kodr_{s});\n", .{ v, v });
+                    }
+                    for (f.body.block.statements) |stmt| {
+                        try self.writeIndent();
+                        try self.generateStatement(stmt);
+                        try self.write("\n");
+                    }
+                    self.indent -= 1;
+                    try self.writeIndent();
+                    try self.write("}");
+                } else {
+                    try self.write("| ");
+                    try self.generateBlock(f.body);
+                }
             },
             .defer_stmt => |d| {
                 try self.write("defer ");
@@ -864,6 +899,48 @@ pub const CodeGen = struct {
         }
     }
 
+    // Generate a while continue expression — same as assignment but no trailing semicolon.
+    fn generateContinueExpr(self: *CodeGen, node: *parser.Node) anyerror!void {
+        if (node.* == .assignment) {
+            const a = node.assignment;
+            if (std.mem.eql(u8, a.op, "/=")) {
+                try self.generateExpr(a.left);
+                try self.write(" = @divTrunc(");
+                try self.generateExpr(a.left);
+                try self.write(", ");
+                try self.generateExpr(a.right);
+                try self.write(")");
+            } else {
+                try self.generateExpr(a.left);
+                try self.writeFmt(" {s} ", .{a.op});
+                try self.generateExpr(a.right);
+            }
+        } else {
+            try self.generateExpr(node);
+        }
+    }
+
+    fn writeRangeExpr(self: *CodeGen, r: parser.BinaryOp) anyerror!void {
+        // Zig for-range endpoints must be usize. Cast non-literal values.
+        const left_is_literal = r.left.* == .int_literal;
+        const right_is_literal = r.right.* == .int_literal;
+        if (left_is_literal) {
+            try self.generateExpr(r.left);
+        } else {
+            try self.write("@intCast(");
+            try self.generateExpr(r.left);
+            try self.write(")");
+        }
+        try self.write("..");
+        if (right_is_literal) {
+            try self.generateExpr(r.right);
+        } else {
+            try self.write("@intCast(");
+            try self.generateExpr(r.right);
+            try self.write(")");
+        }
+    }
+
     fn generateCompilerFunc(self: *CodeGen, cf: parser.CompilerFunc) anyerror!void {
         // Map Kodr @functions to Zig equivalents
         if (std.mem.eql(u8, cf.name, "type")) {
@@ -882,10 +959,25 @@ pub const CodeGen = struct {
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write("))");
         } else if (std.mem.eql(u8, cf.name, "cast")) {
-            // @cast(x) — target type from context, use @as in Zig
-            try self.write("@as(/* target_type */, ");
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-            try self.write(")");
+            // @cast(T, x) → Zig cast depending on target type:
+            //   float target (f32/f64): @as(T, @floatFromInt(x))
+            //   int target:             @as(T, @intCast(x))
+            if (cf.args.len >= 2) {
+                const target_type = try self.typeToZig(cf.args[0]);
+                const is_float = target_type.len > 0 and target_type[0] == 'f';
+                try self.writeFmt("@as({s}, ", .{target_type});
+                if (is_float) {
+                    try self.write("@floatFromInt(");
+                } else {
+                    try self.write("@intCast(");
+                }
+                try self.generateExpr(cf.args[1]);
+                try self.write("))");
+            } else if (cf.args.len == 1) {
+                try self.write("@intCast(");
+                try self.generateExpr(cf.args[0]);
+                try self.write(")");
+            }
         } else if (std.mem.eql(u8, cf.name, "size")) {
             // @size(T) → @sizeOf(T)
             try self.write("@sizeOf(");
@@ -1024,6 +1116,8 @@ pub const CodeGen = struct {
                 }
                 break :blk g.name;
             },
+            // @cast(i64, x) — type arg parsed as identifier by parseExpr
+            .identifier => |name| builtins.ZigMapping.primitiveToZig(name),
             else => "anyopaque",
         };
     }

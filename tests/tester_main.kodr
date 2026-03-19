@@ -150,5 +150,29 @@ func main() void {
         zigstd.print("FAIL nested_scopes\n")
     }
 
+    if(tester.sum_range(5) == 10) {
+        zigstd.print("PASS for_range\n")
+    } else {
+        zigstd.print("FAIL for_range\n")
+    }
+
+    if(tester.sum_while_continue(5) == 10) {
+        zigstd.print("PASS while_continue\n")
+    } else {
+        zigstd.print("FAIL while_continue\n")
+    }
+
+    if(tester.cast_to_i64(42) == 42) {
+        zigstd.print("PASS cast_int\n")
+    } else {
+        zigstd.print("FAIL cast_int\n")
+    }
+
+    if(tester.cast_to_f32(7) == 7.0) {
+        zigstd.print("PASS cast_float\n")
+    } else {
+        zigstd.print("FAIL cast_float\n")
+    }
+
     zigstd.print("TESTER:DONE\n")
 }

@@ -167,12 +167,42 @@ pub func sum_to(n: i32) i32 {
     return total
 }
 
+// ─── Cast ────────────────────────────────────────────────────
+
+pub func cast_to_i64(x: i32) i64 {
+    return @cast(i64, x)
+}
+
+pub func cast_to_f32(x: i32) f32 {
+    return @cast(f32, x)
+}
+
+// ─── While with continue expression ─────────────────────────
+
+pub func sum_while_continue(n: i32) i32 {
+    var total: i32 = 0
+    var i: i32 = 0
+    while(i < n) : (i += 1) {
+        total += i
+    }
+    return total
+}
+
 // ─── For loop ────────────────────────────────────────────────
 
 pub func sum_slice(arr: []i32) i32 {
     var total: i32 = 0
     for(arr) |val| {
         total += val
+    }
+    return total
+}
+
+// for loop with range
+pub func sum_range(n: i32) i32 {
+    var total: i32 = 0
+    for(0..n) |i| {
+        total += i
     }
     return total
 }
@@ -453,4 +483,20 @@ test "enum usage" {
 
 test "nested scopes" {
     @assert(nested_scope() == 6)
+}
+
+test "for range" {
+    @assert(sum_range(5) == 10)
+}
+
+test "while continue" {
+    @assert(sum_while_continue(5) == 10)
+}
+
+test "cast int" {
+    @assert(cast_to_i64(42) == 42)
+}
+
+test "cast float" {
+    @assert(cast_to_f32(7) == 7.0)
 }

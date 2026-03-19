@@ -24,6 +24,16 @@ func countdown(n: i32) i32 {
     return result
 }
 
+// while loop with continue expression — runs after each iteration
+func sum_with_step(n: i32) i32 {
+    var total: i32 = 0
+    var i: i32 = 0
+    while(i < n) : (i += 1) {
+        total += i
+    }
+    return total
+}
+
 // ─── For Loops ───────────────────────────────────────────────────────────────
 
 // for loop over array
@@ -31,6 +41,15 @@ func sum_array(arr: []i32) i32 {
     var total: i32 = 0
     for(arr) |val| {
         total += val
+    }
+    return total
+}
+
+// for loop over a numeric range
+func sum_range(n: i32) i32 {
+    var total: i32 = 0
+    for(0..n) |i| {
+        total += i
     }
     return total
 }
