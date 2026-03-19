@@ -622,6 +622,19 @@ test "cast float" {
     @assert(cast_to_f32(7) == 7.0)
 }
 
+pub func raw_ptr_read() i32 {
+    var x: i32 = 99
+    const raw: RawPtr(i32) = RawPtr(i32, &x)
+    x = raw[0]
+    return x
+}
+
+pub func raw_ptr_index() i32 {
+    var arr: [3]i32 = [1, 2, 3]
+    const raw: RawPtr(i32) = RawPtr(i32, &arr)
+    return raw[1]
+}
+
 test "cast float to int" {
     @assert(cast_float_to_int() == 3)
 }
@@ -635,4 +648,9 @@ test "fixed array" {
     const arr: [3]i32 = [10, 20, 30]
     @assert(sum_fixed_array(arr) == 60)
     @assert(array_index_test() == 20)
+}
+
+test "raw ptr" {
+    @assert(raw_ptr_read() == 99)
+    @assert(raw_ptr_index() == 2)
 }

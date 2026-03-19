@@ -235,5 +235,11 @@ func main() void {
         zigstd.print("FAIL cast_float_to_int\n")
     }
 
+    if(tester.raw_ptr_read() == 99) {
+        zigstd.print("PASS raw_ptr\n")
+    } else {
+        zigstd.print("FAIL raw_ptr\n")
+    }
+
     zigstd.print("TESTER:DONE\n")
 }

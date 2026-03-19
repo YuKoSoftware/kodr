@@ -1745,6 +1745,22 @@ pub const Parser = struct {
                     return self.newNode(.{ .error_literal = msg.text });
                 }
 
+                // Pointer instantiation: RawPtr(T, addr) / VolatilePtr(T, addr)
+                const is_raw = std.mem.eql(u8, tok.text, "RawPtr");
+                const is_volatile = std.mem.eql(u8, tok.text, "VolatilePtr");
+                if ((is_raw or is_volatile) and self.check(.lparen)) {
+                    _ = self.advance();
+                    const type_arg = try self.parseType();
+                    _ = try self.expect(.comma);
+                    const addr_arg = try self.parseExpr();
+                    _ = try self.expect(.rparen);
+                    return self.newNode(.{ .ptr_expr = .{
+                        .kind = tok.text,
+                        .type_arg = type_arg,
+                        .addr_arg = addr_arg,
+                    }});
+                }
+
                 return self.newNode(.{ .identifier = tok.text });
             },
 
