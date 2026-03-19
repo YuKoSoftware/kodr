@@ -162,6 +162,19 @@ func main() void {
         zigstd.print("FAIL while_continue\n")
     }
 
+    const arr: [3]i32 = [10, 20, 30]
+    if(tester.sum_fixed_array(arr) == 60) {
+        zigstd.print("PASS fixed_array\n")
+    } else {
+        zigstd.print("FAIL fixed_array\n")
+    }
+
+    if(tester.array_index_test() == 20) {
+        zigstd.print("PASS array_index\n")
+    } else {
+        zigstd.print("FAIL array_index\n")
+    }
+
     if(tester.apply_fn(tester.triple, 5) == 15) {
         zigstd.print("PASS func_ptr\n")
     } else {

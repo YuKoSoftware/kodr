@@ -190,6 +190,19 @@ func nullable_var_demo() i32 {
     return x.i32
 }
 
+// ─── Fixed-Size Arrays ───────────────────────────────────────
+
+// [N]T — size known at compile time
+func array_sum() i32 {
+    const arr: [3]i32 = [10, 20, 30]
+    var total: i32 = 0
+    var i: i32 = 0
+    while(i < 3) : (i += 1) {
+        total += arr[i]
+    }
+    return total
+}
+
 // ─── Function Pointers ───────────────────────────────────────────────────────
 
 // func(T) RetType is a type — store functions in variables, pass them as args

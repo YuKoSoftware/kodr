@@ -881,7 +881,15 @@ pub const CodeGen = struct {
             .index_expr => |i| {
                 try self.generateExpr(i.object);
                 try self.write("[");
-                try self.generateExpr(i.index);
+                // Zig requires usize for indices — cast non-literal indices
+                const index_is_literal = i.index.* == .int_literal;
+                if (!index_is_literal) {
+                    try self.write("@intCast(");
+                    try self.generateExpr(i.index);
+                    try self.write(")");
+                } else {
+                    try self.generateExpr(i.index);
+                }
                 try self.write("]");
             },
             .compiler_func => |cf| {
@@ -1057,8 +1065,8 @@ pub const CodeGen = struct {
             },
             .type_array => |a| blk: {
                 const inner = try self.typeToZig(a.elem);
-                // Size expression — simplified to use the expr text
-                break :blk try self.allocTypeStr("[TODO]{s}", .{inner});
+                const size_text = if (a.size.* == .int_literal) a.size.int_literal else "0";
+                break :blk try self.allocTypeStr("[{s}]{s}", .{ size_text, inner });
             },
             .type_union => |u| blk: {
                 var has_error = false;
