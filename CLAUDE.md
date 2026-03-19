@@ -5,9 +5,10 @@ Kodr is a compiled, memory-safe programming language that transpiles to Zig.
 Written in Zig 0.15.x. Lives entirely in `src/`.
 One-sentence pitch: *"A simple yet powerful language that is safe."*
 
-**Full language spec:** `README.md` — read it before making
-any decisions about language behavior, syntax, or semantics. Do not rely on memory
-or assumptions — check the blueprint.
+**Full language spec:** `README.md` — read it before making any decisions about
+language behavior, syntax, or semantics. Do not rely on memory or assumptions — check the spec.
+
+**Other docs:** `COMPILER.md` — compiler architecture. `STDLIB.md` — stdlib roadmap. `FUTURE.md` — uncommitted ideas.
 
 ---
 
@@ -17,8 +18,11 @@ or assumptions — check the blueprint.
 kodr/
     build.zig
     build.zig.zon
-    kodr_technical_blueprint_025.md   — full language spec
-    kodr_grammar.peg                  — formal grammar
+    README.md               — full language spec
+    COMPILER.md             — compiler architecture + project structure
+    STDLIB.md               — standard library roadmap
+    FUTURE.md               — uncommitted ideas
+    kodr_grammar.peg        — formal grammar
     src/
         main.zig            — CLI + pipeline orchestration
         lexer.zig           — pass 1:  tokenizer
@@ -28,9 +32,9 @@ kodr/
         resolver.zig        — pass 5:  compt + type resolution
         ownership.zig       — pass 6:  ownership + move analysis
         borrow.zig          — pass 7:  borrow checking
-        thread_safety.zig   — pass 8:  thread safety analysis
+        thread_safety.zig   — pass 8:  thread safety analysis (stub)
         propagation.zig     — pass 9:  error + null propagation
-        mir.zig             — pass 10: MIR types + generation
+        mir.zig             — pass 10: MIR types + generation (stub)
         codegen.zig         — pass 11: Zig source generation
         zig_runner.zig      — pass 12: invoke Zig compiler
         types.zig           — shared: Kodr type system
@@ -42,7 +46,8 @@ kodr/
             example.kodr    — @embedFile, language manual anchor (see below)
             *.kodr          — @embedFile, additional manual files (module example)
         std/
-            alpha.kodr      — @embedFile, extracted by kodr initstd
+            zigstd.kodr     — @embedFile, extracted by kodr initstd
+            zigstd.zig      — Zig stdlib bridge implementation
 ```
 
 ---
@@ -66,8 +71,7 @@ Source (.kodr)
 ```
 
 Each pass runs only if the previous succeeded. First error stops compilation.
-Passes 6–7 have basic implementations. Pass 8 is a stub. Pass 9 has DeclTable-backed
-union detection. Pass 10 (MIR) is a skeleton stub.
+Passes 1–7, 9, 11–12 are working. Pass 8 (thread safety) is a stub. Pass 10 (MIR) is a skeleton stub.
 
 ---
 
@@ -253,37 +257,30 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 
 ## Current Status
 
-**Phase 2** — full pipeline working end-to-end.
+**Phase 2** — full pipeline working end-to-end. 108 tests passing.
 
 **Working:**
-- `kodr init <n>` — creates project with `main.kodr`, `example.kodr`, `control_flow.kodr`
-- `kodr build` — compiles to `bin/<project_name>`
-- `kodr run` — builds and executes the binary
-- `kodr initstd` — installs `std/` and `global/` next to the binary
-- `kodr addtopath`, `kodr debug`
-- Import system with `::` scope operator
-- Missing module errors reported cleanly
-- `extern func` — declares Kodr interface for paired `.zig` implementation
+- `kodr init <n>`, `kodr build`, `kodr run`, `kodr test`, `kodr initstd`, `kodr debug`
+- Import system with `::` scope operator, missing module errors reported cleanly
+- `extern func` — Kodr interface for paired `.zig` sidecar implementation
 - `import std::zigstd` — Zig stdlib bridge, `kodr initstd` installs it
-- Sidecar `.zig` files auto-copied to generated dir during compilation
-- `++` concatenation operator (strings and arrays)
-- `main.bitsize` — resolver applies default types to untyped numeric literals
-- Struct instantiation with named fields — `Player(name: "hero", health: 100.0)`
-- Struct methods — static, immutable (`const &`), mutable (`var &`)
-- Default field values — omit fields with defaults, Zig fills them in
-- Enum instantiation — `var d: Direction = North` → `.North` in Zig
-- Enum matching — match arms with enum variants, exhaustive switch detection
-- Error type codegen — `Error("msg")`, `(Error | i32)`, `@type(result) == Error`
+- `++` concatenation (strings and arrays), `main.bitsize` numeric literal defaults
+- Structs — instantiation, methods (static/const/var), default field values
+- Enums — instantiation, matching, methods
+- Named tuples — `(min: i32, max: i32)`, destructuring `const min, max = expr`
+- Fixed-size arrays `[N]T`, slices `[]T`, for/index/range loops, while with continue
+- `@cast` — int/float/int-to-float/float-to-int
+- Function pointers — `*const fn(T) R`
+- Error handling — `Error("msg")`, `(Error | T)`, error is a distinct string type
+- Null handling — `(null | T)` unions
+- `is` / `is not` — type comparison keywords (`result is Error`, `result is not null`)
+- `@type`, `@typename`, `@typeid`, `@cast`, `@copy`, `@move`, `@assert`, `@size`, `@align`
 - Error location in messages — file:line:col with source line preview and caret
-- Pass 6 field type awareness — DeclTable lookup for primitive vs non-primitive fields
-- Pass 9 propagation — DeclTable-backed `(Error|T)` and `(null|T)` detection
-- 86-test suite — unit + build + integration + runtime + negative tests
+- Pass 9 propagation — `(Error|T)` and `(null|T)` detection
 
 **Next:**
-- Null handling codegen — `(null | T)` unions
-- `for` with range — `for(0..10) |i| { }`
-- `while` with continue expression — `while(i < 10) : (i += 1) { }`
-- `@cast` codegen
+- Pointers — `Ptr(T)`, `RawPtr(T)`
+- Heap allocation — `alloc`, `free`
 - Pass 8 (thread safety) — sendability checks
 
 **Priority rule:** Focus on getting the core language working. Don't flesh out std,

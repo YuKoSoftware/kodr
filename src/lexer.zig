@@ -48,6 +48,7 @@ pub const TokenKind = enum {
     kw_true,
     kw_false,
     kw_extern,
+    kw_is,
 
     // Punctuation
     lparen,     // (
@@ -139,6 +140,7 @@ const KEYWORDS = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "true",     .kw_true },
     .{ "false",    .kw_false },
     .{ "extern",   .kw_extern },
+    .{ "is",       .kw_is },
 });
 
 /// The lexer state machine
