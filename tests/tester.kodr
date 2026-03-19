@@ -635,6 +635,16 @@ pub func raw_ptr_index() i32 {
     return raw[1]
 }
 
+pub func safe_ptr_read() i32 {
+    var x: i32 = 77
+    const p: Ptr(i32) = Ptr(i32, &x)
+    return p.value
+}
+
+test "safe ptr" {
+    @assert(safe_ptr_read() == 77)
+}
+
 test "cast float to int" {
     @assert(cast_float_to_int() == 3)
 }

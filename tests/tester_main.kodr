@@ -241,5 +241,11 @@ func main() void {
         zigstd.print("FAIL raw_ptr\n")
     }
 
+    if(tester.safe_ptr_read() == 77) {
+        zigstd.print("PASS safe_ptr\n")
+    } else {
+        zigstd.print("FAIL safe_ptr\n")
+    }
+
     zigstd.print("TESTER:DONE\n")
 }

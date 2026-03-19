@@ -287,3 +287,27 @@ test "null handling" {
     @assert(value_or_default(0) == 0)
     @assert(nullable_var_demo() == 42)
 }
+
+// ─── Pointers ────────────────────────────────────────────────
+
+// Ptr(T) — safe, const-only pointer. Reads value with .value
+func read_via_ptr(n: i32) i32 {
+    var x: i32 = n
+    const p: Ptr(i32) = Ptr(i32, &x)
+    return p.value
+}
+
+// RawPtr(T) — unsafe pointer, always generates a compiler warning
+func read_via_rawptr(n: i32) i32 {
+    var x: i32 = n
+    const raw: RawPtr(i32) = RawPtr(i32, &x)
+    return raw[0]
+}
+
+test "safe pointer" {
+    @assert(read_via_ptr(42) == 42)
+}
+
+test "raw pointer" {
+    @assert(read_via_rawptr(99) == 99)
+}

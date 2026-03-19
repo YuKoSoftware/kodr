@@ -22,6 +22,7 @@ pub const CodeGen = struct {
     in_null_union_func: bool, // current function returns (null | T)
     null_vars: std.StringHashMapUnmanaged(void),    // variables with (null | T) type
     rawptr_vars: std.StringHashMapUnmanaged(void),  // variables holding RawPtr(T) or VolatilePtr(T)
+    ptr_vars: std.StringHashMapUnmanaged(void),     // variables holding Ptr(T)
     in_test_block: bool, // inside a test { } block — @assert uses std.testing.expect
     destruct_counter: usize, // unique index for destructuring temp vars
 
@@ -38,6 +39,7 @@ pub const CodeGen = struct {
             .in_null_union_func = false,
             .null_vars = .{},
             .rawptr_vars = .{},
+            .ptr_vars = .{},
             .in_test_block = false,
             .destruct_counter = 0,
         };
@@ -61,6 +63,7 @@ pub const CodeGen = struct {
         self.output.deinit(self.allocator);
         self.null_vars.deinit(self.allocator);
         self.rawptr_vars.deinit(self.allocator);
+        self.ptr_vars.deinit(self.allocator);
     }
 
     /// Get the generated Zig source
@@ -171,6 +174,16 @@ pub const CodeGen = struct {
              std.mem.eql(u8, value.ptr_expr.kind, "VolatilePtr"));
     }
 
+    /// Check if a value expression is a safe Ptr(T) instantiation
+    fn isSafePtrExpr(value: *parser.Node) bool {
+        return value.* == .ptr_expr and std.mem.eql(u8, value.ptr_expr.kind, "Ptr");
+    }
+
+    /// Check if a variable holds a safe Ptr(T)
+    fn isPtrVar(self: *const CodeGen, name: []const u8) bool {
+        return self.ptr_vars.contains(name);
+    }
+
     /// Generate a value expression, wrapping it for null union context if needed
     fn generateNullWrappedExpr(self: *CodeGen, value: *parser.Node) anyerror!void {
         if (value.* == .null_literal) {
@@ -252,8 +265,10 @@ pub const CodeGen = struct {
         // Clear null/rawptr vars per function scope (each function tracks its own)
         const prev_null_vars = self.null_vars;
         const prev_rawptr_vars = self.rawptr_vars;
+        const prev_ptr_vars = self.ptr_vars;
         self.null_vars = .{};
         self.rawptr_vars = .{};
+        self.ptr_vars = .{};
         self.in_error_union_func = false;
         self.in_null_union_func = false;
         if (f.return_type.* == .type_union) {
@@ -269,6 +284,8 @@ pub const CodeGen = struct {
             self.null_vars = prev_null_vars;
             self.rawptr_vars.deinit(self.allocator);
             self.rawptr_vars = prev_rawptr_vars;
+            self.ptr_vars.deinit(self.allocator);
+            self.ptr_vars = prev_ptr_vars;
         }
 
         // pub modifier — always pub for main (Zig requires pub fn main for exe entry)
@@ -434,6 +451,7 @@ pub const CodeGen = struct {
             try self.generateNullWrappedExpr(v.value);
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
+            if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
             try self.generateExpr(v.value);
         }
         try self.write(";\n");
@@ -452,6 +470,7 @@ pub const CodeGen = struct {
             try self.generateNullWrappedExpr(v.value);
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
+            if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
             try self.generateExpr(v.value);
         }
         try self.write(";\n");
@@ -512,6 +531,7 @@ pub const CodeGen = struct {
                     try self.generateNullWrappedExpr(v.value);
                 } else {
                     if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
+                    if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
                     try self.generateExpr(v.value);
                 }
                 try self.write(";");
@@ -526,6 +546,7 @@ pub const CodeGen = struct {
                     try self.generateNullWrappedExpr(v.value);
                 } else {
                     if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
+                    if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
                     try self.generateExpr(v.value);
                 }
                 try self.write(";");
@@ -930,8 +951,19 @@ pub const CodeGen = struct {
                 }
             },
             .field_expr => |f| {
-                // raw.value → raw[0] (RawPtr/VolatilePtr dereference)
+                // ptr.value → ptr.* (safe Ptr(T) dereference)
                 if (std.mem.eql(u8, f.field, "value") and
+                    f.object.* == .identifier and self.isPtrVar(f.object.identifier))
+                {
+                    try self.generateExpr(f.object);
+                    try self.write(".*");
+                // ptr.valid → true (compile-time known)
+                } else if (std.mem.eql(u8, f.field, "valid") and
+                    f.object.* == .identifier and self.isPtrVar(f.object.identifier))
+                {
+                    try self.write("true");
+                // raw.value → raw[0] (RawPtr/VolatilePtr dereference)
+                } else if (std.mem.eql(u8, f.field, "value") and
                     f.object.* == .identifier and self.isRawPtrVar(f.object.identifier))
                 {
                     try self.generateExpr(f.object);
@@ -1120,11 +1152,10 @@ pub const CodeGen = struct {
 
     fn generatePtrExpr(self: *CodeGen, p: parser.PtrExpr) anyerror!void {
         if (std.mem.eql(u8, p.kind, "Ptr")) {
-            // Ptr(T, &x) → KodrPtr(T){ .address = @intFromPtr(&x), .valid = true }
-            try self.writeFmt("KodrPtr({s}){{ .address = @intFromPtr(", .{try self.typeToZig(p.type_arg)});
+            // Ptr(T, &x) → &x  (const pointer, compile-time validity tracking)
             try self.generateExpr(p.addr_arg);
-            try self.write("), .valid = true }");
         } else if (std.mem.eql(u8, p.kind, "RawPtr")) {
+            std.debug.print("WARNING: RawPtr used — unsafe, no bounds checking\n", .{});
             const zig_type = try self.typeToZig(p.type_arg);
             if (p.addr_arg.* == .borrow_expr) {
                 // RawPtr(T, &x) → @as([*]T, @ptrCast(&x))
@@ -1138,6 +1169,7 @@ pub const CodeGen = struct {
                 try self.write("))");
             }
         } else if (std.mem.eql(u8, p.kind, "VolatilePtr")) {
+            std.debug.print("WARNING: VolatilePtr used — unsafe, hardware access only\n", .{});
             const zig_type = try self.typeToZig(p.type_arg);
             if (p.addr_arg.* == .borrow_expr) {
                 // VolatilePtr(T, &x) → @as(*volatile T, @ptrCast(&x))
@@ -1230,6 +1262,12 @@ pub const CodeGen = struct {
                     if (g.args.len > 0) {
                         const inner = try self.typeToZig(g.args[0]);
                         break :blk try self.allocTypeStr("KodrAsync({s})", .{inner});
+                    }
+                } else if (std.mem.eql(u8, g.name, "Ptr")) {
+                    // Ptr(T) → *const T
+                    if (g.args.len > 0) {
+                        const inner = try self.typeToZig(g.args[0]);
+                        break :blk try self.allocTypeStr("*const {s}", .{inner});
                     }
                 } else if (std.mem.eql(u8, g.name, "RawPtr")) {
                     // RawPtr(T) → [*]T

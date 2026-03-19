@@ -1745,10 +1745,11 @@ pub const Parser = struct {
                     return self.newNode(.{ .error_literal = msg.text });
                 }
 
-                // Pointer instantiation: RawPtr(T, addr) / VolatilePtr(T, addr)
+                // Pointer instantiation: Ptr(T, &x) / RawPtr(T, addr) / VolatilePtr(T, addr)
+                const is_safe = std.mem.eql(u8, tok.text, "Ptr");
                 const is_raw = std.mem.eql(u8, tok.text, "RawPtr");
                 const is_volatile = std.mem.eql(u8, tok.text, "VolatilePtr");
-                if ((is_raw or is_volatile) and self.check(.lparen)) {
+                if ((is_safe or is_raw or is_volatile) and self.check(.lparen)) {
                     _ = self.advance();
                     const type_arg = try self.parseType();
                     _ = try self.expect(.comma);

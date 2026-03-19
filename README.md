@@ -840,29 +840,18 @@ Moving individual fields out of a struct is a compile time error.
 Traditional `*T` pointer syntax does not exist in Kodr. Instead there are three distinct pointer types, each with a clear purpose. All follow the same `Type(T, value)` instantiation pattern used everywhere in Kodr.
 
 ### `Ptr(T)` — safe pointer, general use
-Compiler tracked. `valid` is automatically set to `false` when the pointed-to value is moved, dropped, or set to null. No warnings emitted — safe to use anywhere.
+Compiler tracked. Always `const` — the pointer itself cannot be reassigned. `valid` is automatically set to `false` when the pointed-to value is moved or goes out of scope. Validity is compile-time verified — using a pointer after the pointee moves is a hard compiler error. No warnings emitted — safe to use anywhere.
 
 ```
-Ptr(T) {
-    address: usize
-    valid: bool       // compiler maintained, single source of truth
-}
+const ptr: Ptr(i32) = Ptr(i32, &x)
+
+ptr.valid          // true — compile time known
+ptr.value          // safe dereference
+
+var x2: i32 = x   // x moved — compiler error if ptr.value used after this
 ```
 
-```
-var x: i32 = 5
-var ptr: Ptr(i32) = Ptr(i32, &x)
-
-ptr.valid          // true
-ptr.value          // safe dereference, compiler checks valid first
-
-var x2: i32 = x   // x moved, ptr.valid automatically set to false
-ptr.value          // compile time error — valid is false
-```
-
-No `[]` indexing — `Ptr(T)` points to a single owned value. Use `[]T` for safe array access.
-
-**Note on primitives:** Since primitives copy silently, the original variable is never invalidated by assignment. `ptr.valid` stays `true` until the pointed-to variable goes out of scope — at which point the compiler sets `valid` to `false`. Never dereference a `Ptr(T)` after the variable it points to has gone out of scope.
+No `[]` indexing — `Ptr(T)` points to a single value. Use `[]T` for array access.
 
 ### `RawPtr(T)` — unsafe pointer, C interop and bare metal
 Zero overhead — just a memory address, nothing else. Always emits a compiler warning. `[]` indexing available for working with C arrays — no bounds checking.
@@ -904,10 +893,11 @@ reg[4]             // volatile read from fifth register
 ```
 
 ### Rules
-- `Ptr(T)` — safe, no warnings, general use, single value only
-- `RawPtr(T)` — always warns, bare metal and Zig bridge files only, `[]` for pointer arithmetic
+- `Ptr(T)` — always `const`, safe, no warnings, single value only
+- `RawPtr(T)` — always warns, bare metal and C interop only, `[]` for pointer arithmetic
 - `VolatilePtr(T)` — always warns, hardware registers and memory mapped IO, `[]` for register arrays
-- All three use `&` to get the address of a variable, or a literal address for hardware
+- `Ptr(T)` uses `&` to get the address of a variable
+- `RawPtr(T)` and `VolatilePtr(T)` use `&` for variables or a literal integer for hardware addresses
 - Self-referential structures use array indices instead of pointers — faster and safer
 - `RawPtr(T)` and `VolatilePtr(T)` are escape hatches — discouraged for general programming
 
