@@ -438,8 +438,8 @@ GEN_EXAMPLE=".kodr-cache/generated/example.zig"
 if grep -q "inline fn" "$GEN_EXAMPLE"; then pass "compt func generates inline fn"
 else fail "compt func generates inline fn"; fi
 
-if grep -q "const BUFFER_SIZE" "$GEN_EXAMPLE"; then pass "compt var generates const"
-else fail "compt var generates const"; fi
+if grep -q "inline fn double" "$GEN_EXAMPLE"; then pass "compt func double generates inline fn"
+else fail "compt func double generates inline fn"; fi
 
 if grep -q '++' "$GEN_EXAMPLE"; then pass "++ concatenation in output"
 else fail "++ concatenation in output"; fi

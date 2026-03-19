@@ -18,7 +18,6 @@ const zig_runner = @import("zig_runner.zig");
 const errors = @import("errors.zig");
 const cache = @import("cache.zig");
 const builtins = @import("builtins.zig");
-const types = @import("types.zig");
 
 // ============================================================
 // CLI
@@ -377,9 +376,9 @@ fn addToPath(allocator: std.mem.Allocator) !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var da = std.heap.DebugAllocator(.{}){};
+    defer _ = da.deinit();
+    const allocator = if (@import("builtin").mode == .Debug) da.allocator() else std.heap.smp_allocator;
 
     const cli = try parseArgs(allocator);
     defer cli.deinit();
@@ -834,7 +833,6 @@ test "pipeline - imports all passes" {
     _ = errors;
     _ = cache;
     _ = builtins;
-    _ = types;
     try std.testing.expect(true);
 }
 

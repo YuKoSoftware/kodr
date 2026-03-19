@@ -65,7 +65,7 @@ func main() void {
     console.println(result.i32)
 
     // Explicit allocation — no default allocator
-    var a = mem.GPA()
+    var a = mem.DebugAllocator()
     var data: []i32 = a.alloc(i32, 64)
     defer a.free(data)
 
@@ -90,7 +90,7 @@ test"damage reduces health" {
 ## Key Features
 
 - **Ownership & borrow checking** — compile-time memory safety, no GC
-- **Explicit allocators** — `mem.GPA()`, `mem.Arena()`, `mem.Temp(n)`, `mem.Page()`
+- **Explicit allocators** — `mem.DebugAllocator()`, `mem.Arena()`, `mem.Temp(n)`, `mem.Page()`
 - **Error & null as types** — `(Error | T)` and `(null | T)` unions, handled explicitly
 - **`is` / `is not`** — clean type comparisons at the call site
 - **Structs & enums** — methods, data-carrying variants, bitfield enums
@@ -128,7 +128,7 @@ test"damage reduces health" {
 
 ## Status
 
-**Phase 2** — full pipeline working end-to-end. 110 tests passing.
+**Phase 2** — full pipeline working end-to-end. 118 tests passing.
 
 Transpiles to Zig 0.15.x. No bundled binary — Zig installed globally.
 

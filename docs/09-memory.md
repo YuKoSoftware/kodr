@@ -10,7 +10,7 @@
 5. All safety checks are compile time only — zero runtime overhead
 
 ### Copy vs Move
-- **Primitives** (`i32`, `i64`, `u8`, `f64`, `bool`, `usize`, `isize`, `string` etc.) — silently copy on assignment, compiler does not track them. `string` is `[]const u8` under the hood (a pointer + length), so copying is always cheap (16 bytes).
+- **Primitives** (`i32`, `i64`, `u8`, `f64`, `bool`, `usize`, `isize`, `String` etc.) — silently copy on assignment, compiler does not track them. `String` is `[]const u8` under the hood (a pointer + length), so copying is always cheap (16 bytes).
 - **Everything else** (structs, slices, user types) — move by default, compiler tracks ownership
 - `move` for explicit move intent
 - `copy` for explicit copies of non-primitives
@@ -20,8 +20,8 @@
 var a: i32 = 5
 var b: i32 = a            // copy, a still valid, compiler does not track
 
-var s: string = "hello"
-var s2: string = s        // copy, s still valid (string is a slice — cheap)
+var s: String = "hello"
+var s2: String = s        // copy, s still valid (String is a slice — cheap)
 
 var data: MyStruct = getData()
 var d2: MyStruct = data          // move, data is now invalid
@@ -34,7 +34,7 @@ Use-after-move is a compile time error. Zero runtime overhead — moved variable
 ### Borrowing
 `&` borrows a value without transferring ownership. Caller retains ownership.
 ```
-var s: string = "hello"
+var s: String = "hello"
 print(&s)     // borrow, s still valid
 print(&s)     // still valid
 print(s)      // move, s is gone after this
@@ -42,8 +42,8 @@ print(s)      // move, s is gone after this
 
 In function signatures:
 ```
-func read(x: const &string) void { }    // immutable borrow, read only
-func mutate(x: var &string) void { }    // mutable borrow, can modify
+func read(x: const &String) void { }    // immutable borrow, read only
+func mutate(x: var &String) void { }    // mutable borrow, can modify
 ```
 
 ### Borrow Rules
@@ -58,7 +58,7 @@ struct Game {
     player: Player
 
     // Don't return &Player — provide methods instead:
-    func getPlayerName(self: const &Game) string { return self.player.name }
+    func getPlayerName(self: const &Game) String { return self.player.name }
     func damagePlayer(self: var &Game, amount: f32) void {
         self.player.health = self.player.health - amount
     }
@@ -74,7 +74,7 @@ Structs are atomic ownership units — all fields move together or none do.
 var p: Player = Player(name: "john", score: 0, health: 100.0)
 var p2: Player = p      // entire struct moves, p is invalid
 
-var name: &string = &p2.name    // borrow a field, p2 still owns everything
+var name: &String = &p2.name    // borrow a field, p2 still owns everything
 ```
 Moving individual fields out of a struct is a compile time error.
 
@@ -145,7 +145,7 @@ var arr: [10]i32 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]   // fixed array, on the stac
 ```
 import std::mem
 
-var a = mem.GPA()
+var a = mem.DebugAllocator()
 
 // single value
 var x: i32 = a.allocOne(i32, 42)
@@ -173,7 +173,7 @@ func process(a: mem.Allocator, n: i32) []i32 {
     return buf    // caller owns buf, caller is responsible for freeing
 }
 
-var a = mem.GPA()
+var a = mem.DebugAllocator()
 var result: []i32 = process(a, 100)
 // ... use result ...
 a.free(result)
@@ -187,7 +187,8 @@ Custom allocator *implementation* belongs in Zig via `extern func` — Kodr code
 
 | Allocator | Speed | Notes |
 |-----------|-------|-------|
-| `mem.GPA()` | safe | general purpose, leak detection in debug builds |
+| `mem.SMP()` | fastest | default for release builds — per-thread freelist, zero setup, global singleton |
+| `mem.DebugAllocator()` | safe | debug builds — leak detection, double-free checks, general purpose |
 | `mem.Arena()` | fast | batch work, free all at once via `freeAll()` |
 | `mem.Page()` | varies | OS page-sized chunks, large allocations, bypasses heap |
 | `mem.Temp(n)` | fastest | stack-backed scratch, no heap, auto-reset at scope exit — `n` must be a compile-time constant |

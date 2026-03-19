@@ -14,9 +14,6 @@ var counter: i32 = 0
 const MAX_SIZE: i32 = 100
 const PI: f64 = 3.14159
 
-// compile-time evaluated constant
-compt BUFFER_SIZE: i32 = 1024
-
 // compile-time function — entire body evaluated at compile time
 compt func double(n: i32) i32 {
     return n * 2
@@ -178,6 +175,16 @@ func divide_or_default(a: i32, b: i32) i32 {
     return result.i32
 }
 
+// match on union type — clean alternative to if/is
+func divide_match(a: i32, b: i32) i32 {
+    const result = safe_divide(a, b)
+    match(result) {
+        Error => { return 0 }
+        i32   => { return result.i32 }
+    }
+    return 0
+}
+
 // ─── Null Handling ──────────────────────────────────────────────────────────
 
 // function returning a nullable union — (null | T)
@@ -195,6 +202,16 @@ func value_or_default(id: i32) i32 {
         return 0
     }
     return result.i32
+}
+
+// match on null union
+func find_match(id: i32) i32 {
+    const result: (null | i32) = find_value(id)
+    match(result) {
+        null => { return 0 }
+        i32  => { return result.i32 }
+    }
+    return 0
 }
 
 // nullable variable — starts null, assigned later
@@ -327,10 +344,20 @@ test "error handling" {
     assert(divide_or_default(10, 0) == 0)
 }
 
+test "match error union" {
+    assert(divide_match(10, 2) == 5)
+    assert(divide_match(10, 0) == 0)
+}
+
 test "null handling" {
     assert(value_or_default(5) == 50)
     assert(value_or_default(0) == 0)
     assert(nullable_var_demo() == 42)
+}
+
+test "match null union" {
+    assert(find_match(5) == 50)
+    assert(find_match(0) == 0)
 }
 
 // ─── Pointers ────────────────────────────────────────────────
@@ -355,4 +382,139 @@ test "safe pointer" {
 
 test "raw pointer" {
     assert(read_via_rawptr(99) == 99)
+}
+
+// ─── Generics with `any` ─────────────────────────────────────────────────────
+
+// generic function — any param, any return. resolved at compile time.
+func identity(val: any) any {
+    return val
+}
+
+// compt func — type dispatch via `is`
+compt func describe(val: any) String {
+    if(val is i32) { return "integer" }
+    if(val is f32) { return "float" }
+    if(val is String) { return "string" }
+    return "unknown"
+}
+
+// is not — negated type check
+compt func is_not_int(val: any) bool {
+    if(val is not i32) { return true }
+    return false
+}
+
+test "identity generic" {
+    const x: i32 = identity(42)
+    assert(x == 42)
+}
+
+test "compt describe" {
+    // use typed variables — comptime_int does not equal i32
+    const n: i32 = 5
+    const f: f32 = 5.0
+    assert(describe(n) == "integer")
+    assert(describe(f) == "float")
+}
+
+test "is not check" {
+    const f: f32 = 3.14
+    const n: i32 = 7
+    assert(is_not_int(f))
+    assert(not is_not_int(n))
+}
+
+// ─── Collections ─────────────────────────────────────────────────────────────
+
+// List(T) — dynamic array backed by std.ArrayList
+// List(T) — owned allocator, no setup needed
+func list_demo() i32 {
+    var items: List(i32) = List(i32)
+    defer { items.free() }
+    items.add(10)
+    items.add(20)
+    items.add(30)
+    return items.get(1)
+}
+
+// Map(K,V) — use has() before get()
+func map_demo() i32 {
+    var scores: Map(String, i32) = Map(String, i32)
+    defer { scores.free() }
+    scores.put("alice", 42)
+    scores.put("bob", 99)
+    if(scores.has("alice")) {
+        return scores.get("alice")
+    }
+    return 0
+}
+
+// Set(T) — unique value set
+func set_demo() bool {
+    var seen: Set(i32) = Set(i32)
+    defer { seen.free() }
+    seen.add(1)
+    seen.add(2)
+    seen.add(1)
+    return seen.has(2)
+}
+
+// for loop over a List
+func list_sum() i32 {
+    var nums: List(i32) = List(i32)
+    defer { nums.free() }
+    nums.add(1)
+    nums.add(2)
+    nums.add(3)
+    var total: i32 = 0
+    for(nums) |n| {
+        total += n
+    }
+    return total
+}
+
+// explicit allocator — shared across multiple collections
+func shared_alloc_demo() i32 {
+    const alloc = mem.DebugAllocator()
+    var a: List(i32) = List(i32, alloc)
+    defer { a.free() }
+    var b: List(i32) = List(i32, alloc)
+    defer { b.free() }
+    a.add(1)
+    b.add(2)
+    return a.get(0) + b.get(0)
+}
+
+test "list demo" {
+    assert(list_demo() == 20)
+}
+
+test "map demo" {
+    assert(map_demo() == 42)
+}
+
+test "set demo" {
+    assert(set_demo())
+}
+
+test "list sum" {
+    assert(list_sum() == 6)
+}
+
+test "shared alloc" {
+    assert(shared_alloc_demo() == 3)
+}
+
+// type-returning compt func — generates a new struct type at compile time
+compt func Box(T: any) type {
+    return struct {
+        value: T
+    }
+}
+
+test "Box type" {
+    const IntBox = Box(i32)
+    const b = IntBox(value: 99)
+    assert(b.value == 99)
 }

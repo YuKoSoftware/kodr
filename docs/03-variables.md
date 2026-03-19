@@ -3,17 +3,19 @@
 Three levels of mutability and evaluation:
 
 ```
-var x: i32 = 5           // mutable, runtime
-const y: i32 = 10        // immutable, runtime (optimizer may constant-fold)
-compt z: i32 = 5 * 10    // compile time, guaranteed — hard error if impossible
+var x: i32 = 5      // mutable, runtime
+const y: i32 = 10   // immutable, runtime
 ```
 
 - `var` — mutable, runtime. Can be reassigned.
-- `const` — immutable, runtime. Cannot be reassigned. The optimizer may fold constant expressions, but this is not guaranteed by the language.
-- `compt` — compile time, guaranteed. Must be fully knowable at compile time — hard compiler error otherwise. `compt` is a prefix modifier — it goes in front of declarations and statements, never inline on arbitrary expressions. Three uses:
-  - `compt X: i32 = 1024` — compile-time variable
-  - `compt func hash() u64 { ... }` — compile-time function (entire body is comptime)
-  - `compt for(items) |item| { ... }` — compile-time loop unrolling (maps to Zig `inline for`)
+- `const` — immutable, runtime. Cannot be reassigned. If the value comes from a `compt func`, the compiler evaluates it at compile time automatically.
+
+For compile-time computation, use a `compt func` and assign the result to a `const`:
+```
+compt func bufferSize() i32 { return 1024 }
+
+const BUFFER_SIZE: i32 = bufferSize()   // evaluated at compile time
+```
 
 All variables must be initialized at declaration — no uninitialized state. If a value is not yet known, use a `(null | T)` union:
 ```

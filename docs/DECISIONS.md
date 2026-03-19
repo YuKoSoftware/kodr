@@ -28,11 +28,12 @@ are primitives with no runtime overhead. `String` carries length and is heap-all
 All type conversions go through `cast(T, val)`. Silent coercions are a common source
 of bugs. The explicitness is intentional — if you are casting, it should be visible.
 
-### `compt` only on declarations and statements
-`compt X: i32 = 1`, `compt func f()`, `compt for(...)`. Never inline on arbitrary
-expressions. If you need a compile-time value inside a runtime function, extract it
-into a `compt func` and call it. Keeping `compt` at statement level makes it easy
-to audit what runs at compile time.
+### `compt` is only valid before `func`
+`compt func f()` is the one and only use of `compt`. `compt var`, `compt const`, and
+`compt for` are compiler errors. A regular loop inside a `compt func` already runs at
+compile time — no special keyword needed. A `const` assigned from a `compt func` call
+is automatically evaluated at compile time by the Zig backend. One keyword, one use,
+no confusion.
 
 ### No `inline` keyword
 `compt func` covers the use case. One keyword for compile-time, not two.

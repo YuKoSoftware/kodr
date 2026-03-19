@@ -12,6 +12,9 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "RawPtr",
     "VolatilePtr",
     "Error",
+    "List",
+    "Map",
+    "Set",
     "Version",
     "VersionRule",
     "Dependency",
@@ -149,6 +152,9 @@ pub const ZigMapping = struct {
 test "builtin type detection" {
     try std.testing.expect(isBuiltinType("Thread"));
     try std.testing.expect(isBuiltinType("Ptr"));
+    try std.testing.expect(isBuiltinType("List"));
+    try std.testing.expect(isBuiltinType("Map"));
+    try std.testing.expect(isBuiltinType("Set"));
     try std.testing.expect(!isBuiltinType("Player"));
     try std.testing.expect(!isBuiltinType("i32"));
 }

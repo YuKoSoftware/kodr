@@ -257,7 +257,7 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 
 ## Current Status
 
-**Phase 2** — full pipeline working end-to-end. 113 tests passing.
+**Phase 2** — full pipeline working end-to-end. 118 tests passing.
 
 **Working:**
 - `kodr init <n>`, `kodr build`, `kodr run`, `kodr test`, `kodr initstd`, `kodr debug`
@@ -272,13 +272,16 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 - Fixed-size arrays `[N]T`, slices `[]T`, `arr[a..b]` slice expressions
 - For/index/range loops, while with continue
 - `@cast` — int/float/int-to-float/float-to-int
-- Function pointers — `*const fn(T) R`
+- Function pointers — `func(T) R` type syntax
 - Error handling — `Error("msg")`, `(Error | T)`, error is a distinct `String` type
 - Null handling — `(null | T)` unions
+- `match` on union types — `Error =>` / `null =>` / value type arms, `else` as catch-all
 - `is` / `is not` — type comparison keywords (`result is Error`, `result is not null`)
 - `@type`, `@typename`, `@typeid`, `@cast`, `@copy`, `@move`, `@assert`, `@size`, `@align`
 - Error location in messages — file:line:col with source line preview and caret
 - Pass 9 propagation — `(Error|T)` and `(null|T)` detection
+- Collections — `List(T)`, `Map(K,V)`, `Set(T)` as builtin types, owned/shared allocator patterns
+- Allocators — `mem.SMP()` (default), `mem.DebugAllocator()`, `mem.Arena()`, `mem.Temp(n)`, `mem.Page()`
 
 **Next:**
 - Overflow helpers — `overflow()`, `wrap()`, `sat()`

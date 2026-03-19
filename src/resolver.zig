@@ -5,7 +5,6 @@
 
 const std = @import("std");
 const parser = @import("parser.zig");
-const types = @import("types.zig");
 const declarations = @import("declarations.zig");
 const builtins = @import("builtins.zig");
 const errors = @import("errors.zig");

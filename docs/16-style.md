@@ -36,8 +36,8 @@ enum Direction(u32) {
     West
 }
 
-// bitfield enum variants — PascalCase
-enum Permissions(u32, bitfield) {
+// bitfield variants — PascalCase
+bitfield Permissions(u32) {
     Read
     Write
     Execute

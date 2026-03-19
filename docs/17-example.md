@@ -12,9 +12,9 @@ main.name = "example"
 import std::console
 
 // --- NUMERIC LITERALS ---
-compt HEX_COLOR: u32 = 0xFF_AA_00
-compt MAX_HEALTH: f32 = 100.0
-compt BIG_NUMBER: i64 = 1_000_000
+const HEX_COLOR: u32 = 0xFF_AA_00
+const MAX_HEALTH: f32 = 100.0
+const BIG_NUMBER: i64 = 1_000_000
 
 // generic function — any resolved at compile time
 func identity(val: any) any {
@@ -38,8 +38,8 @@ enum Direction(u32) {
     West
 }
 
-// bitfield enum — compiler assigns powers of 2
-enum Permissions(u32, bitfield) {
+// bitfield — compiler assigns powers of 2
+bitfield Permissions(u32) {
     Read      // 0b0001
     Write     // 0b0010
     Execute   // 0b0100
@@ -118,14 +118,12 @@ func fibonacci(n: i32) i32 {
     return fibonacci(n - 1) + fibonacci(n - 2)
 }
 
-// first class function
-const Transform = *const fn(i32) i32
-
+// first class function — func(T) R is a type
 func double(x: i32) i32 {
     return x * 2
 }
 
-func applyToAll(arr: []i32, f: Transform) void {
+func applyToAll(arr: []i32, f: func(i32) i32) void {
     for(arr) |val| {
         console.println(f(val))
     }
@@ -157,8 +155,8 @@ func main() void {
         West  => { console.println("going west") }
     }
 
-    // --- BITFIELD ENUM ---
-    var perms: Permissions = Read | Write
+    // --- BITFIELD ---
+    var perms: Permissions = Permissions(Read, Write)
     perms.set(Execute)
     perms.clear(Write)
     perms.toggle(Execute)
@@ -227,22 +225,6 @@ func main() void {
     console.println(typename(p))
     console.println(typeid(p))
 
-    // --- THREADING ---
-    var data: []i32 = [1, 2, 3, 4, 5, 6]
-    var left, right = data.splitAt(3)
-
-    Thread([]i32) thread_a { return left }
-    Thread([]i32) thread_b { return right }
-
-    var leftResult: []i32 = thread_a.value
-    var rightResult: []i32 = thread_b.value
-
-    // async IO
-    Async(String) my_request {
-        return "fetched data"
-    }
-    var response = my_request.value
-
     // --- POINTERS ---
     var val: i32 = 10
     var ptr = Ptr(i32, &val)
@@ -251,7 +233,7 @@ func main() void {
     // --- MEMORY ALLOCATION ---
     import std::mem
 
-    var a = mem.GPA()
+    var a = mem.DebugAllocator()
     var box = a.allocOne(i32, 42)
     console.println(box)
     a.free(box)

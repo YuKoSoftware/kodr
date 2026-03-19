@@ -14,7 +14,7 @@ std.math          // abs, min, max, clamp, lerp, trig, rounding, constants (pi, 
 std.math.linear   // Vec2(T), Vec3(T), Vec4(T), Mat2(T), Mat3(T), Mat4(T), Quat(T)
 std.string        // manipulation, search, split, trim, parse
 std.bytes         // raw byte manipulation, endianness, bit operations
-std.collections   // list, map, set, queue, stack
+std.collections   // List(T), Map(K,V), Set(T) — implemented as compiler builtins (queue, stack TBD)
 std.os            // environment variables, signals, process info
 std.io            // raw streams, buffers, readers, writers
 std.console       // terminal — print, input, colors, cursor, clear

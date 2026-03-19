@@ -12,7 +12,7 @@ import std::console
 
 var mutable_var: i32 = 10
 const immutable_const: i32 = 20
-compt COMPT_VALUE: i32 = 1024
+const COMPT_VALUE: i32 = 1024
 
 // ─── Structs ─────────────────────────────────────────────────
 
@@ -461,7 +461,7 @@ pub func test_enum_method() i32 {
     const o: Direction = d.opposite()
     match(o) {
         South => { return 1 }
-        _ => { return 0 }
+        else => { return 0 }
     }
     return 0
 }
@@ -708,7 +708,7 @@ pub func match_range(n: i32) i32 {
         4..6 => {
             return 2
         }
-        _ => {
+        else => {
             return 0
         }
     }
@@ -732,7 +732,7 @@ pub func match_string(s: String) i32 {
         "world" => {
             return 2
         }
-        _ => {
+        else => {
             return 0
         }
     }

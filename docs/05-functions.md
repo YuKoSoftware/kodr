@@ -49,15 +49,6 @@ var p: Pair(i32, String) = Pair(i32, String)(first: 42, second: "hello")
 ```
 
 
-## `compt for` — Compile-time Loop Unrolling
-`compt for` unrolls a loop at compile time. Maps to Zig's `inline for`. Used for generating code per type or per item in a compile-time known collection.
-```
-compt for(types) |T| {
-    // generates code per type at compile time
-}
-```
-If you need compile-time logic inside a runtime function, extract it into a `compt func` and call it — no inline `compt` blocks or expressions.
-
 ## No Function Overloading
 Every function has a unique name. No ambiguity, no compiler complexity.
 
@@ -173,6 +164,10 @@ void     // function returns nothing
 true     // boolean true
 false    // boolean false
 ```
+
+### Version, VersionRule, Dependency — Not Yet Implemented
+
+These builtins are reserved for the dependency management system and are not yet functional. Documented here for reference only.
 
 ### Version
 A named tuple of three `u32` values following semantic versioning — major, minor, patch. String versions are never allowed — hard compiler error.

@@ -31,6 +31,14 @@ func readFile(path: String) (Error | String) {
 
 If the error is not handled before scope exit — crash, print message, done.
 
+`match` is a clean alternative to `if/is` when both branches need handling:
+```
+match result {
+    Error => { console.print(result.Error) }
+    i32   => { var value: i32 = result.i32 }
+}
+```
+
 ---
 
 ## Null Handling
@@ -51,4 +59,12 @@ if(result is null) {
     return
 }
 var user: User = result.User
+```
+
+Or with `match`:
+```
+match result {
+    null => { return }
+    User => { var user: User = result.User }
+}
 ```

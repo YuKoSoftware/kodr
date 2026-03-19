@@ -169,3 +169,17 @@ var left, right = data.splitAt(3)
 // hard compiler error if variable count doesn't match field count
 var a, b, c = minMax(arr)    // error — MinMax only has 2 fields
 ```
+
+---
+
+## Builtin Collection Types
+
+`List(T)`, `Map(K, V)`, and `Set(T)` are builtin parameterized types — no import needed. They own their memory and require an explicit `free()` call.
+
+```
+List(i32)           // dynamic array of i32
+Map(String, i32)    // hash map, String key → i32 value
+Set(i32)            // unique set of i32
+```
+
+All three accept an optional allocator argument. See [06-collections.md](06-collections.md) for full documentation.

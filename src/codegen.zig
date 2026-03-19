@@ -10,7 +10,7 @@ const declarations = @import("declarations.zig");
 const errors = @import("errors.zig");
 
 /// Built-in allocator kinds from std::mem
-const AllocKind = enum { gpa, arena, temp, page };
+const AllocKind = enum { gpa, smp, arena, temp, page };
 
 /// Info tracked per allocator variable
 const AllocInfo = struct {
@@ -32,6 +32,9 @@ pub const CodeGen = struct {
     null_vars: std.StringHashMapUnmanaged(void),       // variables with (null | T) type
     rawptr_vars: std.StringHashMapUnmanaged(void),     // variables holding RawPtr(T) or VolatilePtr(T)
     ptr_vars: std.StringHashMapUnmanaged(void),        // variables holding Ptr(T)
+    list_vars: std.StringHashMapUnmanaged([]const u8), // variables holding List(T) → allocator name
+    map_vars: std.StringHashMapUnmanaged([]const u8), // variables holding Map(K,V) → allocator name
+    set_vars: std.StringHashMapUnmanaged([]const u8), // variables holding Set(T) → allocator name
     allocator_vars: std.StringHashMapUnmanaged(AllocInfo), // variables holding a mem.* allocator
     heap_single_vars: std.StringHashMapUnmanaged([]const u8), // heap singles: var → allocator name
     in_test_block: bool, // inside a test { } block — @assert uses std.testing.expect
@@ -53,6 +56,9 @@ pub const CodeGen = struct {
             .null_vars = .{},
             .rawptr_vars = .{},
             .ptr_vars = .{},
+            .list_vars = .{},
+            .map_vars = .{},
+            .set_vars = .{},
             .allocator_vars = .{},
             .heap_single_vars = .{},
             .in_test_block = false,
@@ -87,6 +93,12 @@ pub const CodeGen = struct {
         self.null_vars.deinit(self.allocator);
         self.rawptr_vars.deinit(self.allocator);
         self.ptr_vars.deinit(self.allocator);
+        { var it = self.list_vars.valueIterator(); while (it.next()) |v| self.allocator.free(v.*); }
+        self.list_vars.deinit(self.allocator);
+        { var it = self.map_vars.valueIterator(); while (it.next()) |v| self.allocator.free(v.*); }
+        self.map_vars.deinit(self.allocator);
+        { var it = self.set_vars.valueIterator(); while (it.next()) |v| self.allocator.free(v.*); }
+        self.set_vars.deinit(self.allocator);
         var it = self.allocator_vars.iterator();
         while (it.next()) |e| if (e.value_ptr.impl_name.len > 0) self.allocator.free(e.value_ptr.impl_name);
         self.allocator_vars.deinit(self.allocator);
@@ -211,6 +223,46 @@ pub const CodeGen = struct {
         return value.* == .ptr_expr and std.mem.eql(u8, value.ptr_expr.kind, "Ptr");
     }
 
+    /// Check if a value expression is a collection constructor of the given kind
+    fn isCollExpr(value: *parser.Node, kind: []const u8) bool {
+        return value.* == .coll_expr and std.mem.eql(u8, value.coll_expr.kind, kind);
+    }
+
+    /// True when a coll_expr owns its allocator:
+    /// - no alloc_arg (default) → owned GPA
+    /// - inline mem.DebugAllocator() / mem.Arena() etc. → owned
+    /// - named variable → shared (not owned)
+    fn isOwnedColl(c: parser.CollExpr) bool {
+        const arg = c.alloc_arg orelse return true; // no arg = default owned
+        return getMemAllocKind(arg) != null;
+    }
+
+    fn isListVar(self: *const CodeGen, name: []const u8) bool {
+        return self.list_vars.contains(name);
+    }
+    fn isMapVar(self: *const CodeGen, name: []const u8) bool {
+        return self.map_vars.contains(name);
+    }
+    fn isSetVar(self: *const CodeGen, name: []const u8) bool {
+        return self.set_vars.contains(name);
+    }
+
+    /// Return the allocator expression for a collection object node (used in unmanaged API calls).
+    fn getCollAllocName(self: *const CodeGen, obj: *parser.Node) []const u8 {
+        if (obj.* == .identifier) {
+            if (self.list_vars.get(obj.identifier)) |a| return a;
+            if (self.map_vars.get(obj.identifier)) |a| return a;
+            if (self.set_vars.get(obj.identifier)) |a| return a;
+        }
+        return "std.heap.smp_allocator";
+    }
+
+    /// Extract allocator name from a shared coll_expr (alloc_arg is a named identifier).
+    fn sharedCollAllocName(c: parser.CollExpr) []const u8 {
+        const arg = c.alloc_arg orelse return "std.heap.smp_allocator";
+        return if (arg.* == .identifier) arg.identifier else "std.heap.smp_allocator";
+    }
+
     /// Check if a variable holds a safe Ptr(T)
     fn isPtrVar(self: *const CodeGen, name: []const u8) bool {
         return self.ptr_vars.contains(name);
@@ -308,11 +360,17 @@ pub const CodeGen = struct {
         const prev_null_vars = self.null_vars;
         const prev_rawptr_vars = self.rawptr_vars;
         const prev_ptr_vars = self.ptr_vars;
+        const prev_list_vars = self.list_vars;
+        const prev_map_vars = self.map_vars;
+        const prev_set_vars = self.set_vars;
         const prev_allocator_vars = self.allocator_vars;
         const prev_heap_single_vars = self.heap_single_vars;
         self.null_vars = .{};
         self.rawptr_vars = .{};
         self.ptr_vars = .{};
+        self.list_vars = .{};
+        self.map_vars = .{};
+        self.set_vars = .{};
         self.allocator_vars = .{};
         self.heap_single_vars = .{};
         self.in_error_union_func = false;
@@ -332,6 +390,15 @@ pub const CodeGen = struct {
             self.rawptr_vars = prev_rawptr_vars;
             self.ptr_vars.deinit(self.allocator);
             self.ptr_vars = prev_ptr_vars;
+            { var _lv = self.list_vars.valueIterator(); while (_lv.next()) |v| self.allocator.free(v.*); }
+            self.list_vars.deinit(self.allocator);
+            self.list_vars = prev_list_vars;
+            { var _mv = self.map_vars.valueIterator(); while (_mv.next()) |v| self.allocator.free(v.*); }
+            self.map_vars.deinit(self.allocator);
+            self.map_vars = prev_map_vars;
+            { var _sv = self.set_vars.valueIterator(); while (_sv.next()) |v| self.allocator.free(v.*); }
+            self.set_vars.deinit(self.allocator);
+            self.set_vars = prev_set_vars;
             var _it = self.allocator_vars.iterator();
             while (_it.next()) |e| if (e.value_ptr.impl_name.len > 0) self.allocator.free(e.value_ptr.impl_name);
             self.allocator_vars.deinit(self.allocator);
@@ -345,28 +412,56 @@ pub const CodeGen = struct {
         // pub modifier — always pub for main (Zig requires pub fn main for exe entry)
         if (f.is_pub or std.mem.eql(u8, f.name, "main")) try self.write("pub ");
 
-        // compt functions become inline fn in Zig
-        if (f.is_compt) {
+        // compt func + `type` return → generic type fn with `comptime T: type` params
+        // compt func + other return  → inline fn with `anytype` params
+        // regular func               → fn (anytype params handled in loop below)
+        const returns_type = f.return_type.* == .type_named and
+            std.mem.eql(u8, f.return_type.type_named, "type");
+        const is_type_generic = f.is_compt and returns_type;
+
+        if (f.is_compt and !is_type_generic) {
             try self.writeFmt("inline fn {s}(", .{f.name});
         } else {
             try self.writeFmt("fn {s}(", .{f.name});
         }
 
-        // Parameters
+        // Parameters — track first `any` param name for return type inference
+        var first_any_param: ?[]const u8 = null;
         for (f.params, 0..) |param, i| {
             if (i > 0) try self.write(", ");
             if (param.* == .param) {
-                try self.writeFmt("{s}: {s}", .{
-                    param.param.name,
-                    try self.typeToZig(param.param.type_annotation),
-                });
+                const is_any = param.param.type_annotation.* == .type_named and
+                    std.mem.eql(u8, param.param.type_annotation.type_named, "any");
+                if (is_any and first_any_param == null) first_any_param = param.param.name;
+                if (is_type_generic and is_any) {
+                    // `compt func F(T: any) type` → `fn F(comptime T: type)`
+                    try self.writeFmt("comptime {s}: type", .{param.param.name});
+                } else if (is_any) {
+                    // generic value param → anytype
+                    try self.writeFmt("{s}: anytype", .{param.param.name});
+                } else {
+                    try self.writeFmt("{s}: {s}", .{
+                        param.param.name,
+                        try self.typeToZig(param.param.type_annotation),
+                    });
+                }
             }
         }
 
         try self.write(") ");
 
-        // Return type
-        try self.write(try self.typeToZig(f.return_type));
+        // Return type — `any` return becomes @TypeOf(first_any_param)
+        const return_is_any = f.return_type.* == .type_named and
+            std.mem.eql(u8, f.return_type.type_named, "any");
+        if (return_is_any) {
+            if (first_any_param) |pname| {
+                try self.writeFmt("@TypeOf({s})", .{pname});
+            } else {
+                try self.write("anyopaque"); // fallback: no any param found
+            }
+        } else {
+            try self.write(try self.typeToZig(f.return_type));
+        }
         try self.write(" ");
 
         // Body
@@ -490,7 +585,7 @@ pub const CodeGen = struct {
     // MEMORY ALLOCATORS (std::mem)
     // ============================================================
 
-    /// Detect if a node is a mem.GPA() / mem.Arena() / mem.Temp(n) / mem.Page() constructor call.
+    /// Detect if a node is a mem.DebugAllocator() / mem.Arena() / mem.Temp(n) / mem.Page() constructor call.
     fn getMemAllocKind(node: *parser.Node) ?AllocKind {
         if (node.* != .call_expr) return null;
         const c = node.call_expr;
@@ -498,14 +593,15 @@ pub const CodeGen = struct {
         const fe = c.callee.field_expr;
         if (fe.object.* != .identifier) return null;
         if (!std.mem.eql(u8, fe.object.identifier, "mem")) return null;
-        if (std.mem.eql(u8, fe.field, "GPA"))   return .gpa;
+        if (std.mem.eql(u8, fe.field, "DebugAllocator")) return .gpa;
+        if (std.mem.eql(u8, fe.field, "SMP"))   return .smp;
         if (std.mem.eql(u8, fe.field, "Arena")) return .arena;
         if (std.mem.eql(u8, fe.field, "Temp"))  return .temp;
         if (std.mem.eql(u8, fe.field, "Page"))  return .page;
         return null;
     }
 
-    /// Generate allocator initialization statements for: var a = mem.GPA() etc.
+    /// Generate allocator initialization statements for: var a = mem.DebugAllocator() etc.
     /// Expands to multi-line Zig — backing struct + defer deinit + allocator() call.
     /// NOTE: generateBlock already called writeIndent() before this statement, so the
     /// first line must NOT call writeIndent(); subsequent lines must.
@@ -513,9 +609,16 @@ pub const CodeGen = struct {
         const impl_name = try std.fmt.allocPrint(self.allocator, "_{s}_impl", .{name});
         switch (kind) {
             .gpa => {
-                try self.writeFmt("var {s} = std.heap.GeneralPurposeAllocator(.{{}}){{}};\n", .{impl_name});
+                try self.writeFmt("var {s} = std.heap.DebugAllocator(.{{}}){{}};\n", .{impl_name});
                 try self.writeIndent(); try self.writeFmt("defer _ = {s}.deinit();\n", .{impl_name});
                 try self.writeIndent(); try self.writeFmt("const {s} = {s}.allocator();", .{name, impl_name});
+            },
+            .smp => {
+                // smp_allocator is a global singleton — no init/deinit
+                try self.writeFmt("const {s} = std.heap.smp_allocator;", .{name});
+                self.allocator.free(impl_name);
+                try self.allocator_vars.put(self.allocator, name, .{ .kind = kind, .impl_name = "" });
+                return;
             },
             .arena => {
                 try self.writeFmt("var {s} = std.heap.ArenaAllocator.init(std.heap.page_allocator);\n", .{impl_name});
@@ -597,7 +700,10 @@ pub const CodeGen = struct {
     // ============================================================
 
     fn generateConst(self: *CodeGen, v: parser.VarDecl) anyerror!void {
-        // mem.GPA() / mem.Arena() / mem.Temp(n) / mem.Page() — multi-statement expansion
+        // Owned collection: List(T) / List(T, mem.DebugAllocator()) etc. — multi-statement expansion
+        if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
+            return self.generateOwnedCollDecl("const", v.name, v.type_annotation, v.value.coll_expr);
+        // mem.DebugAllocator() / mem.Arena() / mem.Temp(n) / mem.Page() — multi-statement expansion
         if (getMemAllocKind(v.value)) |kind| {
             return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
         }
@@ -618,13 +724,19 @@ pub const CodeGen = struct {
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
             if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
+            if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+            if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+            if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
             try self.generateExpr(v.value);
         }
         try self.write(";\n");
     }
 
     fn generateVar(self: *CodeGen, v: parser.VarDecl) anyerror!void {
-        // mem.GPA() / mem.Arena() / mem.Temp(n) / mem.Page() — multi-statement expansion
+        // Owned collection: List(T) / List(T, mem.DebugAllocator()) etc. — multi-statement expansion
+        if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
+            return self.generateOwnedCollDecl("var", v.name, v.type_annotation, v.value.coll_expr);
+        // mem.DebugAllocator() / mem.Arena() / mem.Temp(n) / mem.Page() — multi-statement expansion
         if (getMemAllocKind(v.value)) |kind| {
             return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
         }
@@ -645,6 +757,9 @@ pub const CodeGen = struct {
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
             if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
+            if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+            if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+            if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
             try self.generateExpr(v.value);
         }
         try self.write(";\n");
@@ -731,6 +846,8 @@ pub const CodeGen = struct {
     fn generateStatement(self: *CodeGen, node: *parser.Node) anyerror!void {
         switch (node.*) {
             .var_decl => |v| {
+                if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
+                    return self.generateOwnedCollDecl("var", v.name, v.type_annotation, v.value.coll_expr);
                 if (getMemAllocKind(v.value)) |kind| {
                     return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
                 }
@@ -747,11 +864,16 @@ pub const CodeGen = struct {
                 } else {
                     if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
                     if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
+                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
                     try self.generateExpr(v.value);
                 }
                 try self.write(";");
             },
             .const_decl => |v| {
+                if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
+                    return self.generateOwnedCollDecl("const", v.name, v.type_annotation, v.value.coll_expr);
                 if (getMemAllocKind(v.value)) |kind| {
                     return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
                 }
@@ -768,6 +890,9 @@ pub const CodeGen = struct {
                 } else {
                     if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
                     if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
+                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
                     try self.generateExpr(v.value);
                 }
                 try self.write(";");
@@ -787,7 +912,7 @@ pub const CodeGen = struct {
                 }
             },
             .compt_decl => |v| {
-                try self.writeFmt("const {s}: {s} = comptime ", .{
+                try self.writeFmt("const {s}: {s} = ", .{
                     v.name,
                     try self.typeToZig(v.type_annotation orelse return),
                 });
@@ -873,6 +998,9 @@ pub const CodeGen = struct {
                     if (i > 0) try self.write(", ");
                     if (it.* == .range_expr) {
                         try self.writeRangeExpr(it.range_expr);
+                    } else if (it.* == .identifier and self.isListVar(it.identifier)) {
+                        // for(list) → for(list.items)
+                        try self.writeFmt("{s}.items", .{it.identifier});
                     } else {
                         try self.generateExpr(it);
                     }
@@ -923,8 +1051,34 @@ pub const CodeGen = struct {
                     break :blk false;
                 };
 
+                // Type match — any arm is `Error` or `null` identifier
+                // match result { Error => { } i32 => { } }
+                // match user   { null  => { } User => { } }
+                const is_type_match = blk: {
+                    for (m.arms) |arm| {
+                        if (arm.* != .match_arm) continue;
+                        const pat = arm.match_arm.pattern;
+                        if (pat.* == .null_literal) break :blk true;
+                        if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "Error"))
+                            break :blk true;
+                    }
+                    break :blk false;
+                };
+
+                // Determine whether the union is a null union (has `null` arm)
+                // vs an error union (has `Error` arm) — affects which tag non-special arms map to
+                const is_null_union = blk: {
+                    for (m.arms) |arm| {
+                        if (arm.* == .match_arm and arm.match_arm.pattern.* == .null_literal)
+                            break :blk true;
+                    }
+                    break :blk false;
+                };
+
                 if (is_string_match) {
                     try self.generateStringMatch(m);
+                } else if (is_type_match) {
+                    try self.generateTypeMatch(m, is_null_union);
                 } else {
 
                 try self.write("switch (");
@@ -940,9 +1094,9 @@ pub const CodeGen = struct {
                 for (m.arms) |arm| {
                     if (arm.* == .match_arm) {
                         try self.writeIndent();
-                        // Check for wildcard pattern (_)
+                        // Check for wildcard pattern (else)
                         if (arm.match_arm.pattern.* == .identifier and
-                            std.mem.eql(u8, arm.match_arm.pattern.identifier, "_"))
+                            std.mem.eql(u8, arm.match_arm.pattern.identifier, "else"))
                         {
                             has_wildcard = true;
                             try self.write("else");
@@ -980,7 +1134,7 @@ pub const CodeGen = struct {
                 self.indent -= 1;
                 try self.writeIndent();
                 try self.write("}");
-                } // close else (non-string match)
+                } // close else (non-string, non-type match)
             },
             .break_stmt => try self.write("break;"),
             .continue_stmt => try self.write("continue;"),
@@ -1088,28 +1242,41 @@ pub const CodeGen = struct {
                 try self.write("}");
             },
             .binary_expr => |b| {
-                // `x is Error` → x == .err
-                // `x is null`  → x == .none
-                if (std.mem.eql(u8, b.op, "==") and
+                // `x is Error`   → x == .err    (error union tag check)
+                // `x is null`    → x == .none   (null union tag check)
+                // `x is T`       → @TypeOf(x) == T  (comptime type check for `any` params)
+                // `x is not ...` → same but with !=
+                const is_eq = std.mem.eql(u8, b.op, "==");
+                const is_ne = std.mem.eql(u8, b.op, "!=");
+                if ((is_eq or is_ne) and
                     b.left.* == .compiler_func and
                     std.mem.eql(u8, b.left.compiler_func.name, "type") and
                     b.left.compiler_func.args.len > 0)
                 {
+                    const val_node = b.left.compiler_func.args[0];
+                    const cmp = if (is_eq) "==" else "!=";
                     // null is a keyword, parsed as .null_literal not .identifier
                     if (b.right.* == .null_literal) {
                         try self.write("(");
-                        try self.generateExpr(b.left.compiler_func.args[0]);
-                        try self.write(" == .none)");
+                        try self.generateExpr(val_node);
+                        try self.writeFmt(" {s} .none)", .{cmp});
                         return;
                     }
                     if (b.right.* == .identifier) {
                         const rhs = b.right.identifier;
                         if (std.mem.eql(u8, rhs, "Error")) {
                             try self.write("(");
-                            try self.generateExpr(b.left.compiler_func.args[0]);
-                            try self.write(" == .err)");
+                            try self.generateExpr(val_node);
+                            try self.writeFmt(" {s} .err)", .{cmp});
                             return;
                         }
+                        // General type check: `val is i32` → `@TypeOf(val) == i32`
+                        // Map Kodr type names to Zig (e.g. String → []const u8)
+                        const zig_rhs = builtins.ZigMapping.primitiveToZig(rhs);
+                        try self.write("(@TypeOf(");
+                        try self.generateExpr(val_node);
+                        try self.writeFmt(") {s} {s})", .{ cmp, zig_rhs });
+                        return;
                     }
                 }
                 // Division on signed ints → @divTrunc in Zig
@@ -1153,6 +1320,25 @@ pub const CodeGen = struct {
                     } else if (std.mem.eql(u8, callee_name, "overflow")) {
                         try self.generateOverflowExpr(c.args[0]);
                         return;
+                    }
+                }
+                // Collection method calls: list.add(), map.put(), set.add() etc.
+                if (c.callee.* == .field_expr) {
+                    const fe = c.callee.field_expr;
+                    if (fe.object.* == .identifier) {
+                        const obj = fe.object.identifier;
+                        if (self.isListVar(obj)) {
+                            try self.generateListMethod(fe.object, fe.field, c.args);
+                            return;
+                        }
+                        if (self.isMapVar(obj)) {
+                            try self.generateMapMethod(fe.object, fe.field, c.args);
+                            return;
+                        }
+                        if (self.isSetVar(obj)) {
+                            try self.generateSetMethod(fe.object, fe.field, c.args);
+                            return;
+                        }
                     }
                 }
                 // Allocator method calls: a.alloc(), a.free(), a.freeAll()
@@ -1220,6 +1406,19 @@ pub const CodeGen = struct {
                 {
                     try self.generateExpr(f.object);
                     try self.write("[0]");
+                } else if (std.mem.eql(u8, f.field, "len") and
+                    f.object.* == .identifier and self.isListVar(f.object.identifier))
+                {
+                    // list.len → list.items.len
+                    try self.generateExpr(f.object);
+                    try self.write(".items.len");
+                } else if (std.mem.eql(u8, f.field, "len") and
+                    f.object.* == .identifier and
+                    (self.isMapVar(f.object.identifier) or self.isSetVar(f.object.identifier)))
+                {
+                    // map.len / set.len → map.count()
+                    try self.generateExpr(f.object);
+                    try self.write(".count()");
                 } else if (std.mem.eql(u8, f.field, "Error")) {
                     try self.generateExpr(f.object);
                     try self.write(".err");
@@ -1286,6 +1485,25 @@ pub const CodeGen = struct {
             .ptr_expr => |p| {
                 try self.generatePtrExpr(p);
             },
+            .coll_expr => |c| {
+                try self.generateCollExpr(c);
+            },
+            .struct_type => |fields| {
+                try self.write("struct {\n");
+                self.indent += 1;
+                for (fields) |f| {
+                    if (f.* == .field_decl) {
+                        try self.writeIndent();
+                        try self.writeFmt("{s}: {s},\n", .{
+                            f.field_decl.name,
+                            try self.typeToZig(f.field_decl.type_annotation),
+                        });
+                    }
+                }
+                self.indent -= 1;
+                try self.writeIndent();
+                try self.write("}");
+            },
             else => {
                 const msg = try std.fmt.allocPrint(self.allocator, "internal codegen error: unhandled expression kind '{s}'", .{@tagName(node.*)});
                 defer self.allocator.free(msg);
@@ -1339,8 +1557,50 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Desugar a type match on (Error|T) or (null|T) into a Zig switch on the tagged union.
+    /// match result { Error => { } i32 => { } }
+    /// → switch (result) { .err => { }, .ok => { } }
+    fn generateTypeMatch(self: *CodeGen, m: parser.MatchStmt, is_null_union: bool) anyerror!void {
+        try self.write("switch (");
+        try self.generateExpr(m.value);
+        try self.write(") {\n");
+        self.indent += 1;
+
+        for (m.arms) |arm| {
+            if (arm.* != .match_arm) continue;
+            const pat = arm.match_arm.pattern;
+            try self.writeIndent();
+
+            if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "Error")) {
+                // Error arm → .err
+                try self.write(".err");
+            } else if (pat.* == .null_literal) {
+                // null arm → .none
+                try self.write(".none");
+            } else if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "else")) {
+                // catch-all
+                try self.write("else");
+            } else {
+                // The value type arm → .ok (error union) or .some (null union)
+                if (is_null_union) {
+                    try self.write(".some");
+                } else {
+                    try self.write(".ok");
+                }
+            }
+
+            try self.write(" => ");
+            try self.generateBlock(arm.match_arm.body);
+            try self.write(",\n");
+        }
+
+        self.indent -= 1;
+        try self.writeIndent();
+        try self.write("}");
+    }
+
     /// Desugar a string match into an if/else chain.
-    /// match s { "hello" => { } "world" => { } _ => { } }
+    /// match s { "hello" => { } "world" => { } else => { } }
     /// → if (std.mem.eql(u8, s, "hello")) { } else if (...) { } else { }
     fn generateStringMatch(self: *CodeGen, m: parser.MatchStmt) anyerror!void {
         var first = true;
@@ -1351,8 +1611,8 @@ pub const CodeGen = struct {
             const pat = arm.match_arm.pattern;
             const body = arm.match_arm.body;
 
-            // Wildcard (_) — save for the final else
-            if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "_")) {
+            // Wildcard (else) — save for the final else
+            if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "else")) {
                 wildcard_body = body;
                 continue;
             }
@@ -1575,6 +1835,217 @@ pub const CodeGen = struct {
         }
     }
 
+    fn generateListMethod(self: *CodeGen, obj: *parser.Node, method: []const u8, args: []*parser.Node) anyerror!void {
+        const alloc = self.getCollAllocName(obj);
+        if (std.mem.eql(u8, method, "add")) {
+            // list.add(x) → list.append(alloc, x) catch unreachable
+            try self.generateExpr(obj);
+            try self.writeFmt(".append({s}, ", .{alloc});
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(") catch unreachable");
+        } else if (std.mem.eql(u8, method, "get")) {
+            // list.get(i) → list.items[@intCast(i)]
+            try self.generateExpr(obj);
+            try self.write(".items[");
+            if (args.len > 0) {
+                if (args[0].* == .int_literal) {
+                    try self.generateExpr(args[0]);
+                } else {
+                    try self.write("@intCast(");
+                    try self.generateExpr(args[0]);
+                    try self.write(")");
+                }
+            }
+            try self.write("]");
+        } else if (std.mem.eql(u8, method, "set")) {
+            // list.set(i, v) → list.items[@intCast(i)] = v
+            try self.generateExpr(obj);
+            try self.write(".items[");
+            if (args.len > 0) {
+                if (args[0].* == .int_literal) {
+                    try self.generateExpr(args[0]);
+                } else {
+                    try self.write("@intCast(");
+                    try self.generateExpr(args[0]);
+                    try self.write(")");
+                }
+            }
+            try self.write("] = ");
+            if (args.len > 1) try self.generateExpr(args[1]);
+        } else if (std.mem.eql(u8, method, "remove")) {
+            // list.remove(i) → _ = list.orderedRemove(@intCast(i))
+            try self.write("_ = ");
+            try self.generateExpr(obj);
+            try self.write(".orderedRemove(");
+            if (args.len > 0) {
+                if (args[0].* == .int_literal) {
+                    try self.generateExpr(args[0]);
+                } else {
+                    try self.write("@intCast(");
+                    try self.generateExpr(args[0]);
+                    try self.write(")");
+                }
+            }
+            try self.write(")");
+        } else if (std.mem.eql(u8, method, "pop")) {
+            // list.pop() → list.pop()
+            try self.generateExpr(obj);
+            try self.write(".pop()");
+        } else if (std.mem.eql(u8, method, "clear")) {
+            // list.clear() → list.clearRetainingCapacity()
+            try self.generateExpr(obj);
+            try self.write(".clearRetainingCapacity()");
+        } else if (std.mem.eql(u8, method, "free")) {
+            // list.free() → list.deinit(alloc)
+            try self.generateExpr(obj);
+            try self.writeFmt(".deinit({s})", .{alloc});
+        } else {
+            // pass through unknown methods
+            try self.generateExpr(obj);
+            try self.writeFmt(".{s}(", .{method});
+            for (args, 0..) |a, i| {
+                if (i > 0) try self.write(", ");
+                try self.generateExpr(a);
+            }
+            try self.write(")");
+        }
+    }
+
+    fn generateMapMethod(self: *CodeGen, obj: *parser.Node, method: []const u8, args: []*parser.Node) anyerror!void {
+        const alloc = self.getCollAllocName(obj);
+        if (std.mem.eql(u8, method, "put")) {
+            // map.put(k, v) → map.put(alloc, k, v) catch unreachable
+            try self.generateExpr(obj);
+            try self.writeFmt(".put({s}", .{alloc});
+            for (args) |a| {
+                try self.write(", ");
+                try self.generateExpr(a);
+            }
+            try self.write(") catch unreachable");
+        } else if (std.mem.eql(u8, method, "get")) {
+            // map.get(k) → map.get(k).?  (panics if missing — use has() first)
+            try self.generateExpr(obj);
+            try self.write(".get(");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(").?");
+        } else if (std.mem.eql(u8, method, "has")) {
+            // map.has(k) → map.contains(k)
+            try self.generateExpr(obj);
+            try self.write(".contains(");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")");
+        } else if (std.mem.eql(u8, method, "remove")) {
+            // map.remove(k) → _ = map.remove(k)
+            try self.write("_ = ");
+            try self.generateExpr(obj);
+            try self.write(".remove(");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")");
+        } else if (std.mem.eql(u8, method, "free")) {
+            try self.generateExpr(obj);
+            try self.writeFmt(".deinit({s})", .{alloc});
+        } else {
+            try self.generateExpr(obj);
+            try self.writeFmt(".{s}(", .{method});
+            for (args, 0..) |a, i| {
+                if (i > 0) try self.write(", ");
+                try self.generateExpr(a);
+            }
+            try self.write(")");
+        }
+    }
+
+    fn generateSetMethod(self: *CodeGen, obj: *parser.Node, method: []const u8, args: []*parser.Node) anyerror!void {
+        const alloc = self.getCollAllocName(obj);
+        if (std.mem.eql(u8, method, "add")) {
+            // set.add(x) → set.put(alloc, x, {}) catch unreachable
+            try self.generateExpr(obj);
+            try self.writeFmt(".put({s}, ", .{alloc});
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(", {}) catch unreachable");
+        } else if (std.mem.eql(u8, method, "has")) {
+            // set.has(x) → set.contains(x)
+            try self.generateExpr(obj);
+            try self.write(".contains(");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")");
+        } else if (std.mem.eql(u8, method, "remove")) {
+            // set.remove(x) → _ = set.remove(x)
+            try self.write("_ = ");
+            try self.generateExpr(obj);
+            try self.write(".remove(");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")");
+        } else if (std.mem.eql(u8, method, "free")) {
+            try self.generateExpr(obj);
+            try self.writeFmt(".deinit({s})", .{alloc});
+        } else {
+            try self.generateExpr(obj);
+            try self.writeFmt(".{s}(", .{method});
+            for (args, 0..) |a, i| {
+                if (i > 0) try self.write(", ");
+                try self.generateExpr(a);
+            }
+            try self.write(")");
+        }
+    }
+
+    /// Generate a collection declaration where the collection owns its allocator.
+    /// Default (no arg) and mem.SMP() → use std.heap.smp_allocator (singleton, no boilerplate).
+    /// mem.DebugAllocator() / mem.Arena() / mem.Temp(n) → generate allocator boilerplate first.
+    /// All collections use the unmanaged API (init = .{}, allocator passed to each method).
+    fn generateOwnedCollDecl(self: *CodeGen, decl_kind: []const u8, name: []const u8, type_ann: ?*parser.Node, c: parser.CollExpr) anyerror!void {
+        const kind: AllocKind = if (c.alloc_arg) |arg| getMemAllocKind(arg) orelse .smp else .smp;
+        const extra_args: []*parser.Node = if (c.alloc_arg) |arg|
+            if (arg.* == .call_expr) arg.call_expr.args else &[_]*parser.Node{}
+        else
+            &[_]*parser.Node{};
+
+        // Determine allocator expression for method calls
+        const tracked_alloc: []const u8 = switch (kind) {
+            .smp  => "std.heap.smp_allocator",
+            .page => "std.heap.page_allocator",
+            else  => try std.fmt.allocPrint(self.allocator, "_{s}_alloc", .{name}),
+        };
+        defer if (kind != .smp and kind != .page) self.allocator.free(tracked_alloc);
+
+        // Generate allocator boilerplate for stateful allocators
+        switch (kind) {
+            .smp, .page => {}, // global singletons — no init needed
+            else => {
+                try self.generateAllocatorInit(tracked_alloc, kind, extra_args);
+                try self.write("\n");
+                try self.writeIndent();
+            },
+        }
+
+        // Emit: var/const name[: type] = .{};
+        try self.writeFmt("{s} {s}", .{ decl_kind, name });
+        if (type_ann) |t| try self.writeFmt(": {s}", .{try self.typeToZig(t)});
+        try self.write(" = .{};");
+
+        // Track variable with its allocator name
+        const stored_alloc = try self.allocator.dupe(u8, tracked_alloc);
+        if (std.mem.eql(u8, c.kind, "List")) {
+            try self.list_vars.put(self.allocator, name, stored_alloc);
+        } else if (std.mem.eql(u8, c.kind, "Map")) {
+            try self.map_vars.put(self.allocator, name, stored_alloc);
+        } else if (std.mem.eql(u8, c.kind, "Set")) {
+            try self.set_vars.put(self.allocator, name, stored_alloc);
+        } else {
+            self.allocator.free(stored_alloc);
+        }
+    }
+
+    /// Generate a shared-allocator collection expression (named alloc only).
+    /// Unmanaged API: emit .{} — allocator is passed to each method call, not stored.
+    /// Owned collections are handled at declaration level by generateOwnedCollDecl.
+    fn generateCollExpr(self: *CodeGen, c: parser.CollExpr) anyerror!void {
+        _ = c.alloc_arg; // allocator tracked at declaration level, not embedded in init
+        // All unmanaged collections zero-initialize: the type annotation carries the type.
+        try self.write(".{}");
+    }
+
     // ============================================================
     // TYPE TRANSLATION
     // ============================================================
@@ -1663,6 +2134,31 @@ pub const CodeGen = struct {
                     if (g.args.len > 0) {
                         const inner = try self.typeToZig(g.args[0]);
                         break :blk try self.allocTypeStr("[*]volatile {s}", .{inner});
+                    }
+                } else if (std.mem.eql(u8, g.name, "List")) {
+                    // List(T) → std.ArrayList(T)
+                    if (g.args.len > 0) {
+                        const inner = try self.typeToZig(g.args[0]);
+                        break :blk try self.allocTypeStr("std.ArrayList({s})", .{inner});
+                    }
+                } else if (std.mem.eql(u8, g.name, "Map")) {
+                    // Map(K,V) → std.StringHashMapUnmanaged(V) if K is String, else std.AutoHashMapUnmanaged(K,V)
+                    if (g.args.len >= 2) {
+                        const key = try self.typeToZig(g.args[0]);
+                        const val = try self.typeToZig(g.args[1]);
+                        if (std.mem.eql(u8, key, "[]const u8")) {
+                            break :blk try self.allocTypeStr("std.StringHashMapUnmanaged({s})", .{val});
+                        }
+                        break :blk try self.allocTypeStr("std.AutoHashMapUnmanaged({s}, {s})", .{ key, val });
+                    }
+                } else if (std.mem.eql(u8, g.name, "Set")) {
+                    // Set(T) → std.StringHashMapUnmanaged(void) if T is String, else std.AutoHashMapUnmanaged(T, void)
+                    if (g.args.len > 0) {
+                        const inner = try self.typeToZig(g.args[0]);
+                        if (std.mem.eql(u8, inner, "[]const u8")) {
+                            break :blk "std.StringHashMapUnmanaged(void)";
+                        }
+                        break :blk try self.allocTypeStr("std.AutoHashMapUnmanaged({s}, void)", .{inner});
                     }
                 }
                 break :blk g.name;

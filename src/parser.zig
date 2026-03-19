@@ -52,6 +52,7 @@ pub const NodeKind = enum {
     borrow_expr,
     compiler_func,
     ptr_expr,
+    coll_expr,
     identifier,
     int_literal,
     float_literal,
@@ -73,6 +74,7 @@ pub const NodeKind = enum {
     type_func,
     type_generic,
     type_named,
+    struct_type,
 };
 
 /// A node in the AST
@@ -116,6 +118,7 @@ pub const Node = union(NodeKind) {
     borrow_expr: *Node,
     compiler_func: CompilerFunc,
     ptr_expr: PtrExpr,
+    coll_expr: CollExpr,
     identifier: []const u8,
     int_literal: []const u8,
     float_literal: []const u8,
@@ -136,6 +139,7 @@ pub const Node = union(NodeKind) {
     type_func: TypeFunc,
     type_generic: TypeGeneric,
     type_named: []const u8,
+    struct_type: []*Node,  // anonymous struct type expression — fields only, no name/methods
 };
 
 pub const Program = struct {
@@ -309,6 +313,12 @@ pub const PtrExpr = struct {
     kind: []const u8, // "Ptr", "RawPtr", "VolatilePtr"
     type_arg: *Node,
     addr_arg: *Node,
+};
+
+pub const CollExpr = struct {
+    kind: []const u8, // "List", "Map", "Set"
+    type_args: []*Node, // [T] for List/Set, [K, V] for Map
+    alloc_arg: ?*Node, // null = use default owned allocator
 };
 
 pub const ConcurrencyBlock = struct {
@@ -694,9 +704,7 @@ pub const Parser = struct {
             .kw_var       => try self.parseVarDecl(true),
             .kw_compt  => blk: {
                 var node = try self.parseComptDecl();
-                // Mark the inner decl as pub
-                if (node.* == .func_decl) node.func_decl.is_pub = true
-                else if (node.* == .compt_decl) node.compt_decl.is_pub = true;
+                if (node.* == .func_decl) node.func_decl.is_pub = true;
                 break :blk node;
             },
             else => {
@@ -780,23 +788,18 @@ pub const Parser = struct {
             return node;
         }
         if (tok.kind == .kw_for) {
-            var node = try self.parseFor();
-            node.for_stmt.is_compt = true;
-            return node;
+            try self.reporter.report(.{
+                .message = "'compt for' is not supported — put the loop inside a 'compt func' instead",
+                .loc = .{ .file = "", .line = tok.line, .col = tok.col },
+            });
+            return error.ParseError;
         }
-        // compt variable declaration
-        const name_tok = try self.expect(.identifier);
-        _ = try self.expect(.colon);
-        const type_ann = try self.parseType();
-        _ = try self.expect(.assign);
-        const value = try self.parseExpr();
-        try self.expectNewlineOrEof();
-        return self.newNode(.{ .compt_decl = .{
-            .name = name_tok.text,
-            .type_annotation = type_ann,
-            .value = value,
-            .is_pub = false,
-        }});
+        // compt var/const — not supported
+        try self.reporter.report(.{
+            .message = "'compt' is only valid before 'func' — use 'const' for compile-time values",
+            .loc = .{ .file = "", .line = tok.line, .col = tok.col },
+        });
+        return error.ParseError;
     }
 
     fn parseParam(self: *Parser) anyerror!*Node {
@@ -1240,10 +1243,10 @@ pub const Parser = struct {
     fn parseMatchPattern(self: *Parser) anyerror!*Node {
         const tok = self.peek();
 
-        // Wildcard
-        if (tok.kind == .identifier and std.mem.eql(u8, tok.text, "_")) {
+        // Wildcard — `else` is the catch-all arm
+        if (tok.kind == .kw_else) {
             _ = self.advance();
-            return self.newNode(.{ .identifier = "_" });
+            return self.newNode(.{ .identifier = "else" });
         }
 
         // Parse an expression — could be range, enum variant, literal, type check
@@ -1811,11 +1814,51 @@ pub const Parser = struct {
                     }});
                 }
 
+                // Collection constructors: List(T, alloc) / Map(K, V, alloc) / Set(T, alloc)
+                const is_list = std.mem.eql(u8, tok.text, "List");
+                const is_map = std.mem.eql(u8, tok.text, "Map");
+                const is_set = std.mem.eql(u8, tok.text, "Set");
+                if ((is_list or is_map or is_set) and self.check(.lparen)) {
+                    _ = self.advance(); // consume (
+                    var type_args = std.ArrayListUnmanaged(*Node){};
+                    const n_type_args: usize = if (is_map) 2 else 1;
+                    for (0..n_type_args) |i| {
+                        const type_arg = try self.parseType();
+                        try type_args.append(self.alloc(), type_arg);
+                        // comma between type args (not after last)
+                        if (i < n_type_args - 1) _ = try self.expect(.comma);
+                    }
+                    // Optional allocator arg
+                    const alloc_arg: ?*Node = if (self.eat(.rparen)) null else blk: {
+                        _ = try self.expect(.comma);
+                        const arg = try self.parseExpr();
+                        _ = try self.expect(.rparen);
+                        break :blk arg;
+                    };
+                    return self.newNode(.{ .coll_expr = .{
+                        .kind = tok.text,
+                        .type_args = try type_args.toOwnedSlice(self.alloc()),
+                        .alloc_arg = alloc_arg,
+                    }});
+                }
+
                 return self.newNode(.{ .identifier = tok.text });
             },
 
-            // Async block as expression (Async(T) name { })
-            // Note: typically parsed at statement level but can appear in assignments
+            // Anonymous struct type expression: struct { field: Type ... }
+            // Used in compt func return position: compt func Box(T: any) type { return struct { value: T } }
+            .kw_struct => {
+                _ = self.advance(); // consume 'struct'
+                _ = try self.expect(.lbrace);
+                var fields = std.ArrayListUnmanaged(*Node){};
+                while (!self.check(.rbrace) and !self.check(.eof)) {
+                    const is_pub_field = self.eat(.kw_pub);
+                    const field = try self.parseFieldDecl(is_pub_field);
+                    try fields.append(self.alloc(), field);
+                }
+                _ = try self.expect(.rbrace);
+                return self.newNode(.{ .struct_type = try fields.toOwnedSlice(self.alloc()) });
+            },
 
             else => {
                 const msg = try std.fmt.allocPrint(self.alloc(),
@@ -2292,7 +2335,7 @@ test "parser - compt func" {
     try std.testing.expect(prog.program.top_level[0].func_decl.is_compt);
 }
 
-test "parser - compt for" {
+test "parser - compt for is rejected" {
     const alloc = std.testing.allocator;
     var lex = lexer.Lexer.init((
         \\module main
@@ -2312,11 +2355,8 @@ test "parser - compt for" {
     var p = Parser.init(tokens.items, alloc, &reporter);
     defer p.deinit();
 
-    const prog = try p.parseProgram();
-    try std.testing.expect(!reporter.hasErrors());
-    const body = prog.program.top_level[0].func_decl.body;
-    try std.testing.expect(body.block.statements[0].* == .for_stmt);
-    try std.testing.expect(body.block.statements[0].for_stmt.is_compt);
+    _ = p.parseProgram() catch {};
+    try std.testing.expect(reporter.hasErrors());
 }
 
 test "parser - for with range" {

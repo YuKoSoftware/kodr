@@ -5,7 +5,6 @@
 
 const std = @import("std");
 const parser = @import("parser.zig");
-const types = @import("types.zig");
 const errors = @import("errors.zig");
 
 /// A borrow record — tracks active borrows

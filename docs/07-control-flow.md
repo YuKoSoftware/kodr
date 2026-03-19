@@ -63,7 +63,7 @@ func findZero(items: []Item) bool {
 
 ## Pattern Matching
 
-`match` is the only way to safely extract enum variant data. Must be exhaustive — compiler error if any variant is unhandled. `_` is the catch-all wildcard and must be last.
+`match` is the only way to safely extract enum variant data. Must be exhaustive — compiler error if any variant is unhandled. `else` is the catch-all arm and must be last.
 
 Inside a match arm, variant data accessed via dot syntax on the variant name. No local binding names needed.
 
@@ -72,20 +72,41 @@ match s {
     Circle    => { var area: f32 = 3.14 * Circle.radius * Circle.radius }
     Rectangle => { var area: f32 = Rectangle.width * Rectangle.height }
     Point     => { }
-    _         => { }
+    else      => { }
 }
 ```
 
-`match` works on integers, strings, ranges, enum variants, and types:
+`match` works on integers, strings, ranges, enum variants, and union types:
 ```
 match value {
     0       => { }    // exact integer
     4..8    => { }    // inclusive range
     "hello" => { }    // String
     North   => { }    // enum variant, no type prefix
-    _       => { }    // catch-all
+    else    => { }    // catch-all
 }
 ```
+
+### Matching on Union Types
+
+`match` can branch on which type a `(Error | T)` or `(null | T)` union currently holds.
+Arms are type names — no binding syntax needed, access the payload via the usual dot syntax.
+
+```
+// (Error | T) union
+match result {
+    Error => { console.println(result.Error) }
+    i32   => { console.println(result.i32) }
+}
+
+// (null | T) union
+match user {
+    null => { return "not found" }
+    User => { return user.User.name }
+}
+```
+
+The two arm kinds never mix in the same `match` block — value matching and type matching are separate.
 
 ### Type Checking in `compt` Functions
 

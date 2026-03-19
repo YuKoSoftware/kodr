@@ -1,6 +1,6 @@
 # Kodr Language Grammar
 # PEG (Parsing Expression Grammar)
-# Version 1.0
+# Version 1.1
 
 # ============================================================
 # PROGRAM STRUCTURE
@@ -49,6 +49,7 @@ scope_name      <- "std" / "global"        # valid scopes — only one level all
 top_level       <- func_decl
                  / struct_decl
                  / enum_decl
+                 / bitfield_decl
                  / const_decl
                  / var_decl
                  / compt_decl
@@ -90,7 +91,7 @@ field_decl      <- name _ ":" _ type (_ "=" _ expr)? newline
 # ENUMS
 # ============================================================
 
-enum_decl       <- "enum" _ name _ "(" _ type (_ "," _ "bitfield")? _ ")" _ "{" _ enum_member* _ "}"
+enum_decl       <- "enum" _ name _ "(" _ type _ ")" _ "{" _ enum_member* _ "}"
 
 enum_member     <- func_decl
                  / enum_variant
@@ -99,6 +100,17 @@ enum_variant    <- name (_ "(" _ variant_fields _ ")")? newline
 
 variant_fields  <- variant_field (_ "," _ variant_field)*
 variant_field   <- name _ ":" _ type
+
+# ============================================================
+# BITFIELDS
+# ============================================================
+
+bitfield_decl   <- "bitfield" _ name _ "(" _ type _ ")" _ "{" _ bitfield_member* _ "}"
+
+bitfield_member <- func_decl
+                 / bitfield_flag
+
+bitfield_flag   <- name newline
 
 # ============================================================
 # VARIABLE DECLARATIONS
@@ -150,11 +162,12 @@ defer_stmt      <- "defer" _ block
 
 match_stmt      <- "match" _ expr _ "{" _ match_arm* _ "}"
 match_arm       <- match_pattern _ "=>" _ block
-match_pattern   <- "_"
-                 / type_pattern
+match_pattern   <- "else"
                  / range_pattern
+                 / variant_pattern
                  / expr
 range_pattern   <- expr ".." expr
+variant_pattern <- name   # enum variant name (Circle, North, etc.)
 
 break_stmt      <- "break" newline
 continue_stmt   <- "continue" newline
@@ -163,7 +176,7 @@ assignment      <- expr _ "=" _ expr newline
 expr_stmt       <- expr newline
 
 # ============================================================
-# CONCURRENCY
+# CONCURRENCY (not yet implemented — emits compiler error)
 # ============================================================
 
 thread_block    <- "Thread" "(" _ type _ ")" _ name _ block
@@ -273,7 +286,7 @@ primitive_type  <- "i8" / "i16" / "i32" / "i64" / "i128"
                  / "isize" / "usize"
                  / "f16" / "bf16" / "f32" / "f64" / "f128"
                  / "bool"
-                 / "string"
+                 / "String"
 
 union_type      <- "(" _ type (_ "|" _ type)+ _ ")"
 
@@ -346,9 +359,9 @@ name            <- !keyword [a-zA-Z_] [a-zA-Z0-9_]*
 
 keyword         <- ("func" / "var" / "const" / "if" / "else" / "for"
                  / "while" / "return" / "import" / "pub" / "match"
-                 / "struct" / "enum" / "defer" / "thread" / "null"
-                 / "void" / "compt" / "any" / "module" / "test"
-                 / "and" / "or" / "not" / "main" / "as" / "type"
+                 / "struct" / "enum" / "bitfield" / "extern" / "defer"
+                 / "null" / "void" / "compt" / "any" / "module" / "test"
+                 / "and" / "or" / "not" / "is" / "main" / "as" / "type"
                  / "break" / "continue" / "true" / "false"
                  / "cast" / "copy" / "move" / "swap" / "assert"
                  / "size" / "align" / "typename" / "typeid") ![a-zA-Z0-9_]
