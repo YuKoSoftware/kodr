@@ -32,6 +32,7 @@ const Command = enum {
     addtopath,
     initstd,
     debug,
+    version,
     help,
 };
 
@@ -104,6 +105,10 @@ fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         cli.command = .debug;
     } else if (std.mem.eql(u8, cmd_str, "addtopath") or std.mem.eql(u8, cmd_str, "-addtopath")) {
         cli.command = .addtopath;
+    } else if (std.mem.eql(u8, cmd_str, "version") or std.mem.eql(u8, cmd_str, "--version")) {
+        cli.command = .version;
+    } else if (std.mem.eql(u8, cmd_str, "help") or std.mem.eql(u8, cmd_str, "--help")) {
+        cli.command = .help;
     } else {
         printUsage();
         std.process.exit(1);
@@ -136,25 +141,38 @@ fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
 
 fn printUsage() void {
     const usage =
-        \\kodr — The Kodr programming language compiler
+        \\kodr — The Kodr compiler  (kodr help for more info)
         \\
-        \\Usage:
-        \\  kodr build              Debug build, native platform
-        \\  kodr build -x64         64-bit build
-        \\  kodr build -arm         ARM build
-        \\  kodr build -wasm        WebAssembly build
-        \\  kodr build -release     Release build (strips debug traces)
-        \\  kodr build -fast        Max optimization
-        \\  kodr run                Build and run
-        \\  kodr test               Run all test blocks
-        \\  kodr build -zig         Show raw Zig compiler output (dev mode)
-        \\  kodr init <name>         Create a new project in ./<name>/
-        \\  kodr addtopath           Add kodr to PATH in your shell profile
-        \\  kodr initstd             Create std/ and global/ folders next to the kodr binary
-        \\  kodr debug               Dump project info (files, modules, source dir)
+        \\  build   run   test   init   initstd   addtopath   debug   version
         \\
     ;
     std.debug.print("{s}", .{usage});
+}
+
+fn printHelp() void {
+    const help =
+        \\kodr — The Kodr programming language compiler
+        \\
+        \\Commands:
+        \\  build               Compile the project in the current directory
+        \\  run                 Build and immediately execute the binary
+        \\  test                Run all test { } blocks in the project
+        \\  init <name>         Create a new project in ./<name>/
+        \\  initstd             Install the standard library next to the kodr binary
+        \\  addtopath           Add kodr to your shell PATH
+        \\  debug               Show project info — modules, files, source directory
+        \\  version             Print the compiler version
+        \\
+        \\Build flags (for build and run):
+        \\  -x64                Target x86-64 Linux
+        \\  -arm                Target ARM64 Linux
+        \\  -wasm               Target WebAssembly
+        \\  -release            Optimized build with safety checks
+        \\  -fast               Maximum optimization, no safety checks
+        \\  -zig                Show raw Zig compiler output (for debugging the compiler)
+        \\
+    ;
+    std.debug.print("{s}", .{help});
 }
 
 // ============================================================
@@ -390,6 +408,16 @@ pub fn main() !void {
 
     if (cli.command == .debug) {
         try runDebug(allocator, &cli);
+        return;
+    }
+
+    if (cli.command == .help) {
+        printHelp();
+        return;
+    }
+
+    if (cli.command == .version) {
+        std.debug.print("kodr 0.1.1\n", .{});
         return;
     }
 

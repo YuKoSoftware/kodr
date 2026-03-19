@@ -233,6 +233,16 @@ pub func sum_slice(arr: []i32) i32 {
     return total
 }
 
+// for loop over slice — tests iteration over array elements
+pub func sum_slice_test() i32 {
+    const arr: [3]i32 = [1, 2, 3]
+    var total: i32 = 0
+    for(arr) |val| {
+        total += val
+    }
+    return total
+}
+
 // for loop with range
 pub func sum_range(n: i32) i32 {
     var total: i32 = 0
@@ -518,6 +528,10 @@ test "enum usage" {
 
 test "nested scopes" {
     @assert(nested_scope() == 6)
+}
+
+test "slice for loop" {
+    @assert(sum_slice_test() == 6)
 }
 
 test "for range" {

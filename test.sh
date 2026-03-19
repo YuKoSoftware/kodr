@@ -179,7 +179,32 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 6: kodr build
+# STAGE 6: kodr test command
+# ══════════════════════════════════════════════════════════════
+
+section "kodr test command"
+
+cd "$TESTDIR"
+mkdir -p kodrtest/src
+cp "$SCRIPT_DIR/tests/tester_main.kodr" kodrtest/src/main.kodr
+cp "$SCRIPT_DIR/tests/tester.kodr" kodrtest/src/tester.kodr
+cd "$TESTDIR/kodrtest"
+
+TEST_OUT=$("$KODR" test 2>&1)
+if echo "$TEST_OUT" | grep -q "all tests passed"; then
+    pass "kodr test — all tests pass"
+else
+    fail "kodr test — all tests pass" "$TEST_OUT"
+fi
+
+if echo "$TEST_OUT" | grep -q "FAIL"; then
+    fail "kodr test — no failures reported"
+else
+    pass "kodr test — no failures reported"
+fi
+
+# ══════════════════════════════════════════════════════════════
+# STAGE 7: kodr build
 # ══════════════════════════════════════════════════════════════
 
 section "kodr build"
@@ -210,7 +235,7 @@ if echo "$BINOUT" | grep -q "hello kodr"; then pass "binary runs"
 else fail "binary runs" "$BINOUT"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 7: Incremental build
+# STAGE 8: Incremental build
 # ══════════════════════════════════════════════════════════════
 
 section "Incremental build"
@@ -223,7 +248,7 @@ if [ -f .kodr-cache/timestamps ]; then pass "cache timestamps exist"
 else fail "cache timestamps exist"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 8: kodr run
+# STAGE 9: kodr run
 # ══════════════════════════════════════════════════════════════
 
 section "kodr run"
@@ -238,7 +263,7 @@ if echo "$OUTPUT" | grep -q "hello kodr"; then pass "executes the binary"
 else fail "executes the binary" "$OUTPUT"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 9: kodr debug
+# STAGE 10: kodr debug
 # ══════════════════════════════════════════════════════════════
 
 section "kodr debug"
@@ -255,7 +280,7 @@ if echo "$OUTPUT" | grep -q "module 'example'"; then pass "finds example module"
 else fail "finds example module" "$OUTPUT"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 10: Error handling
+# STAGE 11: Error handling
 # ══════════════════════════════════════════════════════════════
 
 section "Error handling"
@@ -310,7 +335,7 @@ if echo "$ANCHOR_OUT" | grep -qi "no anchor file"; then pass "missing anchor fil
 else fail "missing anchor file error" "$ANCHOR_OUT"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 11: Multi-module project
+# STAGE 12: Multi-module project
 # ══════════════════════════════════════════════════════════════
 
 section "Multi-module project"
@@ -347,7 +372,7 @@ if echo "$BINOUT" | grep -q "multi-module works"; then pass "multi-module runs"
 else fail "multi-module runs" "$BINOUT"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 12: Generated Zig quality
+# STAGE 13: Generated Zig quality
 # ══════════════════════════════════════════════════════════════
 
 section "Generated Zig quality"
@@ -385,7 +410,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 13: Language feature test
+# STAGE 14: Language feature test
 # ══════════════════════════════════════════════════════════════
 
 section "Language features (example module)"
@@ -426,7 +451,7 @@ if echo "$BINOUT" | grep -q "hello kodr"; then pass "langtest binary runs"
 else fail "langtest binary runs" "$BINOUT"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 14: Compiler tester module
+# STAGE 15: Compiler tester module
 # ══════════════════════════════════════════════════════════════
 
 section "Compiler tester module"
@@ -494,7 +519,7 @@ if grep -q ".some" "$GEN_TESTER" 2>/dev/null; then pass "value → .some codegen
 else fail "value → .some codegen"; fi
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 15: Runtime correctness
+# STAGE 16: Runtime correctness
 # ══════════════════════════════════════════════════════════════
 
 section "Runtime correctness"
@@ -515,13 +540,13 @@ else
 fi
 
 # Check individual results
-for TEST_NAME in add sub factorial is_positive compound sum_to match match_default break_continue abs compt_func struct_instantiation default_fields default_override static_method mutable_method error_ok error_fail null_some null_none null_reassign enum_usage nested_scopes for_range while_continue cast_int cast_float cast_float_to_int func_ptr func_ptr_var fixed_array array_index; do
+for TEST_NAME in add sub factorial is_positive compound sum_to match match_default break_continue abs compt_func struct_instantiation default_fields default_override static_method mutable_method error_ok error_fail null_some null_none null_reassign enum_usage nested_scopes slice_for for_range while_continue cast_int cast_float cast_float_to_int func_ptr func_ptr_var fixed_array array_index; do
     if echo "$BINOUT" | grep -q "PASS $TEST_NAME"; then pass "runtime: $TEST_NAME"
     else fail "runtime: $TEST_NAME"; fi
 done
 
 # ══════════════════════════════════════════════════════════════
-# STAGE 16: Negative tests (must fail to compile)
+# STAGE 17: Negative tests (must fail to compile)
 # ══════════════════════════════════════════════════════════════
 
 section "Negative tests (expected failures)"

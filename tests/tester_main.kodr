@@ -150,6 +150,12 @@ func main() void {
         zigstd.print("FAIL nested_scopes\n")
     }
 
+    if(tester.sum_slice_test() == 6) {
+        zigstd.print("PASS slice_for\n")
+    } else {
+        zigstd.print("FAIL slice_for\n")
+    }
+
     if(tester.sum_range(5) == 10) {
         zigstd.print("PASS for_range\n")
     } else {
