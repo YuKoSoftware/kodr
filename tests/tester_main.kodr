@@ -144,16 +144,40 @@ func main() void {
         zigstd.print("FAIL enum_usage\n")
     }
 
+    if(tester.test_enum_method() == 1) {
+        zigstd.print("PASS enum_method\n")
+    } else {
+        zigstd.print("FAIL enum_method\n")
+    }
+
     if(tester.nested_scope() == 6) {
         zigstd.print("PASS nested_scopes\n")
     } else {
         zigstd.print("FAIL nested_scopes\n")
     }
 
+    if(tester.test_tuple() == 10) {
+        zigstd.print("PASS tuple\n")
+    } else {
+        zigstd.print("FAIL tuple\n")
+    }
+
+    if(tester.test_tuple_destruct() == 10) {
+        zigstd.print("PASS tuple_destruct\n")
+    } else {
+        zigstd.print("FAIL tuple_destruct\n")
+    }
+
     if(tester.sum_slice_test() == 6) {
         zigstd.print("PASS slice_for\n")
     } else {
         zigstd.print("FAIL slice_for\n")
+    }
+
+    if(tester.indexed_sum() == 63) {
+        zigstd.print("PASS for_index\n")
+    } else {
+        zigstd.print("FAIL for_index\n")
     }
 
     if(tester.sum_range(5) == 10) {

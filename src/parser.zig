@@ -23,6 +23,7 @@ pub const NodeKind = enum {
     const_decl,
     var_decl,
     compt_decl,
+    destruct_decl,
     test_decl,
     field_decl,
     enum_variant,
@@ -86,6 +87,7 @@ pub const Node = union(NodeKind) {
     const_decl: VarDecl,
     var_decl: VarDecl,
     compt_decl: VarDecl,
+    destruct_decl: DestructDecl,
     test_decl: TestDecl,
     field_decl: FieldDecl,
     enum_variant: EnumVariant,
@@ -239,6 +241,12 @@ pub const ForStmt = struct {
 
 pub const DeferStmt = struct {
     body: *Node,
+};
+
+pub const DestructDecl = struct {
+    names: [][]const u8, // variable names — also used as field names
+    is_const: bool,
+    value: *Node,
 };
 
 pub const MatchStmt = struct {
@@ -887,9 +895,10 @@ pub const Parser = struct {
         while (!self.check(.rbrace) and !self.check(.eof)) {
             self.skipNewlines();
             if (self.check(.rbrace)) break;
+            const member_pub = self.eat(.kw_pub);
             const tok = self.peek();
             if (tok.kind == .kw_func) {
-                try members.append(self.alloc(), try self.parseFuncDecl(false, false));
+                try members.append(self.alloc(), try self.parseFuncDecl(member_pub, false));
             } else {
                 try members.append(self.alloc(), try self.parseEnumVariant());
             }
@@ -938,6 +947,7 @@ pub const Parser = struct {
 
     fn parseConstDecl(self: *Parser, is_pub: bool) anyerror!*Node {
         _ = try self.expect(.kw_const);
+        if (self.check(.lparen)) return self.parseDestructDecl(true);
         const name_tok = try self.expect(.identifier);
 
         var type_ann: ?*Node = null;
@@ -960,6 +970,7 @@ pub const Parser = struct {
 
     fn parseVarDecl(self: *Parser, is_pub: bool) anyerror!*Node {
         _ = try self.expect(.kw_var);
+        if (self.check(.lparen)) return self.parseDestructDecl(false);
         const name_tok = try self.expect(.identifier);
 
         var type_ann: ?*Node = null;
@@ -977,6 +988,25 @@ pub const Parser = struct {
             .type_annotation = type_ann,
             .value = value,
             .is_pub = is_pub,
+        }});
+    }
+
+    fn parseDestructDecl(self: *Parser, is_const: bool) anyerror!*Node {
+        _ = try self.expect(.lparen);
+        var names: std.ArrayListUnmanaged([]const u8) = .{};
+        while (!self.check(.rparen) and !self.check(.eof)) {
+            const name_tok = try self.expect(.identifier);
+            try names.append(self.alloc(), name_tok.text);
+            if (!self.eat(.comma)) break;
+        }
+        _ = try self.expect(.rparen);
+        _ = try self.expect(.assign);
+        const value = try self.parseExpr();
+        try self.expectNewlineOrEof();
+        return self.newNode(.{ .destruct_decl = .{
+            .names = try names.toOwnedSlice(self.alloc()),
+            .is_const = is_const,
+            .value = value,
         }});
     }
 
@@ -1310,6 +1340,11 @@ pub const Parser = struct {
         const left = try self.parseOrExpr();
         if (self.check(.dotdot)) {
             _ = self.advance();
+            // Open-ended range: 0.. — next token is ) or | (no right side)
+            if (self.check(.rparen) or self.check(.pipe)) {
+                const sentinel = try self.newNode(.{ .null_literal = {} });
+                return self.newNode(.{ .range_expr = .{ .op = "..", .left = left, .right = sentinel } });
+            }
             const right = try self.parseOrExpr();
             return self.newNode(.{ .range_expr = .{ .op = "..", .left = left, .right = right } });
         }
@@ -1653,6 +1688,28 @@ pub const Parser = struct {
             // Grouped expression: (expr)
             .lparen => {
                 _ = self.advance();
+                // Named tuple literal: (name: val, name: val, ...)
+                if (self.peek().kind == .identifier and self.peekAt(1).kind == .colon) {
+                    var names: std.ArrayListUnmanaged([]const u8) = .{};
+                    var values: std.ArrayListUnmanaged(*Node) = .{};
+                    while (!self.check(.rparen) and !self.check(.eof)) {
+                        self.skipNewlines();
+                        const name_tok = try self.expect(.identifier);
+                        _ = try self.expect(.colon);
+                        const val = try self.parseExpr();
+                        try names.append(self.alloc(), name_tok.text);
+                        try values.append(self.alloc(), val);
+                        self.skipNewlines();
+                        if (!self.eat(.comma)) break;
+                        self.skipNewlines();
+                    }
+                    _ = try self.expect(.rparen);
+                    return self.newNode(.{ .tuple_literal = .{
+                        .is_named = true,
+                        .fields = try values.toOwnedSlice(self.alloc()),
+                        .field_names = try names.toOwnedSlice(self.alloc()),
+                    }});
+                }
                 const expr = try self.parseExpr();
                 _ = try self.expect(.rparen);
                 return expr;
@@ -1814,16 +1871,32 @@ pub const Parser = struct {
         _ = try self.expect(.lparen);
         self.skipNewlines();
 
-        // Empty parens — void?
+        // Empty parens — void
         if (self.check(.rparen)) {
             _ = self.advance();
             return self.newNode(.{ .type_named = "void" });
         }
 
-        // Peek ahead to determine type
-        // Named tuple: (name: Type, ...)
-        // Anonymous tuple: (Type, Type, ...)
-        // Union: (Type | Type | ...)
+        // Named tuple type: (name: T, name: T, ...)
+        if (self.peek().kind == .identifier and self.peekAt(1).kind == .colon) {
+            var fields: std.ArrayListUnmanaged(NamedTypeField) = .{};
+            while (!self.check(.rparen) and !self.check(.eof)) {
+                self.skipNewlines();
+                const name_tok = try self.expect(.identifier);
+                _ = try self.expect(.colon);
+                const field_type = try self.parseType();
+                try fields.append(self.alloc(), .{
+                    .name = name_tok.text,
+                    .type_node = field_type,
+                    .default = null,
+                });
+                self.skipNewlines();
+                if (!self.eat(.comma)) break;
+                self.skipNewlines();
+            }
+            _ = try self.expect(.rparen);
+            return self.newNode(.{ .type_tuple_named = try fields.toOwnedSlice(self.alloc()) });
+        }
 
         const first_type = try self.parseType();
         self.skipNewlines();
@@ -1842,13 +1915,20 @@ pub const Parser = struct {
             return self.newNode(.{ .type_union = try types.toOwnedSlice(self.alloc()) });
         }
 
-        // Single type in parens — just return it
-        if (self.check(.rparen)) {
-            _ = self.advance();
-            return first_type;
+        // Anonymous tuple: (T, T, ...)
+        if (self.check(.comma)) {
+            var types: std.ArrayListUnmanaged(*Node) = .{};
+            try types.append(self.alloc(), first_type);
+            while (self.eat(.comma)) {
+                self.skipNewlines();
+                try types.append(self.alloc(), try self.parseType());
+                self.skipNewlines();
+            }
+            _ = try self.expect(.rparen);
+            return self.newNode(.{ .type_tuple_anon = try types.toOwnedSlice(self.alloc()) });
         }
 
-        // Tuple: (T, U, ...) or (name: T, name: U, ...)
+        // Single type in parens — just return it
         _ = try self.expect(.rparen);
         return first_type;
     }

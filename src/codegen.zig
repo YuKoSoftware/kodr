@@ -22,6 +22,7 @@ pub const CodeGen = struct {
     in_null_union_func: bool, // current function returns (null | T)
     null_vars: std.StringHashMapUnmanaged(void), // variables with (null | T) type
     in_test_block: bool, // inside a test { } block — @assert uses std.testing.expect
+    destruct_counter: usize, // unique index for destructuring temp vars
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
@@ -36,6 +37,7 @@ pub const CodeGen = struct {
             .in_null_union_func = false,
             .null_vars = .{},
             .in_test_block = false,
+            .destruct_counter = 0,
         };
     }
 
@@ -505,6 +507,20 @@ pub const CodeGen = struct {
                 }
                 try self.write(";");
             },
+            .destruct_decl => |d| {
+                // var (a, b) = expr  →  const _kodr_dN = expr; var/const a = _kodr_dN.a; ...
+                const idx = self.destruct_counter;
+                self.destruct_counter += 1;
+                try self.writeFmt("const _kodr_d{d} = ", .{idx});
+                try self.generateExpr(d.value);
+                try self.write(";");
+                const kw = if (d.is_const) "const" else "var";
+                for (d.names) |name| {
+                    try self.write("\n");
+                    try self.writeIndent();
+                    try self.writeFmt("{s} {s} = _kodr_d{d}.{s};", .{ kw, name, idx, name });
+                }
+            },
             .compt_decl => |v| {
                 try self.writeFmt("const {s}: {s} = comptime ", .{
                     v.name,
@@ -573,11 +589,18 @@ pub const CodeGen = struct {
                 // compt for → inline for
                 //
                 // Range iterables: Zig range-for produces usize loop vars.
-                // When any iterable is a range_expr, use internal names and
-                // declare user vars as i32 casts at the top of the block.
-                const has_range = for (f.iterables) |it| {
-                    if (it.* == .range_expr) break true;
-                } else false;
+                // Only variables paired with a range_expr iterable need renaming
+                // and i32 casting — slice/array variables are used directly.
+                const needs_cast = try self.allocator.alloc(bool, f.variables.len);
+                defer self.allocator.free(needs_cast);
+                for (needs_cast) |*nc| nc.* = false;
+                var has_cast = false;
+                for (f.iterables, 0..) |it, idx| {
+                    if (idx < needs_cast.len and it.* == .range_expr) {
+                        needs_cast[idx] = true;
+                        has_cast = true;
+                    }
+                }
 
                 if (f.is_compt) try self.write("inline ");
                 try self.write("for (");
@@ -590,22 +613,23 @@ pub const CodeGen = struct {
                     }
                 }
                 try self.write(") |");
-                for (f.variables, 0..) |v, i| {
-                    if (i > 0) try self.write(", ");
-                    if (has_range) {
-                        // Use internal name; user var declared inside block
+                for (f.variables, 0..) |v, vi| {
+                    if (vi > 0) try self.write(", ");
+                    if (vi < needs_cast.len and needs_cast[vi]) {
                         try self.writeFmt("_kodr_{s}", .{v});
                     } else {
                         try self.write(v);
                     }
                 }
-                if (has_range) {
-                    // Open block manually, inject casts before body statements
+                if (has_cast) {
+                    // Open block manually, inject i32 casts only for range vars
                     try self.write("| {\n");
                     self.indent += 1;
-                    for (f.variables) |v| {
-                        try self.writeIndent();
-                        try self.writeFmt("const {s}: i32 = @intCast(_kodr_{s});\n", .{ v, v });
+                    for (f.variables, 0..) |v, vi| {
+                        if (vi < needs_cast.len and needs_cast[vi]) {
+                            try self.writeIndent();
+                            try self.writeFmt("const {s}: i32 = @intCast(_kodr_{s});\n", .{ v, v });
+                        }
                     }
                     for (f.body.block.statements) |stmt| {
                         try self.writeIndent();
@@ -626,7 +650,12 @@ pub const CodeGen = struct {
             },
             .match_stmt => |m| {
                 try self.write("switch (");
-                try self.generateExpr(m.value);
+                // self in a method is *T in Zig — must dereference for switch
+                if (m.value.* == .identifier and std.mem.eql(u8, m.value.identifier, "self")) {
+                    try self.write("self.*");
+                } else {
+                    try self.generateExpr(m.value);
+                }
                 try self.write(") {\n");
                 self.indent += 1;
                 var has_wildcard = false;
@@ -781,6 +810,22 @@ pub const CodeGen = struct {
                 for (items, 0..) |item, i| {
                     if (i > 0) try self.write(", ");
                     try self.generateExpr(item);
+                }
+                try self.write("}");
+            },
+            .tuple_literal => |t| {
+                try self.write(".{");
+                if (t.is_named) {
+                    for (t.fields, 0..) |field, i| {
+                        if (i > 0) try self.write(", ");
+                        try self.writeFmt(".{s} = ", .{t.field_names[i]});
+                        try self.generateExpr(field);
+                    }
+                } else {
+                    for (t.fields, 0..) |field, i| {
+                        if (i > 0) try self.write(", ");
+                        try self.generateExpr(field);
+                    }
                 }
                 try self.write("}");
             },
@@ -940,7 +985,6 @@ pub const CodeGen = struct {
     fn writeRangeExpr(self: *CodeGen, r: parser.BinaryOp) anyerror!void {
         // Zig for-range endpoints must be usize. Cast non-literal values.
         const left_is_literal = r.left.* == .int_literal;
-        const right_is_literal = r.right.* == .int_literal;
         if (left_is_literal) {
             try self.generateExpr(r.left);
         } else {
@@ -949,6 +993,9 @@ pub const CodeGen = struct {
             try self.write(")");
         }
         try self.write("..");
+        // Open-ended range (0..) — null_literal sentinel means no right side
+        if (r.right.* == .null_literal) return;
+        const right_is_literal = r.right.* == .int_literal;
         if (right_is_literal) {
             try self.generateExpr(r.right);
         } else {
@@ -1143,6 +1190,28 @@ pub const CodeGen = struct {
                     }
                 }
                 break :blk g.name;
+            },
+            .type_tuple_named => |fields| blk: {
+                var buf = std.ArrayListUnmanaged(u8){};
+                defer buf.deinit(self.allocator);
+                try buf.appendSlice(self.allocator, "struct { ");
+                for (fields) |f| {
+                    const ft = try self.typeToZig(f.type_node);
+                    try buf.writer(self.allocator).print("{s}: {s}, ", .{ f.name, ft });
+                }
+                try buf.appendSlice(self.allocator, "}");
+                break :blk try self.allocTypeStr("{s}", .{buf.items});
+            },
+            .type_tuple_anon => |types| blk: {
+                var buf = std.ArrayListUnmanaged(u8){};
+                defer buf.deinit(self.allocator);
+                try buf.appendSlice(self.allocator, "struct { ");
+                for (types, 0..) |t, i| {
+                    const ft = try self.typeToZig(t);
+                    try buf.writer(self.allocator).print("@\"{d}\": {s}, ", .{ i, ft });
+                }
+                try buf.appendSlice(self.allocator, "}");
+                break :blk try self.allocTypeStr("{s}", .{buf.items});
             },
             // @cast(i64, x) — type arg parsed as identifier by parseExpr
             .identifier => |name| builtins.ZigMapping.primitiveToZig(name),

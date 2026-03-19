@@ -414,15 +414,17 @@ pub const TypeResolver = struct {
     }
 
     fn typeNodeStr(self: *TypeResolver, node: *parser.Node) []const u8 {
+        _ = self;
         return switch (node.*) {
             .type_named => |n| n,
             .type_slice => "slice",
             .type_array => "array",
             .type_union => "union",
+            .type_tuple_named, .type_tuple_anon => "tuple",
             .type_func => "func",
             .type_generic => |g| g.name,
             .type_ptr => |p| p.kind,
-            else => std.fmt.allocPrint(self.allocator, "{s}", .{@tagName(node.*)}) catch "unknown",
+            else => "unknown",
         };
     }
 };

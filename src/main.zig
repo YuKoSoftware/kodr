@@ -417,7 +417,7 @@ pub fn main() !void {
     }
 
     if (cli.command == .version) {
-        std.debug.print("kodr 0.1.1\n", .{});
+        std.debug.print("kodr 0.1.2\n", .{});
         return;
     }
 

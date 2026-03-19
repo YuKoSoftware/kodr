@@ -267,16 +267,19 @@ pub const DeclCollector = struct {
 
     /// Convert a type AST node to a string representation
     fn typeNodeToStr(self: *DeclCollector, node: *parser.Node) []const u8 {
+        _ = self;
         return switch (node.*) {
             .type_named => |n| n,
             .type_primitive => |p| p,
             .type_slice => "[]T",
             .type_array => "[n]T",
             .type_union => "(union)",
+            .type_tuple_named => "(tuple)",
+            .type_tuple_anon => "(tuple)",
             .type_func => "func",
             .type_generic => |g| g.name,
             .type_ptr => |p| p.kind,
-            else => std.fmt.allocPrint(self.allocator, "{s}", .{@tagName(node.*)}) catch "unknown",
+            else => "unknown",
         };
     }
 };
