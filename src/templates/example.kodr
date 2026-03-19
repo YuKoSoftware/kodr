@@ -190,6 +190,25 @@ func nullable_var_demo() i32 {
     return x.i32
 }
 
+// ─── Function Pointers ───────────────────────────────────────────────────────
+
+// func(T) RetType is a type — store functions in variables, pass them as args
+
+func negate(x: i32) i32 {
+    return 0 - x
+}
+
+// function accepting a function pointer as a parameter
+func apply(f: func(i32) i32, x: i32) i32 {
+    return f(x)
+}
+
+// store a function in a const variable, call through it
+func call_via_pointer() i32 {
+    const f: func(i32) i32 = negate
+    return f(10)
+}
+
 // ─── Compound Assignment ─────────────────────────────────────────────────────
 
 // += -= *= /=

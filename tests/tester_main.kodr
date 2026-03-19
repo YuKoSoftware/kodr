@@ -162,6 +162,18 @@ func main() void {
         zigstd.print("FAIL while_continue\n")
     }
 
+    if(tester.apply_fn(tester.triple, 5) == 15) {
+        zigstd.print("PASS func_ptr\n")
+    } else {
+        zigstd.print("FAIL func_ptr\n")
+    }
+
+    if(tester.call_via_ptr() == 12) {
+        zigstd.print("PASS func_ptr_var\n")
+    } else {
+        zigstd.print("FAIL func_ptr_var\n")
+    }
+
     if(tester.cast_to_i64(42) == 42) {
         zigstd.print("PASS cast_int\n")
     } else {

@@ -1098,7 +1098,7 @@ pub const CodeGen = struct {
                     try params_str.appendSlice(self.allocator, try self.typeToZig(p));
                 }
                 const ret = try self.typeToZig(f.ret);
-                break :blk try self.allocTypeStr("fn ({s}) {s}",
+                break :blk try self.allocTypeStr("*const fn ({s}) {s}",
                     .{ params_str.items, ret });
             },
             .type_generic => |g| blk: {

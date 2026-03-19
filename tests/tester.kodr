@@ -167,6 +167,21 @@ pub func sum_to(n: i32) i32 {
     return total
 }
 
+// ─── Function pointers ───────────────────────────────────────
+
+pub func triple(x: i32) i32 {
+    return x * 3
+}
+
+pub func apply_fn(f: func(i32) i32, x: i32) i32 {
+    return f(x)
+}
+
+pub func call_via_ptr() i32 {
+    const f: func(i32) i32 = triple
+    return f(4)
+}
+
 // ─── Cast ────────────────────────────────────────────────────
 
 pub func cast_to_i64(x: i32) i64 {
@@ -499,4 +514,9 @@ test "cast int" {
 
 test "cast float" {
     @assert(cast_to_f32(7) == 7.0)
+}
+
+test "function pointer" {
+    @assert(apply_fn(triple, 5) == 15)
+    @assert(call_via_ptr() == 12)
 }
