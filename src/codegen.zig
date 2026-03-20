@@ -48,6 +48,7 @@ pub const CodeGen = struct {
     locs: ?*const parser.LocMap, // AST node → source location (set by main.zig)
     source_file: []const u8,     // anchor file path for location reporting
     uses_fs: bool,               // module uses File or Dir types
+    uses_mem: bool,              // module uses allocator wrappers (Debug/Arena/Temp)
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
@@ -79,6 +80,7 @@ pub const CodeGen = struct {
             .locs = null,
             .source_file = "",
             .uses_fs = false,
+            .uses_mem = false,
         };
     }
 
@@ -185,6 +187,12 @@ pub const CodeGen = struct {
         // Always emit KodrNullable — used by null unions and string indexOf/lastIndexOf
         try self.write("fn KodrNullable(comptime T: type) type { return union(enum) { some: T, none: void }; }\n");
         try self.write("fn kodrTypeId(comptime T: type) usize { return @intFromPtr(@typeName(T).ptr); }\n");
+
+        // Allocator wrappers — import if module uses Debug/Arena/Temp allocators
+        if (moduleUsesAllocWrappers(ast)) {
+            self.uses_mem = true;
+            try self.write("const KodrMem = @import(\"kodr_mem.zig\");\n");
+        }
 
         // File/Dir runtime — import if module uses these types
         if (moduleUsesFileOrDir(ast)) {
@@ -303,9 +311,19 @@ pub const CodeGen = struct {
     }
 
     /// Extract allocator name from a shared coll_expr (alloc_arg is a named identifier).
-    fn sharedCollAllocName(c: parser.CollExpr) []const u8 {
-        const arg = c.alloc_arg orelse return "std.heap.smp_allocator";
-        return if (arg.* == .identifier) arg.identifier else "std.heap.smp_allocator";
+    /// For wrapper allocators (Debug/Arena/Temp), appends .allocator() for the unmanaged API.
+    fn resolveCollAllocName(self: *const CodeGen, c: parser.CollExpr) ![]const u8 {
+        const arg = c.alloc_arg orelse return try self.allocator.dupe(u8, "std.heap.smp_allocator");
+        if (arg.* == .identifier) {
+            const name = arg.identifier;
+            if (self.allocator_vars.get(name)) |info| {
+                if (info.kind != .smp and info.kind != .page) {
+                    return try std.fmt.allocPrint(self.allocator, "{s}.allocator()", .{name});
+                }
+            }
+            return try self.allocator.dupe(u8, name);
+        }
+        return try self.allocator.dupe(u8, "std.heap.smp_allocator");
     }
 
     /// Check if a variable holds a safe Ptr(T)
@@ -738,30 +756,34 @@ pub const CodeGen = struct {
     }
 
     /// Generate allocator initialization statements for: var a = mem.DebugAllocator() etc.
-    /// Expands to multi-line Zig — backing struct + defer deinit + allocator() call.
+    /// SMP/Page → global singletons (no wrapper).
+    /// Debug/Arena/Temp → KodrMem wrapper types (methods pass through to Zig).
     /// NOTE: generateBlock already called writeIndent() before this statement, so the
     /// first line must NOT call writeIndent(); subsequent lines must.
     fn generateAllocatorInit(self: *CodeGen, name: []const u8, kind: AllocKind, args: []*parser.Node) anyerror!void {
-        const impl_name = try std.fmt.allocPrint(self.allocator, "_{s}_impl", .{name});
         switch (kind) {
-            .gpa => {
-                try self.writeFmt("var {s} = std.heap.DebugAllocator(.{{}}){{}};\n", .{impl_name});
-                try self.writeIndent(); try self.writeFmt("defer _ = {s}.deinit();\n", .{impl_name});
-                try self.writeIndent(); try self.writeFmt("const {s} = {s}.allocator();", .{name, impl_name});
-            },
             .smp => {
-                // smp_allocator is a global singleton — no init/deinit
                 try self.writeFmt("const {s} = std.heap.smp_allocator;", .{name});
-                self.allocator.free(impl_name);
                 try self.allocator_vars.put(self.allocator, name, .{ .kind = kind, .impl_name = "" });
                 return;
             },
+            .page => {
+                try self.writeFmt("const {s} = std.heap.page_allocator;", .{name});
+                try self.allocator_vars.put(self.allocator, name, .{ .kind = kind, .impl_name = "" });
+                return;
+            },
+            .gpa => {
+                self.uses_mem = true;
+                try self.writeFmt("var {s} = KodrMem.DebugAlloc.init();\n", .{name});
+                try self.writeIndent(); try self.writeFmt("defer {s}.deinit();", .{name});
+            },
             .arena => {
-                try self.writeFmt("var {s} = std.heap.ArenaAllocator.init(std.heap.page_allocator);\n", .{impl_name});
-                try self.writeIndent(); try self.writeFmt("defer {s}.deinit();\n", .{impl_name});
-                try self.writeIndent(); try self.writeFmt("const {s} = {s}.allocator();", .{name, impl_name});
+                self.uses_mem = true;
+                try self.writeFmt("var {s} = KodrMem.ArenaAlloc.init();\n", .{name});
+                try self.writeIndent(); try self.writeFmt("defer {s}.deinit();", .{name});
             },
             .temp => {
+                self.uses_mem = true;
                 if (args.len < 1) {
                     try self.reporter.report(.{ .message = "mem.Temp requires a size argument" });
                     return error.CompileError;
@@ -769,18 +791,10 @@ pub const CodeGen = struct {
                 try self.writeFmt("var _{s}_buf: [", .{name});
                 try self.generateExpr(args[0]);
                 try self.write("]u8 = undefined;\n");
-                try self.writeIndent(); try self.writeFmt("var {s} = std.heap.FixedBufferAllocator.init(&_{s}_buf);\n", .{ impl_name, name });
-                try self.writeIndent(); try self.writeFmt("const {s} = {s}.allocator();", .{name, impl_name});
-            },
-            .page => {
-                // page_allocator is a static global — no init/deinit needed
-                try self.writeFmt("const {s} = std.heap.page_allocator;", .{name});
-                self.allocator.free(impl_name);
-                try self.allocator_vars.put(self.allocator, name, .{ .kind = kind, .impl_name = "" });
-                return;
+                try self.writeIndent(); try self.writeFmt("var {s} = KodrMem.TempAlloc.init(&_{s}_buf);", .{ name, name });
             },
         }
-        try self.allocator_vars.put(self.allocator, name, .{ .kind = kind, .impl_name = impl_name });
+        try self.allocator_vars.put(self.allocator, name, .{ .kind = kind, .impl_name = try self.allocator.dupe(u8, name) });
     }
 
     /// Generate a method call on an allocator variable: a.alloc(), a.allocOne(), a.free(), a.freeAll()
@@ -860,9 +874,9 @@ pub const CodeGen = struct {
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
             if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
-            if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-            if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-            if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+            if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+            if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+            if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
             if (v.type_annotation) |t| {
                 if (t.* == .type_named and self.isBitfieldType(t.type_named))
                     try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
@@ -897,9 +911,9 @@ pub const CodeGen = struct {
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
             if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
-            if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-            if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-            if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+            if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+            if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+            if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
             if (v.type_annotation) |t| {
                 if (t.* == .type_named and self.isBitfieldType(t.type_named))
                     try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
@@ -929,17 +943,31 @@ pub const CodeGen = struct {
         return .{ .alloc_name = fe.object.identifier, .type_arg = c.args[0], .val_arg = c.args[1] };
     }
 
-    /// Generate: const x = a.create(T) catch @panic("out of memory"); x.* = val;
+    /// Generate: const x = a.allocOne(T, val);
+    /// For wrapper allocators, the method handles create+init.
+    /// For raw allocators (SMP/Page), uses create + manual init.
     /// Tracks x in heap_single_vars so identifier access emits x.* and free uses destroy().
-    /// NOTE: generateBlock already called writeIndent() before this, so first line must NOT.
     fn generateAllocOneDecl(self: *CodeGen, name: []const u8, alloc_name: []const u8, type_arg: *parser.Node, val_arg: *parser.Node) anyerror!void {
-        try self.writeFmt("const {s} = {s}.create(", .{ name, alloc_name });
-        try self.generateExpr(type_arg);
-        try self.write(") catch @panic(\"out of memory\");\n");
-        try self.writeIndent(); try self.writeFmt("{s}.* = ", .{name});
-        try self.generateExpr(val_arg);
-        try self.write(";");
-        // Track so identifier access emits name.* and a.free(name) uses destroy()
+        const is_wrapper = if (self.allocator_vars.get(alloc_name)) |info|
+            info.kind != .smp and info.kind != .page
+        else
+            false;
+        if (is_wrapper) {
+            // Wrapper type — call allocOne method directly
+            try self.writeFmt("const {s} = {s}.allocOne(", .{ name, alloc_name });
+            try self.generateExpr(type_arg);
+            try self.write(", ");
+            try self.generateExpr(val_arg);
+            try self.write(");");
+        } else {
+            // Raw std.mem.Allocator — manual create + init
+            try self.writeFmt("const {s} = {s}.create(", .{ name, alloc_name });
+            try self.generateExpr(type_arg);
+            try self.write(") catch @panic(\"out of memory\");\n");
+            try self.writeIndent(); try self.writeFmt("{s}.* = ", .{name});
+            try self.generateExpr(val_arg);
+            try self.write(";");
+        }
         const duped = try self.allocator.dupe(u8, alloc_name);
         try self.heap_single_vars.put(self.allocator, name, duped);
     }
@@ -1017,9 +1045,9 @@ pub const CodeGen = struct {
                 } else {
                     if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
                     if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
-                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
                     if (v.type_annotation) |t| {
                         if (t.* == .type_named and self.isBitfieldType(t.type_named))
                             try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
@@ -1052,9 +1080,9 @@ pub const CodeGen = struct {
                 } else {
                     if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
                     if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
-                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
-                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, sharedCollAllocName(v.value.coll_expr)));
+                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
+                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
                     if (v.type_annotation) |t| {
                         if (t.* == .type_named and self.isBitfieldType(t.type_named))
                             try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
@@ -1574,13 +1602,26 @@ pub const CodeGen = struct {
                         }
                     }
                 }
-                // Allocator method calls: a.alloc(), a.free(), a.freeAll()
+                // Allocator method calls: wrapper methods pass through to Zig.
+                // SMP/Page (std.mem.Allocator) still need explicit dispatch.
                 if (c.callee.* == .field_expr) {
                     const fe = c.callee.field_expr;
                     if (fe.object.* == .identifier) {
                         if (self.allocator_vars.get(fe.object.identifier)) |info| {
-                            try self.generateAllocatorMethod(fe.object.identifier, info, fe.field, c.args);
-                            return;
+                            // SMP/Page are raw std.mem.Allocator — need manual dispatch
+                            if (info.kind == .smp or info.kind == .page) {
+                                try self.generateAllocatorMethod(fe.object.identifier, info, fe.field, c.args);
+                                return;
+                            }
+                            // Wrapper types (Debug/Arena/Temp) — methods mostly pass through.
+                            // Exception: free() with heap single vars needs raw pointer (no auto-deref).
+                            if (std.mem.eql(u8, fe.field, "free") and c.args.len > 0 and
+                                c.args[0].* == .identifier and self.heap_single_vars.contains(c.args[0].identifier))
+                            {
+                                try self.writeFmt("{s}.free({s})", .{ fe.object.identifier, c.args[0].identifier });
+                                return;
+                            }
+                            // (fall through to generic call handler for other methods)
                         }
                     }
                 }
@@ -2353,10 +2394,15 @@ pub const CodeGen = struct {
             &[_]*parser.Node{};
 
         // Determine allocator expression for method calls
+        const alloc_var = try std.fmt.allocPrint(self.allocator, "_{s}_alloc", .{name});
+        defer self.allocator.free(alloc_var);
+
+        // For wrapper types: tracked alloc is "_{name}_alloc.allocator()"
+        // For singletons: tracked alloc is the global allocator directly
         const tracked_alloc: []const u8 = switch (kind) {
             .smp  => "std.heap.smp_allocator",
             .page => "std.heap.page_allocator",
-            else  => try std.fmt.allocPrint(self.allocator, "_{s}_alloc", .{name}),
+            else  => try std.fmt.allocPrint(self.allocator, "{s}.allocator()", .{alloc_var}),
         };
         defer if (kind != .smp and kind != .page) self.allocator.free(tracked_alloc);
 
@@ -2364,7 +2410,7 @@ pub const CodeGen = struct {
         switch (kind) {
             .smp, .page => {}, // global singletons — no init needed
             else => {
-                try self.generateAllocatorInit(tracked_alloc, kind, extra_args);
+                try self.generateAllocatorInit(alloc_var, kind, extra_args);
                 try self.write("\n");
                 try self.writeIndent();
             },
@@ -2654,6 +2700,48 @@ fn nodeContainsNullUnion(node: *parser.Node) bool {
                     }
                 }
             }
+            return false;
+        },
+        else => return false,
+    }
+}
+
+/// Check if a module uses wrapper allocators (Debug/Arena/Temp) for preamble import
+fn moduleUsesAllocWrappers(ast: *parser.Node) bool {
+    if (ast.* != .program) return false;
+    for (ast.program.top_level) |node| {
+        if (nodeRefsAllocWrapper(node)) return true;
+    }
+    return false;
+}
+
+fn nodeRefsAllocWrapper(node: *parser.Node) bool {
+    switch (node.*) {
+        .call_expr => |c| {
+            // Check for mem.DebugAllocator(), mem.Arena(), mem.Temp()
+            if (c.callee.* == .field_expr) {
+                const fe = c.callee.field_expr;
+                if (fe.object.* == .identifier and std.mem.eql(u8, fe.object.identifier, "mem")) {
+                    if (std.mem.eql(u8, fe.field, "DebugAllocator") or
+                        std.mem.eql(u8, fe.field, "Arena") or
+                        std.mem.eql(u8, fe.field, "Temp")) return true;
+                }
+            }
+            for (c.args) |arg| if (nodeRefsAllocWrapper(arg)) return true;
+            return false;
+        },
+        .func_decl => |f| return nodeRefsAllocWrapper(f.body),
+        .block => |b| {
+            for (b.statements) |s| if (nodeRefsAllocWrapper(s)) return true;
+            return false;
+        },
+        .var_decl, .const_decl => |v| return nodeRefsAllocWrapper(v.value),
+        .struct_decl => |s| {
+            for (s.members) |m| if (nodeRefsAllocWrapper(m)) return true;
+            return false;
+        },
+        .coll_expr => |c| {
+            if (c.alloc_arg) |arg| return nodeRefsAllocWrapper(arg);
             return false;
         },
         else => return false,

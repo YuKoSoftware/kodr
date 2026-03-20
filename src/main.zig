@@ -268,6 +268,7 @@ const KODR_FS_ZIG  = @embedFile("std/kodr_fs.zig");
 const MATH_KODR    = @embedFile("std/math.kodr");
 const MATH_ZIG     = @embedFile("std/math.zig");
 const MEM_KODR     = @embedFile("std/mem.kodr");
+const KODR_MEM_ZIG = @embedFile("std/kodr_mem.zig");
 
 fn initStd(allocator: std.mem.Allocator) !void {
     // Find directory containing the kodr binary
@@ -733,6 +734,10 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         // If module uses File/Dir types, copy kodr_fs.zig to generated dir
         if (cg.uses_fs) {
             try cache.writeGeneratedZig("kodr_fs", KODR_FS_ZIG, allocator);
+        }
+        // If module uses allocator wrappers, copy kodr_mem.zig to generated dir
+        if (cg.uses_mem) {
+            try cache.writeGeneratedZig("kodr_mem", KODR_MEM_ZIG, allocator);
         }
 
         // Update timestamp cache
