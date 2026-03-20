@@ -42,6 +42,8 @@ pub const CodeGen = struct {
     decls: ?*declarations.DeclTable,
     in_error_union_func: bool, // current function returns (Error | T)
     in_null_union_func: bool, // current function returns (null | T)
+    in_arb_union_func: bool, // current function returns an arbitrary union like (i32 | String)
+    arb_union_return_type: ?*parser.Node, // return type node for arbitrary union wrapping
     null_vars: std.StringHashMapUnmanaged(void),       // variables with (null | T) type
     arb_union_vars: std.StringHashMapUnmanaged(void),  // variables with arbitrary union type
     rawptr_vars: std.StringHashMapUnmanaged(void),     // variables holding RawPtr(T) or VolatilePtr(T)
@@ -81,6 +83,8 @@ pub const CodeGen = struct {
             .decls = null,
             .in_error_union_func = false,
             .in_null_union_func = false,
+            .in_arb_union_func = false,
+            .arb_union_return_type = null,
             .null_vars = .{},
             .arb_union_vars = .{},
             .rawptr_vars = .{},
@@ -319,6 +323,23 @@ pub const CodeGen = struct {
     /// Check if a variable name is a tracked arbitrary union variable
     fn isArbUnionVar(self: *const CodeGen, name: []const u8) bool {
         return self.arb_union_vars.contains(name);
+    }
+
+    /// Look up a call expression's return type node via the declaration table.
+    /// Returns the return_type_node if the callee is a known function returning an arbitrary union.
+    fn callReturnsArbUnion(self: *const CodeGen, value: *parser.Node) ?*parser.Node {
+        if (value.* != .call_expr) return null;
+        const c = value.call_expr;
+        const name = switch (c.callee.*) {
+            .identifier => |n| n,
+            else => return null,
+        };
+        if (self.decls) |d| {
+            if (d.funcs.get(name)) |fsig| {
+                if (isArbitraryUnion(fsig.return_type_node)) return fsig.return_type_node;
+            }
+        }
+        return null;
     }
 
     /// Check if a variable name holds a RawPtr or VolatilePtr
@@ -671,9 +692,11 @@ pub const CodeGen = struct {
             return;
         }
 
-        // Track if this function returns an error or null union
+        // Track if this function returns an error, null, or arbitrary union
         const prev_error = self.in_error_union_func;
         const prev_null = self.in_null_union_func;
+        const prev_arb = self.in_arb_union_func;
+        const prev_arb_return = self.arb_union_return_type;
         // Clear per-function tracking maps — each function has its own scope
         const prev_null_vars = self.null_vars;
         const prev_arb_union_vars = self.arb_union_vars;
@@ -703,16 +726,24 @@ pub const CodeGen = struct {
         self.thread_vars = .{};
         self.in_error_union_func = false;
         self.in_null_union_func = false;
+        self.in_arb_union_func = false;
+        self.arb_union_return_type = null;
         try collectAssigned(f.body, &self.assigned_vars, self.allocator);
         if (f.return_type.* == .type_union) {
             for (f.return_type.type_union) |t| {
                 if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) self.in_error_union_func = true;
                 if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) self.in_null_union_func = true;
             }
+            if (isArbitraryUnion(f.return_type)) {
+                self.in_arb_union_func = true;
+                self.arb_union_return_type = f.return_type;
+            }
         }
         defer {
             self.in_error_union_func = prev_error;
             self.in_null_union_func = prev_null;
+            self.in_arb_union_func = prev_arb;
+            self.arb_union_return_type = prev_arb_return;
             self.null_vars.deinit(self.allocator);
             self.null_vars = prev_null_vars;
             self.arb_union_vars.deinit(self.allocator);
@@ -1100,6 +1131,9 @@ pub const CodeGen = struct {
             }
             if (isStringType(v.type_annotation) or v.value.* == .string_literal)
                 try self.string_vars.put(self.allocator, v.name, {});
+            // Infer arb union from function call return type (no explicit annotation)
+            if (v.type_annotation == null and self.callReturnsArbUnion(v.value) != null)
+                try self.arb_union_vars.put(self.allocator, v.name, {});
             try self.generateExpr(v.value);
         }
         try self.write(";\n");
@@ -1136,6 +1170,9 @@ pub const CodeGen = struct {
             }
             if (isStringType(v.type_annotation) or v.value.* == .string_literal)
                 try self.string_vars.put(self.allocator, v.name, {});
+            // Infer arb union from function call return type (no explicit annotation)
+            if (v.type_annotation == null and self.callReturnsArbUnion(v.value) != null)
+                try self.arb_union_vars.put(self.allocator, v.name, {});
             const prev_ctx = self.type_ctx;
             self.type_ctx = v.type_annotation;
             try self.generateExpr(v.value);
@@ -1402,6 +1439,12 @@ pub const CodeGen = struct {
                             try self.write(".{ .some = ");
                             try self.generateExpr(v);
                             try self.write(" }");
+                        }
+                    } else if (self.in_arb_union_func) {
+                        if (self.arb_union_return_type) |rt| {
+                            try self.generateArbUnionWrappedExpr(v, rt);
+                        } else {
+                            try self.generateExpr(v);
                         }
                     } else {
                         try self.generateExpr(v);

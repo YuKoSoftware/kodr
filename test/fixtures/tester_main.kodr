@@ -403,5 +403,11 @@ func main() void {
         console.print("FAIL alloc_slice\n")
     }
 
+    if(tester.test_arb_union_return() == 1) {
+        console.print("PASS arb_union_return\n")
+    } else {
+        console.print("FAIL arb_union_return\n")
+    }
+
     console.print("TESTER:DONE\n")
 }

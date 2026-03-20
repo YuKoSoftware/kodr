@@ -744,6 +744,10 @@ test "match_string" {
     assert(match_string("other") == 0)
 }
 
+test "arb union return" {
+    assert(test_arb_union_return() == 1)
+}
+
 // ─── Collections ────────────────────────────────────────────
 
 pub func test_list() i32 {
@@ -969,6 +973,27 @@ pub func test_alloc_one() i32 {
     const result: i32 = val
     alloc.free(val)
     return result
+}
+
+// ─── Arbitrary union return ──────────────────────────────────
+
+// Function returning an arbitrary union — return auto-wraps
+func get_int_or_str(flag: bool) (i32 | String) {
+    if(flag) {
+        return 42
+    }
+    return "hello"
+}
+
+pub func test_arb_union_return() i32 {
+    const a = get_int_or_str(true)
+    const b = get_int_or_str(false)
+    if(a is i32) {
+        if(b is String) {
+            return 1
+        }
+    }
+    return 0
 }
 
 // Direct heap allocation — alloc slice + free
