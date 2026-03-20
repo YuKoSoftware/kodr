@@ -264,7 +264,7 @@ pub const BorrowChecker = struct {
 fn isMutableBorrowType(type_ann: ?*parser.Node) bool {
     const ann = type_ann orelse return false;
     if (ann.* == .type_ptr) {
-        return std.mem.startsWith(u8, ann.type_ptr.kind, "var &");
+        return std.mem.eql(u8, ann.type_ptr.kind, "var &");
     }
     return false;
 }

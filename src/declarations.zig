@@ -5,6 +5,7 @@
 const std = @import("std");
 const parser = @import("parser.zig");
 const errors = @import("errors.zig");
+const builtins = @import("builtins.zig");
 
 /// A function signature
 pub const FuncSig = struct {
@@ -214,6 +215,16 @@ pub const DeclCollector = struct {
                     .has_default = f.default_value != null,
                     .is_pub = f.is_pub,
                 });
+            }
+        }
+
+        // Validate field names don't conflict with type names
+        for (fields.items) |field| {
+            if (isReservedTypeName(field.name)) {
+                const msg = try std.fmt.allocPrint(self.allocator,
+                    "field name '{s}' conflicts with type name — choose a different name", .{field.name});
+                defer self.allocator.free(msg);
+                try self.reporter.report(.{ .message = msg, .loc = loc });
             }
         }
 
@@ -529,4 +540,21 @@ test "declaration collector - extern func is registered" {
     try collector.collect(prog);
     try std.testing.expect(!reporter.hasErrors());
     try std.testing.expect(collector.table.funcs.contains("print"));
+}
+
+/// Check if a name conflicts with a primitive or builtin type name.
+/// Used to prevent field names like `String`, `i32`, `File` etc.
+fn isReservedTypeName(name: []const u8) bool {
+    const primitives = [_][]const u8{
+        "i8", "i16", "i32", "i64", "i128",
+        "u8", "u16", "u32", "u64", "u128",
+        "isize", "usize",
+        "f16", "bf16", "f32", "f64", "f128",
+        "bool", "String", "void",
+        "Error",
+    };
+    for (primitives) |p| {
+        if (std.mem.eql(u8, name, p)) return true;
+    }
+    return builtins.isBuiltinType(name);
 }

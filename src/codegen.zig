@@ -850,9 +850,18 @@ pub const CodeGen = struct {
     // ============================================================
 
     fn generateConst(self: *CodeGen, v: parser.VarDecl) anyerror!void {
+        return self.generateDecl(v, "const");
+    }
+
+    fn generateVar(self: *CodeGen, v: parser.VarDecl) anyerror!void {
+        return self.generateDecl(v, "var");
+    }
+
+    /// Shared codegen for var and const declarations
+    fn generateDecl(self: *CodeGen, v: parser.VarDecl, kw: []const u8) anyerror!void {
         // Owned collection: List(T) / List(T, mem.DebugAllocator()) etc. — multi-statement expansion
         if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
-            return self.generateOwnedCollDecl("const", v.name, v.type_annotation, v.value.coll_expr);
+            return self.generateOwnedCollDecl(kw, v.name, v.type_annotation, v.value.coll_expr);
         // mem.DebugAllocator() / mem.Arena() / mem.Temp(n) / mem.Page() — multi-statement expansion
         if (getMemAllocKind(v.value)) |kind| {
             return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
@@ -862,7 +871,7 @@ pub const CodeGen = struct {
             return self.generateAllocOneDecl(v.name, ac.alloc_name, ac.type_arg, ac.val_arg);
         }
         if (v.is_pub) try self.write("pub ");
-        try self.writeFmt("const {s}", .{v.name});
+        try self.writeFmt("{s} {s}", .{ kw, v.name });
         const is_null_union = if (v.type_annotation) |t| isNullUnionType(t) else false;
         if (v.type_annotation) |t| {
             try self.writeFmt(": {s}", .{try self.typeToZig(t)});
@@ -881,29 +890,19 @@ pub const CodeGen = struct {
                 if (t.* == .type_named and self.isBitfieldType(t.type_named))
                     try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
             }
+            if (isStringType(v.type_annotation) or v.value.* == .string_literal)
+                try self.string_vars.put(self.allocator, v.name, {});
             try self.generateExpr(v.value);
         }
         try self.write(";\n");
     }
 
-    fn generateVar(self: *CodeGen, v: parser.VarDecl) anyerror!void {
-        // Owned collection: List(T) / List(T, mem.DebugAllocator()) etc. — multi-statement expansion
-        if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
-            return self.generateOwnedCollDecl("var", v.name, v.type_annotation, v.value.coll_expr);
-        // mem.DebugAllocator() / mem.Arena() / mem.Temp(n) / mem.Page() — multi-statement expansion
-        if (getMemAllocKind(v.value)) |kind| {
-            return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
-        }
-        // a.allocOne(T, val) — heap single value, expands to create + init
-        if (self.getAllocOneCall(v.value)) |ac| {
-            return self.generateAllocOneDecl(v.name, ac.alloc_name, ac.type_arg, ac.val_arg);
-        }
-        if (v.is_pub) try self.write("pub ");
-        try self.writeFmt("var {s}", .{v.name});
+    /// Shared codegen for var/const declarations inside function blocks.
+    /// Handles type tracking, null unions, and type_ctx for overflow codegen.
+    fn generateStmtDecl(self: *CodeGen, v: parser.VarDecl, kw: []const u8) anyerror!void {
         const is_null_union = if (v.type_annotation) |t| isNullUnionType(t) else false;
-        if (v.type_annotation) |t| {
-            try self.writeFmt(": {s}", .{try self.typeToZig(t)});
-        }
+        try self.writeFmt("{s} {s}", .{ kw, v.name });
+        if (v.type_annotation) |t| try self.writeFmt(": {s}", .{try self.typeToZig(t)});
         try self.write(" = ");
         if (is_null_union) {
             try self.null_vars.put(self.allocator, v.name, {});
@@ -918,9 +917,14 @@ pub const CodeGen = struct {
                 if (t.* == .type_named and self.isBitfieldType(t.type_named))
                     try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
             }
+            if (isStringType(v.type_annotation) or v.value.* == .string_literal)
+                try self.string_vars.put(self.allocator, v.name, {});
+            const prev_ctx = self.type_ctx;
+            self.type_ctx = v.type_annotation;
             try self.generateExpr(v.value);
+            self.type_ctx = prev_ctx;
         }
-        try self.write(";\n");
+        try self.write(";");
     }
 
     /// Info extracted from an a.allocOne(T, val) call expression
@@ -1020,81 +1024,29 @@ pub const CodeGen = struct {
             .var_decl => |v| {
                 if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
                     return self.generateOwnedCollDecl("var", v.name, v.type_annotation, v.value.coll_expr);
-                if (getMemAllocKind(v.value)) |kind| {
+                if (getMemAllocKind(v.value)) |kind|
                     return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
-                }
-                if (self.getAllocOneCall(v.value)) |ac| {
+                if (self.getAllocOneCall(v.value)) |ac|
                     return self.generateAllocOneDecl(v.name, ac.alloc_name, ac.type_arg, ac.val_arg);
-                }
-                const is_null_union = if (v.type_annotation) |t| isNullUnionType(t) else false;
+                // var → const promotion: warn if never reassigned
                 const is_mutated = self.assigned_vars.contains(v.name);
                 const kw: []const u8 = if (is_mutated) "var" else "const";
                 if (!is_mutated) {
-                    // User wrote `var` but never reassigns — emit a warning
                     const msg = try std.fmt.allocPrint(self.allocator,
                         "'{s}' is declared as var but never reassigned — use const", .{v.name});
                     defer self.allocator.free(msg);
                     try self.reporter.warn(.{ .message = msg, .loc = self.nodeLoc(node) });
                 }
-                try self.writeFmt("{s} {s}", .{ kw, v.name });
-                if (v.type_annotation) |t| try self.writeFmt(": {s}", .{try self.typeToZig(t)});
-                try self.write(" = ");
-                if (is_null_union) {
-                    try self.null_vars.put(self.allocator, v.name, {});
-                    try self.generateNullWrappedExpr(v.value);
-                } else {
-                    if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
-                    if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
-                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
-                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
-                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
-                    if (v.type_annotation) |t| {
-                        if (t.* == .type_named and self.isBitfieldType(t.type_named))
-                            try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
-                    }
-                    if (isStringType(v.type_annotation) or v.value.* == .string_literal)
-                        try self.string_vars.put(self.allocator, v.name, {});
-                    const prev_ctx = self.type_ctx;
-                    self.type_ctx = v.type_annotation;
-                    try self.generateExpr(v.value);
-                    self.type_ctx = prev_ctx;
-                }
-                try self.write(";");
+                try self.generateStmtDecl(v, kw);
             },
             .const_decl => |v| {
                 if (v.value.* == .coll_expr and isOwnedColl(v.value.coll_expr))
                     return self.generateOwnedCollDecl("const", v.name, v.type_annotation, v.value.coll_expr);
-                if (getMemAllocKind(v.value)) |kind| {
+                if (getMemAllocKind(v.value)) |kind|
                     return self.generateAllocatorInit(v.name, kind, v.value.call_expr.args);
-                }
-                if (self.getAllocOneCall(v.value)) |ac| {
+                if (self.getAllocOneCall(v.value)) |ac|
                     return self.generateAllocOneDecl(v.name, ac.alloc_name, ac.type_arg, ac.val_arg);
-                }
-                const is_null_union = if (v.type_annotation) |t| isNullUnionType(t) else false;
-                try self.writeFmt("const {s}", .{v.name});
-                if (v.type_annotation) |t| try self.writeFmt(": {s}", .{try self.typeToZig(t)});
-                try self.write(" = ");
-                if (is_null_union) {
-                    try self.null_vars.put(self.allocator, v.name, {});
-                    try self.generateNullWrappedExpr(v.value);
-                } else {
-                    if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
-                    if (isSafePtrExpr(v.value)) try self.ptr_vars.put(self.allocator, v.name, {});
-                    if (isCollExpr(v.value, "List")) try self.list_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
-                    if (isCollExpr(v.value, "Map")) try self.map_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
-                    if (isCollExpr(v.value, "Set")) try self.set_vars.put(self.allocator, v.name, try self.resolveCollAllocName(v.value.coll_expr));
-                    if (v.type_annotation) |t| {
-                        if (t.* == .type_named and self.isBitfieldType(t.type_named))
-                            try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
-                    }
-                    if (isStringType(v.type_annotation) or v.value.* == .string_literal)
-                        try self.string_vars.put(self.allocator, v.name, {});
-                    const prev_ctx = self.type_ctx;
-                    self.type_ctx = v.type_annotation;
-                    try self.generateExpr(v.value);
-                    self.type_ctx = prev_ctx;
-                }
-                try self.write(";");
+                try self.generateStmtDecl(v, "const");
             },
             .destruct_decl => |d| {
                 // String split destructuring:

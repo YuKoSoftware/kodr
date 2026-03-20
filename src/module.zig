@@ -8,6 +8,8 @@ const lexer = @import("lexer.zig");
 const errors = @import("errors.zig");
 const cache = @import("cache.zig");
 
+const MODULE_KEYWORD = "module ";
+
 /// A resolved module — one or more .kodr files sharing the same module name
 pub const Module = struct {
     name: []const u8,
@@ -172,14 +174,14 @@ pub const Resolver = struct {
         const content = buf[0..n];
 
         // Find "module " prefix
-        if (!std.mem.startsWith(u8, std.mem.trimLeft(u8, content, " \t"), "module ")) {
+        if (!std.mem.startsWith(u8, std.mem.trimLeft(u8, content, " \t"), MODULE_KEYWORD)) {
             return null;
         }
 
         // Extract module name
         var start: usize = 0;
         while (start < content.len and (content[start] == ' ' or content[start] == '\t')) start += 1;
-        start += 7; // skip "module "
+        start += MODULE_KEYWORD.len; // skip "module "
         var end = start;
         while (end < content.len and content[end] != '\n' and content[end] != '\r' and content[end] != ' ') end += 1;
 
@@ -220,7 +222,7 @@ pub const Resolver = struct {
                 if (file_idx > 0) {
                     // Skip the `module X` line from non-first files
                     const trimmed = std.mem.trimLeft(u8, content, " \t");
-                    if (std.mem.startsWith(u8, trimmed, "module ")) {
+                    if (std.mem.startsWith(u8, trimmed, MODULE_KEYWORD)) {
                         if (std.mem.indexOfScalar(u8, trimmed, '\n')) |nl| {
                             try combined.appendSlice(arena_alloc, trimmed[nl + 1 ..]);
                         } else {
