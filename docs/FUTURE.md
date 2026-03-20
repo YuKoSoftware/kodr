@@ -117,4 +117,4 @@ Priority: low — implement after core language is stable.
 
 ## `#gpu` metadata — GPU/concurrency
 
-`#gpu` is reserved for future GPU/concurrency design. Deferred until `Thread`/`Async` semantics are settled.
+`#gpu` is reserved for future GPU/concurrency design. `thread` is implemented; `async` is deferred.

@@ -6,19 +6,6 @@ Prioritized list of best next moves as of 2026-03-20.
 
 ## Missing Features
 
-### F5. Pass 8: Thread safety + `Thread(T)` implementation
-Concurrency design is finalized (see `docs/12-concurrency.md`). Implementation needed:
-1. Parse `Thread(T) name { body }` syntax
-2. Codegen to `std.Thread.spawn` + wrapper struct
-3. Pass 8 — enforce moved captures not used after thread spawn, unjoined threads are errors
-4. `.value` (move), `.finished`, `.wait()`, `.cancel()` (cooperative)
-5. `splitAt` for safe data sharing across threads
-
-### F6. `splitAt()` — atomic split
-Design settled: consumes the original, produces two non-overlapping pieces.
-Works on slices, Lists, and any collection where splitting is meaningful.
-Implement alongside Thread.
-
 ### F4. Intra-project library linking
 When a project has multiple `#build` targets (e.g. an exe + a dynamic lib), the exe
 currently compiles the lib's Kodr source inline — it does NOT link against the built
@@ -42,6 +29,8 @@ projects via `#dep`.
 
 ## Done
 
+- `thread(T) name { body }` — OS threads with implicit captures, move semantics, `.value`/`.finished`/`.wait()`/`.cancel()`, unjoined = compile error
+- `splitAt` — consumes original, produces two non-overlapping slices, works on arrays + Lists, pass 6 enforces use-after-move
 - Map/Set iteration — `for(map) |(key, value)|`, `for(set) |key|`, optional index as last capture, removed `0..` counter syntax
 - `#dep "path" Version?` — external dependency support: scan dep dirs, parse modules, version check (error if older, warn if newer)
 - `#key = value` metadata syntax — replaced old `main.field = value` with `#` prefix throughout compiler + docs
@@ -58,7 +47,7 @@ projects via `#dep`.
 - `String` (uppercase) — consistent naming, docs + templates + tests
 - `std::console` — print, println, debugPrint, get
 - `typeid` — fixed, unique per type via `@intFromPtr(@typeName(T).ptr)`
-- Thread/Async — replaced broken codegen with clear "not yet implemented" error
+- Thread/Async — `thread` fully implemented; `async` deferred with clear error
 - Spec cleanup — removed auto-deferred free, arr.ptr, Pool/Ring allocators from spec
 - `match` on ranges — range arms emit `4...8` (Zig inclusive)
 - `match` on strings — desugars to `if (std.mem.eql(u8, ...))` / else-if chain
