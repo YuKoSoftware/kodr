@@ -55,6 +55,23 @@ pub const PropScope = struct {
         }
         if (self.parent) |p| p.markHandled(name);
     }
+
+    /// Check if a variable is tracked as a union in this scope or any parent
+    pub fn isTracked(self: *const PropScope, name: []const u8) ?UnionVar {
+        if (self.vars.get(name)) |v| return v;
+        if (self.parent) |p| return p.isTracked(name);
+        return null;
+    }
+
+    /// Reset a variable to unhandled (e.g. after reassignment to a new union value)
+    pub fn resetHandled(self: *PropScope, name: []const u8, is_error: bool) void {
+        if (self.vars.getPtr(name)) |v| {
+            v.handled = false;
+            v.is_error_union = is_error;
+            return;
+        }
+        if (self.parent) |p| p.resetHandled(name, is_error);
+    }
 };
 
 /// The propagation checker
@@ -145,27 +162,63 @@ pub const PropChecker = struct {
                 // Annotation takes priority
                 const is_union = from_annotation orelse from_value;
                 if (is_union) |is_error| {
-                    try scope.define(v.name, is_error, 0, 0);
+                    const loc = self.nodeLoc(node);
+                    try scope.define(v.name, is_error, if (loc) |l| l.line else 0, if (loc) |l| l.col else 0);
+                }
+                // Assignment propagation: var y = x where x is a tracked union
+                if (from_annotation == null and from_value == null) {
+                    if (v.value.* == .identifier) {
+                        if (scope.isTracked(v.value.identifier)) |tracked| {
+                            const loc = self.nodeLoc(node);
+                            try scope.define(v.name, tracked.is_error_union, if (loc) |l| l.line else 0, if (loc) |l| l.col else 0);
+                        }
+                    }
                 }
             },
 
-            .if_stmt => |i| {
-                // Check if condition is a type check that handles a union (via `is` / `is not`)
-                // `x is Error` desugars to `@type(x) == Error`
-                // `x is not null` desugars to `@type(x) != null`
-                if (i.condition.* == .binary_expr) {
-                    const be = i.condition.binary_expr;
-                    if (std.mem.eql(u8, be.op, "==") or std.mem.eql(u8, be.op, "!=")) {
-                        if (be.left.* == .compiler_func and std.mem.eql(u8, be.left.compiler_func.name, K.Type.TYPE)) {
-                            if (be.left.compiler_func.args.len > 0) {
-                                const checked_var = be.left.compiler_func.args[0];
-                                if (checked_var.* == .identifier) {
-                                    scope.markHandled(checked_var.identifier);
-                                }
+            .assignment => |a| {
+                // Reassignment: if assigning a union value to a tracked variable, reset it
+                const var_name = if (a.left.* == .identifier) a.left.identifier else null;
+                if (var_name) |name| {
+                    const new_union = try self.exprReturnsUnion(a.right);
+                    if (new_union) |is_error| {
+                        // Reassigning to a new union value — reset to unhandled
+                        if (scope.isTracked(name) != null) {
+                            scope.resetHandled(name, is_error);
+                        } else {
+                            const loc = self.nodeLoc(node);
+                            try scope.define(name, is_error, if (loc) |l| l.line else 0, if (loc) |l| l.col else 0);
+                        }
+                    }
+                    // Assignment propagation: x = y where y is a tracked union
+                    if (new_union == null and a.right.* == .identifier) {
+                        if (scope.isTracked(a.right.identifier)) |tracked| {
+                            if (scope.isTracked(name) != null) {
+                                scope.resetHandled(name, tracked.is_error_union);
+                            } else {
+                                const loc = self.nodeLoc(node);
+                                try scope.define(name, tracked.is_error_union, if (loc) |l| l.line else 0, if (loc) |l| l.col else 0);
                             }
                         }
                     }
                 }
+            },
+
+            .return_stmt => |r| {
+                // Returning a union variable marks it as handled — it's being passed to caller
+                if (r.value) |val| {
+                    if (val.* == .identifier) {
+                        scope.markHandled(val.identifier);
+                    }
+                }
+            },
+
+            .if_stmt => |i| {
+                // Walk the condition to find type checks — handles compound conditions
+                // `x is Error` desugars to `@type(x) == Error`
+                // `x is not null` desugars to `@type(x) != null`
+                // `x is Error and y is null` → both marked handled
+                self.extractTypeChecks(i.condition, scope);
                 try self.checkNode(i.then_block, scope);
                 if (i.else_block) |e| try self.checkNode(e, scope);
             },
@@ -190,6 +243,33 @@ pub const PropChecker = struct {
 
             .block => try self.checkNode(node, scope),
 
+            else => {},
+        }
+    }
+
+    /// Walk a condition expression and extract all type checks, marking variables as handled.
+    /// Handles simple conditions, AND/OR compound conditions, and nested type checks.
+    fn extractTypeChecks(self: *const PropChecker, node: *parser.Node, scope: *PropScope) void {
+        switch (node.*) {
+            .binary_expr => |be| {
+                // Compound conditions: walk both sides of `and` / `or`
+                if (std.mem.eql(u8, be.op, "and") or std.mem.eql(u8, be.op, "or")) {
+                    self.extractTypeChecks(be.left, scope);
+                    self.extractTypeChecks(be.right, scope);
+                    return;
+                }
+                // Direct type check: @type(x) == Error / @type(x) != null
+                if (std.mem.eql(u8, be.op, "==") or std.mem.eql(u8, be.op, "!=")) {
+                    if (be.left.* == .compiler_func and std.mem.eql(u8, be.left.compiler_func.name, K.Type.TYPE)) {
+                        if (be.left.compiler_func.args.len > 0) {
+                            const checked_var = be.left.compiler_func.args[0];
+                            if (checked_var.* == .identifier) {
+                                scope.markHandled(checked_var.identifier);
+                            }
+                        }
+                    }
+                }
+            },
             else => {},
         }
     }
@@ -235,11 +315,15 @@ pub const PropChecker = struct {
                     // Function doesn't return error union — can't propagate
                     if (func_ret) |_| {
                         const kind = if (uvar.is_error_union) K.Type.ERROR else K.Type.NULL;
+                        const loc: ?errors.SourceLoc = if (uvar.line > 0)
+                            .{ .file = self.source_file, .line = uvar.line, .col = uvar.col }
+                        else
+                            null;
                         const msg = try std.fmt.allocPrint(self.allocator,
                             "unhandled {s} union '{s}' — enclosing function cannot propagate",
                             .{ kind, uvar.name });
                         defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg });
+                        try self.reporter.report(.{ .message = msg, .loc = loc });
                     }
                 }
             }
@@ -446,4 +530,169 @@ test "propagation - is not check marks union as handled" {
     // result should be marked as handled
     const uvar = scope.vars.get("result").?;
     try std.testing.expect(uvar.handled);
+}
+
+test "propagation - return marks union as handled" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = PropChecker.init(alloc, &reporter, null);
+
+    var scope = PropScope.init(alloc, null, true);
+    defer scope.deinit();
+
+    // Define a union var
+    try scope.define("result", true, 1, 1);
+
+    // return result — passes union to caller
+    var result_id = parser.Node{ .identifier = "result" };
+    var ret = parser.Node{ .return_stmt = .{ .value = &result_id } };
+    try checker.checkStatement(&ret, &scope);
+
+    const uvar = scope.vars.get("result").?;
+    try std.testing.expect(uvar.handled);
+}
+
+test "propagation - assignment propagation tracks union" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = PropChecker.init(alloc, &reporter, null);
+
+    var scope = PropScope.init(alloc, null, false);
+    defer scope.deinit();
+
+    // Define x as an error union
+    try scope.define("x", true, 1, 1);
+
+    // var y = x → y should also be tracked as error union
+    var x_id = parser.Node{ .identifier = "x" };
+    var y_decl = parser.Node{ .var_decl = .{
+        .name = "y",
+        .type_annotation = null,
+        .value = &x_id,
+        .is_pub = false,
+    } };
+    try checker.checkStatement(&y_decl, &scope);
+
+    const y_var = scope.vars.get("y").?;
+    try std.testing.expect(!y_var.handled);
+    try std.testing.expect(y_var.is_error_union);
+}
+
+test "propagation - reassignment resets handled status" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    // Set up decl table with a function returning error union
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+
+    const inner = try alloc.create(types.ResolvedType);
+    defer alloc.destroy(inner);
+    inner.* = .{ .primitive = "i32" };
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const ret_node = try a.create(parser.Node);
+    ret_node.* = .{ .type_named = "i32" };
+
+    const params = try alloc.alloc(declarations.ParamSig, 0);
+    try decl_table.funcs.put("divide", .{
+        .name = "divide",
+        .params = params,
+        .return_type = .{ .error_union = inner },
+        .return_type_node = ret_node,
+        .is_compt = false,
+        .is_pub = false,
+    });
+
+    var checker = PropChecker.init(alloc, &reporter, &decl_table);
+
+    var scope = PropScope.init(alloc, null, false);
+    defer scope.deinit();
+
+    // Define result, mark as handled
+    try scope.define("result", true, 1, 1);
+    scope.markHandled("result");
+    try std.testing.expect(scope.vars.get("result").?.handled);
+
+    // Reassign: result = divide(5, 0) — should reset to unhandled
+    var result_id = parser.Node{ .identifier = "result" };
+    var callee = parser.Node{ .identifier = "divide" };
+    var call_node = parser.Node{ .call_expr = .{
+        .callee = &callee,
+        .args = &[_]*parser.Node{},
+        .arg_names = &.{},
+    } };
+    var assign = parser.Node{ .assignment = .{ .op = "=", .left = &result_id, .right = &call_node } };
+    try checker.checkStatement(&assign, &scope);
+
+    try std.testing.expect(!scope.vars.get("result").?.handled);
+}
+
+test "propagation - compound condition handles multiple unions" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = PropChecker.init(alloc, &reporter, null);
+
+    var scope = PropScope.init(alloc, null, false);
+    defer scope.deinit();
+
+    // Define two union variables
+    try scope.define("x", true, 1, 1);
+    try scope.define("y", false, 2, 1);
+
+    // Build: if(@type(x) == Error and @type(y) != null)
+    var x_id = parser.Node{ .identifier = "x" };
+    var x_args = [_]*parser.Node{&x_id};
+    var x_type = parser.Node{ .compiler_func = .{ .name = K.Type.TYPE, .args = &x_args } };
+    var error_node = parser.Node{ .type_named = K.Type.ERROR };
+    var left_cond = parser.Node{ .binary_expr = .{ .left = &x_type, .op = "==", .right = &error_node } };
+
+    var y_id = parser.Node{ .identifier = "y" };
+    var y_args = [_]*parser.Node{&y_id};
+    var y_type = parser.Node{ .compiler_func = .{ .name = K.Type.TYPE, .args = &y_args } };
+    var null_node = parser.Node{ .type_named = K.Type.NULL };
+    var right_cond = parser.Node{ .binary_expr = .{ .left = &y_type, .op = "!=", .right = &null_node } };
+
+    var compound = parser.Node{ .binary_expr = .{ .left = &left_cond, .op = "and", .right = &right_cond } };
+    var empty_block = parser.Node{ .block = .{ .statements = &.{} } };
+    var if_stmt = parser.Node{ .if_stmt = .{
+        .condition = &compound,
+        .then_block = &empty_block,
+        .else_block = null,
+    } };
+
+    try checker.checkStatement(&if_stmt, &scope);
+
+    // Both should be marked as handled
+    try std.testing.expect(scope.vars.get("x").?.handled);
+    try std.testing.expect(scope.vars.get("y").?.handled);
+}
+
+test "propagation - scope isTracked walks parents" {
+    const alloc = std.testing.allocator;
+
+    var parent = PropScope.init(alloc, null, true);
+    defer parent.deinit();
+
+    try parent.define("x", true, 1, 1);
+
+    var child = PropScope.init(alloc, &parent, true);
+    defer child.deinit();
+
+    // x should be visible from child scope
+    const tracked = child.isTracked("x");
+    try std.testing.expect(tracked != null);
+    try std.testing.expect(tracked.?.is_error_union);
+
+    // y should not be tracked
+    try std.testing.expect(child.isTracked("y") == null);
 }

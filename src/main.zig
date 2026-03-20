@@ -469,7 +469,7 @@ pub fn main() !void {
     }
 
     if (cli.command == .version) {
-        std.debug.print("kodr 0.1.9\n", .{});
+        std.debug.print("kodr 0.2.0\n", .{});
         return;
     }
 
@@ -604,6 +604,20 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
     const order = try mod_resolver.topologicalOrder(allocator);
     defer allocator.free(order);
 
+    // Build module build-type map for codegen — lets import generation
+    // distinguish lib targets (linked via build system) from source modules
+    var module_builds = std.StringHashMapUnmanaged(module.BuildType){};
+    defer module_builds.deinit(allocator);
+    {
+        var mbi = mod_resolver.modules.iterator();
+        while (mbi.next()) |entry| {
+            const bt = entry.value_ptr.build_type;
+            if (bt != .none) {
+                try module_builds.put(allocator, entry.key_ptr.*, bt);
+            }
+        }
+    }
+
     // Process each module in dependency order
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
@@ -725,6 +739,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         cg.decls = &decl_collector.table;
         cg.locs = locs_ptr;
         cg.source_file = source_file;
+        cg.module_builds = &module_builds;
 
         try cg.generate(ast, mod_name);
         if (reporter.hasErrors()) return null;
@@ -809,51 +824,146 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
 
     // Build every root module (all those with a #build declaration).
     // A project can have multiple build targets — e.g. an exe + a dynamic lib.
-    var exe_binary_name: ?[]const u8 = null; // tracked for `kodr run`
-    var mod_it = mod_resolver.modules.iterator();
-    while (mod_it.next()) |entry| {
-        const mod = entry.value_ptr;
-        if (!mod.is_root) continue;
 
-        var build_type: []const u8 = "exe";
-        var project_name: []const u8 = "";
-        if (mod.ast) |ast| {
-            for (ast.program.metadata) |meta| {
-                if (std.mem.eql(u8, meta.metadata.field, "build")) {
-                    if (meta.metadata.value.* == .identifier) {
-                        build_type = meta.metadata.value.identifier;
+    // Count root modules and collect target descriptors
+    var root_count: usize = 0;
+    var multi_targets = std.ArrayListUnmanaged(zig_runner.MultiTarget){};
+    defer multi_targets.deinit(allocator);
+    // Temporary storage for lib_imports slices
+    var lib_import_lists = std.ArrayListUnmanaged([]const []const u8){};
+    defer {
+        for (lib_import_lists.items) |li| allocator.free(li);
+        lib_import_lists.deinit(allocator);
+    }
+
+    var exe_binary_name: ?[]const u8 = null; // tracked for `kodr run`
+
+    {
+        var mod_it = mod_resolver.modules.iterator();
+        while (mod_it.next()) |entry| {
+            const mod = entry.value_ptr;
+            if (!mod.is_root) continue;
+            root_count += 1;
+        }
+    }
+
+    if (root_count > 1) {
+        // Multi-target build: collect all targets, build once
+        var mod_it = mod_resolver.modules.iterator();
+        while (mod_it.next()) |entry| {
+            const mod = entry.value_ptr;
+            if (!mod.is_root) continue;
+
+            var build_type: []const u8 = "exe";
+            var project_name: []const u8 = "";
+            if (mod.ast) |ast| {
+                for (ast.program.metadata) |meta| {
+                    if (std.mem.eql(u8, meta.metadata.field, "build")) {
+                        if (meta.metadata.value.* == .identifier) {
+                            build_type = meta.metadata.value.identifier;
+                        }
                     }
-                }
-                if (std.mem.eql(u8, meta.metadata.field, "name")) {
-                    if (meta.metadata.value.* == .string_literal) {
-                        const raw = meta.metadata.value.string_literal;
-                        if (raw.len >= 2 and raw[0] == '"') {
-                            project_name = raw[1 .. raw.len - 1];
-                        } else {
-                            project_name = raw;
+                    if (std.mem.eql(u8, meta.metadata.field, "name")) {
+                        if (meta.metadata.value.* == .string_literal) {
+                            const raw = meta.metadata.value.string_literal;
+                            if (raw.len >= 2 and raw[0] == '"') {
+                                project_name = raw[1 .. raw.len - 1];
+                            } else {
+                                project_name = raw;
+                            }
                         }
                     }
                 }
             }
+
+            const binary_name = if (project_name.len > 0) project_name else mod.name;
+
+            if (std.mem.eql(u8, build_type, "exe")) {
+                if (exe_binary_name == null) {
+                    exe_binary_name = try allocator.dupe(u8, binary_name);
+                }
+            }
+
+            // Find which of this module's imports are lib targets
+            var lib_imports = std.ArrayListUnmanaged([]const u8){};
+            defer lib_imports.deinit(allocator);
+            for (mod.imports) |imp_name| {
+                if (module_builds.get(imp_name)) |bt| {
+                    if (bt == .static or bt == .dynamic) {
+                        try lib_imports.append(allocator, imp_name);
+                    }
+                }
+            }
+            const lib_slice = try allocator.dupe([]const u8, lib_imports.items);
+            try lib_import_lists.append(allocator, lib_slice);
+
+            try multi_targets.append(allocator, .{
+                .module_name = mod.name,
+                .project_name = binary_name,
+                .build_type = build_type,
+                .lib_imports = lib_slice,
+            });
         }
 
-        const binary_name = if (project_name.len > 0) project_name else mod.name;
-
-        try runner.generateBuildZig(mod.name, build_type, binary_name);
-
-        const built = if (std.mem.eql(u8, build_type, "exe"))
-            try runner.build(target_str, opt_str, mod.name, binary_name)
-        else
-            try runner.buildLib(target_str, opt_str, mod.name, binary_name, build_type);
+        const built = try runner.buildAll(target_str, opt_str, multi_targets.items);
         if (!built) return null;
 
-        if (std.mem.eql(u8, build_type, "exe")) {
-            if (exe_binary_name == null) {
-                exe_binary_name = try allocator.dupe(u8, binary_name);
+        // Generate interface files for lib targets
+        for (multi_targets.items) |t| {
+            if (!std.mem.eql(u8, t.build_type, "exe")) {
+                const mod = mod_resolver.modules.get(t.module_name) orelse continue;
+                if (mod.ast) |ast| {
+                    try generateInterface(allocator, t.module_name, t.project_name, ast);
+                }
             }
-        } else {
+        }
+    } else {
+        // Single-target build: use existing path (no behavior change)
+        var mod_it = mod_resolver.modules.iterator();
+        while (mod_it.next()) |entry| {
+            const mod = entry.value_ptr;
+            if (!mod.is_root) continue;
+
+            var build_type: []const u8 = "exe";
+            var project_name: []const u8 = "";
             if (mod.ast) |ast| {
-                try generateInterface(allocator, mod.name, binary_name, ast);
+                for (ast.program.metadata) |meta| {
+                    if (std.mem.eql(u8, meta.metadata.field, "build")) {
+                        if (meta.metadata.value.* == .identifier) {
+                            build_type = meta.metadata.value.identifier;
+                        }
+                    }
+                    if (std.mem.eql(u8, meta.metadata.field, "name")) {
+                        if (meta.metadata.value.* == .string_literal) {
+                            const raw = meta.metadata.value.string_literal;
+                            if (raw.len >= 2 and raw[0] == '"') {
+                                project_name = raw[1 .. raw.len - 1];
+                            } else {
+                                project_name = raw;
+                            }
+                        }
+                    }
+                }
+            }
+
+            const binary_name = if (project_name.len > 0) project_name else mod.name;
+
+            try runner.generateBuildZig(mod.name, build_type, binary_name);
+
+            const built = if (std.mem.eql(u8, build_type, "exe"))
+                try runner.build(target_str, opt_str, mod.name, binary_name)
+            else
+                try runner.buildLib(target_str, opt_str, mod.name, binary_name, build_type);
+            if (!built) return null;
+
+            if (std.mem.eql(u8, build_type, "exe")) {
+                if (exe_binary_name == null) {
+                    exe_binary_name = try allocator.dupe(u8, binary_name);
+                }
+            } else {
+                if (mod.ast) |ast| {
+                    try generateInterface(allocator, mod.name, binary_name, ast);
+                }
             }
         }
     }

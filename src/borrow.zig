@@ -9,8 +9,10 @@ const errors = @import("errors.zig");
 const K = @import("constants.zig");
 
 /// A borrow record — tracks active borrows
+/// `field` is null for whole-variable borrows, non-null for field-level borrows.
 pub const Borrow = struct {
     variable: []const u8,
+    field: ?[]const u8,
     is_mutable: bool,
     scope_depth: usize,
 };
@@ -86,8 +88,8 @@ pub const BorrowChecker = struct {
                 // If the type is var &T and value is &x, it's a mutable borrow
                 if (v.value.* == .borrow_expr) {
                     const is_mut = isMutableBorrowType(v.type_annotation);
-                    if (v.value.borrow_expr.* == .identifier) {
-                        try self.addBorrow(v.value.borrow_expr.identifier, is_mut);
+                    if (extractBorrowTarget(v.value.borrow_expr)) |target| {
+                        try self.addBorrow(target.variable, target.field, is_mut);
                     }
                 } else {
                     try self.checkExpr(v.value);
@@ -96,8 +98,8 @@ pub const BorrowChecker = struct {
             .const_decl => |v| {
                 // const declarations with borrows are always immutable
                 if (v.value.* == .borrow_expr) {
-                    if (v.value.borrow_expr.* == .identifier) {
-                        try self.addBorrow(v.value.borrow_expr.identifier, false);
+                    if (extractBorrowTarget(v.value.borrow_expr)) |target| {
+                        try self.addBorrow(target.variable, target.field, false);
                     }
                 } else {
                     try self.checkExpr(v.value);
@@ -144,8 +146,8 @@ pub const BorrowChecker = struct {
                 // If assigning a borrow, check for conflicts
                 if (a.right.* == .borrow_expr) {
                     const is_mut = isMutableBorrowType(null); // no type context in assignment
-                    if (a.right.borrow_expr.* == .identifier) {
-                        try self.addBorrow(a.right.borrow_expr.identifier, is_mut);
+                    if (extractBorrowTarget(a.right.borrow_expr)) |target| {
+                        try self.addBorrow(target.variable, target.field, is_mut);
                     }
                 }
                 // Check that borrowed variables aren't used while mutably borrowed
@@ -161,14 +163,14 @@ pub const BorrowChecker = struct {
         switch (node.*) {
             .borrow_expr => |inner| {
                 // Bare & in expression context (e.g. function call arg) — default immutable
-                if (inner.* == .identifier) {
-                    try self.addBorrow(inner.identifier, false);
+                if (extractBorrowTarget(inner)) |target| {
+                    try self.addBorrow(target.variable, target.field, false);
                 }
                 try self.checkExpr(inner);
             },
             .identifier => |name| {
                 // Check if this variable is mutably borrowed — can't use it
-                try self.checkNotMutablyBorrowed(name);
+                try self.checkNotMutablyBorrowedPath(name, null);
             },
             .call_expr => |c| {
                 try self.checkExpr(c.callee);
@@ -179,7 +181,15 @@ pub const BorrowChecker = struct {
                 try self.checkExpr(b.right);
             },
             .unary_expr => |u| try self.checkExpr(u.operand),
-            .field_expr => |f| try self.checkExpr(f.object),
+            .field_expr => {
+                // Field access: check with field-level awareness
+                if (extractBorrowTarget(node)) |target| {
+                    try self.checkNotMutablyBorrowedPath(target.variable, target.field);
+                } else {
+                    // Cannot extract base — fall back to recursive check
+                    try self.checkExpr(node.field_expr.object);
+                }
+            },
             .index_expr => |i| {
                 try self.checkExpr(i.object);
                 try self.checkExpr(i.index);
@@ -196,42 +206,59 @@ pub const BorrowChecker = struct {
         }
     }
 
-    /// Check if accessing a variable that is mutably borrowed
+    /// Check if accessing a variable/field that is mutably borrowed
     fn checkExprAccess(self: *BorrowChecker, node: *parser.Node) anyerror!void {
         switch (node.*) {
-            .identifier => |name| try self.checkNotMutablyBorrowed(name),
-            .field_expr => |f| try self.checkExprAccess(f.object),
+            .identifier => |name| try self.checkNotMutablyBorrowedPath(name, null),
+            .field_expr => {
+                if (extractBorrowTarget(node)) |target| {
+                    try self.checkNotMutablyBorrowedPath(target.variable, target.field);
+                } else {
+                    try self.checkExprAccess(node.field_expr.object);
+                }
+            },
             .index_expr => |i| try self.checkExprAccess(i.object),
             .slice_expr => |s| try self.checkExprAccess(s.object),
             else => {},
         }
     }
 
-    /// Error if a variable has an active mutable borrow
-    fn checkNotMutablyBorrowed(self: *BorrowChecker, name: []const u8) !void {
+    /// Error if a variable/field has an active mutable borrow that overlaps.
+    /// Bare variable access (field=null) is blocked by any mutable borrow on the variable.
+    /// Field access (field!=null) is only blocked by whole-variable or same-field borrows.
+    fn checkNotMutablyBorrowedPath(self: *BorrowChecker, name: []const u8, field: ?[]const u8) !void {
         for (self.active_borrows.items) |b| {
-            if (std.mem.eql(u8, b.variable, name) and b.is_mutable) {
+            if (!std.mem.eql(u8, b.variable, name) or !b.is_mutable) continue;
+            if (!pathsOverlap(b.field, field)) continue;
+
+            if (field) |f| {
+                const msg = try std.fmt.allocPrint(self.allocator,
+                    "cannot use '{s}.{s}' while it is mutably borrowed", .{ name, f });
+                defer self.allocator.free(msg);
+                try self.reporter.report(.{ .message = msg });
+            } else {
                 const msg = try std.fmt.allocPrint(self.allocator,
                     "cannot use '{s}' while it is mutably borrowed", .{name});
                 defer self.allocator.free(msg);
                 try self.reporter.report(.{ .message = msg });
-                return;
             }
+            return;
         }
     }
 
-    /// Add a borrow — check for conflicts
-    fn addBorrow(self: *BorrowChecker, variable: []const u8, is_mutable: bool) !void {
+    /// Add a borrow — check for conflicts (field-level aware)
+    fn addBorrow(self: *BorrowChecker, variable: []const u8, field: ?[]const u8, is_mutable: bool) !void {
         // Check existing borrows for conflicts
         for (self.active_borrows.items) |existing| {
             if (!std.mem.eql(u8, existing.variable, variable)) continue;
+            if (!pathsOverlap(existing.field, field)) continue;
 
             if (is_mutable or existing.is_mutable) {
-                // Mutable borrow conflicts with any existing borrow
+                const label = borrowLabel(variable, field);
                 const msg = try std.fmt.allocPrint(self.allocator,
                     "cannot borrow '{s}' as {s}: already borrowed as {s}",
                     .{
-                        variable,
+                        label,
                         if (is_mutable) "mutable" else "immutable",
                         if (existing.is_mutable) "mutable" else "immutable",
                     });
@@ -244,6 +271,7 @@ pub const BorrowChecker = struct {
 
         try self.active_borrows.append(self.allocator, .{
             .variable = variable,
+            .field = field,
             .is_mutable = is_mutable,
             .scope_depth = self.scope_depth,
         });
@@ -260,6 +288,46 @@ pub const BorrowChecker = struct {
         }
     }
 };
+
+/// Two borrow paths overlap if either is a whole-variable borrow (null)
+/// or both refer to the same field.
+fn pathsOverlap(field_a: ?[]const u8, field_b: ?[]const u8) bool {
+    const a = field_a orelse return true; // whole variable overlaps everything
+    const b = field_b orelse return true;
+    return std.mem.eql(u8, a, b);
+}
+
+/// Format a borrow target for error messages: "var" or "var.field"
+fn borrowLabel(variable: []const u8, field: ?[]const u8) []const u8 {
+    // For error messages we just return the variable name — field info is
+    // included by the caller when needed. This avoids allocation.
+    _ = field;
+    return variable;
+}
+
+/// Extract the base variable and optional field from a borrow target expression.
+/// Handles: identifier("x") → (x, null), field_expr(ident("p"), "name") → (p, name)
+/// For deeper chains like a.b.c, tracks the first field level from the base.
+fn extractBorrowTarget(node: *parser.Node) ?struct { variable: []const u8, field: ?[]const u8 } {
+    switch (node.*) {
+        .identifier => |name| return .{ .variable = name, .field = null },
+        .field_expr => |f| {
+            if (f.object.* == .identifier) {
+                return .{ .variable = f.object.identifier, .field = f.field };
+            }
+            // Deeper nesting: a.b.c → walk to base, track first-level field
+            var current = f.object;
+            while (current.* == .field_expr and current.field_expr.object.* != .identifier) {
+                current = current.field_expr.object;
+            }
+            if (current.* == .field_expr and current.field_expr.object.* == .identifier) {
+                return .{ .variable = current.field_expr.object.identifier, .field = current.field_expr.field };
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
 
 /// Check if a type annotation is a mutable borrow type (var &T)
 fn isMutableBorrowType(type_ann: ?*parser.Node) bool {
@@ -279,8 +347,8 @@ test "borrow checker - no conflict immutable borrows" {
     defer checker.deinit();
 
     // Two immutable borrows of same variable — OK
-    try checker.addBorrow("x", false);
-    try checker.addBorrow("x", false);
+    try checker.addBorrow("x", null, false);
+    try checker.addBorrow("x", null, false);
     try std.testing.expect(!reporter.hasErrors());
 }
 
@@ -293,8 +361,8 @@ test "borrow checker - mutable conflicts immutable" {
     defer checker.deinit();
 
     // Immutable borrow then mutable — conflict
-    try checker.addBorrow("x", false);
-    try checker.addBorrow("x", true);
+    try checker.addBorrow("x", null, false);
+    try checker.addBorrow("x", null, true);
     try std.testing.expect(reporter.hasErrors());
 }
 
@@ -323,7 +391,7 @@ test "borrow checker - mutable borrow via var &T type" {
     defer checker.deinit();
 
     // First: immutable borrow
-    try checker.addBorrow("data", false);
+    try checker.addBorrow("data", null, false);
 
     // Then: var decl with var &T type = &data → mutable borrow → conflict
     var inner_type = parser.Node{ .type_named = "MyStruct" };
@@ -385,7 +453,7 @@ test "borrow checker - cannot use while mutably borrowed" {
     defer checker.deinit();
 
     // Mutable borrow of x
-    try checker.addBorrow("x", true);
+    try checker.addBorrow("x", null, true);
 
     // Try to use x directly — should error
     var id = parser.Node{ .identifier = "x" };
@@ -403,7 +471,7 @@ test "borrow checker - scope drops borrows" {
 
     // Borrow at depth 1
     checker.scope_depth = 1;
-    try checker.addBorrow("x", true);
+    try checker.addBorrow("x", null, true);
     try std.testing.expectEqual(@as(usize, 1), checker.active_borrows.items.len);
 
     // Exit scope — borrow should be dropped
@@ -414,4 +482,168 @@ test "borrow checker - scope drops borrows" {
     var id = parser.Node{ .identifier = "x" };
     try checker.checkExpr(&id);
     try std.testing.expect(!reporter.hasErrors());
+}
+
+test "borrow checker - sibling field borrows do not conflict" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = BorrowChecker.init(alloc, &reporter);
+    defer checker.deinit();
+
+    // Mutable borrow of p.name and p.health — different fields, no conflict
+    try checker.addBorrow("p", "name", true);
+    try checker.addBorrow("p", "health", true);
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "borrow checker - same field mutable borrow conflicts" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = BorrowChecker.init(alloc, &reporter);
+    defer checker.deinit();
+
+    // Two mutable borrows of same field — conflict
+    try checker.addBorrow("p", "name", true);
+    try checker.addBorrow("p", "name", true);
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "borrow checker - whole variable borrow conflicts with field borrow" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = BorrowChecker.init(alloc, &reporter);
+    defer checker.deinit();
+
+    // Whole variable borrow then field borrow — conflict
+    try checker.addBorrow("p", null, true);
+    try checker.addBorrow("p", "name", false);
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "borrow checker - field access while sibling mutably borrowed" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = BorrowChecker.init(alloc, &reporter);
+    defer checker.deinit();
+
+    // Mutable borrow of p.name
+    try checker.addBorrow("p", "name", true);
+
+    // Access p.health — different field, should be fine
+    var p_ident = parser.Node{ .identifier = "p" };
+    var health_access = parser.Node{ .field_expr = .{ .object = &p_ident, .field = "health" } };
+    try checker.checkExpr(&health_access);
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "borrow checker - field access while same field mutably borrowed" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = BorrowChecker.init(alloc, &reporter);
+    defer checker.deinit();
+
+    // Mutable borrow of p.name
+    try checker.addBorrow("p", "name", true);
+
+    // Access p.name — same field, should error
+    var p_ident = parser.Node{ .identifier = "p" };
+    var name_access = parser.Node{ .field_expr = .{ .object = &p_ident, .field = "name" } };
+    try checker.checkExpr(&name_access);
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "borrow checker - bare variable access while field mutably borrowed" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = BorrowChecker.init(alloc, &reporter);
+    defer checker.deinit();
+
+    // Mutable borrow of p.name
+    try checker.addBorrow("p", "name", true);
+
+    // Access bare p — whole variable includes borrowed field, should error
+    var p_ident = parser.Node{ .identifier = "p" };
+    try checker.checkExpr(&p_ident);
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "borrow checker - field borrow from borrow_expr field_expr" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = BorrowChecker.init(alloc, &reporter);
+    defer checker.deinit();
+
+    // Simulate: var ref: var &String = &p.name
+    var inner_type = parser.Node{ .type_named = "String" };
+    var type_ann = parser.Node{ .type_ptr = .{ .kind = "var &", .elem = &inner_type } };
+    var p_ident = parser.Node{ .identifier = "p" };
+    var field_access = parser.Node{ .field_expr = .{ .object = &p_ident, .field = "name" } };
+    var borrow_val = parser.Node{ .borrow_expr = &field_access };
+    var decl = parser.Node{ .var_decl = .{
+        .name = "ref",
+        .type_annotation = &type_ann,
+        .value = &borrow_val,
+        .is_pub = false,
+    } };
+
+    try checker.checkStatement(&decl);
+    try std.testing.expect(!reporter.hasErrors());
+
+    // Now borrow p.health — should be fine (sibling)
+    try checker.addBorrow("p", "health", true);
+    try std.testing.expect(!reporter.hasErrors());
+
+    // But borrow p.name again as mutable — should conflict
+    try checker.addBorrow("p", "name", false);
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "borrow checker - extractBorrowTarget" {
+    // identifier
+    var id = parser.Node{ .identifier = "x" };
+    const t1 = extractBorrowTarget(&id).?;
+    try std.testing.expectEqualStrings("x", t1.variable);
+    try std.testing.expect(t1.field == null);
+
+    // field_expr: p.name
+    var p_ident = parser.Node{ .identifier = "p" };
+    var field = parser.Node{ .field_expr = .{ .object = &p_ident, .field = "name" } };
+    const t2 = extractBorrowTarget(&field).?;
+    try std.testing.expectEqualStrings("p", t2.variable);
+    try std.testing.expectEqualStrings("name", t2.field.?);
+
+    // nested field_expr: a.b.c → tracks first-level field "b"
+    var a_ident = parser.Node{ .identifier = "a" };
+    var ab = parser.Node{ .field_expr = .{ .object = &a_ident, .field = "b" } };
+    var abc = parser.Node{ .field_expr = .{ .object = &ab, .field = "c" } };
+    const t3 = extractBorrowTarget(&abc).?;
+    try std.testing.expectEqualStrings("a", t3.variable);
+    try std.testing.expectEqualStrings("b", t3.field.?);
+}
+
+test "borrow checker - pathsOverlap" {
+    // null overlaps with everything
+    try std.testing.expect(pathsOverlap(null, null));
+    try std.testing.expect(pathsOverlap(null, "name"));
+    try std.testing.expect(pathsOverlap("name", null));
+
+    // same field overlaps
+    try std.testing.expect(pathsOverlap("name", "name"));
+
+    // different fields do not overlap
+    try std.testing.expect(!pathsOverlap("name", "health"));
 }

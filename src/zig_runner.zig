@@ -6,6 +6,7 @@
 const std = @import("std");
 const errors = @import("errors.zig");
 const cache = @import("cache.zig");
+const module = @import("module.zig");
 
 /// Result of a Zig compiler invocation
 pub const ZigResult = struct {
@@ -43,6 +44,86 @@ pub const ZigRunner = struct {
 
     pub fn deinit(self: *ZigRunner) void {
         self.allocator.free(self.zig_path);
+    }
+
+    /// Build all targets in a multi-target project with a single zig build invocation.
+    /// Generates a unified build.zig, runs zig build once, copies all artifacts to bin/.
+    pub fn buildAll(
+        self: *ZigRunner,
+        target: []const u8,
+        optimize: []const u8,
+        targets: []const MultiTarget,
+    ) !bool {
+        // Generate unified build.zig
+        const content = try buildZigContentMulti(self.allocator, targets);
+        defer self.allocator.free(content);
+        try cache.writeGeneratedZig("build", content, self.allocator);
+
+        // Run zig build once
+        var args: std.ArrayListUnmanaged([]const u8) = .{};
+        defer args.deinit(self.allocator);
+
+        try args.append(self.allocator, self.zig_path);
+        try args.append(self.allocator, "build");
+
+        if (target.len > 0) {
+            const target_flag = try std.fmt.allocPrint(self.allocator, "-Dtarget={s}", .{target});
+            defer self.allocator.free(target_flag);
+            try args.append(self.allocator, target_flag);
+        }
+
+        if (std.mem.eql(u8, optimize, "release")) {
+            try args.append(self.allocator, "-Doptimize=ReleaseSafe");
+        } else if (std.mem.eql(u8, optimize, "fast")) {
+            try args.append(self.allocator, "-Doptimize=ReleaseFast");
+        }
+
+        var result = try self.runZigIn(args.items, cache.GENERATED_DIR);
+        defer result.deinit(self.allocator);
+
+        if (self.show_zig_output) {
+            try self.printRaw(result.stdout);
+            try self.printRaw(result.stderr);
+        }
+
+        if (!result.success) {
+            if (!self.show_zig_output) {
+                try self.reformatZigErrors(result.stderr);
+            }
+            return false;
+        }
+
+        // Copy all artifacts to bin/
+        try std.fs.cwd().makePath("bin");
+
+        for (targets) |t| {
+            const is_lib = !std.mem.eql(u8, t.build_type, "exe");
+            const ext: []const u8 = if (std.mem.eql(u8, t.build_type, "dynamic")) ".so" else ".a";
+
+            const src_bin = if (is_lib)
+                try std.fmt.allocPrint(self.allocator, "{s}/zig-out/lib/lib{s}{s}", .{ cache.GENERATED_DIR, t.project_name, ext })
+            else
+                try std.fs.path.join(self.allocator, &.{ cache.GENERATED_DIR, "zig-out", "bin", t.project_name });
+            defer self.allocator.free(src_bin);
+
+            const dst_name = if (is_lib)
+                try std.fmt.allocPrint(self.allocator, "bin/lib{s}{s}", .{ t.project_name, ext })
+            else
+                try std.fs.path.join(self.allocator, &.{ "bin", t.project_name });
+            defer self.allocator.free(dst_name);
+
+            try std.fs.cwd().copyFile(src_bin, std.fs.cwd(), dst_name, .{});
+
+            std.debug.print("Built: {s}\n", .{dst_name});
+        }
+
+        // Clean up generated zig-out
+        const generated_zig_out = try std.fs.path.join(self.allocator,
+            &.{ cache.GENERATED_DIR, "zig-out" });
+        defer self.allocator.free(generated_zig_out);
+        std.fs.cwd().deleteTree(generated_zig_out) catch {};
+
+        return true;
     }
 
     /// Build the generated Zig project
@@ -402,6 +483,136 @@ pub fn buildZigContent(
     return buf.toOwnedSlice(allocator);
 }
 
+/// Descriptor for a build target in a multi-target project
+pub const MultiTarget = struct {
+    module_name: []const u8,
+    project_name: []const u8,
+    build_type: []const u8, // "exe", "static", "dynamic"
+    lib_imports: []const []const u8, // names of imported lib modules (for linking)
+};
+
+/// Build a unified build.zig for multiple targets.
+/// Libs are defined first, then exes link against them via addImport + linkLibrary.
+pub fn buildZigContentMulti(
+    allocator: std.mem.Allocator,
+    targets: []const MultiTarget,
+) ![]u8 {
+    var buf = std.ArrayListUnmanaged(u8){};
+    errdefer buf.deinit(allocator);
+
+    // Preamble
+    try buf.appendSlice(allocator,
+        \\const std = @import("std");
+        \\
+        \\pub fn build(b: *std.Build) void {
+        \\    const target = b.standardTargetOptions(.{});
+        \\    const optimize = b.standardOptimizeOption(.{});
+        \\
+    );
+
+    // Build a map from module_name → project_name for lib targets (used by exe linking)
+    var lib_targets = std.StringHashMapUnmanaged([]const u8){};
+    defer lib_targets.deinit(allocator);
+
+    // Pass 1: emit all lib targets first
+    for (targets) |t| {
+        if (std.mem.eql(u8, t.build_type, "exe")) continue;
+
+        const linkage: []const u8 = if (std.mem.eql(u8, t.build_type, "dynamic")) ".dynamic" else ".static";
+
+        const lib_chunk = try std.fmt.allocPrint(allocator,
+            \\    const lib_{s} = b.addLibrary(.{{
+            \\        .name = "{s}",
+            \\        .linkage = {s},
+            \\        .root_module = b.createModule(.{{
+            \\            .root_source_file = b.path("{s}.zig"),
+            \\            .target = target,
+            \\            .optimize = optimize,
+            \\        }}),
+            \\    }});
+            \\    b.installArtifact(lib_{s});
+            \\
+        , .{ t.module_name, t.project_name, linkage, t.module_name, t.module_name });
+        defer allocator.free(lib_chunk);
+        try buf.appendSlice(allocator, lib_chunk);
+
+        try lib_targets.put(allocator, t.module_name, t.project_name);
+    }
+
+    // Pass 2: emit all exe targets, linking against libs
+    for (targets) |t| {
+        if (!std.mem.eql(u8, t.build_type, "exe")) continue;
+
+        const exe_chunk = try std.fmt.allocPrint(allocator,
+            \\    const exe_{s} = b.addExecutable(.{{
+            \\        .name = "{s}",
+            \\        .root_module = b.createModule(.{{
+            \\            .root_source_file = b.path("{s}.zig"),
+            \\            .target = target,
+            \\            .optimize = optimize,
+            \\        }}),
+            \\    }});
+            \\
+        , .{ t.module_name, t.project_name, t.module_name });
+        defer allocator.free(exe_chunk);
+        try buf.appendSlice(allocator, exe_chunk);
+
+        // Link imported lib modules
+        for (t.lib_imports) |lib_name| {
+            if (lib_targets.contains(lib_name)) {
+                const link_chunk = try std.fmt.allocPrint(allocator,
+                    \\    exe_{s}.root_module.addImport("{s}", lib_{s}.root_module);
+                    \\    exe_{s}.linkLibrary(lib_{s});
+                    \\
+                , .{ t.module_name, lib_name, lib_name, t.module_name, lib_name });
+                defer allocator.free(link_chunk);
+                try buf.appendSlice(allocator, link_chunk);
+            }
+        }
+
+        const install_chunk = try std.fmt.allocPrint(allocator,
+            \\    b.installArtifact(exe_{s});
+            \\
+            \\    const run_cmd_{s} = b.addRunArtifact(exe_{s});
+            \\    run_cmd_{s}.step.dependOn(b.getInstallStep());
+            \\    const run_step = b.step("run", "Run");
+            \\    run_step.dependOn(&run_cmd_{s}.step);
+            \\
+        , .{ t.module_name, t.module_name, t.module_name, t.module_name, t.module_name });
+        defer allocator.free(install_chunk);
+        try buf.appendSlice(allocator, install_chunk);
+    }
+
+    // Test step — use the first exe target's module for tests
+    for (targets) |t| {
+        if (std.mem.eql(u8, t.build_type, "exe")) {
+            const test_chunk = try std.fmt.allocPrint(allocator,
+                \\    const unit_tests = b.addTest(.{{
+                \\        .root_module = b.createModule(.{{
+                \\            .root_source_file = b.path("{s}.zig"),
+                \\            .target = target,
+                \\            .optimize = optimize,
+                \\        }}),
+                \\    }});
+                \\    const run_tests = b.addRunArtifact(unit_tests);
+                \\    const test_step = b.step("test", "Run tests");
+                \\    test_step.dependOn(&run_tests.step);
+                \\
+            , .{t.module_name});
+            defer allocator.free(test_chunk);
+            try buf.appendSlice(allocator, test_chunk);
+            break;
+        }
+    }
+
+    try buf.appendSlice(allocator,
+        \\}
+        \\
+    );
+
+    return buf.toOwnedSlice(allocator);
+}
+
 /// Find the Zig binary
 /// 1. Check same directory as kodr binary
 /// 2. Check PATH
@@ -504,4 +715,54 @@ test "buildZigContent - project name in exe artifact" {
     const content = try buildZigContent(alloc, "main", "exe", "calculator");
     defer alloc.free(content);
     try std.testing.expect(std.mem.indexOf(u8, content, "\"calculator\"") != null);
+}
+
+test "buildZigContentMulti - exe with dynamic lib" {
+    const alloc = std.testing.allocator;
+    const lib_name: []const u8 = "mathlib";
+    const targets = [_]MultiTarget{
+        .{ .module_name = "mathlib", .project_name = "mathlib", .build_type = "dynamic", .lib_imports = &.{} },
+        .{ .module_name = "main", .project_name = "myapp", .build_type = "exe", .lib_imports = @constCast(&[_][]const u8{lib_name}) },
+    };
+    const content = try buildZigContentMulti(alloc, &targets);
+    defer alloc.free(content);
+
+    // Lib target present
+    try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, ".linkage = .dynamic") != null);
+    // Exe target present
+    try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") != null);
+    // Linking: addImport + linkLibrary
+    try std.testing.expect(std.mem.indexOf(u8, content, "addImport(\"mathlib\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "linkLibrary(lib_mathlib)") != null);
+    // Test step present
+    try std.testing.expect(std.mem.indexOf(u8, content, "b.step(\"test\"") != null);
+}
+
+test "buildZigContentMulti - exe with static lib" {
+    const alloc = std.testing.allocator;
+    const lib_name: []const u8 = "utils";
+    const targets = [_]MultiTarget{
+        .{ .module_name = "utils", .project_name = "utils", .build_type = "static", .lib_imports = &.{} },
+        .{ .module_name = "main", .project_name = "myapp", .build_type = "exe", .lib_imports = @constCast(&[_][]const u8{lib_name}) },
+    };
+    const content = try buildZigContentMulti(alloc, &targets);
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, ".linkage = .static") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "addImport(\"utils\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "linkLibrary(lib_utils)") != null);
+}
+
+test "buildZigContentMulti - single exe (no libs)" {
+    const alloc = std.testing.allocator;
+    const targets = [_]MultiTarget{
+        .{ .module_name = "main", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
+    };
+    const content = try buildZigContentMulti(alloc, &targets);
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") == null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "addImport") == null);
 }

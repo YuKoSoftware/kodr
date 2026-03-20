@@ -9,6 +9,7 @@ const builtins = @import("builtins.zig");
 const declarations = @import("declarations.zig");
 const errors = @import("errors.zig");
 const K = @import("constants.zig");
+const module = @import("module.zig");
 
 /// Built-in allocator kinds from std::mem
 const AllocKind = enum { gpa, smp, arena, temp, page };
@@ -66,6 +67,7 @@ pub const CodeGen = struct {
     in_thread_block: bool,       // inside a Thread body — return → result assignment
     current_thread_name: []const u8, // name of the thread being generated
     thread_capture_renames: std.StringHashMapUnmanaged([]const u8), // original name → _cap_name
+    module_builds: ?*const std.StringHashMapUnmanaged(module.BuildType), // imported module → build type
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
@@ -103,6 +105,7 @@ pub const CodeGen = struct {
             .in_thread_block = false,
             .current_thread_name = "",
             .thread_capture_renames = .{},
+            .module_builds = null,
         };
     }
 
@@ -515,8 +518,18 @@ pub const CodeGen = struct {
         if (imp.is_c_header) {
             try self.writeLineFmt("// WARNING: C header import\nconst {s} = @cImport(@cInclude({s}));", .{ alias, imp.path });
         } else {
-            // Generated .zig file is always named after the module, regardless of scope
-            try self.writeLineFmt("const {s} = @import(\"{s}.zig\");", .{ alias, imp.path });
+            // Check if the imported module is a lib target — if so, use build-system
+            // module name (no .zig extension) since it's provided via addImport in build.zig
+            const is_lib = if (self.module_builds) |mb| blk: {
+                const bt = mb.get(imp.path) orelse break :blk false;
+                break :blk bt == .static or bt == .dynamic;
+            } else false;
+
+            if (is_lib) {
+                try self.writeLineFmt("const {s} = @import(\"{s}\");", .{ alias, imp.path });
+            } else {
+                try self.writeLineFmt("const {s} = @import(\"{s}.zig\");", .{ alias, imp.path });
+            }
         }
     }
 

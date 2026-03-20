@@ -10,12 +10,15 @@ const cache = @import("cache.zig");
 
 const MODULE_KEYWORD = "module ";
 
+pub const BuildType = enum { none, exe, static, dynamic };
+
 /// A resolved module — one or more .kodr files sharing the same module name
 pub const Module = struct {
     name: []const u8,
     files: [][]const u8,
     imports: [][]const u8,    // names of imported modules
     is_root: bool,            // has buildtype declaration
+    build_type: BuildType,    // what artifact this module builds into
     ast: ?*parser.Node,       // parsed AST (null if cached/unchanged)
     ast_arena: ?std.heap.ArenaAllocator, // owns the AST memory; null until parsed
     locs: ?parser.LocMap,     // AST node → source location map
@@ -114,6 +117,7 @@ pub const Resolver = struct {
                 .files = files,
                 .imports = &.{},
                 .is_root = false,
+                .build_type = .none,
                 .ast = null,
                 .ast_arena = null,
                 .locs = null,
@@ -332,6 +336,7 @@ pub const Resolver = struct {
                             .files = files,
                             .imports = &.{},
                             .is_root = false,
+                            .build_type = .none,
                             .ast = null,
                             .ast_arena = null,
                             .locs = null,
@@ -352,6 +357,18 @@ pub const Resolver = struct {
             for (ast.program.metadata) |meta| {
                 if (std.mem.eql(u8, meta.metadata.field, "build")) {
                     mod.is_root = true;
+                    if (meta.metadata.value.* == .identifier) {
+                        const val = meta.metadata.value.identifier;
+                        if (std.mem.eql(u8, val, "static")) {
+                            mod.build_type = .static;
+                        } else if (std.mem.eql(u8, val, "dynamic")) {
+                            mod.build_type = .dynamic;
+                        } else {
+                            mod.build_type = .exe;
+                        }
+                    } else {
+                        mod.build_type = .exe;
+                    }
                 }
             }
         }

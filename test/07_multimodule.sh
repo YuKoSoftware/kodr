@@ -38,4 +38,94 @@ BINOUT=$(./bin/multimod 2>&1)
 if echo "$BINOUT" | grep -q "multi-module works"; then pass "multi-module runs"
 else fail "multi-module runs" "$BINOUT"; fi
 
+section "Multi-target: exe + dynamic lib"
+
+cd "$TESTDIR"
+"$KODR" init dynlink >/dev/null 2>&1
+cd "$TESTDIR/dynlink"
+
+# Create a dynamic lib module
+cat > src/mathlib.kodr <<'KODR'
+module mathlib
+#name    = "mathlib"
+#build   = dynamic
+pub func add(a: i32, b: i32) i32 {
+    return a + b
+}
+KODR
+
+# Create an exe that imports the dynamic lib
+cat > src/main.kodr <<'KODR'
+module main
+#name    = "dynlink"
+#build   = exe
+import std::console
+import mathlib
+func main() void {
+    console.println("dynlink ok")
+}
+KODR
+
+# Remove example module (not needed)
+rm -f src/example.kodr src/control_flow.kodr
+
+OUTPUT=$("$KODR" build 2>&1)
+if echo "$OUTPUT" | grep -q "Built:.*dynlink"; then pass "multi-target: exe built"
+else fail "multi-target: exe built" "$OUTPUT"; fi
+
+if echo "$OUTPUT" | grep -q "Built:.*libmathlib.so"; then pass "multi-target: dynamic lib built"
+else fail "multi-target: dynamic lib built" "$OUTPUT"; fi
+
+if [ -f bin/libmathlib.so ]; then pass "multi-target: .so exists"
+else fail "multi-target: .so exists"; fi
+
+if [ -f bin/mathlib.kodr ]; then pass "multi-target: interface file generated"
+else fail "multi-target: interface file generated"; fi
+
+if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "multi-target: no memory leaks"
+else fail "multi-target: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')"; fi
+
+section "Multi-target: exe + static lib"
+
+cd "$TESTDIR"
+"$KODR" init statlink >/dev/null 2>&1
+cd "$TESTDIR/statlink"
+
+# Create a static lib module
+cat > src/utils.kodr <<'KODR'
+module utils
+#name    = "utils"
+#build   = static
+pub func triple(n: i32) i32 {
+    return n * 3
+}
+KODR
+
+# Create an exe that imports the static lib
+cat > src/main.kodr <<'KODR'
+module main
+#name    = "statlink"
+#build   = exe
+import std::console
+import utils
+func main() void {
+    console.println("statlink ok")
+}
+KODR
+
+rm -f src/example.kodr src/control_flow.kodr
+
+OUTPUT=$("$KODR" build 2>&1)
+if echo "$OUTPUT" | grep -q "Built:.*statlink"; then pass "static-link: exe built"
+else fail "static-link: exe built" "$OUTPUT"; fi
+
+if echo "$OUTPUT" | grep -q "Built:.*libutils.a"; then pass "static-link: static lib built"
+else fail "static-link: static lib built" "$OUTPUT"; fi
+
+if [ -f bin/libutils.a ]; then pass "static-link: .a exists"
+else fail "static-link: .a exists"; fi
+
+if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "static-link: no memory leaks"
+else fail "static-link: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')"; fi
+
 report_results

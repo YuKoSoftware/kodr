@@ -202,7 +202,10 @@ pub const OwnershipChecker = struct {
                 try self.checkExpr(v.value, scope, false);
                 // Define the new variable as owned, with type name for field lookup
                 const type_name = if (v.type_annotation) |t| typeNodeName(t) else "";
-                const is_prim = if (type_name.len > 0) types.isPrimitiveName(type_name) else false;
+                const is_prim = if (type_name.len > 0)
+                    types.isPrimitiveName(type_name)
+                else
+                    inferPrimitiveFromValue(v.value, scope);
                 try scope.defineTyped(v.name, is_prim, type_name);
             },
 
@@ -239,7 +242,7 @@ pub const OwnershipChecker = struct {
 
             .assignment => |a| {
                 try self.checkExpr(a.right, scope, false);
-                // If assigning from identifier (non-borrow), it's a move
+                // If assigning from identifier (non-borrow), it's a move of the source
                 if (a.right.* == .identifier) {
                     const name = a.right.identifier;
                     if (scope.getState(name)) |state| {
@@ -247,6 +250,10 @@ pub const OwnershipChecker = struct {
                             _ = scope.setState(name, .moved);
                         }
                     }
+                }
+                // Assignment to target restores ownership — the target receives a new value
+                if (a.left.* == .identifier) {
+                    _ = scope.setState(a.left.identifier, .owned);
                 }
             },
 
@@ -295,15 +302,27 @@ pub const OwnershipChecker = struct {
                 const snapshot = try self.snapshotScope(scope);
                 defer self.allocator.free(snapshot);
 
-                // Check each arm, merging moved states (conservative)
+                // Check each arm, collecting moved states from all arms
+                var arm_snapshots = std.ArrayListUnmanaged([]StateEntry){};
+                defer {
+                    for (arm_snapshots.items) |s| self.allocator.free(s);
+                    arm_snapshots.deinit(self.allocator);
+                }
+
                 for (m.arms) |arm| {
                     if (arm.* == .match_arm) {
                         self.restoreScope(scope, snapshot);
                         try self.checkExpr(arm.match_arm.pattern, scope, true);
                         try self.checkNode(arm.match_arm.body, scope);
+                        try arm_snapshots.append(self.allocator, try self.snapshotScope(scope));
                     }
                 }
-                // After match: anything moved in ANY arm is moved
+
+                // Restore to pre-match state, then merge: moved in ANY arm → moved
+                self.restoreScope(scope, snapshot);
+                for (arm_snapshots.items) |s| {
+                    self.mergeMovedStates(scope, s);
+                }
             },
 
             .defer_stmt => |d| {
@@ -423,6 +442,17 @@ pub const OwnershipChecker = struct {
                 }
             },
 
+            .unary_expr => |u| {
+                // Unary operands are reads, not moves
+                try self.checkExpr(u.operand, scope, true);
+            },
+
+            .array_literal => |elems| {
+                for (elems) |elem| {
+                    try self.checkExpr(elem, scope, false);
+                }
+            },
+
             .thread_block => |t| {
                 // Values move into threads
                 try self.checkNode(t.body, scope);
@@ -463,6 +493,22 @@ pub const OwnershipChecker = struct {
         }
     }
 };
+
+/// Infer whether a value expression produces a primitive type (when no annotation exists).
+/// Conservative: returns false if unknown.
+fn inferPrimitiveFromValue(value: *parser.Node, scope: *OwnershipScope) bool {
+    return switch (value.*) {
+        .int_literal, .float_literal, .bool_literal, .string_literal => true,
+        .binary_expr => true, // arithmetic/comparison results are primitive
+        .unary_expr => true, // negation/not results are primitive
+        .identifier => |name| {
+            // If copying from a known variable, inherit its primitive status
+            if (scope.getState(name)) |state| return state.is_primitive;
+            return false;
+        },
+        else => false,
+    };
+}
 
 /// Extract the type name string from an AST type node (for DeclTable lookups)
 fn typeNodeName(node: *parser.Node) []const u8 {
@@ -734,4 +780,156 @@ test "ownership - if branch moves conservatively" {
     // data should be considered moved after the if
     const state = scope.getState("data").?;
     try std.testing.expect(state.state == .moved);
+}
+
+test "ownership - assignment restores ownership" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = OwnershipChecker.init(alloc, &reporter);
+
+    var scope = OwnershipScope.init(alloc, null);
+    defer scope.deinit();
+
+    // Define 'data' as non-primitive, then move it
+    try scope.define("data", false);
+    _ = scope.setState("data", .moved);
+    try std.testing.expect(scope.getState("data").?.state == .moved);
+
+    // Assign new value: data = newData
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const left = try a.create(parser.Node);
+    left.* = .{ .identifier = "data" };
+    const right = try a.create(parser.Node);
+    right.* = .{ .int_literal = "42" }; // value doesn't matter for ownership
+    const assign = try a.create(parser.Node);
+    assign.* = .{ .assignment = .{ .op = "=", .left = left, .right = right } };
+
+    try checker.checkStatement(assign, &scope);
+
+    // data should be owned again
+    try std.testing.expect(scope.getState("data").?.state == .owned);
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "ownership - type inference from literal values" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = OwnershipChecker.init(alloc, &reporter);
+
+    var scope = OwnershipScope.init(alloc, null);
+    defer scope.deinit();
+
+    // var x = 42 → should infer as primitive
+    var int_val = parser.Node{ .int_literal = "42" };
+    var decl = parser.Node{ .var_decl = .{
+        .name = "x",
+        .type_annotation = null,
+        .value = &int_val,
+        .is_pub = false,
+    } };
+    try checker.checkStatement(&decl, &scope);
+
+    const state = scope.getState("x").?;
+    try std.testing.expect(state.is_primitive);
+
+    // x should be usable multiple times (primitive copies)
+    var id1 = parser.Node{ .identifier = "x" };
+    try checker.checkExpr(&id1, &scope, false);
+    var id2 = parser.Node{ .identifier = "x" };
+    try checker.checkExpr(&id2, &scope, false);
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "ownership - match arm merging is conservative" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var checker = OwnershipChecker.init(alloc, &reporter);
+
+    var scope = OwnershipScope.init(alloc, null);
+    defer scope.deinit();
+
+    try scope.define("data", false);
+    try scope.define("val", true);
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Build: match(val) { 1 => { var x = data }, 2 => { } }
+    // data is moved in arm 1 but not arm 2 → should be moved after match
+
+    // Arm 1: var x = data (moves data)
+    const data_id = try a.create(parser.Node);
+    data_id.* = .{ .identifier = "data" };
+    const var_node = try a.create(parser.Node);
+    var_node.* = .{ .var_decl = .{ .name = "x", .type_annotation = null, .value = data_id, .is_pub = false } };
+    const stmts1 = try a.alloc(*parser.Node, 1);
+    stmts1[0] = var_node;
+    const body1 = try a.create(parser.Node);
+    body1.* = .{ .block = .{ .statements = stmts1 } };
+    const pat1 = try a.create(parser.Node);
+    pat1.* = .{ .int_literal = "1" };
+    const arm1 = try a.create(parser.Node);
+    arm1.* = .{ .match_arm = .{ .pattern = pat1, .body = body1 } };
+
+    // Arm 2: empty block (doesn't move data)
+    const body2 = try a.create(parser.Node);
+    body2.* = .{ .block = .{ .statements = &.{} } };
+    const pat2 = try a.create(parser.Node);
+    pat2.* = .{ .int_literal = "2" };
+    const arm2 = try a.create(parser.Node);
+    arm2.* = .{ .match_arm = .{ .pattern = pat2, .body = body2 } };
+
+    const arms = try a.alloc(*parser.Node, 2);
+    arms[0] = arm1;
+    arms[1] = arm2;
+
+    const val_id = try a.create(parser.Node);
+    val_id.* = .{ .identifier = "val" };
+    const match_node = try a.create(parser.Node);
+    match_node.* = .{ .match_stmt = .{ .value = val_id, .arms = arms } };
+
+    try checker.checkStatement(match_node, &scope);
+    try std.testing.expect(!reporter.hasErrors());
+
+    // data should be moved (conservative: moved in any arm → moved)
+    try std.testing.expect(scope.getState("data").?.state == .moved);
+}
+
+test "ownership - inferPrimitiveFromValue" {
+    var scope = OwnershipScope.init(std.testing.allocator, null);
+    defer scope.deinit();
+
+    // Literals are primitive
+    var int_node = parser.Node{ .int_literal = "42" };
+    try std.testing.expect(inferPrimitiveFromValue(&int_node, &scope));
+
+    var float_node = parser.Node{ .float_literal = "3.14" };
+    try std.testing.expect(inferPrimitiveFromValue(&float_node, &scope));
+
+    var bool_node = parser.Node{ .bool_literal = true };
+    try std.testing.expect(inferPrimitiveFromValue(&bool_node, &scope));
+
+    var str_node = parser.Node{ .string_literal = "hello" };
+    try std.testing.expect(inferPrimitiveFromValue(&str_node, &scope));
+
+    // Binary expr result is primitive
+    var left = parser.Node{ .int_literal = "1" };
+    var right = parser.Node{ .int_literal = "2" };
+    var bin = parser.Node{ .binary_expr = .{ .op = "+", .left = &left, .right = &right } };
+    try std.testing.expect(inferPrimitiveFromValue(&bin, &scope));
+
+    // Unknown call → conservative false
+    var callee = parser.Node{ .identifier = "makeStruct" };
+    var call = parser.Node{ .call_expr = .{ .callee = &callee, .args = &.{}, .arg_names = &.{} } };
+    try std.testing.expect(!inferPrimitiveFromValue(&call, &scope));
 }
