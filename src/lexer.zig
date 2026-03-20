@@ -102,6 +102,7 @@ pub const TokenKind = enum {
     newline,
     eof,
     invalid,
+    hash,       // #
 };
 
 /// A single token with its kind, source text, and location
@@ -422,6 +423,7 @@ pub const Lexer = struct {
             },
             '|' => .pipe,
             '&' => .ampersand,
+            '#' => .hash,
             else => .invalid,
         };
 

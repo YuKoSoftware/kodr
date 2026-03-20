@@ -501,7 +501,7 @@ pub const Parser = struct {
         // module declaration is mandatory
         const module = try self.parseModuleDecl();
 
-        // metadata (main.build = ..., etc.)
+        // metadata (#build = ..., etc.)
         var metadata_list: std.ArrayListUnmanaged(*Node) = .{};
         var imports_list: std.ArrayListUnmanaged(*Node) = .{};
         var top_level_list: std.ArrayListUnmanaged(*Node) = .{};
@@ -515,13 +515,10 @@ pub const Parser = struct {
 
             const tok = self.peek();
 
-            if (tok.kind == .identifier or tok.kind == .kw_main) {
-                // Could be metadata (name.field = value) or top-level decl
-                if (self.isMetadata()) {
-                    const meta = try self.parseMetadata();
-                    try metadata_list.append(self.alloc(), meta);
-                    continue;
-                }
+            if (tok.kind == .hash) {
+                const meta = try self.parseMetadata();
+                try metadata_list.append(self.alloc(), meta);
+                continue;
             }
 
             if (tok.kind == .kw_import) {
@@ -543,22 +540,6 @@ pub const Parser = struct {
         }});
     }
 
-    fn isMetadata(self: *Parser) bool {
-        // Look ahead: identifier . identifier = ...
-        var i = self.pos;
-        // Skip newlines
-        while (i < self.tokens.len and self.tokens[i].kind == .newline) i += 1;
-        if (i >= self.tokens.len) return false;
-        const t1 = self.tokens[i];
-        if (t1.kind != .identifier and t1.kind != .kw_main) return false;
-        i += 1;
-        if (i >= self.tokens.len or self.tokens[i].kind != .dot) return false;
-        i += 1;
-        if (i >= self.tokens.len or self.tokens[i].kind != .identifier) return false;
-        i += 1;
-        if (i >= self.tokens.len or self.tokens[i].kind != .assign) return false;
-        return true;
-    }
 
     fn parseModuleDecl(self: *Parser) anyerror!*Node {
         _ = try self.expect(.kw_module);
@@ -582,18 +563,24 @@ pub const Parser = struct {
     }
 
     fn parseMetadata(self: *Parser) anyerror!*Node {
-        const obj_tok = self.advance(); // module name or 'main'
-        _ = try self.expect(.dot);
+        _ = try self.expect(.hash);
         const field_tok = try self.expect(.identifier);
+
+        if (std.mem.eql(u8, field_tok.text, "dep")) {
+            // #dep "path" Version?
+            const path = try self.parseExpr(); // string literal path
+            // Optionally consume version expression — parsed but not yet used
+            if (!self.check(.newline) and !self.check(.eof)) {
+                _ = try self.parseExpr();
+            }
+            try self.expectNewlineOrEof();
+            return self.newNode(.{ .metadata = .{ .field = "dep", .value = path } });
+        }
+
         _ = try self.expect(.assign);
         const value = try self.parseExpr();
         try self.expectNewlineOrEof();
-
-        const full_field = try std.fmt.allocPrint(self.alloc(), "{s}.{s}", .{ obj_tok.text, field_tok.text });
-        return self.newNode(.{ .metadata = .{
-            .field = full_field,
-            .value = value,
-        }});
+        return self.newNode(.{ .metadata = .{ .field = field_tok.text, .value = value } });
     }
 
     fn parseImport(self: *Parser) anyerror!*Node {

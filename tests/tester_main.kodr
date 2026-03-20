@@ -1,9 +1,9 @@
 module main
 
-main.name = "comptest"
-main.version = Version(1, 0, 0)
-main.build = build.exe
-main.bitsize = 32
+#name    = "comptest"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
 
 import std::console
 import tester

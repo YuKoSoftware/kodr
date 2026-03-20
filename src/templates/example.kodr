@@ -25,9 +25,9 @@ var hex: u32 = 0xFF
 var binary: u8 = 0b1010
 var octal: u8 = 0o77
 
-// type is inferred from main.bitsize when no annotation is given
-// var x = 42          // i32 if main.bitsize = 32
-// const y = 3.14      // f32 if main.bitsize = 32
+// type is inferred from #bitsize when no annotation is given
+// var x = 42          // i32 if #bitsize = 32
+// const y = 3.14      // f32 if #bitsize = 32
 
 // ─── Structs ─────────────────────────────────────────────────────────────────
 

@@ -94,20 +94,18 @@ into a `compt func` and call it. No sprinkling `compt` on random expressions.
 - The compiler groups files by their `module` declaration, not by file name or folder
 - Every module needs an **anchor file** — one file whose name matches the module
   (e.g., `math.kodr` for `module math`). Other files in the module can be named anything.
-- Only the anchor file can contain build metadata (`main.build`, `main.name`,
-  `main.version`, `main.bitsize`, etc.)
+- Only the anchor file can contain metadata (`#build`, `#name`, `#version`, `#bitsize`, `#dep`, etc.)
 - Module names are globally unique within a project
-- Modules without a `build` declaration are regular modules — compiled into whatever
+- Modules without a `#build` declaration are regular modules — compiled into whatever
   imports them. Modules that are never imported are dead code and skipped entirely.
 
 ### Build types
-Every project root is `main.kodr` / `module main`. The build type is set via `main.build`:
-- `build.exe` — executable (requires `func main()`)
-- `build.static` — static library
-- `build.dynamic` — dynamic/shared library
+Every project root is `main.kodr` / `module main`. The build type is set via `#build`:
+- `#build = exe` — executable (requires `func main()`)
+- `#build = static` — static library
+- `#build = dynamic` — dynamic/shared library
 
-Metadata prefix = module name. `main.*` for the root, `math.*` for `module math`, etc.
-Only the anchor file of each module can declare metadata.
+Metadata uses `#key = value` syntax. Only the anchor file of each module can declare metadata.
 
 ### Multiple modules in one project
 A project can contain additional library modules alongside the root module.

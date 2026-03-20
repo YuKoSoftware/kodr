@@ -1,9 +1,9 @@
 module main
 
-main.name = "{s}"
-main.version = Version(1, 0, 0)
-main.build = build.exe
-main.bitsize = 32
+#name    = "{s}"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
 
 import std::console
 

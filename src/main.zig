@@ -697,7 +697,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
             root_module_name = mod.name;
             if (mod.ast) |ast| {
                 for (ast.program.metadata) |meta| {
-                    if (std.mem.endsWith(u8, meta.metadata.field, ".name")) {
+                    if (std.mem.eql(u8, meta.metadata.field, "name")) {
                         if (meta.metadata.value.* == .string_literal) {
                             const raw = meta.metadata.value.string_literal;
                             if (raw.len >= 2 and raw[0] == '"') {
@@ -737,16 +737,14 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         // Read build type and project name from metadata
         if (mod.ast) |ast| {
             for (ast.program.metadata) |meta| {
-                // main.build = build.exe → build_type = "exe"
-                if (std.mem.endsWith(u8, meta.metadata.field, ".build")) {
-                    if (meta.metadata.value.* == .field_expr) {
-                        build_type = meta.metadata.value.field_expr.field;
-                    } else if (meta.metadata.value.* == .identifier) {
+                // #build = exe → build_type = "exe"
+                if (std.mem.eql(u8, meta.metadata.field, "build")) {
+                    if (meta.metadata.value.* == .identifier) {
                         build_type = meta.metadata.value.identifier;
                     }
                 }
-                // main.name = "kodr_proj" → project_name = "kodr_proj"
-                if (std.mem.endsWith(u8, meta.metadata.field, ".name")) {
+                // #name = "kodr_proj" → project_name = "kodr_proj"
+                if (std.mem.eql(u8, meta.metadata.field, "name")) {
                     if (meta.metadata.value.* == .string_literal) {
                         // strip surrounding quotes
                         const raw = meta.metadata.value.string_literal;
@@ -922,5 +920,45 @@ test "full pipeline - hello world" {
     try std.testing.expect(std.mem.indexOf(u8, output, "// generated from module main") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "const std = @import(\"std\");") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "pub fn main()") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "var x: i32 = 42;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "const x: i32 = 42;") != null);
+}
+
+test "codegen - var never reassigned becomes const" {
+    const alloc = std.testing.allocator;
+
+    // 'a' is never reassigned — should become const
+    // 'b' is reassigned — should stay var
+    const source =
+        \\module main
+        \\
+        \\func main() void {
+        \\    var a: i32 = 1
+        \\    var b: i32 = 2
+        \\    b = 3
+        \\}
+        \\
+    ;
+
+    var lex = lexer.Lexer.init(source);
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var p = parser.Parser.init(tokens.items, alloc, &reporter);
+    defer p.deinit();
+    const ast = try p.parseProgram();
+
+    var decl_collector = declarations.DeclCollector.init(alloc, &reporter);
+    defer decl_collector.deinit();
+    try decl_collector.collect(ast);
+
+    var cg = codegen.CodeGen.init(alloc, &reporter, true);
+    defer cg.deinit();
+    try cg.generate(ast, "main");
+
+    const output = cg.getOutput();
+    try std.testing.expect(std.mem.indexOf(u8, output, "const a: i32 = 1;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "var b: i32 = 2;") != null);
 }

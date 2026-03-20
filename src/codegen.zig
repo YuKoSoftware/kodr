@@ -41,6 +41,7 @@ pub const CodeGen = struct {
     destruct_counter: usize, // unique index for destructuring temp vars
     warned_rawptr: bool,     // RawPtr/VolatilePtr warning printed once per module
     module_name: []const u8, // current module name — used for extern re-exports
+    assigned_vars: std.StringHashMapUnmanaged(void), // vars assigned after declaration in current func
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
@@ -65,6 +66,7 @@ pub const CodeGen = struct {
             .destruct_counter = 0,
             .warned_rawptr = false,
             .module_name = "",
+            .assigned_vars = .{},
         };
     }
 
@@ -105,6 +107,7 @@ pub const CodeGen = struct {
         var hs_it = self.heap_single_vars.iterator();
         while (hs_it.next()) |e| self.allocator.free(e.value_ptr.*);
         self.heap_single_vars.deinit(self.allocator);
+        self.assigned_vars.deinit(self.allocator);
     }
 
     /// Get the generated Zig source
@@ -346,6 +349,49 @@ pub const CodeGen = struct {
     // FUNCTIONS
     // ============================================================
 
+    /// Walk a node tree and collect all variable names that appear as the
+    /// LHS of an assignment (simple, compound, field, or index). Stops at
+    /// nested func_decl boundaries so inner functions don't pollute the outer set.
+    fn collectAssigned(node: *parser.Node, set: *std.StringHashMapUnmanaged(void), alloc: std.mem.Allocator) anyerror!void {
+        switch (node.*) {
+            .assignment => |a| {
+                if (getRootIdent(a.left)) |name| try set.put(alloc, name, {});
+                try collectAssigned(a.right, set, alloc);
+            },
+            .block => |b| {
+                for (b.statements) |s| try collectAssigned(s, set, alloc);
+            },
+            .func_decl => {}, // nested function — own scope, don't descend
+            .if_stmt => |i| {
+                try collectAssigned(i.condition, set, alloc);
+                try collectAssigned(i.then_block, set, alloc);
+                if (i.else_block) |e| try collectAssigned(e, set, alloc);
+            },
+            .while_stmt => |w| {
+                try collectAssigned(w.condition, set, alloc);
+                if (w.continue_expr) |c| try collectAssigned(c, set, alloc);
+                try collectAssigned(w.body, set, alloc);
+            },
+            .for_stmt => |f| try collectAssigned(f.body, set, alloc),
+            .match_stmt => |m| {
+                for (m.arms) |arm| {
+                    if (arm.* == .match_arm) try collectAssigned(arm.match_arm.body, set, alloc);
+                }
+            },
+            .defer_stmt => |d| try collectAssigned(d.body, set, alloc),
+            else => {},
+        }
+    }
+
+    fn getRootIdent(node: *parser.Node) ?[]const u8 {
+        return switch (node.*) {
+            .identifier => |name| name,
+            .field_expr => |f| getRootIdent(f.object),
+            .index_expr => |i| getRootIdent(i.object),
+            else => null,
+        };
+    }
+
     fn generateFunc(self: *CodeGen, f: parser.FuncDecl) anyerror!void {
         // extern func — re-export from paired sidecar file
         if (f.is_extern) {
@@ -365,6 +411,7 @@ pub const CodeGen = struct {
         const prev_set_vars = self.set_vars;
         const prev_allocator_vars = self.allocator_vars;
         const prev_heap_single_vars = self.heap_single_vars;
+        const prev_assigned_vars = self.assigned_vars;
         self.null_vars = .{};
         self.rawptr_vars = .{};
         self.ptr_vars = .{};
@@ -373,8 +420,10 @@ pub const CodeGen = struct {
         self.set_vars = .{};
         self.allocator_vars = .{};
         self.heap_single_vars = .{};
+        self.assigned_vars = .{};
         self.in_error_union_func = false;
         self.in_null_union_func = false;
+        try collectAssigned(f.body, &self.assigned_vars, self.allocator);
         if (f.return_type.* == .type_union) {
             for (f.return_type.type_union) |t| {
                 if (t.* == .type_named and std.mem.eql(u8, t.type_named, "Error")) self.in_error_union_func = true;
@@ -407,6 +456,8 @@ pub const CodeGen = struct {
             while (_hs_it.next()) |e| self.allocator.free(e.value_ptr.*);
             self.heap_single_vars.deinit(self.allocator);
             self.heap_single_vars = prev_heap_single_vars;
+            self.assigned_vars.deinit(self.allocator);
+            self.assigned_vars = prev_assigned_vars;
         }
 
         // pub modifier — always pub for main (Zig requires pub fn main for exe entry)
@@ -855,7 +906,8 @@ pub const CodeGen = struct {
                     return self.generateAllocOneDecl(v.name, ac.alloc_name, ac.type_arg, ac.val_arg);
                 }
                 const is_null_union = if (v.type_annotation) |t| isNullUnionType(t) else false;
-                try self.writeFmt("var {s}", .{v.name});
+                const kw: []const u8 = if (self.assigned_vars.contains(v.name)) "var" else "const";
+                try self.writeFmt("{s} {s}", .{ kw, v.name });
                 if (v.type_annotation) |t| try self.writeFmt(": {s}", .{try self.typeToZig(t)});
                 try self.write(" = ");
                 if (is_null_union) {

@@ -165,48 +165,17 @@ true     // boolean true
 false    // boolean false
 ```
 
-### Version, VersionRule, Dependency — Not Yet Implemented
-
-These builtins are reserved for the dependency management system and are not yet functional. Documented here for reference only.
-
 ### Version
-A named tuple of three `u32` values following semantic versioning — major, minor, patch. String versions are never allowed — hard compiler error.
+A named tuple of three `u32` values following semantic versioning — major, minor, patch.
+String versions are never allowed — hard compiler error. Used in `#version` and `#dep` metadata:
 ```
-Version(1, 0, 0)
-Version(2, 4, 1)
-```
-
-### VersionRule
-An enum that tells the compiler how to resolve a dependency version:
-```
-enum VersionRule(u64) {
-    Latest                    // ignore version, get latest
-    Minimum(v: Version)       // at least this version
-    Exact(v: Version)         // exactly this version
-    Preferred(v: Version)     // this version if available, latest otherwise
-}
+Version(major: u32, minor: u32, patch: u32)
 ```
 
 ```
-Latest
-Minimum(Version(2, 0, 0))
-Exact(Version(2, 4, 1))
-Preferred(Version(2, 4, 1))
+#version = Version(1, 0, 0)
+#dep "./libs/mylib" Version(2, 0, 0)   // minimum version — warn if newer, error if older
+#dep "./libs/utils"                     // no version constraint
 ```
 
-### Dependency
-Declares an external dependency with a URL and version rule:
-```
-Dependency(url: String, rule: VersionRule)
-```
-
-```
-main.deps = [
-    Dependency("https://github.com/user/lib", Latest)
-    Dependency("https://github.com/user/lib", Minimum(Version(2, 0, 0)))
-    Dependency("https://github.com/user/lib", Exact(Version(2, 4, 1)))
-    Dependency("https://github.com/user/lib", Preferred(Version(2, 4, 1)))
-]
-```
-
-`Version`, `VersionRule` and `Dependency` are all compiler-known builtins — no import needed since they are used in the root file before any imports.
+`Version` is a compiler-known builtin — no import needed.

@@ -71,8 +71,8 @@ call form is explicit, greppable, and does not pollute the operator table.
 site. Repeated warnings on the same issue are noise. If the developer uses `RawPtr`
 ten times, they know — one warning is enough.
 
-### `main.bitsize` sets numeric literal defaults
-`main.bitsize = 32` means untyped integer literals default to `i32` and float literals
+### `#bitsize` sets numeric literal defaults
+`#bitsize = 32` means untyped integer literals default to `i32` and float literals
 to `f32`. This controls the entire module. No per-expression type inference guessing.
 
 ---

@@ -21,8 +21,8 @@ and groups files by module name. Each group becomes one **compilation unit**.
 
 ### File Naming Rules — Anchor File
 Among all files in a module, exactly one must be named after the module — the **anchor file**.
-This is what `import math` resolves to. Only the anchor file can contain build metadata
-(`main.build`, `main.name`, `main.version`, `main.bitsize`, etc.).
+This is what `import math` resolves to. Only the anchor file can contain metadata
+(`#build`, `#name`, `#version`, `#bitsize`, `#dep`, etc.).
 
 - `module math` → one of the files must be `math.kodr` (anywhere in `src/`)
 - `module main` → one of the files must be `main.kodr`
@@ -57,17 +57,17 @@ pub func solve(a: f64, b: f64, c: f64) f64 { }
 ```
 Regular modules are only compiled if something imports them (dead code elimination).
 
-**Project root** — always `main.kodr` / `module main`. All metadata uses the `main.*` prefix:
+**Project root** — always `main.kodr` / `module main`. Metadata uses `#key = value`:
 ```
 // main.kodr — project root for executable
 module main
 
-main.build = build.exe
-main.version = Version(1, 0, 0)
-main.name = "my_project"
+#build   = exe
+#version = Version(1, 0, 0)
+#name    = "my_project"
 
 func main() void {
-    // entry point — required for build.exe
+    // entry point — required for #build = exe
 }
 ```
 
@@ -75,9 +75,9 @@ func main() void {
 // main.kodr — project root for library
 module main
 
-main.build = build.static
-main.version = Version(1, 0, 0)
-main.name = "mylib"
+#build   = static
+#version = Version(1, 0, 0)
+#name    = "mylib"
 ```
 
 ### Additional Library Modules
@@ -85,10 +85,10 @@ A project can contain additional library modules alongside the root.
 Each has its own anchor file and build declaration:
 ```
 src/
-    main.kodr              ← module main, build.exe (root)
-    math/math.kodr         ← module math, build.static (anchor)
+    main.kodr              ← module main, #build = exe (root)
+    math/math.kodr         ← module math, #build = static (anchor)
     math/vectors.kodr      ← module math (additional file)
-    network/network.kodr   ← module network, build.dynamic (anchor)
+    network/network.kodr   ← module network, #build = dynamic (anchor)
 ```
 Library modules are only built as separate artifacts if they are actually imported.
 
@@ -96,11 +96,11 @@ Library modules are only built as separate artifacts if they are actually import
 ```
 my_project/
     src/
-        main.kodr                // root — module main, build.exe
+        main.kodr                // root — module main, #build = exe
         player.kodr              // module main — additional file
-        math/math.kodr           // module math, build.static (anchor)
+        math/math.kodr           // module math, #build = static (anchor)
         math/vectors.kodr        // module math — additional file
-        utils/utils.kodr         // module utils — regular module (no build)
+        utils/utils.kodr         // module utils — regular module (no #build)
 ```
 
 ---
@@ -151,17 +151,19 @@ std_utils.trim("hello")
 my_utils.doSomething()
 ```
 
-### Precompiled Kodr Libraries *(not yet implemented — planned for later)*
-When compiling a library, the compiler will generate a `.kodrm` metadata sidecar file.
-This allows importing a precompiled library without needing its source — the `.kodrm`
-contains the public interface (exported functions, types, struct layouts) for type checking.
+### Library Interface File
+When compiling a `#build = static` or `#build = dynamic` module, the compiler generates
+a `.kodr` interface file alongside the binary output. This file contains only the
+`pub` declarations — functions, types, structs — and serves as the public API surface.
 
 ```
 mylib.a        // compiled binary
-mylib.kodrm    // required metadata — pub symbols, types, functions
+mylib.kodr     // generated interface — pub declarations only, for type checking
 ```
 
-Missing `.kodrm` when importing a precompiled library is a hard compiler error.
+The interface file is a valid Kodr source file. Consumers can read it to understand
+the library's public API. The compiler uses it for type checking when importing
+a precompiled library without its full source.
 
 ### Visibility
 - Everything private by default
@@ -176,26 +178,28 @@ Missing `.kodrm` when importing a precompiled library is a hard compiler error.
 - Project metadata written in any file other than the root file
 - No anchor file found — at least one file in the module must be named after the module
 - `module main` not in `main.kodr`
-- `func main()` missing when `build.exe`
+- `func main()` missing when `#build = exe`
 - Unknown import scope (anything other than `std` or `global`)
 - `extern func` with a body — extern functions must have no body
 - `extern func` without a paired `.zig` file
-- `func main()` present when `build.static` or `build.dynamic`
+- `func main()` present when `#build = static` or `#build = dynamic`
 
 ---
 
 ## Project Metadata
 
-Declared in anchor files only. The metadata prefix is always the module name — `main.*` for `module main`, `math.*` for `module math`, etc. Writing project metadata in any file other than the anchor is a hard compiler error. No build files ever — the compiler is the build system.
+Declared in anchor files only using `#key = value` syntax. Writing metadata in any
+file other than the anchor is a hard compiler error. No build files ever — the
+compiler is the build system.
 
 ```
 // main.kodr — executable
 module main
 
-main.name = "my_project"
-main.version = Version(1, 0, 0)
-main.build = build.exe
-main.bitsize = 32
+#name    = "my_project"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
 
 func main() void { }
 ```
@@ -204,26 +208,55 @@ func main() void { }
 // main.kodr — library project root
 module main
 
-main.name = "mylib"
-main.version = Version(1, 0, 0)
-main.build = build.static
+#name    = "mylib"
+#version = Version(1, 0, 0)
+#build   = static
 ```
 
 ```
 // math/math.kodr — additional library module within a project
 module math
 
-math.build = build.static
-math.name = "math"
+#build = static
+#name  = "math"
 ```
 
 ### Build Types
-- `build.exe` — `func main()` required, produces runnable binary
-- `build.static` — no `func main()` needed, produces `.a` or `.lib` + `.kodrm`
-- `build.dynamic` — no `func main()` needed, produces `.so` or `.dll` + `.kodrm`
-
-`build` is a compiler-known enum. No import needed.
+- `#build = exe` — `func main()` required, produces runnable binary
+- `#build = static` — no `func main()` needed, produces `.a` or `.lib` + `.kodr` interface file
+- `#build = dynamic` — no `func main()` needed, produces `.so` or `.dll` + `.kodr` interface file
 
 ### External Dependencies
 
-Not yet implemented. See `docs/FUTURE.md`.
+Declared with `#dep` in the anchor file. The compiler never fetches dependencies —
+the developer places them at the declared paths.
+
+```
+#dep "./libs/mylib" Version(1, 0, 0)   // path + minimum version
+#dep "./libs/utils"                     // path only — no version check
+```
+
+**Version semantics** — `Version(x, y, z)` is the minimum required version:
+- Exact match → silent
+- Library is newer → warning: `mylib is version 1.2.0, expected 1.0.0`
+- Library is older → hard compiler error: `mylib version 0.9.0 below required 1.0.0`
+- No version specified → no check performed
+
+The library declares its version in its anchor file:
+```
+#version = Version(1, 0, 0)
+```
+
+**Dependency types:**
+- `#build = static` / `#build = dynamic` — compiled as a separate artifact, linked into the project
+- Regular module (no `#build`) — source files added to the compiler scan, compiled into the importer
+
+**Import syntax** is unchanged — `import mylib`. No new scope needed. Deps resolve
+the same way as project-local modules, just sourced from the declared path.
+
+**Transitive dependencies** — if `mylib` has its own deps, they live inside `mylib`'s
+folder. The consuming project does not declare them.
+
+**Global shared libraries** — place modules in `<kodr_dir>/global/` and import with
+`import global::name`. Created by `kodr initstd`. Useful for personal utility
+libraries shared across all projects on a machine.

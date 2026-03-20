@@ -5,9 +5,9 @@ This example covers the entire Kodr language. Read it as a short tutorial.
 ```
 module main
 
-main.build = build.exe
-main.version = Version(1, 0, 0)
-main.name = "example"
+#build   = exe
+#version = Version(1, 0, 0)
+#name    = "example"
 
 import std::console
 

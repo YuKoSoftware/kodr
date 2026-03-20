@@ -59,7 +59,7 @@ All generated files live in `.kodr-cache/generated/` and should never be edited 
 
 ```
 bin/
-    <project_name>       // final binary — named from main.name metadata, or module name
+    <project_name>       // final binary — named from #name metadata, or module name
 
 .kodr-cache/
     generated/

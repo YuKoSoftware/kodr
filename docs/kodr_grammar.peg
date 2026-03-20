@@ -1,34 +1,32 @@
 # Kodr Language Grammar
 # PEG (Parsing Expression Grammar)
-# Version 1.1
+# Version 1.2
 
 # ============================================================
 # PROGRAM STRUCTURE
 # ============================================================
 
-program         <- module_decl metadata* import* top_level* EOF
+program         <- module_decl meta_decl* import* top_level* EOF
 
 module_decl     <- "module" _ name newline
 
-metadata        <- name "." name _ "=" _ metadata_value newline
+# All metadata starts with # — either a key=value pair or a dep declaration
+meta_decl       <- dep_decl
+                 / "#" name _ "=" _ metadata_value newline
+
+dep_decl        <- "#dep" _ string_literal (_ version_expr)? newline
+
 metadata_value  <- build_type
                  / version_expr
-                 / dependency_list
                  / string_literal
+                 / integer_literal
                  / name
 
-build_type      <- "build.exe"
-                 / "build.static"
-                 / "build.dynamic"
+build_type      <- "exe"
+                 / "static"
+                 / "dynamic"
 
 version_expr    <- "Version" "(" _ integer_literal _ "," _ integer_literal _ "," _ integer_literal _ ")"
-
-dependency_list <- "[" _ (dependency_expr ("," _ dependency_expr)*)? _ "]"
-dependency_expr <- "Dependency" "(" _ string_literal _ "," _ version_rule _ ")"
-version_rule    <- "Latest"
-                 / "Minimum" "(" _ version_expr _ ")"
-                 / "Exact" "(" _ version_expr _ ")"
-                 / "Preferred" "(" _ version_expr _ ")"
 
 # ============================================================
 # IMPORTS

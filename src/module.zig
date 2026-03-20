@@ -341,7 +341,7 @@ pub const Resolver = struct {
 
             // Check if root module (has build declaration in metadata)
             for (ast.program.metadata) |meta| {
-                if (std.mem.endsWith(u8, meta.metadata.field, ".build")) {
+                if (std.mem.eql(u8, meta.metadata.field, "build")) {
                     mod.is_root = true;
                 }
             }

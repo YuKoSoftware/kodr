@@ -53,11 +53,11 @@ pub const BUILD_FIELDS = [_][]const u8{
     "gpu",
 };
 
-/// Build type enum values
+/// Build type values for #build metadata
 pub const BUILD_TYPES = [_][]const u8{
-    "build.exe",
-    "build.static",
-    "build.dynamic",
+    "exe",
+    "static",
+    "dynamic",
 };
 
 /// Check if a name is a builtin type

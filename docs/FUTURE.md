@@ -30,22 +30,10 @@ Priority: low — implement after core language is stable.
 
 ---
 
-## External dependency management — `main.deps`
+## External dependency management — `#dep`
 
-A `main.deps` field for declaring project dependencies and a `main.gpu` field for
-GPU configuration are planned but not implemented. The design:
-
-```
-main.deps = [
-    Dependency("./libs/mylib", Exact(Version(2, 4, 1)))
-    Dependency("./libs/sdl2", Minimum(Version(2, 0, 0)))
-]
-main.gpu = gpu.unified.auto
-```
-
-Dependencies would be managed locally — user places libraries in their project,
-compiler finds and links them. No automatic fetching, no network code in the compiler.
-Priority: needed before Kodr can be used for real projects with external libraries.
+Designed, not yet implemented. See `docs/11-modules.md` for the full spec.
+`main.gpu` deferred until GPU/concurrency design is settled.
 
 ---
 

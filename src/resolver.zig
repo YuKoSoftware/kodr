@@ -50,7 +50,7 @@ pub const TypeResolver = struct {
     reporter: *errors.Reporter,
     allocator: std.mem.Allocator,
     bindings: std.ArrayListUnmanaged(TypeBinding),
-    bitsize: ?u16 = null, // from main.bitsize metadata
+    bitsize: ?u16 = null, // from #bitsize metadata
     locs: ?*const parser.LocMap = null,
     source_file: []const u8 = "",
 
@@ -84,16 +84,16 @@ pub const TypeResolver = struct {
     pub fn resolve(self: *TypeResolver, ast: *parser.Node) !void {
         if (ast.* != .program) return;
 
-        // Extract main.bitsize from metadata
+        // Extract #bitsize from metadata
         for (ast.program.metadata) |meta| {
-            if (std.mem.endsWith(u8, meta.metadata.field, ".bitsize")) {
+            if (std.mem.eql(u8, meta.metadata.field, "bitsize")) {
                 if (meta.metadata.value.* == .int_literal) {
                     const val = std.fmt.parseInt(u16, meta.metadata.value.int_literal, 10) catch 0;
                     if (val == 32 or val == 64) {
                         self.bitsize = val;
                     } else if (val != 0) {
                         try self.reporter.report(.{
-                            .message = "main.bitsize must be 32 or 64",
+                            .message = "#bitsize must be 32 or 64",
                             .loc = self.nodeLoc(meta),
                         });
                     }
@@ -202,7 +202,7 @@ pub const TypeResolver = struct {
                         std.mem.eql(u8, val_type, "float_literal"))
                     {
                         try self.reporter.report(.{
-                            .message = "numeric literal requires explicit type or main.bitsize",
+                            .message = "numeric literal requires explicit type or #bitsize",
                             .loc = self.nodeLoc(node),
                         });
                     }
@@ -220,7 +220,7 @@ pub const TypeResolver = struct {
                         std.mem.eql(u8, val_type, "float_literal"))
                     {
                         try self.reporter.report(.{
-                            .message = "numeric literal requires explicit type or main.bitsize",
+                            .message = "numeric literal requires explicit type or #bitsize",
                             .loc = self.nodeLoc(node),
                         });
                     }
@@ -481,11 +481,11 @@ test "resolver - bitsize resolves numeric literals" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    // Build metadata: main.bitsize = 32
+    // Build metadata: #bitsize = 32
     const bitsize_val = try a.create(parser.Node);
     bitsize_val.* = .{ .int_literal = "32" };
     const meta_node = try a.create(parser.Node);
-    meta_node.* = .{ .metadata = .{ .field = "main.bitsize", .value = bitsize_val } };
+    meta_node.* = .{ .metadata = .{ .field = "bitsize", .value = bitsize_val } };
 
     // Build: var x = 42 (no type annotation)
     const int_lit = try a.create(parser.Node);

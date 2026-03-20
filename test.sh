@@ -136,7 +136,7 @@ else
     fail "main.kodr has 'module main'"
 fi
 
-if grep -q 'main.name = "testproj"' testproj/src/main.kodr; then
+if grep -q '#name    = "testproj"' testproj/src/main.kodr; then
     pass "main.kodr has project name"
 else
     fail "main.kodr has project name"
@@ -300,9 +300,9 @@ cd "$TESTDIR"
 "$KODR" init badimport >/dev/null 2>&1
 cat > "$TESTDIR/badimport/src/main.kodr" <<'KODR'
 module main
-main.name = "badimport"
-main.version = Version(1, 0, 0)
-main.build = build.exe
+#name    = "badimport"
+#version = Version(1, 0, 0)
+#build   = exe
 import nonexistent
 func main() void {
 }
@@ -357,9 +357,9 @@ KODR
 
 cat > src/main.kodr <<'KODR'
 module main
-main.name = "multimod"
-main.version = Version(1, 0, 0)
-main.build = build.exe
+#name    = "multimod"
+#version = Version(1, 0, 0)
+#build   = exe
 import std::console
 import utils
 func main() void {
@@ -584,9 +584,9 @@ cd "$TESTDIR"
 mkdir -p neg_anchor/src
 cat > neg_anchor/src/main.kodr <<'KODR'
 module main
-main.name = "neg_anchor"
-main.version = Version(1, 0, 0)
-main.build = build.exe
+#name    = "neg_anchor"
+#version = Version(1, 0, 0)
+#build   = exe
 func main() void {
 }
 KODR
@@ -604,9 +604,9 @@ cd "$TESTDIR"
 mkdir -p neg_extern_pub/src
 cat > neg_extern_pub/src/main.kodr <<'KODR'
 module main
-main.name = "neg_extern_pub"
-main.version = Version(1, 0, 0)
-main.build = build.exe
+#name    = "neg_extern_pub"
+#version = Version(1, 0, 0)
+#build   = exe
 pub extern func do_thing() void
 func main() void {
 }
@@ -624,9 +624,9 @@ cd "$TESTDIR"
 mkdir -p neg_extern/src
 cat > neg_extern/src/main.kodr <<'KODR'
 module main
-main.name = "neg_extern"
-main.version = Version(1, 0, 0)
-main.build = build.exe
+#name    = "neg_extern"
+#version = Version(1, 0, 0)
+#build   = exe
 extern func do_thing() void
 func main() void {
 }
