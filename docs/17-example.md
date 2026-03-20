@@ -214,10 +214,10 @@ func main() void {
     console.println(fibonacci(10))
 
     // --- COMPILER FUNCTIONS ---
-    console.println(@size(Player))
-    console.println(@align(f64))
-    console.println(@typename(p))
-    console.println(@typeid(p))
+    console.println(size(Player))
+    console.println(align(f64))
+    console.println(typename(p))
+    console.println(typeid(p))
 
     // --- POINTERS ---
     var val: i32 = 10

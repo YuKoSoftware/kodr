@@ -20,9 +20,9 @@ func isAlive() bool { }
 var playerHealth: f32 = 100.0
 const maxPlayers: i32 = 64
 
-// compt constants — SCREAMING_SNAKE_CASE
-compt MAX_PLAYERS: i32 = 64
-compt PI: f32 = 3.14159
+// compile-time constants — SCREAMING_SNAKE_CASE
+const MAX_PLAYERS: i32 = 64
+const PI: f32 = 3.14159
 
 // modules — lowercase, no separators, keep short
 module mathutils
@@ -51,6 +51,6 @@ const ErrDivByZero: Error = Error("division by zero")
 ## Reasoning
 - `PascalCase` for types — universally understood, immediately signals "this is a type"
 - `camelCase` for functions and variables — clean, minimal, widely used
-- `SCREAMING_SNAKE_CASE` for compt constants — signals compile time constant, universally understood
+- `SCREAMING_SNAKE_CASE` for compile-time constants — signals constant, universally understood
 - `lowercase` for modules — clean, no separators, module names should be short and descriptive
 - `Err` prefix for error constants — immediately signals what it is at the call site

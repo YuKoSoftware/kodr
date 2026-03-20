@@ -132,7 +132,7 @@ test "damage reduces health" {
 
 ## Status
 
-**Phase 2** — full pipeline working end-to-end. 137 tests passing.
+**Phase 2** — full pipeline working end-to-end. 143 tests passing.
 
 Transpiles to Zig 0.15.x. No bundled binary — Zig installed globally.
 

@@ -163,8 +163,8 @@ var result: MinMax = minMax(arr)
 result.min
 result.max
 
-// splitAt uses tuple destructuring
-var left, right = data.splitAt(3)
+// string split uses tuple destructuring
+var before, after = name.split(",")
 
 // hard compiler error if variable count doesn't match field count
 var a, b, c = minMax(arr)    // error — MinMax only has 2 fields

@@ -130,6 +130,8 @@ defer { b.free() }
 
 ## `splitAt` — Atomic Slice Split
 
+> **Not yet implemented.** Deferred until concurrency design (Thread/Async) is settled.
+
 Splits a slice into two non-overlapping owned halves in a single atomic operation. The original slice is consumed — invalid after split. Used for safely sharing data between threads.
 
 ```
