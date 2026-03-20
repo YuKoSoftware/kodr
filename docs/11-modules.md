@@ -174,8 +174,7 @@ a precompiled library without its full source.
 
 ### Hard Compiler Errors
 - Circular imports across any boundary
-- Multiple `build` declarations — structurally impossible, only valid in root file
-- Project metadata written in any file other than the root file
+- Project metadata written in any file other than the anchor file
 - No anchor file found — at least one file in the module must be named after the module
 - `module main` not in `main.kodr`
 - `func main()` missing when `#build = exe`

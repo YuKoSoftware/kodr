@@ -506,6 +506,70 @@ test "shared alloc" {
     assert(shared_alloc_demo() == 3)
 }
 
+// ─── String Operations ──────────────────────────────────────────────────────
+
+// non-allocating string methods — all return views or primitives
+func string_contains_demo() bool {
+    const s: String = "hello world"
+    return s.contains("world")
+}
+
+func string_starts_ends() bool {
+    const s: String = "hello world"
+    return s.startsWith("hello") and s.endsWith("world")
+}
+
+func string_trim_demo() String {
+    const s: String = "  hello  "
+    return s.trim()
+}
+
+func string_index_demo() bool {
+    const s: String = "hello world"
+    const pos: (null | usize) = s.indexOf("world")
+    if(pos is null) {
+        return false
+    }
+    return true
+}
+
+func string_count_demo() bool {
+    const s: String = "banana"
+    const n: usize = s.count("a")
+    return n == 3
+}
+
+// split — returns 2 strings via destructuring
+func string_split_demo() bool {
+    const s: String = "key:value"
+    const before, after = s.split(":")
+    return before.contains("key") and after.contains("value")
+}
+
+test "string contains" {
+    assert(string_contains_demo())
+}
+
+test "string starts/ends" {
+    assert(string_starts_ends())
+}
+
+test "string trim" {
+    assert(string_trim_demo() == "hello")
+}
+
+test "string indexOf" {
+    assert(string_index_demo())
+}
+
+test "string count" {
+    assert(string_count_demo())
+}
+
+test "string split" {
+    assert(string_split_demo())
+}
+
 // type-returning compt func — generates a new struct type at compile time
 compt func Box(T: any) type {
     return struct {

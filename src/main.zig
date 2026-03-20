@@ -262,6 +262,9 @@ fn initProject(allocator: std.mem.Allocator, name: []const u8) !void {
 
 const CONSOLE_KODR = @embedFile("std/console.kodr");
 const CONSOLE_ZIG  = @embedFile("std/console.zig");
+const FS_KODR      = @embedFile("std/fs.kodr");
+const FS_ZIG       = @embedFile("std/fs.zig");
+const KODR_FS_ZIG  = @embedFile("std/kodr_fs.zig");
 
 fn initStd(allocator: std.mem.Allocator) !void {
     // Find directory containing the kodr binary
@@ -288,6 +291,27 @@ fn initStd(allocator: std.mem.Allocator) !void {
     defer console_zig_file.close();
     try console_zig_file.writeAll(CONSOLE_ZIG);
 
+    // Write fs.kodr into std/
+    const fs_kodr_path = try std.fs.path.join(allocator, &.{ std_dir, "fs.kodr" });
+    defer allocator.free(fs_kodr_path);
+    const fs_kodr_file = try std.fs.cwd().createFile(fs_kodr_path, .{});
+    defer fs_kodr_file.close();
+    try fs_kodr_file.writeAll(FS_KODR);
+
+    // Write fs.zig into std/ — paired implementation file
+    const fs_zig_path = try std.fs.path.join(allocator, &.{ std_dir, "fs.zig" });
+    defer allocator.free(fs_zig_path);
+    const fs_zig_file = try std.fs.cwd().createFile(fs_zig_path, .{});
+    defer fs_zig_file.close();
+    try fs_zig_file.writeAll(FS_ZIG);
+
+    // Write kodr_fs.zig into std/ — runtime types for File/Dir
+    const kodr_fs_path = try std.fs.path.join(allocator, &.{ std_dir, "kodr_fs.zig" });
+    defer allocator.free(kodr_fs_path);
+    const kodr_fs_file = try std.fs.cwd().createFile(kodr_fs_path, .{});
+    defer kodr_fs_file.close();
+    try kodr_fs_file.writeAll(KODR_FS_ZIG);
+
     // Create global/ next to binary (empty — user fills this)
     const global_dir = try std.fs.path.join(allocator, &.{ exe_dir, "global" });
     defer allocator.free(global_dir);
@@ -297,6 +321,8 @@ fn initStd(allocator: std.mem.Allocator) !void {
     std.debug.print("  {s}/std/\n", .{exe_dir});
     std.debug.print("  {s}/std/console.kodr\n", .{exe_dir});
     std.debug.print("  {s}/std/console.zig\n", .{exe_dir});
+    std.debug.print("  {s}/std/fs.kodr\n", .{exe_dir});
+    std.debug.print("  {s}/std/fs.zig\n", .{exe_dir});
     std.debug.print("  {s}/global/\n", .{exe_dir});
     std.debug.print("\nAdd your shared modules to {s}/global/\n", .{exe_dir});
 }
@@ -416,7 +442,7 @@ pub fn main() !void {
     }
 
     if (cli.command == .version) {
-        std.debug.print("kodr 0.1.5\n", .{});
+        std.debug.print("kodr 0.1.6\n", .{});
         return;
     }
 
@@ -677,6 +703,11 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         // Write generated .zig file to cache
         try cache.writeGeneratedZig(mod_name, cg.getOutput(), allocator);
 
+        // If module uses File/Dir types, copy kodr_fs.zig to generated dir
+        if (cg.uses_fs) {
+            try cache.writeGeneratedZig("kodr_fs", KODR_FS_ZIG, allocator);
+        }
+
         // Update timestamp cache
         for (mod_ptr.files) |file| {
             try comp_cache.updateTimestamp(file);
@@ -694,13 +725,13 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         };
         defer runner.deinit();
 
-        var root_module_name: []const u8 = "main";
-        var project_name: []const u8 = "";
+        var last_binary_name: []const u8 = "main";
+        var any_failed = false;
         var mod_it2 = mod_resolver.modules.iterator();
         while (mod_it2.next()) |entry| {
             const mod = entry.value_ptr;
             if (!mod.is_root) continue;
-            root_module_name = mod.name;
+            var project_name: []const u8 = "";
             if (mod.ast) |ast| {
                 for (ast.program.metadata) |meta| {
                     if (std.mem.eql(u8, meta.metadata.field, "name")) {
@@ -715,12 +746,12 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
                     }
                 }
             }
-            break;
+            const binary_name2 = if (project_name.len > 0) project_name else mod.name;
+            last_binary_name = binary_name2;
+            const passed = try runner.runTests(mod.name, binary_name2);
+            if (!passed) any_failed = true;
         }
-        const binary_name2 = if (project_name.len > 0) project_name else root_module_name;
-        try runner.generateBuildZig(root_module_name, "exe", binary_name2);
-        const passed = try runner.runTests(root_module_name, binary_name2);
-        return if (passed) try allocator.dupe(u8, binary_name2) else null;
+        return if (!any_failed) try allocator.dupe(u8, last_binary_name) else null;
     }
 
     // ── Pass 12: Zig Compiler ──────────────────────────────────
@@ -729,48 +760,6 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         return err;
     };
     defer runner.deinit();
-
-    // Find the root module — the one with a build metadata declaration
-    var root_module_name: []const u8 = "main";
-    var build_type: []const u8 = "exe";
-    var project_name: []const u8 = "";
-
-    var mod_it = mod_resolver.modules.iterator();
-    while (mod_it.next()) |entry| {
-        const mod = entry.value_ptr;
-        if (!mod.is_root) continue;
-        root_module_name = mod.name;
-        // Read build type and project name from metadata
-        if (mod.ast) |ast| {
-            for (ast.program.metadata) |meta| {
-                // #build = exe → build_type = "exe"
-                if (std.mem.eql(u8, meta.metadata.field, "build")) {
-                    if (meta.metadata.value.* == .identifier) {
-                        build_type = meta.metadata.value.identifier;
-                    }
-                }
-                // #name = "kodr_proj" → project_name = "kodr_proj"
-                if (std.mem.eql(u8, meta.metadata.field, "name")) {
-                    if (meta.metadata.value.* == .string_literal) {
-                        // strip surrounding quotes
-                        const raw = meta.metadata.value.string_literal;
-                        if (raw.len >= 2 and raw[0] == '"') {
-                            project_name = raw[1 .. raw.len - 1];
-                        } else {
-                            project_name = raw;
-                        }
-                    }
-                }
-            }
-        }
-        break;
-    }
-
-    // Binary name: metadata name if set, otherwise module name
-    const binary_name = if (project_name.len > 0) project_name else root_module_name;
-
-    // Generate build.zig from the root module's metadata
-    try runner.generateBuildZig(root_module_name, build_type, binary_name);
 
     const target_str: []const u8 = switch (cli.target) {
         .x64 => "x86_64-linux",
@@ -785,26 +774,59 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         .debug => "",
     };
 
-    const built = if (std.mem.eql(u8, build_type, "exe"))
-        try runner.build(target_str, opt_str, root_module_name, binary_name)
-    else
-        try runner.buildLib(target_str, opt_str, root_module_name, binary_name, build_type);
-    if (!built) return null;
+    // Build every root module (all those with a #build declaration).
+    // A project can have multiple build targets — e.g. an exe + a dynamic lib.
+    var exe_binary_name: ?[]const u8 = null; // tracked for `kodr run`
+    var mod_it = mod_resolver.modules.iterator();
+    while (mod_it.next()) |entry| {
+        const mod = entry.value_ptr;
+        if (!mod.is_root) continue;
 
-    // For library builds, emit an interface file alongside the binary
-    if (!std.mem.eql(u8, build_type, "exe")) {
-        var mod_it2 = mod_resolver.modules.iterator();
-        while (mod_it2.next()) |entry| {
-            const mod = entry.value_ptr;
-            if (!mod.is_root) continue;
-            if (mod.ast) |ast| {
-                try generateInterface(allocator, root_module_name, binary_name, ast);
+        var build_type: []const u8 = "exe";
+        var project_name: []const u8 = "";
+        if (mod.ast) |ast| {
+            for (ast.program.metadata) |meta| {
+                if (std.mem.eql(u8, meta.metadata.field, "build")) {
+                    if (meta.metadata.value.* == .identifier) {
+                        build_type = meta.metadata.value.identifier;
+                    }
+                }
+                if (std.mem.eql(u8, meta.metadata.field, "name")) {
+                    if (meta.metadata.value.* == .string_literal) {
+                        const raw = meta.metadata.value.string_literal;
+                        if (raw.len >= 2 and raw[0] == '"') {
+                            project_name = raw[1 .. raw.len - 1];
+                        } else {
+                            project_name = raw;
+                        }
+                    }
+                }
             }
-            break;
+        }
+
+        const binary_name = if (project_name.len > 0) project_name else mod.name;
+
+        try runner.generateBuildZig(mod.name, build_type, binary_name);
+
+        const built = if (std.mem.eql(u8, build_type, "exe"))
+            try runner.build(target_str, opt_str, mod.name, binary_name)
+        else
+            try runner.buildLib(target_str, opt_str, mod.name, binary_name, build_type);
+        if (!built) return null;
+
+        if (std.mem.eql(u8, build_type, "exe")) {
+            if (exe_binary_name == null) {
+                exe_binary_name = try allocator.dupe(u8, binary_name);
+            }
+        } else {
+            if (mod.ast) |ast| {
+                try generateInterface(allocator, mod.name, binary_name, ast);
+            }
         }
     }
 
-    return try allocator.dupe(u8, binary_name);
+    // Return exe name for `kodr run`; empty string signals lib-only success
+    return exe_binary_name orelse try allocator.dupe(u8, "");
 }
 
 /// Collect the names of all extern func declarations in an AST.

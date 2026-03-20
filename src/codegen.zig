@@ -43,9 +43,11 @@ pub const CodeGen = struct {
     module_name: []const u8, // current module name — used for extern re-exports
     assigned_vars: std.StringHashMapUnmanaged(void), // vars assigned after declaration in current func
     bitfield_vars: std.StringHashMapUnmanaged([]const u8), // var name → bitfield type name
+    string_vars: std.StringHashMapUnmanaged(void),        // variables holding String values
     type_ctx: ?*parser.Node, // expected type from enclosing decl (for overflow codegen)
     locs: ?*const parser.LocMap, // AST node → source location (set by main.zig)
     source_file: []const u8,     // anchor file path for location reporting
+    uses_fs: bool,               // module uses File or Dir types
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
@@ -72,9 +74,11 @@ pub const CodeGen = struct {
             .module_name = "",
             .assigned_vars = .{},
             .bitfield_vars = .{},
+            .string_vars = .{},
             .type_ctx = null,
             .locs = null,
             .source_file = "",
+            .uses_fs = false,
         };
     }
 
@@ -127,6 +131,7 @@ pub const CodeGen = struct {
         self.assigned_vars.deinit(self.allocator);
         { var bv_it = self.bitfield_vars.valueIterator(); while (bv_it.next()) |v| self.allocator.free(v.*); }
         self.bitfield_vars.deinit(self.allocator);
+        self.string_vars.deinit(self.allocator);
     }
 
     /// Get the generated Zig source
@@ -177,10 +182,15 @@ pub const CodeGen = struct {
             try self.write("const KodrError = struct { message: []const u8 };\n");
             try self.write("fn KodrResult(comptime T: type) type { return union(enum) { ok: T, err: KodrError }; }\n");
         }
-        if (self.moduleUsesNullUnion(ast)) {
-            try self.write("fn KodrNullable(comptime T: type) type { return union(enum) { some: T, none: void }; }\n");
-        }
+        // Always emit KodrNullable — used by null unions and string indexOf/lastIndexOf
+        try self.write("fn KodrNullable(comptime T: type) type { return union(enum) { some: T, none: void }; }\n");
         try self.write("fn kodrTypeId(comptime T: type) usize { return @intFromPtr(@typeName(T).ptr); }\n");
+
+        // File/Dir runtime — import if module uses these types
+        if (moduleUsesFileOrDir(ast)) {
+            self.uses_fs = true;
+            try self.write("const KodrFs = @import(\"kodr_fs.zig\");\n");
+        }
 
         // Generate imports
         for (ast.program.imports) |imp| {
@@ -301,6 +311,17 @@ pub const CodeGen = struct {
     /// Check if a variable holds a safe Ptr(T)
     fn isPtrVar(self: *const CodeGen, name: []const u8) bool {
         return self.ptr_vars.contains(name);
+    }
+
+    /// Check if a variable holds a String value
+    fn isStringVar(self: *const CodeGen, name: []const u8) bool {
+        return self.string_vars.contains(name);
+    }
+
+    /// Check if a type annotation is String
+    fn isStringType(type_ann: ?*parser.Node) bool {
+        const t = type_ann orelse return false;
+        return t.* == .type_named and std.mem.eql(u8, t.type_named, "String");
     }
 
     /// Generate a value expression, wrapping it for null union context if needed
@@ -463,6 +484,7 @@ pub const CodeGen = struct {
         const prev_allocator_vars = self.allocator_vars;
         const prev_heap_single_vars = self.heap_single_vars;
         const prev_assigned_vars = self.assigned_vars;
+        const prev_string_vars = self.string_vars;
         self.null_vars = .{};
         self.rawptr_vars = .{};
         self.ptr_vars = .{};
@@ -472,6 +494,7 @@ pub const CodeGen = struct {
         self.allocator_vars = .{};
         self.heap_single_vars = .{};
         self.assigned_vars = .{};
+        self.string_vars = .{};
         self.in_error_union_func = false;
         self.in_null_union_func = false;
         try collectAssigned(f.body, &self.assigned_vars, self.allocator);
@@ -512,6 +535,8 @@ pub const CodeGen = struct {
             { var _bv = self.bitfield_vars.valueIterator(); while (_bv.next()) |v| self.allocator.free(v.*); }
             self.bitfield_vars.deinit(self.allocator);
             self.bitfield_vars = .{};
+            self.string_vars.deinit(self.allocator);
+            self.string_vars = prev_string_vars;
         }
 
         // pub modifier — always pub for main (Zig requires pub fn main for exe entry)
@@ -551,6 +576,12 @@ pub const CodeGen = struct {
                     });
                 }
             }
+        }
+
+        // Track String parameters so string methods work on them
+        for (f.params) |param| {
+            if (param.* == .param and isStringType(param.param.type_annotation))
+                try self.string_vars.put(self.allocator, param.param.name, {});
         }
 
         try self.write(") ");
@@ -993,6 +1024,8 @@ pub const CodeGen = struct {
                         if (t.* == .type_named and self.isBitfieldType(t.type_named))
                             try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
                     }
+                    if (isStringType(v.type_annotation) or v.value.* == .string_literal)
+                        try self.string_vars.put(self.allocator, v.name, {});
                     const prev_ctx = self.type_ctx;
                     self.type_ctx = v.type_annotation;
                     try self.generateExpr(v.value);
@@ -1026,6 +1059,8 @@ pub const CodeGen = struct {
                         if (t.* == .type_named and self.isBitfieldType(t.type_named))
                             try self.bitfield_vars.put(self.allocator, v.name, try self.allocator.dupe(u8, t.type_named));
                     }
+                    if (isStringType(v.type_annotation) or v.value.* == .string_literal)
+                        try self.string_vars.put(self.allocator, v.name, {});
                     const prev_ctx = self.type_ctx;
                     self.type_ctx = v.type_annotation;
                     try self.generateExpr(v.value);
@@ -1034,6 +1069,47 @@ pub const CodeGen = struct {
                 try self.write(";");
             },
             .destruct_decl => |d| {
+                // String split destructuring:
+                // var before, after = s.split(",")
+                if (d.names.len == 2 and d.value.* == .call_expr) {
+                    const c = d.value.call_expr;
+                    if (c.callee.* == .field_expr) {
+                        const fe = c.callee.field_expr;
+                        if (std.mem.eql(u8, fe.field, "split") and
+                            fe.object.* == .identifier and self.isStringVar(fe.object.identifier))
+                        {
+                            const si = self.destruct_counter;
+                            self.destruct_counter += 1;
+                            const kw = if (d.is_const) "const" else "var";
+                            // const _kodr_sp0_delim = <arg>;
+                            try self.writeFmt("const _kodr_sp{d}_delim = ", .{si});
+                            if (c.args.len > 0) try self.generateExpr(c.args[0]);
+                            try self.write(";\n");
+                            try self.writeIndent();
+                            // const _kodr_sp0_pos = std.mem.indexOf(u8, s, delim);
+                            try self.writeFmt("const _kodr_sp{d}_pos = std.mem.indexOf(u8, ", .{si});
+                            try self.generateExpr(fe.object);
+                            try self.writeFmt(", _kodr_sp{d}_delim);\n", .{si});
+                            try self.writeIndent();
+                            // const before = if (pos) |_idx| s[0.._idx] else s;
+                            try self.writeFmt("{s} {s} = if (_kodr_sp{d}_pos) |_idx| ", .{ kw, d.names[0], si });
+                            try self.generateExpr(fe.object);
+                            try self.write("[0.._idx] else ");
+                            try self.generateExpr(fe.object);
+                            try self.write(";\n");
+                            try self.writeIndent();
+                            // const after = if (pos) |_idx| s[_idx + delim.len..] else "";
+                            try self.writeFmt("{s} {s} = if (_kodr_sp{d}_pos) |_idx| ", .{ kw, d.names[1], si });
+                            try self.generateExpr(fe.object);
+                            try self.writeFmt("[_idx + _kodr_sp{d}_delim.len..] else \"\";", .{si});
+                            // Track result vars as strings
+                            try self.string_vars.put(self.allocator, d.names[0], {});
+                            try self.string_vars.put(self.allocator, d.names[1], {});
+                            return;
+                        }
+                    }
+                }
+                // Normal tuple destructuring:
                 // var (a, b) = expr  →  const _kodr_dN = expr; var/const a = _kodr_dN.a; ...
                 const idx = self.destruct_counter;
                 self.destruct_counter += 1;
@@ -1507,6 +1583,36 @@ pub const CodeGen = struct {
                             return;
                         }
                     }
+                }
+                // String method calls: s.contains(), s.trim(), s.indexOf() etc.
+                // Works on tracked string variables AND string literals directly
+                if (c.callee.* == .field_expr) {
+                    const fe = c.callee.field_expr;
+                    if (fe.object.* == .string_literal or
+                        (fe.object.* == .identifier and self.isStringVar(fe.object.identifier)))
+                    {
+                        try self.generateStringMethod(fe.object, fe.field, c.args);
+                        return;
+                    }
+                }
+                // File/Dir constructor: File("path") → KodrFs.File{ .path = "path", .alloc = smp }
+                if (c.callee.* == .identifier and
+                    (std.mem.eql(u8, c.callee.identifier, "File") or std.mem.eql(u8, c.callee.identifier, "Dir")))
+                {
+                    self.uses_fs = true;
+                    const zig_type = if (std.mem.eql(u8, c.callee.identifier, "File")) "KodrFs.File" else "KodrFs.Dir";
+                    try self.writeFmt("{s}{{ .path = ", .{zig_type});
+                    if (c.args.len > 0) try self.generateExpr(c.args[0]);
+                    try self.write(", .alloc = ");
+                    if (c.args.len > 1) {
+                        // Shared allocator: File("path", myAlloc)
+                        try self.generateExpr(c.args[1]);
+                    } else {
+                        // Default allocator
+                        try self.write("std.heap.smp_allocator");
+                    }
+                    try self.write(" }");
+                    return;
                 }
                 // Bitfield constructor: Permissions(Read, Write) → Permissions{ .value = Permissions.Read | Permissions.Write }
                 if (c.callee.* == .identifier and self.isBitfieldType(c.callee.identifier)) {
@@ -2171,6 +2277,70 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Generate string method calls — non-allocating operations on []const u8
+    fn generateStringMethod(self: *CodeGen, obj: *parser.Node, method: []const u8, args: []*parser.Node) anyerror!void {
+        if (std.mem.eql(u8, method, "contains")) {
+            // s.contains(substr) → (std.mem.indexOf(u8, s, substr) != null)
+            try self.write("(std.mem.indexOf(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(") != null)");
+        } else if (std.mem.eql(u8, method, "startsWith")) {
+            try self.write("std.mem.startsWith(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")");
+        } else if (std.mem.eql(u8, method, "endsWith")) {
+            try self.write("std.mem.endsWith(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")");
+        } else if (std.mem.eql(u8, method, "trim")) {
+            try self.write("std.mem.trim(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", \" \\t\\n\\r\")");
+        } else if (std.mem.eql(u8, method, "trimLeft")) {
+            try self.write("std.mem.trimLeft(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", \" \\t\\n\\r\")");
+        } else if (std.mem.eql(u8, method, "trimRight")) {
+            try self.write("std.mem.trimRight(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", \" \\t\\n\\r\")");
+        } else if (std.mem.eql(u8, method, "indexOf")) {
+            // s.indexOf(substr) → KodrNullable(usize) wrapping
+            try self.write("if (std.mem.indexOf(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")) |_v| KodrNullable(usize){ .some = _v } else KodrNullable(usize){ .none = {} }");
+        } else if (std.mem.eql(u8, method, "lastIndexOf")) {
+            try self.write("if (std.mem.lastIndexOf(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")) |_v| KodrNullable(usize){ .some = _v } else KodrNullable(usize){ .none = {} }");
+        } else if (std.mem.eql(u8, method, "count")) {
+            try self.write("std.mem.count(u8, ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(")");
+        } else {
+            // Unknown string method — pass through
+            try self.generateExpr(obj);
+            try self.writeFmt(".{s}(", .{method});
+            for (args, 0..) |a, i| {
+                if (i > 0) try self.write(", ");
+                try self.generateExpr(a);
+            }
+            try self.write(")");
+        }
+    }
+
     /// Generate a collection declaration where the collection owns its allocator.
     /// Default (no arg) and mem.SMP() → use std.heap.smp_allocator (singleton, no boilerplate).
     /// mem.DebugAllocator() / mem.Arena() / mem.Temp(n) → generate allocator boilerplate first.
@@ -2243,6 +2413,8 @@ pub const CodeGen = struct {
             .type_named => |name| {
                 if (std.mem.eql(u8, name, "Error")) return "KodrError";
                 if (std.mem.eql(u8, name, "mem.Allocator")) return "std.mem.Allocator";
+                if (std.mem.eql(u8, name, "File")) return "KodrFs.File";
+                if (std.mem.eql(u8, name, "Dir")) return "KodrFs.Dir";
                 return builtins.ZigMapping.primitiveToZig(name);
             },
             .type_slice => |elem| blk: {
@@ -2478,6 +2650,54 @@ fn nodeContainsNullUnion(node: *parser.Node) bool {
             }
             return false;
         },
+        else => return false,
+    }
+}
+
+/// Check if a module uses File or Dir types (for preamble import)
+fn moduleUsesFileOrDir(ast: *parser.Node) bool {
+    if (ast.* != .program) return false;
+    for (ast.program.top_level) |node| {
+        if (nodeRefsFileOrDir(node)) return true;
+    }
+    return false;
+}
+
+fn nodeRefsFileOrDir(node: *parser.Node) bool {
+    switch (node.*) {
+        .identifier => |name| return std.mem.eql(u8, name, "File") or std.mem.eql(u8, name, "Dir"),
+        .type_named => |name| return std.mem.eql(u8, name, "File") or std.mem.eql(u8, name, "Dir"),
+        .call_expr => |c| {
+            if (nodeRefsFileOrDir(c.callee)) return true;
+            for (c.args) |arg| if (nodeRefsFileOrDir(arg)) return true;
+            return false;
+        },
+        .func_decl => |f| {
+            if (nodeRefsFileOrDir(f.return_type)) return true;
+            return nodeRefsFileOrDir(f.body);
+        },
+        .block => |b| {
+            for (b.statements) |s| if (nodeRefsFileOrDir(s)) return true;
+            return false;
+        },
+        .var_decl, .const_decl => |v| {
+            if (v.type_annotation) |t| if (nodeRefsFileOrDir(t)) return true;
+            return nodeRefsFileOrDir(v.value);
+        },
+        .struct_decl => |s| {
+            for (s.members) |m| if (nodeRefsFileOrDir(m)) return true;
+            return false;
+        },
+        .return_stmt => |r| {
+            if (r.value) |v| return nodeRefsFileOrDir(v);
+            return false;
+        },
+        .if_stmt => |i| {
+            if (nodeRefsFileOrDir(i.then_block)) return true;
+            if (i.else_block) |eb| return nodeRefsFileOrDir(eb);
+            return false;
+        },
+        .field_expr => |f| return nodeRefsFileOrDir(f.object),
         else => return false,
     }
 }
@@ -2773,4 +2993,96 @@ test "codegen - overflow helpers wrap/sat/overflow" {
     const ov_out = gen.getOutput();
     try std.testing.expect(std.mem.indexOf(u8, ov_out, "@addWithOverflow") != null);
     try std.testing.expect(std.mem.indexOf(u8, ov_out, "KodrResult") != null);
+}
+
+test "codegen - string methods" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var gen = CodeGen.init(alloc, &reporter, true);
+    defer gen.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Register "s" as a string variable
+    try gen.string_vars.put(gen.allocator, "s", {});
+
+    // Build: s.contains("world")
+    const obj = try a.create(parser.Node);
+    obj.* = .{ .identifier = "s" };
+    const substr = try a.create(parser.Node);
+    substr.* = .{ .string_literal = "\"world\"" };
+
+    // Test contains
+    const field_contains = try a.create(parser.Node);
+    field_contains.* = .{ .field_expr = .{ .object = obj, .field = "contains" } };
+    const args1 = try a.alloc(*parser.Node, 1);
+    args1[0] = substr;
+    const call_contains = try a.create(parser.Node);
+    call_contains.* = .{ .call_expr = .{ .callee = field_contains, .args = args1, .arg_names = &.{} } };
+
+    try gen.generateExpr(call_contains);
+    const contains_out = gen.getOutput();
+    try std.testing.expect(std.mem.indexOf(u8, contains_out, "std.mem.indexOf(u8, s, \"world\")") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contains_out, "!= null") != null);
+
+    // Test trim
+    gen.output.clearRetainingCapacity();
+    const field_trim = try a.create(parser.Node);
+    field_trim.* = .{ .field_expr = .{ .object = obj, .field = "trim" } };
+    const call_trim = try a.create(parser.Node);
+    call_trim.* = .{ .call_expr = .{ .callee = field_trim, .args = &.{}, .arg_names = &.{} } };
+
+    try gen.generateExpr(call_trim);
+    const trim_out = gen.getOutput();
+    try std.testing.expect(std.mem.indexOf(u8, trim_out, "std.mem.trim(u8, s,") != null);
+
+    // Test startsWith
+    gen.output.clearRetainingCapacity();
+    const field_sw = try a.create(parser.Node);
+    field_sw.* = .{ .field_expr = .{ .object = obj, .field = "startsWith" } };
+    const prefix = try a.create(parser.Node);
+    prefix.* = .{ .string_literal = "\"he\"" };
+    const args2 = try a.alloc(*parser.Node, 1);
+    args2[0] = prefix;
+    const call_sw = try a.create(parser.Node);
+    call_sw.* = .{ .call_expr = .{ .callee = field_sw, .args = args2, .arg_names = &.{} } };
+
+    try gen.generateExpr(call_sw);
+    const sw_out = gen.getOutput();
+    try std.testing.expect(std.mem.indexOf(u8, sw_out, "std.mem.startsWith(u8, s, \"he\")") != null);
+
+    // Test indexOf — should emit KodrNullable wrapping
+    gen.output.clearRetainingCapacity();
+    const field_io = try a.create(parser.Node);
+    field_io.* = .{ .field_expr = .{ .object = obj, .field = "indexOf" } };
+    const needle = try a.create(parser.Node);
+    needle.* = .{ .string_literal = "\"x\"" };
+    const args3 = try a.alloc(*parser.Node, 1);
+    args3[0] = needle;
+    const call_io = try a.create(parser.Node);
+    call_io.* = .{ .call_expr = .{ .callee = field_io, .args = args3, .arg_names = &.{} } };
+
+    try gen.generateExpr(call_io);
+    const io_out = gen.getOutput();
+    try std.testing.expect(std.mem.indexOf(u8, io_out, "std.mem.indexOf(u8, s, \"x\")") != null);
+    try std.testing.expect(std.mem.indexOf(u8, io_out, "KodrNullable(usize)") != null);
+
+    // Test count
+    gen.output.clearRetainingCapacity();
+    const field_ct = try a.create(parser.Node);
+    field_ct.* = .{ .field_expr = .{ .object = obj, .field = "count" } };
+    const char = try a.create(parser.Node);
+    char.* = .{ .string_literal = "\"o\"" };
+    const args4 = try a.alloc(*parser.Node, 1);
+    args4[0] = char;
+    const call_ct = try a.create(parser.Node);
+    call_ct.* = .{ .call_expr = .{ .callee = field_ct, .args = args4, .arg_names = &.{} } };
+
+    try gen.generateExpr(call_ct);
+    const ct_out = gen.getOutput();
+    try std.testing.expect(std.mem.indexOf(u8, ct_out, "std.mem.count(u8, s, \"o\")") != null);
 }

@@ -18,6 +18,8 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "Version",
     "VersionRule",
     "Dependency",
+    "File",
+    "Dir",
 };
 
 /// All compiler function names (prefixed with @ in Kodr source)

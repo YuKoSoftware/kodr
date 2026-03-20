@@ -4,6 +4,97 @@ Ideas and language decisions that are not yet committed. These may make it into 
 
 ---
 
+## Missing Core Language Features
+
+### Interfaces / Traits
+No polymorphism mechanism exists. Composition works but there is no way to write a function that accepts "anything with a `.draw()` method". This blocks plugins, generic algorithms, and callback-by-type patterns. Every serious language has this — Rust has traits, Go has interfaces, Swift has protocols.
+
+Design options to evaluate:
+- `interface Drawable { func draw(self: const &Self) void }` — structural or nominal?
+- Anonymous interface satisfaction (Go-style, implicit) vs explicit `impl` (Rust-style)
+- Whether interface dispatch is always static (compt) or can be dynamic (vtable)
+
+**Priority: high** — blocks real-world design patterns.
+
+### Iterator Protocol
+`for` only works on arrays, slices, and integer ranges. Custom structs cannot be made iterable. No lazy sequences, no generators, no pipeline-style data processing. Also means `Map` and `Set` key-value iteration is not possible today.
+
+Needs a protocol that structs can implement — likely tied to the interfaces design above.
+Something like: a struct with `func next(self: var &Self) (null | T)` becomes iterable.
+
+**Priority: high** — blocks usable collections.
+
+### Arbitrary Unions
+The spec documents `const MyUnion = (i32 | f32)` but only `(Error | T)` and `(null | T)` are confirmed working end-to-end. General-purpose unions beyond those two need to be verified and fully implemented in codegen + all analysis passes.
+
+**Priority: medium** — needed for expressing domain types cleanly.
+
+### String Operations — PARTIALLY DONE
+Non-allocating string methods are implemented as compiler-known field operations on `String`:
+`s.contains()`, `s.startsWith()`, `s.endsWith()`, `s.trim()`, `s.trimLeft()`, `s.trimRight()`,
+`s.indexOf()`, `s.lastIndexOf()`, `s.count()`, `s.split()` (destructuring only).
+
+Still missing (allocating — need design decision on allocator passing):
+`toUpper`, `toLower`, `replace`, `repeat`, `join`, `parseInt`, `parseFloat`, `toString`.
+
+**Priority: medium** — non-allocating ops done, allocating ones need allocator design.
+
+### String Formatting
+No `format("hello {}", name)` or string interpolation. `console.println` can print a single value but composing strings from mixed types has no solution in the language today.
+
+Options: a `format(template, args...)` builtin, or `str.format(...)` in stdlib, or string interpolation syntax.
+
+**Priority: high** — needed everywhere.
+
+### Variadic Functions
+No `func log(args: ...)` equivalent. Blocks building any API that takes variable numbers of arguments — including making `console.print` accept mixed types natively without overloads.
+
+Likely maps to Zig's `anytype` variadics via the `extern func` bridge, or a `...any` syntax.
+
+**Priority: medium** — needed for ergonomic stdlib APIs.
+
+---
+
+## Missing Standard Library
+
+Only `std::console` exists today. Minimum viable stdlib for a general-purpose language:
+
+| Module | Contents |
+|---|---|
+| `std::str` | format, join, toUpper, toLower, replace, repeat, parseInt, parseFloat, toString (non-allocating ops now builtin on String) |
+| `std::fs` | **DONE** — File/Dir builtin types + fs.exists/delete/rename/createDir/deleteDir |
+| `std::math` | sqrt, pow, abs, floor, ceil, sin, cos, tan, log, min, max, random |
+| `std::env` | environment variables, process args, cwd |
+| `std::time` | timestamps, sleep, duration, formatting |
+| `std::net` | TCP/UDP sockets, basic HTTP client |
+| `std::json` | parse and emit JSON |
+| `std::sort` | sort slices and lists, custom comparators |
+
+All of these are wrappable from Zig's stdlib. The work is designing the Kodr API surface and adding codegen/builtins support for each.
+
+**Priority: `std::str`, `std::fs`, `std::math` are high. The rest are medium.**
+
+---
+
+## Missing Tooling
+
+### Language Server (LSP)
+No editor integration. Blocks adoption — most developers expect go-to-definition, autocomplete, and inline errors. Needed before the language is usable day-to-day.
+
+### Formatter (`kodr fmt`)
+No canonical formatter. Needed for consistent codebases and CI pipelines. Should be opinionated with no configuration — one style, always.
+
+### `kodr eject`
+Export the generated Zig as a self-contained project: copies `.kodr-cache/generated/` to a clean directory with a proper `build.zig`, removes the Kodr dependency entirely. Useful for publishing libraries or handing off to Zig developers.
+
+### Remote Package Registry
+`#dep` currently only supports local paths. No way to pull a published library by name/version. Needs a registry design and a resolution/download step in the compiler.
+
+### Documentation Generator (`kodr doc`)
+Generate HTML/Markdown docs from `pub` declarations and doc comments. Needed for publishing libraries.
+
+---
+
 ## Extended `extern` — data, types, and Zig-generated code
 
 Currently `extern func` only bridges Kodr → Zig for functions. The bridge should be extended to cover:

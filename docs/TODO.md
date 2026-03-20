@@ -13,6 +13,25 @@ Tied to Thread/Async. Defer until concurrency is designed.
 
 ## Missing Features
 
+### F4. Intra-project library linking
+When a project has multiple `#build` targets (e.g. an exe + a dynamic lib), the exe
+currently compiles the lib's Kodr source inline — it does NOT link against the built
+`.so`/`.a`. The artifacts are produced as standalone files but not wired together.
+
+What's needed:
+- In `zig_runner.buildZigContent`, when building the exe, detect which sibling modules
+  are lib targets and emit `exe.linkLibrary(lib)` / `b.installArtifact(lib)` calls so
+  Zig links them properly.
+- A single `build.zig` that builds all targets in one `zig build` invocation (instead
+  of N sequential invocations) would be cleaner and avoid redundant compilation.
+- The module system needs to distinguish "import as source" vs "link as library" —
+  when a module has `#build = dynamic`, importing it from the exe should mean linking,
+  not inlining the source.
+
+Until this is implemented: within a single project, share code via regular modules
+(no `#build`). Use `#build` only for artifacts meant to be distributed to other
+projects via `#dep`.
+
 ### F3. Pass 8: Thread safety
 100-line stub. Blocked on `splitAt` (D6) and concurrency design.
 `Thread(T)` and `Async(T)` emit a compiler error.

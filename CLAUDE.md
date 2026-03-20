@@ -48,6 +48,10 @@ kodr/
         std/
             console.kodr    — @embedFile, extracted by kodr initstd
             console.zig     — std::console implementation
+    test/
+        helpers.sh          — shared test utilities
+        01_unit.sh .. 11_errors.sh — individual test stages
+        fixtures/           — .kodr test files (tester, fail cases)
 ```
 
 ---
@@ -107,9 +111,9 @@ Every project root is `main.kodr` / `module main`. The build type is set via `#b
 
 Metadata uses `#key = value` syntax. Only the anchor file of each module can declare metadata.
 
-### Multiple modules in one project
-A project can contain additional library modules alongside the root module.
-These are only built if they are actually imported (dead code elimination).
+### Multiple build targets in one project
+A project can have multiple modules with `#build` declarations. Each produces its own artifact.
+`kodr build` builds all of them. `kodr run` executes the exe target (if one exists).
 Folder structure is for the developer's convenience — the compiler only sees modules:
 ```
 src/
@@ -124,16 +128,32 @@ src/
 ## Build & Test
 
 ```bash
-./test.sh               # full test suite: unit tests + build + integration tests
-./build.sh              # debug build
-./build.sh -release     # release build
-./build.sh -x64         # cross-compile for x64
-./build.sh -wasm        # WebAssembly
+./testall.sh             # full test suite: all test stages in pipeline order
+bash test/03_cli.sh      # run a single test stage independently
+./build.sh               # debug build
+./build.sh -release      # release build
+./build.sh -x64          # cross-compile for x64
+./build.sh -wasm         # WebAssembly
 ```
 
-Always run `./test.sh` after changes. It runs: `zig build test` → `zig build` →
-CLI tests → init/build/run tests → error handling → multi-module → generated Zig
-quality → language feature verification via example module.
+Always run `./testall.sh` after changes. Test files live in `test/`, each independently
+runnable. Pipeline order:
+
+| File | What it tests |
+|------|---------------|
+| `test/01_unit.sh` | Zig unit tests (`zig build test`) |
+| `test/02_build.sh` | Compile the compiler (`zig build`) |
+| `test/03_cli.sh` | CLI args, help, error exits |
+| `test/04_init.sh` | `kodr init` + `kodr initstd` scaffolding |
+| `test/05_compile.sh` | `kodr build`, `kodr run`, `kodr test`, `kodr debug`, incremental |
+| `test/06_library.sh` | Static + dynamic library builds |
+| `test/07_multimodule.sh` | Multi-module project builds |
+| `test/08_codegen.sh` | Generated Zig quality checks |
+| `test/09_language.sh` | Language feature codegen (example + tester modules) |
+| `test/10_runtime.sh` | Runtime correctness (tester binary output) |
+| `test/11_errors.sh` | Negative tests (expected compilation failures) |
+
+Test fixtures (`.kodr` files used by tests) live in `test/fixtures/`.
 
 ---
 
@@ -286,6 +306,11 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 - `var` → `const` warning + promotion — Kodr warns when a `var` is never reassigned; emitted as `const` in Zig; method-call receivers correctly treated as mutated
 
 - Interface file generation — `bin/<name>.kodr` emitted alongside static/dynamic lib builds; pub-only signatures, no bodies, valid Kodr source
+- Multiple build targets — a project can have multiple `#build` modules; `kodr build` builds all of them
+- String operations — non-allocating methods on String: `.contains()`, `.startsWith()`, `.endsWith()`, `.trim()`, `.trimLeft()`, `.trimRight()`, `.indexOf()`, `.lastIndexOf()`, `.count()`, `.split()` (destructuring). Works on variables and string literals.
+- `File` type — builtin type, `File("path")` constructor (stateless handle, path + allocator). Methods: `.read()`, `.write()`, `.append()`, `.close()`, `.size()`, `.exists()`. Default allocator or shared: `File("path", alloc)`
+- `Dir` type — builtin type, `Dir("path")` constructor. Methods: `.list()`, `.close()`, `.exists()`
+- `import std::fs` — module-level functions: `fs.exists()`, `fs.delete()`, `fs.rename()`, `fs.createDir()`, `fs.deleteDir()`
 
 **Next:**
 - Pass 8 (thread safety) — sendability checks
