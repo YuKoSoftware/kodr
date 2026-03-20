@@ -191,13 +191,13 @@ pub const CodeGen = struct {
         // Allocator wrappers — import if module uses Debug/Arena/Temp allocators
         if (moduleUsesAllocWrappers(ast)) {
             self.uses_mem = true;
-            try self.write("const KodrMem = @import(\"kodr_mem.zig\");\n");
+            try self.write("const KodrMem = @import(\"mem_rt.zig\");\n");
         }
 
         // File/Dir runtime — import if module uses these types
         if (moduleUsesFileOrDir(ast)) {
             self.uses_fs = true;
-            try self.write("const KodrFs = @import(\"kodr_fs.zig\");\n");
+            try self.write("const KodrFs = @import(\"fs_rt.zig\");\n");
         }
 
         // Generate imports

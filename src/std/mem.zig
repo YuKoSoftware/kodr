@@ -1,6 +1,5 @@
-// kodr_mem.zig — Allocator wrapper types for Kodr
-// Copied to .kodr-cache/generated/ when allocators are used.
-// Each type wraps a Zig allocator with init/deinit/allocator + convenience methods.
+// mem.zig — sidecar for std::mem module
+// Allocator wrapper types with init/deinit/allocator + convenience methods.
 
 const std = @import("std");
 

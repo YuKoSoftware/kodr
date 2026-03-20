@@ -264,11 +264,10 @@ const CONSOLE_KODR = @embedFile("std/console.kodr");
 const CONSOLE_ZIG  = @embedFile("std/console.zig");
 const FS_KODR      = @embedFile("std/fs.kodr");
 const FS_ZIG       = @embedFile("std/fs.zig");
-const KODR_FS_ZIG  = @embedFile("std/kodr_fs.zig");
 const MATH_KODR    = @embedFile("std/math.kodr");
 const MATH_ZIG     = @embedFile("std/math.zig");
 const MEM_KODR     = @embedFile("std/mem.kodr");
-const KODR_MEM_ZIG = @embedFile("std/kodr_mem.zig");
+const MEM_ZIG      = @embedFile("std/mem.zig");
 
 fn initStd(allocator: std.mem.Allocator) !void {
     // Find directory containing the kodr binary
@@ -330,12 +329,12 @@ fn initStd(allocator: std.mem.Allocator) !void {
     defer mem_kodr_file.close();
     try mem_kodr_file.writeAll(MEM_KODR);
 
-    // Write kodr_fs.zig into std/ — runtime types for File/Dir
-    const kodr_fs_path = try std.fs.path.join(allocator, &.{ std_dir, "kodr_fs.zig" });
-    defer allocator.free(kodr_fs_path);
-    const kodr_fs_file = try std.fs.cwd().createFile(kodr_fs_path, .{});
-    defer kodr_fs_file.close();
-    try kodr_fs_file.writeAll(KODR_FS_ZIG);
+    // Write mem.zig into std/ — allocator wrapper implementations
+    const mem_zig_path = try std.fs.path.join(allocator, &.{ std_dir, "mem.zig" });
+    defer allocator.free(mem_zig_path);
+    const mem_zig_file = try std.fs.cwd().createFile(mem_zig_path, .{});
+    defer mem_zig_file.close();
+    try mem_zig_file.writeAll(MEM_ZIG);
 
     // Create global/ next to binary (empty — user fills this)
     const global_dir = try std.fs.path.join(allocator, &.{ exe_dir, "global" });
@@ -731,13 +730,13 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         // Write generated .zig file to cache
         try cache.writeGeneratedZig(mod_name, cg.getOutput(), allocator);
 
-        // If module uses File/Dir types, copy kodr_fs.zig to generated dir
+        // If module uses File/Dir types, copy fs.zig to generated dir
         if (cg.uses_fs) {
-            try cache.writeGeneratedZig("kodr_fs", KODR_FS_ZIG, allocator);
+            try cache.writeGeneratedZig("fs_rt", FS_ZIG, allocator);
         }
-        // If module uses allocator wrappers, copy kodr_mem.zig to generated dir
+        // If module uses allocator wrappers, copy mem.zig to generated dir
         if (cg.uses_mem) {
-            try cache.writeGeneratedZig("kodr_mem", KODR_MEM_ZIG, allocator);
+            try cache.writeGeneratedZig("mem_rt", MEM_ZIG, allocator);
         }
 
         // Update timestamp cache
