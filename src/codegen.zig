@@ -572,6 +572,7 @@ pub const CodeGen = struct {
                 try collectAssigned(w.body, set, alloc);
             },
             .for_stmt => |f| try collectAssigned(f.body, set, alloc),
+            .thread_block => |t| try collectAssigned(t.body, set, alloc),
             .slice_expr => |s| {
                 // Slice base must stay `var` so the slice type is []T not *const [N]T
                 if (s.object.* == .identifier)
@@ -1226,6 +1227,44 @@ pub const CodeGen = struct {
                             // Track result vars as strings
                             try self.string_vars.put(self.allocator, d.names[0], {});
                             try self.string_vars.put(self.allocator, d.names[1], {});
+                            return;
+                        }
+                    }
+                }
+                // splitAt destructuring:
+                // var left, right = data.splitAt(3)
+                if (d.names.len == 2 and d.value.* == .call_expr) {
+                    const c = d.value.call_expr;
+                    if (c.callee.* == .field_expr) {
+                        const fe = c.callee.field_expr;
+                        if (std.mem.eql(u8, fe.field, "splitAt") and c.args.len == 1) {
+                            const kw = if (d.is_const) "const" else "var";
+                            const si = self.destruct_counter;
+                            self.destruct_counter += 1;
+                            // Force runtime index so Zig returns a slice, not a pointer-to-array
+                            try self.writeFmt("var _kodr_s{d}: usize = @intCast(", .{si});
+                            try self.generateExpr(c.args[0]);
+                            try self.write(");\n");
+                            try self.writeIndent();
+                            try self.writeFmt("_ = &_kodr_s{d};\n", .{si});
+                            try self.writeIndent();
+                            try self.writeFmt("{s} {s} = ", .{ kw, d.names[0] });
+                            if (fe.object.* == .identifier and self.isListVar(fe.object.identifier)) {
+                                try self.generateExpr(fe.object);
+                                try self.write(".items");
+                            } else {
+                                try self.generateExpr(fe.object);
+                            }
+                            try self.writeFmt("[0.._kodr_s{d}];\n", .{si});
+                            try self.writeIndent();
+                            try self.writeFmt("{s} {s} = ", .{ kw, d.names[1] });
+                            if (fe.object.* == .identifier and self.isListVar(fe.object.identifier)) {
+                                try self.generateExpr(fe.object);
+                                try self.write(".items");
+                            } else {
+                                try self.generateExpr(fe.object);
+                            }
+                            try self.writeFmt("[_kodr_s{d}..];", .{si});
                             return;
                         }
                     }

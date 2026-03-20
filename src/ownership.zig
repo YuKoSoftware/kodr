@@ -178,6 +178,22 @@ pub const OwnershipChecker = struct {
                 try scope.defineTyped(v.name, is_prim, type_str);
             },
 
+            .destruct_decl => |d| {
+                try self.checkExpr(d.value, scope, false);
+                // Define new variables as owned
+                for (d.names) |name| try scope.define(name, false);
+                // splitAt consumes the source — mark as moved
+                if (d.value.* == .call_expr) {
+                    const c = d.value.call_expr;
+                    if (c.callee.* == .field_expr) {
+                        const fe = c.callee.field_expr;
+                        if (std.mem.eql(u8, fe.field, "splitAt") and fe.object.* == .identifier) {
+                            _ = scope.setState(fe.object.identifier, .moved);
+                        }
+                    }
+                }
+            },
+
             .return_stmt => |r| {
                 if (r.value) |v| {
                     try self.checkExpr(v, scope, false);

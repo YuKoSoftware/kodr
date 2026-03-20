@@ -313,6 +313,24 @@ func main() void {
         console.print("FAIL set_iter\n")
     }
 
+    if(tester.test_split_at() == 21) {
+        console.print("PASS split_at\n")
+    } else {
+        console.print("FAIL split_at\n")
+    }
+
+    if(tester.test_split_list() == 100) {
+        console.print("PASS split_list\n")
+    } else {
+        console.print("FAIL split_list\n")
+    }
+
+    if(tester.test_split_thread() == 100) {
+        console.print("PASS split_thread\n")
+    } else {
+        console.print("FAIL split_thread\n")
+    }
+
     if(tester.test_thread_value() == 42) {
         console.print("PASS thread_value\n")
     } else {

@@ -140,4 +140,44 @@ ANCHOR_OUT=$("$KODR" build 2>&1 || true)
 if echo "$ANCHOR_OUT" | grep -qi "no anchor file"; then pass "missing anchor file error"
 else fail "missing anchor file error" "$ANCHOR_OUT"; fi
 
+# unjoined thread error
+cd "$TESTDIR"
+mkdir -p neg_thread/src
+cat > neg_thread/src/main.kodr <<'KODR'
+module main
+#name    = "neg_thread"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+func main() void {
+    thread(i32) worker {
+        return 42
+    }
+}
+KODR
+cd neg_thread
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "must be joined"; then pass "rejects unjoined thread"
+else fail "rejects unjoined thread" "$NEG_OUT"; fi
+
+# use after splitAt error
+cd "$TESTDIR"
+mkdir -p neg_split/src
+cat > neg_split/src/main.kodr <<'KODR'
+module main
+#name    = "neg_split"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+func main() void {
+    const arr: [4]i32 = [1, 2, 3, 4]
+    const left, right = arr.splitAt(2)
+    const x: i32 = arr[0]
+}
+KODR
+cd neg_split
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "moved\|use of"; then pass "rejects use after splitAt"
+else fail "rejects use after splitAt" "$NEG_OUT"; fi
+
 report_results

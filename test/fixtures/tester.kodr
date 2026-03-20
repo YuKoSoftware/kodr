@@ -815,6 +815,51 @@ pub func test_set_iter() i32 {
     return total
 }
 
+// ─── splitAt ────────────────────────────────────────────────
+
+// splitAt splits array into two non-overlapping slices
+pub func test_split_at() i32 {
+    const arr: [6]i32 = [1, 2, 3, 4, 5, 6]
+    const left, right = arr.splitAt(3)
+    var total: i32 = 0
+    for(left) |v| { total += v }
+    for(right) |v| { total += v }
+    return total
+}
+
+// splitAt with threads — each thread sums its half
+pub func test_split_thread() i32 {
+    const data: [4]i32 = [10, 20, 30, 40]
+    const left, right = data.splitAt(2)
+
+    thread(i32) t1 {
+        var s: i32 = 0
+        for(left) |v| { s += v }
+        return s
+    }
+    thread(i32) t2 {
+        var s: i32 = 0
+        for(right) |v| { s += v }
+        return s
+    }
+    return t1.value + t2.value
+}
+
+// splitAt on a List
+pub func test_split_list() i32 {
+    var items: List(i32) = List(i32)
+    defer { items.free() }
+    items.add(10)
+    items.add(20)
+    items.add(30)
+    items.add(40)
+    const left, right = items.splitAt(2)
+    var total: i32 = 0
+    for(left) |v| { total += v }
+    for(right) |v| { total += v }
+    return total
+}
+
 // ─── Thread ─────────────────────────────────────────────────
 
 // thread spawns OS thread, captures move in, .value returns result

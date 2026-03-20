@@ -469,7 +469,7 @@ pub fn main() !void {
     }
 
     if (cli.command == .version) {
-        std.debug.print("kodr 0.1.8\n", .{});
+        std.debug.print("kodr 0.1.9\n", .{});
         return;
     }
 
@@ -658,6 +658,8 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *const CliArgs, reporter: *err
         // ── Pass 8: Thread Safety ──────────────────────────────
         var thread_checker = thread_safety.ThreadSafetyChecker.init(allocator, reporter);
         defer thread_checker.deinit();
+        thread_checker.locs = locs_ptr;
+        thread_checker.source_file = source_file;
 
         try thread_checker.check(ast);
         if (reporter.hasErrors()) return null;
