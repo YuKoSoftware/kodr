@@ -311,6 +311,7 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 - `File` type — builtin type, `File("path")` constructor (stateless handle, path + allocator). Methods: `.read()`, `.write()`, `.append()`, `.close()`, `.size()`, `.exists()`. Default allocator or shared: `File("path", alloc)`
 - `Dir` type — builtin type, `Dir("path")` constructor. Methods: `.list()`, `.close()`, `.exists()`
 - `import std::fs` — module-level functions: `fs.exists()`, `fs.delete()`, `fs.rename()`, `fs.createDir()`, `fs.deleteDir()`
+- `import std::math` — `math.pow()`, `math.sqrt()`, `math.abs()`, `math.min()`, `math.max()`, `math.floor()`, `math.ceil()`, `math.sin()`, `math.cos()`, `math.tan()`, `math.ln()`, `math.log2()`, `math.PI()`, `math.E()`. All use `any` — type determined by arguments.
 
 **Next:**
 - Pass 8 (thread safety) — sendability checks

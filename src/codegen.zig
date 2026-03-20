@@ -1685,7 +1685,7 @@ pub const CodeGen = struct {
                 } else if (std.mem.eql(u8, f.field, "Error")) {
                     try self.generateExpr(f.object);
                     try self.write(".err");
-                } else if (isResultValueField(f.field)) {
+                } else if (isResultValueField(f.field, self.decls)) {
                     // Check if the object is a null union variable
                     if (f.object.* == .identifier and self.isNullVar(f.object.identifier)) {
                         // result.User → result.some (null union access)
@@ -2553,8 +2553,8 @@ fn opToZig(op: []const u8) []const u8 {
 }
 
 /// Check if a field name is a type name used for union value access (result.i32, result.User)
-fn isResultValueField(name: []const u8) bool {
-    // Primitive type names
+fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) bool {
+    // Primitive type names — always valid as union payload access
     const primitives = [_][]const u8{
         "i8", "i16", "i32", "i64", "i128",
         "u8", "u16", "u32", "u64", "u128",
@@ -2565,8 +2565,14 @@ fn isResultValueField(name: []const u8) bool {
     for (primitives) |p| {
         if (std.mem.eql(u8, name, p)) return true;
     }
-    // PascalCase user type names (first char uppercase, not a field name)
-    if (name.len > 0 and name[0] >= 'A' and name[0] <= 'Z') return true;
+    // Known user-defined types from the declaration table
+    if (decls) |d| {
+        if (d.structs.contains(name)) return true;
+        if (d.enums.contains(name)) return true;
+        if (d.bitfields.contains(name)) return true;
+    }
+    // Builtin types that can appear in unions
+    if (builtins.isBuiltinType(name)) return true;
     return false;
 }
 

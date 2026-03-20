@@ -63,7 +63,7 @@ Only `std::console` exists today. Minimum viable stdlib for a general-purpose la
 |---|---|
 | `std::str` | format, join, toUpper, toLower, replace, repeat, parseInt, parseFloat, toString (non-allocating ops now builtin on String) |
 | `std::fs` | **DONE** — File/Dir builtin types + fs.exists/delete/rename/createDir/deleteDir |
-| `std::math` | sqrt, pow, abs, floor, ceil, sin, cos, tan, log, min, max, random |
+| `std::math` | **DONE** — pow, sqrt, abs, min, max, floor, ceil, sin, cos, tan, ln, log2, PI, E |
 | `std::env` | environment variables, process args, cwd |
 | `std::time` | timestamps, sleep, duration, formatting |
 | `std::net` | TCP/UDP sockets, basic HTTP client |

@@ -265,6 +265,8 @@ const CONSOLE_ZIG  = @embedFile("std/console.zig");
 const FS_KODR      = @embedFile("std/fs.kodr");
 const FS_ZIG       = @embedFile("std/fs.zig");
 const KODR_FS_ZIG  = @embedFile("std/kodr_fs.zig");
+const MATH_KODR    = @embedFile("std/math.kodr");
+const MATH_ZIG     = @embedFile("std/math.zig");
 
 fn initStd(allocator: std.mem.Allocator) !void {
     // Find directory containing the kodr binary
@@ -305,6 +307,20 @@ fn initStd(allocator: std.mem.Allocator) !void {
     defer fs_zig_file.close();
     try fs_zig_file.writeAll(FS_ZIG);
 
+    // Write math.kodr into std/
+    const math_kodr_path = try std.fs.path.join(allocator, &.{ std_dir, "math.kodr" });
+    defer allocator.free(math_kodr_path);
+    const math_kodr_file = try std.fs.cwd().createFile(math_kodr_path, .{});
+    defer math_kodr_file.close();
+    try math_kodr_file.writeAll(MATH_KODR);
+
+    // Write math.zig into std/ — paired implementation file
+    const math_zig_path = try std.fs.path.join(allocator, &.{ std_dir, "math.zig" });
+    defer allocator.free(math_zig_path);
+    const math_zig_file = try std.fs.cwd().createFile(math_zig_path, .{});
+    defer math_zig_file.close();
+    try math_zig_file.writeAll(MATH_ZIG);
+
     // Write kodr_fs.zig into std/ — runtime types for File/Dir
     const kodr_fs_path = try std.fs.path.join(allocator, &.{ std_dir, "kodr_fs.zig" });
     defer allocator.free(kodr_fs_path);
@@ -323,6 +339,8 @@ fn initStd(allocator: std.mem.Allocator) !void {
     std.debug.print("  {s}/std/console.zig\n", .{exe_dir});
     std.debug.print("  {s}/std/fs.kodr\n", .{exe_dir});
     std.debug.print("  {s}/std/fs.zig\n", .{exe_dir});
+    std.debug.print("  {s}/std/math.kodr\n", .{exe_dir});
+    std.debug.print("  {s}/std/math.zig\n", .{exe_dir});
     std.debug.print("  {s}/global/\n", .{exe_dir});
     std.debug.print("\nAdd your shared modules to {s}/global/\n", .{exe_dir});
 }
