@@ -8,6 +8,7 @@ const mir = @import("mir.zig");
 const builtins = @import("builtins.zig");
 const declarations = @import("declarations.zig");
 const errors = @import("errors.zig");
+const K = @import("constants.zig");
 
 /// Built-in allocator kinds from std::mem
 const AllocKind = enum { gpa, smp, arena, temp, page };
@@ -237,7 +238,7 @@ pub const CodeGen = struct {
         if (node.* != .type_union) return null;
         for (node.type_union) |t| {
             if (t.* == .type_named and
-                (std.mem.eql(u8, t.type_named, "Error") or std.mem.eql(u8, t.type_named, "null")))
+                (std.mem.eql(u8, t.type_named, K.Type.ERROR) or std.mem.eql(u8, t.type_named, K.Type.NULL)))
                 continue;
             return t;
         }
@@ -248,7 +249,7 @@ pub const CodeGen = struct {
     fn isNullUnionType(node: *parser.Node) bool {
         if (node.* == .type_union) {
             for (node.type_union) |t| {
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, "null")) return true;
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) return true;
             }
         }
         return false;
@@ -339,7 +340,7 @@ pub const CodeGen = struct {
     /// Check if a type annotation is String
     fn isStringType(type_ann: ?*parser.Node) bool {
         const t = type_ann orelse return false;
-        return t.* == .type_named and std.mem.eql(u8, t.type_named, "String");
+        return t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.STRING);
     }
 
     /// Generate a value expression, wrapping it for null union context if needed
@@ -374,7 +375,7 @@ pub const CodeGen = struct {
         if (self.decls) |decls| {
             if (decls.vars.get(name)) |v| {
                 if (v.type_str) |ts| {
-                    return std.mem.eql(u8, ts, "Error");
+                    return std.mem.eql(u8, ts, K.Type.ERROR);
                 }
             }
         }
@@ -388,7 +389,7 @@ pub const CodeGen = struct {
         // std::mem is a built-in compiler module — no Zig import needed,
         // allocator types map directly to std.heap.* which is always available.
         if (imp.scope) |sc| {
-            if (std.mem.eql(u8, sc, "std") and std.mem.eql(u8, imp.path, "mem")) return;
+            if (std.mem.eql(u8, sc, "std") and std.mem.eql(u8, imp.path, K.Module.MEM)) return;
         }
 
         // Alias defaults to the module name (last segment of path)
@@ -518,8 +519,8 @@ pub const CodeGen = struct {
         try collectAssigned(f.body, &self.assigned_vars, self.allocator);
         if (f.return_type.* == .type_union) {
             for (f.return_type.type_union) |t| {
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, "Error")) self.in_error_union_func = true;
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, "null")) self.in_null_union_func = true;
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) self.in_error_union_func = true;
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) self.in_null_union_func = true;
             }
         }
         defer {
@@ -564,7 +565,7 @@ pub const CodeGen = struct {
         // compt func + other return  → inline fn with `anytype` params
         // regular func               → fn (anytype params handled in loop below)
         const returns_type = f.return_type.* == .type_named and
-            std.mem.eql(u8, f.return_type.type_named, "type");
+            std.mem.eql(u8, f.return_type.type_named, K.Type.TYPE);
         const is_type_generic = f.is_compt and returns_type;
 
         if (f.is_compt and !is_type_generic) {
@@ -579,7 +580,7 @@ pub const CodeGen = struct {
             if (i > 0) try self.write(", ");
             if (param.* == .param) {
                 const is_any = param.param.type_annotation.* == .type_named and
-                    std.mem.eql(u8, param.param.type_annotation.type_named, "any");
+                    std.mem.eql(u8, param.param.type_annotation.type_named, K.Type.ANY);
                 if (is_any and first_any_param == null) first_any_param = param.param.name;
                 if (is_type_generic and is_any) {
                     // `compt func F(T: any) type` → `fn F(comptime T: type)`
@@ -606,7 +607,7 @@ pub const CodeGen = struct {
 
         // Return type — `any` return becomes @TypeOf(first_any_param)
         const return_is_any = f.return_type.* == .type_named and
-            std.mem.eql(u8, f.return_type.type_named, "any");
+            std.mem.eql(u8, f.return_type.type_named, K.Type.ANY);
         if (return_is_any) {
             if (first_any_param) |pname| {
                 try self.writeFmt("@TypeOf({s})", .{pname});
@@ -746,7 +747,7 @@ pub const CodeGen = struct {
         if (c.callee.* != .field_expr) return null;
         const fe = c.callee.field_expr;
         if (fe.object.* != .identifier) return null;
-        if (!std.mem.eql(u8, fe.object.identifier, "mem")) return null;
+        if (!std.mem.eql(u8, fe.object.identifier, K.Module.MEM)) return null;
         if (std.mem.eql(u8, fe.field, "DebugAllocator")) return .gpa;
         if (std.mem.eql(u8, fe.field, "SMP"))   return .smp;
         if (std.mem.eql(u8, fe.field, "Arena")) return .arena;
@@ -1251,7 +1252,7 @@ pub const CodeGen = struct {
                         if (arm.* != .match_arm) continue;
                         const pat = arm.match_arm.pattern;
                         if (pat.* == .null_literal) break :blk true;
-                        if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "Error"))
+                        if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, K.Type.ERROR))
                             break :blk true;
                     }
                     break :blk false;
@@ -1442,7 +1443,7 @@ pub const CodeGen = struct {
                 const is_ne = std.mem.eql(u8, b.op, "!=");
                 if ((is_eq or is_ne) and
                     b.left.* == .compiler_func and
-                    std.mem.eql(u8, b.left.compiler_func.name, "type") and
+                    std.mem.eql(u8, b.left.compiler_func.name, K.Type.TYPE) and
                     b.left.compiler_func.args.len > 0)
                 {
                     const val_node = b.left.compiler_func.args[0];
@@ -1456,7 +1457,7 @@ pub const CodeGen = struct {
                     }
                     if (b.right.* == .identifier) {
                         const rhs = b.right.identifier;
-                        if (std.mem.eql(u8, rhs, "Error")) {
+                        if (std.mem.eql(u8, rhs, K.Type.ERROR)) {
                             try self.write("(");
                             try self.generateExpr(val_node);
                             try self.writeFmt(" {s} .err)", .{cmp});
@@ -1590,10 +1591,10 @@ pub const CodeGen = struct {
                 }
                 // File/Dir constructor: File("path") → KodrFs.File{ .path = "path", .alloc = smp }
                 if (c.callee.* == .identifier and
-                    (std.mem.eql(u8, c.callee.identifier, "File") or std.mem.eql(u8, c.callee.identifier, "Dir")))
+                    (std.mem.eql(u8, c.callee.identifier, K.Type.FILE) or std.mem.eql(u8, c.callee.identifier, K.Type.DIR)))
                 {
                     self.uses_fs = true;
-                    const zig_type = if (std.mem.eql(u8, c.callee.identifier, "File")) "KodrFs.File" else "KodrFs.Dir";
+                    const zig_type = if (std.mem.eql(u8, c.callee.identifier, K.Type.FILE)) "KodrFs.File" else "KodrFs.Dir";
                     try self.writeFmt("{s}{{ .path = ", .{zig_type});
                     if (c.args.len > 0) try self.generateExpr(c.args[0]);
                     try self.write(", .alloc = ");
@@ -1675,7 +1676,7 @@ pub const CodeGen = struct {
                     // map.len / set.len → map.count()
                     try self.generateExpr(f.object);
                     try self.write(".count()");
-                } else if (std.mem.eql(u8, f.field, "Error")) {
+                } else if (std.mem.eql(u8, f.field, K.Type.ERROR)) {
                     try self.generateExpr(f.object);
                     try self.write(".err");
                 } else if (isResultValueField(f.field, self.decls)) {
@@ -1827,7 +1828,7 @@ pub const CodeGen = struct {
             const pat = arm.match_arm.pattern;
             try self.writeIndent();
 
-            if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "Error")) {
+            if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, K.Type.ERROR)) {
                 // Error arm → .err
                 try self.write(".err");
             } else if (pat.* == .null_literal) {
@@ -2375,11 +2376,11 @@ pub const CodeGen = struct {
 
         // Track variable with its allocator name
         const stored_alloc = try self.allocator.dupe(u8, tracked_alloc);
-        if (std.mem.eql(u8, c.kind, "List")) {
+        if (std.mem.eql(u8, c.kind, K.Coll.LIST)) {
             try self.list_vars.put(self.allocator, name, stored_alloc);
-        } else if (std.mem.eql(u8, c.kind, "Map")) {
+        } else if (std.mem.eql(u8, c.kind, K.Coll.MAP)) {
             try self.map_vars.put(self.allocator, name, stored_alloc);
-        } else if (std.mem.eql(u8, c.kind, "Set")) {
+        } else if (std.mem.eql(u8, c.kind, K.Coll.SET)) {
             try self.set_vars.put(self.allocator, name, stored_alloc);
         } else {
             self.allocator.free(stored_alloc);
@@ -2409,10 +2410,10 @@ pub const CodeGen = struct {
     fn typeToZig(self: *CodeGen, node: *parser.Node) ![]const u8 {
         return switch (node.*) {
             .type_named => |name| {
-                if (std.mem.eql(u8, name, "Error")) return "KodrError";
+                if (std.mem.eql(u8, name, K.Type.ERROR)) return "KodrError";
                 if (std.mem.eql(u8, name, "mem.Allocator")) return "std.mem.Allocator";
-                if (std.mem.eql(u8, name, "File")) return "KodrFs.File";
-                if (std.mem.eql(u8, name, "Dir")) return "KodrFs.Dir";
+                if (std.mem.eql(u8, name, K.Type.FILE)) return "KodrFs.File";
+                if (std.mem.eql(u8, name, K.Type.DIR)) return "KodrFs.Dir";
                 return builtins.ZigMapping.primitiveToZig(name);
             },
             .type_slice => |elem| blk: {
@@ -2428,14 +2429,14 @@ pub const CodeGen = struct {
                 var has_error = false;
                 var has_null = false;
                 for (u) |t| {
-                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, "Error")) has_error = true;
-                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, "null")) has_null = true;
+                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) has_error = true;
+                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) has_null = true;
                 }
                 // Find the non-Error/non-null type
                 for (u) |t| {
                     if (t.* == .type_named and
-                        !std.mem.eql(u8, t.type_named, "Error") and
-                        !std.mem.eql(u8, t.type_named, "null"))
+                        !std.mem.eql(u8, t.type_named, K.Type.ERROR) and
+                        !std.mem.eql(u8, t.type_named, K.Type.NULL))
                     {
                         const inner = try self.typeToZig(t);
                         if (has_error) break :blk try self.allocTypeStr("KodrResult({s})", .{inner});
@@ -2445,10 +2446,10 @@ pub const CodeGen = struct {
                 break :blk "KodrUnion";
             },
             .type_ptr => |p| blk: {
-                if (std.mem.eql(u8, p.kind, "const &")) {
+                if (std.mem.eql(u8, p.kind, K.Ptr.CONST_REF)) {
                     const inner = try self.typeToZig(p.elem);
                     break :blk try self.allocTypeStr("*const {s}", .{inner});
-                } else if (std.mem.eql(u8, p.kind, "var &")) {
+                } else if (std.mem.eql(u8, p.kind, K.Ptr.VAR_REF)) {
                     const inner = try self.typeToZig(p.elem);
                     break :blk try self.allocTypeStr("*{s}", .{inner});
                 }
@@ -2486,13 +2487,13 @@ pub const CodeGen = struct {
                         const inner = try self.typeToZig(g.args[0]);
                         break :blk try self.allocTypeStr("[*]volatile {s}", .{inner});
                     }
-                } else if (std.mem.eql(u8, g.name, "List")) {
+                } else if (std.mem.eql(u8, g.name, K.Coll.LIST)) {
                     // List(T) → std.ArrayList(T)
                     if (g.args.len > 0) {
                         const inner = try self.typeToZig(g.args[0]);
                         break :blk try self.allocTypeStr("std.ArrayList({s})", .{inner});
                     }
-                } else if (std.mem.eql(u8, g.name, "Map")) {
+                } else if (std.mem.eql(u8, g.name, K.Coll.MAP)) {
                     // Map(K,V) → std.StringHashMapUnmanaged(V) if K is String, else std.AutoHashMapUnmanaged(K,V)
                     if (g.args.len >= 2) {
                         const key = try self.typeToZig(g.args[0]);
@@ -2502,7 +2503,7 @@ pub const CodeGen = struct {
                         }
                         break :blk try self.allocTypeStr("std.AutoHashMapUnmanaged({s}, {s})", .{ key, val });
                     }
-                } else if (std.mem.eql(u8, g.name, "Set")) {
+                } else if (std.mem.eql(u8, g.name, K.Coll.SET)) {
                     // Set(T) → std.StringHashMapUnmanaged(void) if T is String, else std.AutoHashMapUnmanaged(T, void)
                     if (g.args.len > 0) {
                         const inner = try self.typeToZig(g.args[0]);
@@ -2605,7 +2606,7 @@ fn nodeContainsErrorUnion(node: *parser.Node) bool {
         .func_decl => |f| {
             if (f.return_type.* == .type_union) {
                 for (f.return_type.type_union) |t| {
-                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, "Error")) return true;
+                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) return true;
                 }
             }
             return false;
@@ -2633,7 +2634,7 @@ fn nodeContainsNullUnion(node: *parser.Node) bool {
         .func_decl => |f| {
             if (f.return_type.* == .type_union) {
                 for (f.return_type.type_union) |t| {
-                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, "null")) return true;
+                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) return true;
                 }
             }
             return false;
@@ -2648,7 +2649,7 @@ fn nodeContainsNullUnion(node: *parser.Node) bool {
             if (v.type_annotation) |ta| {
                 if (ta.* == .type_union) {
                     for (ta.type_union) |t| {
-                        if (t.* == .type_named and std.mem.eql(u8, t.type_named, "null")) return true;
+                        if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) return true;
                     }
                 }
             }
@@ -2673,7 +2674,7 @@ fn nodeRefsAllocWrapper(node: *parser.Node) bool {
             // Check for mem.DebugAllocator(), mem.Arena(), mem.Temp()
             if (c.callee.* == .field_expr) {
                 const fe = c.callee.field_expr;
-                if (fe.object.* == .identifier and std.mem.eql(u8, fe.object.identifier, "mem")) {
+                if (fe.object.* == .identifier and std.mem.eql(u8, fe.object.identifier, K.Module.MEM)) {
                     if (std.mem.eql(u8, fe.field, "DebugAllocator") or
                         std.mem.eql(u8, fe.field, "Arena") or
                         std.mem.eql(u8, fe.field, "Temp")) return true;
@@ -2711,8 +2712,8 @@ fn moduleUsesFileOrDir(ast: *parser.Node) bool {
 
 fn nodeRefsFileOrDir(node: *parser.Node) bool {
     switch (node.*) {
-        .identifier => |name| return std.mem.eql(u8, name, "File") or std.mem.eql(u8, name, "Dir"),
-        .type_named => |name| return std.mem.eql(u8, name, "File") or std.mem.eql(u8, name, "Dir"),
+        .identifier => |name| return std.mem.eql(u8, name, K.Type.FILE) or std.mem.eql(u8, name, K.Type.DIR),
+        .type_named => |name| return std.mem.eql(u8, name, K.Type.FILE) or std.mem.eql(u8, name, K.Type.DIR),
         .call_expr => |c| {
             if (nodeRefsFileOrDir(c.callee)) return true;
             for (c.args) |arg| if (nodeRefsFileOrDir(arg)) return true;

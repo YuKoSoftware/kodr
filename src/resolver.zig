@@ -8,6 +8,7 @@ const parser = @import("parser.zig");
 const declarations = @import("declarations.zig");
 const builtins = @import("builtins.zig");
 const errors = @import("errors.zig");
+const K = @import("constants.zig");
 
 /// A resolved type binding — maps expression nodes to their resolved types
 pub const TypeBinding = struct {
@@ -285,10 +286,10 @@ pub const TypeResolver = struct {
                 64 => "f64",
                 else => "float_literal",
             } else "float_literal",
-            .string_literal => "String",
+            .string_literal => K.Type.STRING,
             .bool_literal => "bool",
-            .null_literal => "null",
-            .error_literal => "Error",
+            .null_literal => K.Type.NULL,
+            .error_literal => K.Type.ERROR,
 
             .identifier => |name| {
                 // Check scope first (has most precise info)
@@ -385,7 +386,7 @@ pub const TypeResolver = struct {
                 // size/align return usize, typeid returns usize, typename returns String
                 if (std.mem.eql(u8, cf.name, "size") or std.mem.eql(u8, cf.name, "align")) return "usize";
                 if (std.mem.eql(u8, cf.name, "typeid")) return "usize";
-                if (std.mem.eql(u8, cf.name, "typename")) return "String";
+                if (std.mem.eql(u8, cf.name, "typename")) return K.Type.STRING;
                 return "unknown";
             },
 
@@ -404,9 +405,9 @@ pub const TypeResolver = struct {
                     self.decls.structs.contains(name) or
                     self.decls.enums.contains(name) or
                     builtins.isBuiltinType(name) or
-                    std.mem.eql(u8, name, "any") or
-                    std.mem.eql(u8, name, "void") or
-                    std.mem.eql(u8, name, "null") or
+                    std.mem.eql(u8, name, K.Type.ANY) or
+                    std.mem.eql(u8, name, K.Type.VOID) or
+                    std.mem.eql(u8, name, K.Type.NULL) or
                     scope.lookup(name) != null;
 
                 if (!is_known) {
@@ -447,7 +448,7 @@ fn isPrimitive(name: []const u8) bool {
         "u8", "u16", "u32", "u64", "u128",
         "isize", "usize",
         "f16", "bf16", "f32", "f64", "f128",
-        "bool", "String",
+        "bool", K.Type.STRING,
     };
     for (primitives) |p| {
         if (std.mem.eql(u8, name, p)) return true;

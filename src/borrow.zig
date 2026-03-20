@@ -6,6 +6,7 @@
 const std = @import("std");
 const parser = @import("parser.zig");
 const errors = @import("errors.zig");
+const K = @import("constants.zig");
 
 /// A borrow record — tracks active borrows
 pub const Borrow = struct {
@@ -264,7 +265,7 @@ pub const BorrowChecker = struct {
 fn isMutableBorrowType(type_ann: ?*parser.Node) bool {
     const ann = type_ann orelse return false;
     if (ann.* == .type_ptr) {
-        return std.mem.eql(u8, ann.type_ptr.kind, "var &");
+        return std.mem.eql(u8, ann.type_ptr.kind, K.Ptr.VAR_REF);
     }
     return false;
 }

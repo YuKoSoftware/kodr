@@ -6,6 +6,7 @@ const std = @import("std");
 const parser = @import("parser.zig");
 const declarations = @import("declarations.zig");
 const errors = @import("errors.zig");
+const K = @import("constants.zig");
 
 /// A tracked union variable — needs handling before scope exit
 pub const UnionVar = struct {
@@ -153,7 +154,7 @@ pub const PropChecker = struct {
                     const be = i.condition.binary_expr;
                     if (std.mem.eql(u8, be.op, "==")) {
                         // `x is Error` or `x is null`
-                        if (be.left.* == .compiler_func and std.mem.eql(u8, be.left.compiler_func.name, "type")) {
+                        if (be.left.* == .compiler_func and std.mem.eql(u8, be.left.compiler_func.name, K.Type.TYPE)) {
                             if (be.left.compiler_func.args.len > 0) {
                                 const checked_var = be.left.compiler_func.args[0];
                                 if (checked_var.* == .identifier) {
@@ -222,8 +223,8 @@ pub const PropChecker = struct {
     /// Check if a return type string represents an Error or null union
     fn returnTypeIsUnion(ret: []const u8) ?bool {
         // Return type strings look like "(Error | i32)" or "(null | User)"
-        if (std.mem.indexOf(u8, ret, "Error")) |_| return true;
-        if (std.mem.indexOf(u8, ret, "null")) |_| return false;
+        if (std.mem.indexOf(u8, ret, K.Type.ERROR)) |_| return true;
+        if (std.mem.indexOf(u8, ret, K.Type.NULL)) |_| return false;
         return null;
     }
 
@@ -239,7 +240,7 @@ pub const PropChecker = struct {
                 } else {
                     // Function doesn't return error union — can't propagate
                     if (func_ret) |_| {
-                        const kind = if (uvar.is_error_union) "Error" else "null";
+                        const kind = if (uvar.is_error_union) K.Type.ERROR else K.Type.NULL;
                         const msg = try std.fmt.allocPrint(self.allocator,
                             "unhandled {s} union '{s}' — enclosing function cannot propagate",
                             .{ kind, uvar.name });
@@ -258,8 +259,8 @@ fn typeNodeIsUnion(node: *parser.Node) ?bool {
     switch (node.*) {
         .type_union => |u| {
             for (u) |t| {
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, "Error")) return true;
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, "null")) return false;
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) return true;
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) return false;
             }
             return null;
         },
@@ -271,12 +272,12 @@ fn typeCanPropagate(node: *parser.Node) bool {
     switch (node.*) {
         .type_union => |u| {
             for (u) |t| {
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, "Error")) return true;
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, "null")) return true;
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) return true;
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) return true;
             }
             return false;
         },
-        .type_named => |n| return std.mem.eql(u8, n, "void") == false,
+        .type_named => |n| return std.mem.eql(u8, n, K.Type.VOID) == false,
         else => return false,
     }
 }
