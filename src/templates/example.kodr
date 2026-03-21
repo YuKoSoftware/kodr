@@ -833,6 +833,63 @@ test "string parse" {
     assert(string_parse_demo())
 }
 
+// ─── Match on Strings ───────────────────────────────────────────────────────
+
+// match can branch on string values — generates if/else chain
+
+func classify_greeting(s: String) i32 {
+    match(s) {
+        "hello" => { return 1 }
+        "hi"    => { return 2 }
+        else    => { return 0 }
+    }
+}
+
+test "match string" {
+    assert(classify_greeting("hello") == 1)
+    assert(classify_greeting("hi") == 2)
+    assert(classify_greeting("hey") == 0)
+}
+
+// ─── Match on Ranges ────────────────────────────────────────────────────────
+
+// match can branch on integer ranges — a..b is inclusive
+
+func classify_age(age: i32) String {
+    match(age) {
+        0..12   => { return "child" }
+        13..17  => { return "teen" }
+        18..120 => { return "adult" }
+        else    => { return "unknown" }
+    }
+}
+
+test "match range" {
+    assert(classify_age(5) == "child")
+    assert(classify_age(15) == "teen")
+    assert(classify_age(30) == "adult")
+}
+
+// ─── Extern Declarations ────────────────────────────────────────────────────
+
+// extern bridges Kodr to hand-written Zig via paired .zig sidecar files.
+// All extern declarations are implicitly public.
+//
+// Syntax:
+//   extern func name(params) ReturnType    — bridge a Zig function
+//   extern const NAME: Type                — expose a Zig constant
+//   extern var NAME: Type                  — expose a mutable Zig variable
+//   extern struct Name                     — import an opaque Zig type
+//
+// Example (in a module with a paired .zig file):
+//   extern func sqrt(x: any) any
+//   extern const PI: f64
+//   extern struct Socket
+//
+// The std:: modules use this mechanism:
+//   import std::console    — console.kodr + console.zig
+//   import std::math       — math.kodr + math.zig (PI and E are extern const)
+
 // type-returning compt func — generates a new struct type at compile time
 
 compt func Box(T: any) type {
