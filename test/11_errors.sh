@@ -385,4 +385,38 @@ NEG_OUT=$("$KODR" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "anchor"; then pass "rejects duplicate anchor files"
 else fail "rejects duplicate anchor files" "$NEG_OUT"; fi
 
+# ── Fixture-based category tests ─────────────────────────────
+# Each fixture tests one compiler pass with multiple error cases.
+# Helper: run a fixture as a project and check for expected error
+run_fixture() {
+    local name="$1" fixture="$2" pattern="$3" label="$4"
+    cd "$TESTDIR"
+    mkdir -p "$name/src"
+    cp "$FIXTURES/$fixture" "$name/src/main.kodr"
+    cd "$name"
+    NEG_OUT=$("$KODR" build 2>&1 || true)
+    if echo "$NEG_OUT" | grep -qi "$pattern"; then pass "$label"
+    else fail "$label" "$NEG_OUT"; fi
+}
+
+# syntax (parser) errors
+run_fixture neg_syntax fail_syntax.kodr "module-level.*var.*not allowed" "fixture: rejects module-level var"
+
+# type resolution errors
+run_fixture neg_types fail_types.kodr "unknown type" "fixture: catches unknown types"
+run_fixture neg_types2 fail_types.kodr "already declared" "fixture: catches duplicate variable"
+run_fixture neg_types3 fail_types.kodr "return type mismatch" "fixture: catches return type mismatch"
+run_fixture neg_types4 fail_types.kodr "condition must be bool" "fixture: catches non-bool condition"
+run_fixture neg_types5 fail_types.kodr "type mismatch" "fixture: catches type mismatch"
+run_fixture neg_types6 fail_types.kodr "break.*outside\|continue.*outside" "fixture: catches break/continue outside loop"
+
+# ownership errors
+run_fixture neg_own fail_ownership.kodr "use of moved value\|moved" "fixture: catches use after move"
+
+# thread safety errors
+run_fixture neg_thread2 fail_threads.kodr "must be joined" "fixture: catches unjoined thread"
+
+# TODO: borrow conflict test — borrow checker doesn't catch mutable+immutable overlap yet
+# TODO: propagation test — propagation checker doesn't catch unhandled unions in some patterns
+
 report_results

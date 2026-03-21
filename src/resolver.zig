@@ -177,11 +177,13 @@ pub const TypeResolver = struct {
 
                 for (f.params) |param| {
                     if (param.* == .param) {
+                        try self.validateType(param.param.type_annotation, &func_scope);
                         const t = try types.resolveTypeNode(self.decls.typeAllocator(), param.param.type_annotation);
                         try func_scope.define(param.param.name, t);
                     }
                 }
 
+                try self.validateType(f.return_type, scope);
                 const prev_return = self.current_return_type;
                 self.current_return_type = try types.resolveTypeNode(self.decls.typeAllocator(), f.return_type);
                 defer self.current_return_type = prev_return;
@@ -588,10 +590,12 @@ pub const TypeResolver = struct {
                 const is_known = is_primitive or
                     self.decls.structs.contains(type_name) or
                     self.decls.enums.contains(type_name) or
+                    self.decls.bitfields.contains(type_name) or
                     builtins.isBuiltinType(type_name) or
                     std.mem.eql(u8, type_name, K.Type.ANY) or
                     std.mem.eql(u8, type_name, K.Type.VOID) or
                     std.mem.eql(u8, type_name, K.Type.NULL) or
+                    std.mem.eql(u8, type_name, "type") or
                     scope.lookup(type_name) != null;
 
                 if (!is_known) {

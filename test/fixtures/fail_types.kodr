@@ -1,0 +1,67 @@
+module main
+
+#name    = "fail_types"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+
+// unknown return type
+
+func bad_return() Nope {
+    return 1
+}
+
+// unknown parameter type
+
+func bad_param(x: FakeType) void { }
+
+// unknown variable type
+
+func bad_var() void {
+    const x: Bogus = 1
+}
+
+// return type mismatch
+
+func returns_int() i32 {
+    return "hello"
+}
+
+// if condition must be bool
+
+func bad_if() void {
+    if(42) { }
+}
+
+// while condition must be bool
+
+func bad_while() void {
+    while(42) { }
+}
+
+// duplicate variable
+
+func dup_var() void {
+    const x: i32 = 1
+    const x: i32 = 2
+}
+
+// type mismatch on assignment
+
+func bad_assign() void {
+    var x: i32 = "hello"
+}
+
+// break outside loop
+
+func bad_break() void {
+    break
+}
+
+// continue outside loop
+
+func bad_continue() void {
+    continue
+}
+
+func main() void { }

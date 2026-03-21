@@ -1,0 +1,28 @@
+module main
+
+#name    = "fail_threads"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+
+// unjoined thread
+
+func unjoined() void {
+    const x: i32 = 42
+    thread(i32) worker {
+        return x
+    }
+}
+
+// use after move into thread
+
+func use_after_thread() void {
+    const x: i32 = 21
+    thread(i32) worker {
+        return x * 2
+    }
+    const y: i32 = x + 1
+    const z: i32 = worker.value
+}
+
+func main() void { }

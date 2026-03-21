@@ -8,7 +8,7 @@ One-sentence pitch: *"A simple yet powerful language that is safe."*
 **Full language spec:** `docs/` folder — read relevant files before making any decisions about
 language behavior, syntax, or semantics. Do not rely on memory or assumptions — check the spec.
 
-**Other docs:** `docs/COMPILER.md` — compiler architecture + project structure. `docs/FUTURE.md` — future ideas, stdlib roadmap, next steps.
+**Other docs:** `docs/COMPILER.md` — compiler architecture + project structure. `docs/FUTURE.md` — future ideas, stdlib roadmap, next steps. `docs/BUGS.md` — known bugs to fix.
 
 ---
 
@@ -49,6 +49,7 @@ Targets **Zig 0.15.2+**. Zig is installed globally — do not bundle a binary.
 Zig has moved to Codeberg — not GitHub. Always use Codeberg for source and stdlib:
 - https://codeberg.org/ziglang/zig
 - https://ziglang.org/documentation/master/
+- https://zig.guide/ — up-to-date guides and API reference
 
 ---
 
