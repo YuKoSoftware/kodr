@@ -341,4 +341,48 @@ NEG_OUT=$("$KODR" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "defaults.*must.*after\|required.*param"; then pass "rejects default before required param"
 else fail "rejects default before required param" "$NEG_OUT"; fi
 
+# []u8 → String coercion rejected
+cd "$TESTDIR"
+mkdir -p neg_u8str/src
+cat > neg_u8str/src/main.kodr <<'KODR'
+module main
+#name    = "neg_u8str"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+func greet(s: String) void { }
+func main() void {
+    var buf: [5]u8 = [104, 101, 108, 108, 111]
+    const slice: []u8 = buf[0..5]
+    greet(slice)
+}
+KODR
+cd neg_u8str
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "cannot pass.*u8.*String\|fromBytes"; then pass "rejects []u8 as String"
+else fail "rejects []u8 as String" "$NEG_OUT"; fi
+
+# duplicate anchor file
+cd "$TESTDIR"
+mkdir -p neg_dup_anchor/src/sub
+cat > neg_dup_anchor/src/main.kodr <<'KODR'
+module main
+#name    = "neg_dup"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void { }
+KODR
+cat > neg_dup_anchor/src/example.kodr <<'KODR'
+module example
+func foo() i32 { return 1 }
+KODR
+cat > neg_dup_anchor/src/sub/example.kodr <<'KODR'
+module example
+func bar() i32 { return 2 }
+KODR
+cd neg_dup_anchor
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "anchor"; then pass "rejects duplicate anchor files"
+else fail "rejects duplicate anchor files" "$NEG_OUT"; fi
+
 report_results

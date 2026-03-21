@@ -100,50 +100,65 @@ pub const Reporter = struct {
             try printDiagnostic(stderr, &diag, "ERROR", self.mode);
         }
 
-        // Summary line when there are both warnings and errors, or multiple of either
+        // Summary line
         const wc = self.warnings.items.len;
         const ec = self.errors.items.len;
+        if (wc > 0 or ec > 0) {
+            try stderr.print("\n", .{});
+        }
         if (wc > 0 and ec > 0) {
-            try stderr.print("{d} warning(s), {d} error(s)\n", .{ wc, ec });
-        } else if (wc > 1) {
-            try stderr.print("{d} warning(s)\n", .{wc});
-        } else if (ec > 1) {
-            try stderr.print("{d} error(s)\n", .{ec});
+            try stderr.print("{s}{d} warning(s){s}, {s}{d} error(s){s}\n", .{ YELLOW, wc, RESET, RED, ec, RESET });
+        } else if (wc > 0) {
+            try stderr.print("{s}{d} warning(s){s}\n", .{ YELLOW, wc, RESET });
+        } else if (ec > 0) {
+            try stderr.print("{s}{d} error(s){s}\n", .{ RED, ec, RESET });
         }
 
         try stderr.flush();
     }
 };
 
+// ANSI color codes
+const RED = "\x1b[31m";
+const YELLOW = "\x1b[33m";
+const CYAN = "\x1b[36m";
+const DIM = "\x1b[2m";
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
+
 fn printDiagnostic(stderr: anytype, diag: *const KodrError, label: []const u8, mode: BuildMode) !void {
+    const is_error = std.mem.eql(u8, label, "ERROR");
+    const color = if (is_error) RED else YELLOW;
+
     if (diag.loc) |loc| {
         if (mode == .debug) {
-            try stderr.print("{s}: {s}\n", .{ label, diag.message });
+            // Header: ── ERROR ─────────────────
+            try stderr.print("\n{s}{s}── {s} ─────────────────────────────────────────{s}\n", .{ BOLD, color, label, RESET });
+            // Message
+            try stderr.print("{s}{s}{s}\n", .{ BOLD, diag.message, RESET });
+            // Location
             if (loc.line > 0 and loc.file.len > 0) {
-                try stderr.print("  --> {s}:{d}:{d}\n", .{ loc.file, loc.line, loc.col });
+                try stderr.print("{s}  --> {s}:{d}{s}\n", .{ CYAN, loc.file, loc.line, RESET });
             } else if (loc.line > 0) {
-                try stderr.print("  at line {d}:{d}\n", .{ loc.line, loc.col });
+                try stderr.print("{s}  at line {d}{s}\n", .{ CYAN, loc.line, RESET });
             }
+            // Source snippet
             if (loc.file.len > 0 and loc.line > 0) {
                 if (readSourceLine(loc.file, loc.line)) |line| {
-                    try stderr.print("   |\n", .{});
-                    try stderr.print("{d: >3}|  {s}\n", .{ loc.line, line });
-                    try stderr.print("   |  ", .{});
-                    var c: usize = 1;
-                    while (c < loc.col) : (c += 1) {
-                        try stderr.print(" ", .{});
-                    }
-                    try stderr.print("^\n", .{});
+                    try stderr.print("{s}   |{s}\n", .{ DIM, RESET });
+                    try stderr.print("{s}{d: >3}|{s}  {s}\n", .{ DIM, loc.line, RESET, line });
+                    try stderr.print("{s}   |{s}\n", .{ DIM, RESET });
                 }
             }
             for (diag.notes) |note| {
-                try stderr.print("  note: {s}\n", .{note});
+                try stderr.print("{s}  note:{s} {s}\n", .{ DIM, RESET, note });
             }
         } else {
             try stderr.print("{s}: {s}\n", .{ label, diag.message });
         }
     } else {
-        try stderr.print("{s}: {s}\n", .{ label, diag.message });
+        try stderr.print("\n{s}{s}── {s} ─────────────────────────────────────────{s}\n", .{ BOLD, color, label, RESET });
+        try stderr.print("{s}{s}{s}\n", .{ BOLD, diag.message, RESET });
     }
 }
 

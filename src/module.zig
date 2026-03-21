@@ -17,6 +17,7 @@ pub const Module = struct {
     name: []const u8,
     files: [][]const u8,
     imports: [][]const u8,    // names of imported modules
+    imports_owned: bool,      // true if imports slice was heap-allocated (needs freeing)
     is_root: bool,            // has buildtype declaration
     build_type: BuildType,    // what artifact this module builds into
     ast: ?*parser.Node,       // parsed AST (null if cached/unchanged)
@@ -57,8 +58,8 @@ pub const Resolver = struct {
             // Free file path slices
             for (mod.files) |f| self.allocator.free(f);
             self.allocator.free(mod.files);
-            // Free import name slices (only if dynamically allocated, not comptime &.{})
-            if (mod.imports.len > 0) {
+            // Free import name slices
+            if (mod.imports_owned) {
                 for (mod.imports) |imp| self.allocator.free(imp);
                 self.allocator.free(mod.imports);
             }
@@ -90,32 +91,39 @@ pub const Resolver = struct {
             // Put anchor file (module_name.kodr) first in the list
             const anchor_name = try std.fmt.allocPrint(self.allocator, "{s}.kodr", .{mod_name});
             defer self.allocator.free(anchor_name);
-            var has_anchor = false;
+            var anchor_count: usize = 0;
+            var anchor_idx: usize = 0;
             for (files, 0..) |f, i| {
                 const is_anchor = std.mem.endsWith(u8, f, anchor_name) and
                     (f.len == anchor_name.len or f[f.len - anchor_name.len - 1] == '/');
                 if (is_anchor) {
-                    has_anchor = true;
-                    if (i > 0) {
-                        const tmp = files[0];
-                        files[0] = f;
-                        files[i] = tmp;
-                    }
-                    break;
+                    anchor_count += 1;
+                    anchor_idx = i;
                 }
             }
 
-            if (!has_anchor) {
+            if (anchor_count == 0) {
                 const msg = try std.fmt.allocPrint(self.allocator,
                     "module '{s}' has no anchor file — expected '{s}'", .{ mod_name, anchor_name });
                 defer self.allocator.free(msg);
                 try self.reporter.report(.{ .message = msg });
+            } else if (anchor_count > 1) {
+                const msg = try std.fmt.allocPrint(self.allocator,
+                    "module '{s}' has {d} anchor files — only one '{s}' allowed per module", .{ mod_name, anchor_count, anchor_name });
+                defer self.allocator.free(msg);
+                try self.reporter.report(.{ .message = msg });
+            } else if (anchor_idx > 0) {
+                // Swap anchor to front
+                const tmp = files[0];
+                files[0] = files[anchor_idx];
+                files[anchor_idx] = tmp;
             }
 
             try self.modules.put(mod_name, .{
                 .name = mod_name,
                 .files = files,
                 .imports = &.{},
+                .imports_owned = false,
                 .is_root = false,
                 .build_type = .none,
                 .ast = null,
@@ -196,11 +204,23 @@ pub const Resolver = struct {
 
     /// Parse all modules and extract their imports
     pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
-        var it = self.modules.iterator();
-        while (it.next()) |entry| {
-            var mod = entry.value_ptr;
+        // Collect module names first — we can't iterate the HashMap while mutating it
+        // (getOrPut during import scanning can trigger a rehash, invalidating pointers).
+        var names_to_parse = std.ArrayListUnmanaged([]const u8){};
+        defer names_to_parse.deinit(self.allocator);
+        {
+            var it = self.modules.iterator();
+            while (it.next()) |entry| {
+                if (entry.value_ptr.ast == null) {
+                    try names_to_parse.append(self.allocator, entry.key_ptr.*);
+                }
+            }
+        }
 
-            // Skip already-parsed modules (e.g. dep modules parsed in a prior call)
+        for (names_to_parse.items) |mod_name| {
+            var mod = self.modules.getPtr(mod_name) orelse continue;
+
+            // Skip if already parsed (another module's import scan may have triggered parsing)
             if (mod.ast != null) continue;
 
             // Create the module arena FIRST — the source buffer and AST both
@@ -222,6 +242,24 @@ pub const Resolver = struct {
                 const file = try std.fs.cwd().openFile(file_path, .{});
                 defer file.close();
                 const content = try file.readToEndAlloc(arena_alloc, 10 * 1024 * 1024);
+
+                // Non-anchor files must not contain metadata (#name, #build, etc.)
+                if (file_idx > 0) {
+                    var lines_iter = std.mem.splitSequence(u8, content, "\n");
+                    while (lines_iter.next()) |line| {
+                        const trimmed_line = std.mem.trimLeft(u8, line, " \t");
+                        if (trimmed_line.len > 0 and trimmed_line[0] == '#' and
+                            !std.mem.startsWith(u8, trimmed_line, "//"))
+                        {
+                            const msg = try std.fmt.allocPrint(self.allocator,
+                                "metadata (#{s}...) only allowed in anchor file '{s}.kodr', found in '{s}'",
+                                .{ trimmed_line[1..@min(trimmed_line.len, 10)], mod_name, file_path });
+                            defer self.allocator.free(msg);
+                            try self.reporter.report(.{ .message = msg });
+                            break;
+                        }
+                    }
+                }
 
                 if (file_idx > 0) {
                     // Skip the `module X` line from non-first files
@@ -325,16 +363,17 @@ pub const Resolver = struct {
                     }
 
                     // Add to the file map so it gets parsed and compiled
-                    const mod_name = try self.allocator.dupe(u8, decl.path);
-                    const result = try self.modules.getOrPut(mod_name);
+                    const imp_mod_name = try self.allocator.dupe(u8, decl.path);
+                    const result = try self.modules.getOrPut(imp_mod_name);
                     if (!result.found_existing) {
-                        result.key_ptr.* = mod_name;
+                        result.key_ptr.* = imp_mod_name;
                         const files = try self.allocator.alloc([]const u8, 1);
                         files[0] = file_path;
                         result.value_ptr.* = .{
-                            .name = mod_name,
+                            .name = imp_mod_name,
                             .files = files,
                             .imports = &.{},
+                            .imports_owned = false,
                             .is_root = false,
                             .build_type = .none,
                             .ast = null,
@@ -342,7 +381,7 @@ pub const Resolver = struct {
                             .locs = null,
                         };
                     } else {
-                        self.allocator.free(mod_name);
+                        self.allocator.free(imp_mod_name);
                         self.allocator.free(file_path);
                     }
                     try imports.append(self.allocator, try self.allocator.dupe(u8, decl.path));
@@ -351,7 +390,21 @@ pub const Resolver = struct {
                     try imports.append(self.allocator, try self.allocator.dupe(u8, decl.path));
                 }
             }
-            mod.imports = try imports.toOwnedSlice(self.allocator);
+            // Re-fetch mod pointer — getOrPut during import scanning may have rehashed the map
+            mod = self.modules.getPtr(mod_name) orelse continue;
+            // Free previous imports if owned (from a prior parse pass)
+            if (mod.imports_owned) {
+                for (mod.imports) |imp| self.allocator.free(imp);
+                self.allocator.free(mod.imports);
+            }
+            if (imports.items.len > 0) {
+                mod.imports = try imports.toOwnedSlice(self.allocator);
+                mod.imports_owned = true;
+            } else {
+                imports.deinit(self.allocator);
+                mod.imports = &.{};
+                mod.imports_owned = false;
+            }
 
             // Check if root module (has build declaration in metadata)
             for (ast.program.metadata) |meta| {

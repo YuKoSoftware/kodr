@@ -6,3 +6,15 @@ module str
 // Join a slice of strings with a separator
 
 extern func join(parts: any, sep: String) String
+
+// Convert a byte slice to a String (view, no copy)
+
+extern func fromBytes(bytes: []u8) String
+
+// Convert a String to a mutable byte slice (allocates a copy)
+
+extern func toBytes(s: String) []u8
+
+// Convert any value to its String representation
+
+extern func from(value: any) String

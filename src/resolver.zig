@@ -441,7 +441,15 @@ pub const TypeResolver = struct {
 
             .call_expr => |c| {
                 const callee_type = try self.resolveExpr(c.callee, scope);
-                for (c.args) |arg| _ = try self.resolveExpr(arg, scope);
+                // Resolve arg types and check for String/[]u8 coercion
+                var arg_types_buf: [16]RT = undefined;
+                const arg_count = @min(c.args.len, 16);
+                for (c.args, 0..) |arg, idx| {
+                    const at = try self.resolveExpr(arg, scope);
+                    if (idx < 16) arg_types_buf[idx] = at;
+                }
+                // Check args against function signature — reject []u8 → String
+                try self.checkByteSliceStringCoercion(c, arg_types_buf[0..arg_count], node);
 
                 if (c.callee.* == .identifier) {
                     const name = c.callee.identifier;
@@ -634,6 +642,16 @@ pub const TypeResolver = struct {
     fn checkAssignCompat(self: *TypeResolver, expected: RT, actual: RT, node: *parser.Node) !void {
         if (actual == .unknown or actual == .inferred) return;
         if (expected == .unknown or expected == .inferred) return;
+        // Block []u8 → String coercion
+        if (expected == .primitive and std.mem.eql(u8, expected.primitive, K.Type.STRING) and
+            actual == .slice and actual.slice.* == .primitive and std.mem.eql(u8, actual.slice.primitive, "u8"))
+        {
+            try self.reporter.report(.{
+                .message = "cannot assign '[]u8' to 'String' — use str.fromBytes() for explicit conversion",
+                .loc = self.nodeLoc(node),
+            });
+            return;
+        }
         // Only check when both sides are primitive — that's where we can be confident
         if (expected != .primitive or actual != .primitive) return;
         if (typesCompatible(actual, expected)) return;
@@ -642,6 +660,49 @@ pub const TypeResolver = struct {
             .{ expected.name(), actual.name() });
         defer self.allocator.free(msg);
         try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+    }
+
+    /// Check function call args for illegal []u8 → String coercion.
+    /// String is not []u8 — use str.fromBytes() for explicit conversion.
+    fn checkByteSliceStringCoercion(self: *TypeResolver, c: parser.CallExpr, arg_types: []const RT, node: *parser.Node) !void {
+        // Look up the function signature
+        const func_name: []const u8 = if (c.callee.* == .identifier)
+            c.callee.identifier
+        else if (c.callee.* == .field_expr)
+            c.callee.field_expr.field
+        else
+            return;
+        const sig = self.decls.funcs.get(func_name) orelse return;
+
+        const param_count = @min(sig.params.len, arg_types.len);
+        for (0..param_count) |i| {
+            const param_type = sig.params[i].type_;
+            const arg_type = arg_types[i];
+            // Reject []u8 passed as String
+            if (param_type == .primitive and std.mem.eql(u8, param_type.primitive, K.Type.STRING)) {
+                if (arg_type == .slice) {
+                    if (arg_type.slice.* == .primitive and std.mem.eql(u8, arg_type.slice.primitive, "u8")) {
+                        const msg = try std.fmt.allocPrint(self.allocator,
+                            "cannot pass '[]u8' as 'String' — use str.fromBytes() for explicit conversion",
+                            .{});
+                        defer self.allocator.free(msg);
+                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    }
+                }
+            }
+            // Reject String passed as []u8
+            if (param_type == .slice) {
+                if (param_type.slice.* == .primitive and std.mem.eql(u8, param_type.slice.primitive, "u8")) {
+                    if (arg_type == .primitive and std.mem.eql(u8, arg_type.primitive, K.Type.STRING)) {
+                        const msg = try std.fmt.allocPrint(self.allocator,
+                            "cannot pass 'String' as '[]u8' — use str.toBytes() for explicit conversion",
+                            .{});
+                        defer self.allocator.free(msg);
+                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    }
+                }
+            }
+        }
     }
 };
 

@@ -33,6 +33,7 @@ const Command = enum {
     initstd,
     debug,
     version,
+    fmt,
     help,
 };
 
@@ -144,6 +145,8 @@ fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         cli.command = .initstd;
     } else if (std.mem.eql(u8, cmd_str, "debug")) {
         cli.command = .debug;
+    } else if (std.mem.eql(u8, cmd_str, "fmt")) {
+        cli.command = .fmt;
     } else if (std.mem.eql(u8, cmd_str, "addtopath") or std.mem.eql(u8, cmd_str, "-addtopath")) {
         cli.command = .addtopath;
     } else if (std.mem.eql(u8, cmd_str, "version") or std.mem.eql(u8, cmd_str, "--version")) {
@@ -192,7 +195,7 @@ fn printUsage() void {
     const usage =
         \\kodr — The Kodr compiler  (kodr help for more info)
         \\
-        \\  build   run   test   init   initstd   addtopath   debug   version
+        \\  build   run   test   fmt   init   initstd   addtopath   debug   version
         \\
     ;
     std.debug.print("{s}", .{usage});
@@ -207,6 +210,7 @@ fn printHelp() void {
         \\  run                 Build and immediately execute the binary
         \\  test                Run all test { } blocks in the project
         \\  init [name]         Create a new project (in ./<name>/ or current dir if no name)
+        \\  fmt                 Format all .kodr files in the project
         \\  initstd             Install the standard library next to the kodr binary
         \\  addtopath           Add kodr to your shell PATH
         \\  debug               Show project info — modules, files, source directory
@@ -637,6 +641,12 @@ pub fn main() !void {
         return;
     }
 
+    if (cli.command == .fmt) {
+        const formatter = @import("formatter.zig");
+        try formatter.formatProject(allocator, cli.source_dir);
+        return;
+    }
+
     if (cli.command == .debug) {
         try runDebug(allocator, &cli);
         return;
@@ -767,12 +777,19 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
     try comp_cache.loadTimestamps();
     try comp_cache.loadDeps();
 
-    // Parse all modules — loop until no new unparsed modules remain
-    // (std imports discovered during parsing add new modules to the map)
+    // Parse all modules — two passes to catch std imports discovered during parsing.
+    // First pass parses project modules and discovers std imports (adds them to map).
+    // Second pass parses the newly discovered std modules.
+    try mod_resolver.parseModules(allocator);
+    if (reporter.hasErrors()) return null;
+    // Second pass: only if new modules were added (std imports)
     {
-        var prev_count: usize = 0;
-        while (mod_resolver.modules.count() != prev_count) {
-            prev_count = mod_resolver.modules.count();
+        var has_unparsed = false;
+        var check_it = mod_resolver.modules.iterator();
+        while (check_it.next()) |entry| {
+            if (entry.value_ptr.ast == null) { has_unparsed = true; break; }
+        }
+        if (has_unparsed) {
             try mod_resolver.parseModules(allocator);
             if (reporter.hasErrors()) return null;
         }

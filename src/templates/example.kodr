@@ -2,9 +2,12 @@ module example
 
 // ─── Imports ─────────────────────────────────────────────────────────────────
 
-// local module import
+// standard library imports
 
 import std::console
+import std::str
+import std::system
+import std::time
 
 // ─── Variables & Constants ───────────────────────────────────────────────────
 
@@ -843,3 +846,54 @@ test "Box type" {
     const b = IntBox(value: 99)
     assert(b.value == 99)
 }
+
+// ─── String Utilities (std::str) ────────────────────────────────────────────
+
+// str.from — convert any value to String
+
+func number_to_string() String {
+    const n: i32 = 42
+    return str.from(n)
+}
+
+// str.join — join strings with separator
+
+func join_demo() String {
+    const parts: [3]String = ["one", "two", "three"]
+    return str.join(parts, ", ")
+}
+
+test "str.from" {
+    assert(number_to_string() == "42")
+}
+
+test "str.join" {
+    assert(join_demo() == "one, two, three")
+}
+
+// ─── System (std::system) ───────────────────────────────────────────────────
+
+// system.cwd — get current working directory
+
+func cwd_demo() bool {
+    const dir: String = system.cwd()
+    return dir.contains("/")
+}
+
+test "system.cwd" {
+    assert(cwd_demo())
+}
+
+// ─── Time (std::time) ───────────────────────────────────────────────────────
+
+// time.now — unix timestamp in seconds
+
+func time_demo() bool {
+    const ts: i64 = time.now()
+    return ts > 0
+}
+
+test "time.now" {
+    assert(time_demo())
+}
+
