@@ -9,10 +9,25 @@ Ideas and language decisions that are not yet committed.
 - `join` — needs slice-of-strings support
 - `toString` — needs generic method dispatch on non-string types
 
-## Undecided
+## Decided — Not Yet Implemented
 
-- **`Array(T, N)` / `Slice(T)` syntax** — replace `[N]T` and `[]T` with generic builtin style to match `List(T)`, `Ptr(T)`, etc. More consistent and easier to type, but more verbose and mismatches array literals `[1, 2, 3]`.
-- **`else` on `for`/`while`** — execute a block when the loop body never runs (empty iterable or condition false on first check). `for(items) |item| { ... } else { console.println("empty") }`.
+- **String interpolation `@{}`** — `"hello @{name}"` desugars to `"hello " ++ str.from(name)`. `@` alone is literal, only `@{` triggers interpolation.
+- **Union unwrap `.value`** — replaces `.i32`/`.String` style. Only works when narrowed to one remaining type via `is` checks with early exit or `match`. Unnarrowed `.value` is a compile error.
+- **Exhaustive match on unions** — `match` on a union type must cover all member types or have `else`. Missing arm without `else` is a compile error. Integer/string/range matches still allow partial coverage.
+
+## Decided Against
+
+- **Closures** — function pointers cover the use case. Captures create ownership complexity. Pass variables as arguments instead.
+- **Traits / interfaces** — `any` + `compt` covers generic type dispatch. Traits add complexity (hierarchies, orphan rules, associated types) without proportional value.
+- **Coroutines / async** — threads + move semantics cover parallelism. Coroutines need a runtime, colored functions, and an executor.
+- **REPL** — compiled language. `kodr run` is fast enough. A REPL needs an interpreter or incremental compiler.
+- **Top-level `println`** — keep in `std::console`. One import, all I/O. No special-case global functions.
+- **Collection method chaining** — `.filter().map().take()` allocates intermediate collections. For loops are explicit, zero-alloc, and already work.
+- **Untagged unions** — all unions carry a tag. Safety requires knowing which type is active. Use `extern struct` with Zig sidecar for unsafe C interop.
+- **Goroutines** — need a runtime, GC, scheduler. OS threads + move semantics are deterministic with no runtime overhead.
+- **`Array(T, N)` / `Slice(T)` syntax** — `[N]T` and `[]T` are shorter, universal, and match array literals.
+- **`else` on `for`/`while`** — confusing semantics. Use `if(items.len == 0)` instead.
+- **Enum associated values** — arbitrary unions + `is` already cover this cleanly.
 
 ---
 
@@ -25,7 +40,7 @@ Guiding rule: foundation and building blocks only. No opinionated high-level fra
 std.net           // raw sockets — TCP, UDP
 std.encoding      // base64, hex, UTF-8, UTF-16
 std.unicode       // full unicode support, normalization
-std.fmt           // string formatting: std.fmt.format("hello {}", name)
+std.fmt           // string formatting
 std.process       // spawn processes, pipes, child processes
 std.signal        // OS signals — SIGINT, SIGTERM etc
 std.reflect       // type introspection
@@ -67,7 +82,7 @@ No editor integration. Blocks adoption. Needed before the language is usable day
 Generate HTML/Markdown docs from `pub` declarations and doc comments.
 
 ### Fuzz Testing
-Use Zig's built-in `std.testing.fuzz` to fuzz the lexer and parser. Native speed, no external tools, add directly to existing test blocks in `lexer.zig` and `parser.zig`. Do this once the parser is stable and manual testing stops finding bugs.
+Use Zig's built-in `std.testing.fuzz` to fuzz the lexer and parser. Native speed, no external tools. Do this once the parser is stable.
 
 ---
 
