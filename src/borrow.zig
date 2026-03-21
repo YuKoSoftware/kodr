@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const parser = @import("parser.zig");
+const declarations = @import("declarations.zig");
 const errors = @import("errors.zig");
 const K = @import("constants.zig");
 
@@ -25,6 +26,7 @@ pub const BorrowChecker = struct {
     scope_depth: usize,
     locs: ?*const parser.LocMap,
     source_file: []const u8,
+    decls: ?*declarations.DeclTable,
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter) BorrowChecker {
         return .{
@@ -34,6 +36,7 @@ pub const BorrowChecker = struct {
             .scope_depth = 0,
             .locs = null,
             .source_file = "",
+            .decls = null,
         };
     }
 
@@ -187,6 +190,26 @@ pub const BorrowChecker = struct {
                 try self.checkNotMutablyBorrowedPath(name, null);
             },
             .call_expr => |c| {
+                // Method call: obj.method(args) — check if self param creates a borrow
+                if (c.callee.* == .field_expr) {
+                    const fe = c.callee.field_expr;
+                    if (fe.object.* == .identifier) {
+                        const obj_name = fe.object.identifier;
+                        const method_name = fe.field;
+                        // Look up method to check self parameter mutability
+                        if (self.decls) |decls| {
+                            if (decls.funcs.get(method_name)) |sig| {
+                                if (sig.params.len > 0 and std.mem.eql(u8, sig.params[0].name, "self")) {
+                                    const self_node = sig.param_nodes[0];
+                                    if (self_node.* == .param) {
+                                        const is_mut = isMutableBorrowType(self_node.param.type_annotation);
+                                        try self.addBorrow(obj_name, null, is_mut);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 try self.checkExpr(c.callee);
                 for (c.args) |arg| try self.checkExpr(arg);
             },

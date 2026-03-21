@@ -796,6 +796,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         defer borrow_checker.deinit();
         borrow_checker.locs = locs_ptr;
         borrow_checker.source_file = source_file;
+        borrow_checker.decls = &decl_collector.table;
 
         try borrow_checker.check(ast);
         if (reporter.hasErrors()) return null;

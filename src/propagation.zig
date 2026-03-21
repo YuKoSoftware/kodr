@@ -118,7 +118,7 @@ pub const PropChecker = struct {
                 defer scope.deinit();
 
                 try self.checkNode(f.body, &scope);
-                try self.checkScopeExit(&scope, f.return_type);
+                try self.checkScopeExit(&scope);
             },
             .struct_decl => |s| {
                 for (s.members) |member| {
@@ -146,7 +146,7 @@ pub const PropChecker = struct {
                 }
 
                 // Check scope exit — all unhandled unions must propagate
-                try self.checkScopeExit(&block_scope, null);
+                try self.checkScopeExit(&block_scope);
             },
             else => {},
         }
@@ -217,8 +217,11 @@ pub const PropChecker = struct {
                 // Walk the condition to find type checks — handles compound conditions
                 // `x is Error` desugars to `@type(x) == Error`
                 // `x is not null` desugars to `@type(x) != null`
-                // `x is Error and y is null` → both marked handled
-                self.extractTypeChecks(i.condition, scope);
+                // Only mark as handled if the then-block has statements (empty body = not handled)
+                const has_body = i.then_block.* == .block and i.then_block.block.statements.len > 0;
+                if (has_body) {
+                    self.extractTypeChecks(i.condition, scope);
+                }
                 try self.checkNode(i.then_block, scope);
                 if (i.else_block) |e| try self.checkNode(e, scope);
             },
@@ -322,28 +325,24 @@ pub const PropChecker = struct {
     }
 
     /// Check scope exit — unhandled unions either propagate or error
-    fn checkScopeExit(self: *PropChecker, scope: *PropScope, func_ret: ?*parser.Node) anyerror!void {
+    fn checkScopeExit(self: *PropChecker, scope: *PropScope) anyerror!void {
         var it = scope.vars.iterator();
         while (it.next()) |entry| {
             const uvar = entry.value_ptr.*;
             if (!uvar.handled) {
                 if (scope.func_returns_error) {
                     // OK — will automatically propagate with trace
-                    // In codegen, we emit the propagation code
                 } else {
-                    // Function doesn't return error union — can't propagate
-                    if (func_ret) |_| {
-                        const kind = if (uvar.is_error_union) K.Type.ERROR else K.Type.NULL;
-                        const loc: ?errors.SourceLoc = if (uvar.line > 0)
-                            .{ .file = self.source_file, .line = uvar.line, .col = uvar.col }
-                        else
-                            null;
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "unhandled {s} union '{s}' — enclosing function cannot propagate",
-                            .{ kind, uvar.name });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = loc });
-                    }
+                    const kind = if (uvar.is_error_union) K.Type.ERROR else K.Type.NULL;
+                    const loc: ?errors.SourceLoc = if (uvar.line > 0)
+                        .{ .file = self.source_file, .line = uvar.line, .col = uvar.col }
+                    else
+                        null;
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "unhandled {s} union '{s}' — enclosing function cannot propagate",
+                        .{ kind, uvar.name });
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = loc });
                 }
             }
         }
@@ -393,7 +392,7 @@ test "propagation - handled error union" {
     try scope.define("result", true, 1, 1);
     scope.markHandled("result");
 
-    try checker.checkScopeExit(&scope, null);
+    try checker.checkScopeExit(&scope);
     try std.testing.expect(!reporter.hasErrors());
 }
 
@@ -411,8 +410,7 @@ test "propagation - unhandled in non-propagating function" {
     try scope.define("result", true, 1, 1);
     // Not marked as handled
 
-    var ret_type = parser.Node{ .type_named = "void" };
-    try checker.checkScopeExit(&scope, &ret_type);
+    try checker.checkScopeExit(&scope);
     try std.testing.expect(reporter.hasErrors());
 }
 
@@ -532,16 +530,18 @@ test "propagation - is not check marks union as handled" {
     // Define a null union variable
     try scope.define("result", false, 1, 1);
 
-    // Build: if(@type(result) != null) — desugared from `if(result is not null)`
+    // Build: if(@type(result) != null) { return } — desugared from `if(result is not null)`
     var result_id = parser.Node{ .identifier = "result" };
     var type_args_arr = [_]*parser.Node{&result_id};
     var type_call = parser.Node{ .compiler_func = .{ .name = K.Type.TYPE, .args = &type_args_arr } };
     var null_node = parser.Node{ .type_named = K.Type.NULL };
     var condition = parser.Node{ .binary_expr = .{ .left = &type_call, .op = "!=", .right = &null_node } };
-    var empty_block = parser.Node{ .block = .{ .statements = &.{} } };
+    var ret_stmt = parser.Node{ .return_stmt = .{ .value = null } };
+    var body_stmts = [_]*parser.Node{&ret_stmt};
+    var body_block = parser.Node{ .block = .{ .statements = &body_stmts } };
     var if_stmt = parser.Node{ .if_stmt = .{
         .condition = &condition,
-        .then_block = &empty_block,
+        .then_block = &body_block,
         .else_block = null,
     } };
 
@@ -684,10 +684,12 @@ test "propagation - compound condition handles multiple unions" {
     var right_cond = parser.Node{ .binary_expr = .{ .left = &y_type, .op = "!=", .right = &null_node } };
 
     var compound = parser.Node{ .binary_expr = .{ .left = &left_cond, .op = "and", .right = &right_cond } };
-    var empty_block = parser.Node{ .block = .{ .statements = &.{} } };
+    var ret_stmt = parser.Node{ .return_stmt = .{ .value = null } };
+    var body_stmts = [_]*parser.Node{&ret_stmt};
+    var body_block = parser.Node{ .block = .{ .statements = &body_stmts } };
     var if_stmt = parser.Node{ .if_stmt = .{
         .condition = &compound,
-        .then_block = &empty_block,
+        .then_block = &body_block,
         .else_block = null,
     } };
 

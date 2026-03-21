@@ -1264,7 +1264,7 @@ pub const CodeGen = struct {
             try self.generateExpr(v.value);
             self.type_ctx = prev_ctx;
         }
-        try self.write(";");
+        try self.writeFmt("; _ = &{s};", .{v.name});
     }
 
     /// Info extracted from an a.allocOne(T, val) call expression
