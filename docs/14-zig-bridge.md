@@ -58,12 +58,6 @@ extern const E: f64
 ```
 The Zig sidecar must have a matching `pub const`.
 
-### `extern var` — expose a mutable Zig variable
-```
-extern var counter: i32
-```
-The Zig sidecar must have a matching `pub var`.
-
 ### `extern struct` — import an opaque type from Zig
 ```
 extern struct Socket

@@ -12,6 +12,10 @@ extern func print(msg: String) void
 
 extern func println(msg: String) void
 
+// Flush buffered output — println flushes automatically, use after print
+
+extern func flush() void
+
 // Print to stderr — for debugging
 
 extern func debugPrint(msg: String) void
@@ -20,11 +24,3 @@ extern func debugPrint(msg: String) void
 
 extern func get() (Error | String)
 
-// Print a prefixed message: "[prefix] msg\n"
-
-pub func printPrefixed(prefix: String, msg: String) void {
-    print("[")
-    print(prefix)
-    print("] ")
-    println(msg)
-}

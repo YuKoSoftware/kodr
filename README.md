@@ -41,9 +41,9 @@ The full language spec lives in [`docs/`](docs/):
 | [07-control-flow.md](docs/07-control-flow.md) | Loops, pattern matching, defer |
 | [08-error-handling.md](docs/08-error-handling.md) | Error handling, null handling |
 | [09-memory.md](docs/09-memory.md) | Memory model, ownership, pointers, heap allocation |
-| [10-structs-enums.md](docs/10-structs-enums.md) | Structs, enums |
+| [10-structs-enums.md](docs/10-structs-enums.md) | Structs, enums, bitfields |
 | [11-modules.md](docs/11-modules.md) | Modules, imports, project metadata |
-| [12-concurrency.md](docs/12-concurrency.md) | Thread, async, ownership and threads |
+| [12-concurrency.md](docs/12-concurrency.md) | Threads, ownership and threads |
 | [13-build-cli.md](docs/13-build-cli.md) | Build system, CLI, generated Zig output |
 | [14-zig-bridge.md](docs/14-zig-bridge.md) | extern func, C interop, naming conventions |
 | [15-testing.md](docs/15-testing.md) | Testing |

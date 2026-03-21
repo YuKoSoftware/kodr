@@ -8,6 +8,7 @@ pub const CACHE_DIR = ".kodr-cache";
 pub const GENERATED_DIR = ".kodr-cache/generated";
 pub const TIMESTAMPS_FILE = ".kodr-cache/timestamps";
 pub const DEPS_FILE = ".kodr-cache/deps.graph";
+pub const WARNINGS_FILE = ".kodr-cache/warnings";
 
 /// A module entry in the cache
 pub const ModuleEntry = struct {
@@ -184,6 +185,62 @@ pub const Cache = struct {
         return false;
     }
 };
+
+/// A cached warning entry
+pub const CachedWarning = struct {
+    module: []const u8,
+    file: []const u8,
+    line: usize,
+    message: []const u8,
+};
+
+/// Load cached warnings from .kodr-cache/warnings
+pub fn loadWarnings(allocator: std.mem.Allocator) !std.ArrayListUnmanaged(CachedWarning) {
+    var list: std.ArrayListUnmanaged(CachedWarning) = .{};
+    const file = std.fs.cwd().openFile(WARNINGS_FILE, .{}) catch |err| {
+        if (err == error.FileNotFound) return list;
+        return err;
+    };
+    defer file.close();
+
+    const content = try file.readToEndAlloc(allocator, 1024 * 1024);
+    defer allocator.free(content);
+
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        // Format: "module\tfile\tline\tmessage"
+        var parts = std.mem.splitScalar(u8, line, '\t');
+        const mod = parts.next() orelse continue;
+        const src_file = parts.next() orelse continue;
+        const line_str = parts.next() orelse continue;
+        const msg = parts.next() orelse continue;
+        const line_num = std.fmt.parseInt(usize, line_str, 10) catch continue;
+        try list.append(allocator, .{
+            .module = try allocator.dupe(u8, mod),
+            .file = try allocator.dupe(u8, src_file),
+            .line = line_num,
+            .message = try allocator.dupe(u8, msg),
+        });
+    }
+    return list;
+}
+
+/// Save warnings to .kodr-cache/warnings
+pub fn saveWarnings(warnings: []const CachedWarning) !void {
+    try ensureGeneratedDir();
+    const file = try std.fs.cwd().createFile(WARNINGS_FILE, .{});
+    defer file.close();
+
+    var buf: [8192]u8 = undefined;
+    var w = file.writer(&buf);
+    const writer = &w.interface;
+
+    for (warnings) |warn| {
+        try writer.print("{s}\t{s}\t{d}\t{s}\n", .{ warn.module, warn.file, warn.line, warn.message });
+    }
+    try writer.flush();
+}
 
 pub fn ensureGeneratedDir() !void {
     std.fs.cwd().makePath(GENERATED_DIR) catch |err| {

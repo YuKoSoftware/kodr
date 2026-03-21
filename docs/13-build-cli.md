@@ -19,6 +19,7 @@ kodr init                           // init in current dir, use folder name as p
 kodr initstd                        // create std/ and global/ folders next to the kodr binary
 kodr addtopath                      // add kodr to PATH in your shell profile
 kodr debug                          // dump project info: source dir, modules found, files
+kodr fmt                            // format all .kodr files in the project
 ```
 
 ---

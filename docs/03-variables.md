@@ -7,8 +7,10 @@ var x: i32 = 5      // mutable, runtime
 const y: i32 = 10   // immutable, runtime
 ```
 
-- `var` — mutable, runtime. Can be reassigned.
+- `var` — mutable, runtime. Can be reassigned. Only allowed inside functions.
 - `const` — immutable, runtime. Cannot be reassigned. If the value comes from a `compt func`, the compiler evaluates it at compile time automatically.
+
+Module-level declarations must be `const` — mutable state lives inside functions. This eliminates shared mutable state and prevents data races by design.
 
 For compile-time computation, use a `compt func` and assign the result to a `const`:
 ```

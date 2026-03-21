@@ -8,13 +8,21 @@ const std = @import("std");
 const stdout = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
 const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
 
+var buf: [4096]u8 = undefined;
+var w: std.fs.File.Writer = stdout.writer(&buf);
+
 pub fn print(msg: []const u8) void {
-    stdout.writeAll(msg) catch {};
+    w.interface.writeAll(msg) catch {};
 }
 
 pub fn println(msg: []const u8) void {
-    stdout.writeAll(msg) catch {};
-    stdout.writeAll("\n") catch {};
+    w.interface.writeAll(msg) catch {};
+    w.interface.writeAll("\n") catch {};
+    w.interface.flush() catch {};
+}
+
+pub fn flush() void {
+    w.interface.flush() catch {};
 }
 
 pub fn debugPrint(msg: []const u8) void {

@@ -60,8 +60,6 @@ BINOUT=$(./bin/buildproj 2>&1)
 if echo "$BINOUT" | grep -q "hello kodr"; then pass "binary runs"
 else fail "binary runs" "$BINOUT"; fi
 
-if echo "$BINOUT" | grep -q "\[info\] ready"; then pass "mixed extern+kodr func (printPrefixed)"
-else fail "mixed extern+kodr func (printPrefixed)" "$BINOUT"; fi
 
 # ── kodr run ─────────────────────────────────────────────────
 

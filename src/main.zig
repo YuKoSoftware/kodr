@@ -821,6 +821,28 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         }
     }
 
+    // Load cached warnings for incremental builds
+    var cached_warnings = try cache.loadWarnings(allocator);
+    defer {
+        for (cached_warnings.items) |w| {
+            allocator.free(w.module);
+            allocator.free(w.file);
+            allocator.free(w.message);
+        }
+        cached_warnings.deinit(allocator);
+    }
+
+    // Track all warnings for saving at end
+    var all_warnings: std.ArrayListUnmanaged(cache.CachedWarning) = .{};
+    defer {
+        for (all_warnings.items) |w| {
+            allocator.free(w.module);
+            allocator.free(w.file);
+            allocator.free(w.message);
+        }
+        all_warnings.deinit(allocator);
+    }
+
     // Process each module in dependency order
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
@@ -829,13 +851,30 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         // Check if module needs recompilation
         const needs_recompile = try comp_cache.moduleNeedsRecompile(mod_name, mod_ptr.files);
         if (!needs_recompile) {
-            // Skip — use cached .zig file
+            // Replay cached warnings for this module
+            for (cached_warnings.items) |w| {
+                if (std.mem.eql(u8, w.module, mod_name)) {
+                    try reporter.warn(.{
+                        .message = w.message,
+                        .loc = .{ .file = w.file, .line = w.line, .col = 0 },
+                    });
+                    try all_warnings.append(allocator, .{
+                        .module = try allocator.dupe(u8, w.module),
+                        .file = try allocator.dupe(u8, w.file),
+                        .line = w.line,
+                        .message = try allocator.dupe(u8, w.message),
+                    });
+                }
+            }
             continue;
         }
 
         // Get source location map and file path for error reporting
         const locs_ptr: ?*const parser.LocMap = if (mod_ptr.locs) |*l| l else null;
         const source_file: []const u8 = if (mod_ptr.files.len > 0) mod_ptr.files[0] else "";
+
+        // Snapshot warning count to capture new warnings from this module
+        const warn_start = reporter.warnings.items.len;
 
         // ── Pass 4: Declaration Collection ────────────────────
         var decl_collector = declarations.DeclCollector.init(allocator, reporter);
@@ -959,6 +998,16 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
             try cache.writeGeneratedZig("mem_rt", MEM_ZIG, allocator);
         }
 
+        // Capture new warnings from this module for caching
+        for (reporter.warnings.items[warn_start..]) |w| {
+            try all_warnings.append(allocator, .{
+                .module = try allocator.dupe(u8, mod_name),
+                .file = if (w.loc) |loc| try allocator.dupe(u8, loc.file) else try allocator.dupe(u8, ""),
+                .line = if (w.loc) |loc| loc.line else 0,
+                .message = try allocator.dupe(u8, w.message),
+            });
+        }
+
         // Update timestamp cache
         for (mod_ptr.files) |file| {
             try comp_cache.updateTimestamp(file);
@@ -968,6 +1017,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
     // Save updated cache
     try comp_cache.saveTimestamps();
     try comp_cache.saveDeps();
+    try cache.saveWarnings(all_warnings.items);
 
     if (cli.command == .@"test") {
         var runner = zig_runner.ZigRunner.init(allocator, reporter, cli.verbose) catch |err| {

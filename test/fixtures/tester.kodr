@@ -10,7 +10,6 @@ import std::console
 
 // ─── Variables ───────────────────────────────────────────────
 
-var mutable_var: i32 = 10
 const immutable_const: i32 = 20
 const COMPT_VALUE: i32 = 1024
 

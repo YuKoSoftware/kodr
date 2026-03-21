@@ -660,7 +660,13 @@ pub const Parser = struct {
             .kw_enum => try self.parseEnumDecl(false),
             .kw_bitfield => try self.parseBitfieldDecl(false),
             .kw_const => try self.parseConstDecl(false),
-            .kw_var => try self.parseVarDecl(false),
+            .kw_var => {
+                try self.reporter.report(.{
+                    .message = "module-level 'var' is not allowed — use 'const' or move into a function",
+                    .loc = .{ .file = "", .line = tok.line, .col = tok.col },
+                });
+                return error.ParseError;
+            },
             .kw_pub => try self.parsePubDecl(),
             .kw_extern => try self.parseExternDecl(),
             .kw_test => try self.parseTestDecl(),
@@ -695,7 +701,13 @@ pub const Parser = struct {
             .kw_enum      => try self.parseEnumDecl(true),
             .kw_bitfield  => try self.parseBitfieldDecl(true),
             .kw_const     => try self.parseConstDecl(true),
-            .kw_var       => try self.parseVarDecl(true),
+            .kw_var       => {
+                try self.reporter.report(.{
+                    .message = "module-level 'var' is not allowed — use 'const' or move into a function",
+                    .loc = .{ .file = "", .line = tok.line, .col = tok.col },
+                });
+                return error.ParseError;
+            },
             .kw_compt  => blk: {
                 var node = try self.parseComptDecl();
                 if (node.* == .func_decl) node.func_decl.is_pub = true;
@@ -717,11 +729,17 @@ pub const Parser = struct {
         return switch (tok.kind) {
             .kw_func => self.parseFuncDecl(true, true),
             .kw_const => self.parseExternConstOrVar(true),
-            .kw_var => self.parseExternConstOrVar(false),
+            .kw_var => {
+                try self.reporter.report(.{
+                    .message = "'extern var' is not allowed — use 'extern const' or wrap in 'extern func'",
+                    .loc = .{ .file = "", .line = tok.line, .col = tok.col },
+                });
+                return error.ParseError;
+            },
             .kw_struct => self.parseExternStructDecl(),
             else => {
                 try self.reporter.report(.{
-                    .message = "expected 'func', 'const', 'var', or 'struct' after 'extern'",
+                    .message = "expected 'func', 'const', or 'struct' after 'extern'",
                     .loc = .{ .file = "", .line = ext_tok.line, .col = ext_tok.col },
                 });
                 return error.ParseError;
@@ -2239,11 +2257,13 @@ test "parser - simple function" {
     try std.testing.expectEqual(@as(usize, 1), prog.program.top_level.len);
 }
 
-test "parser - var declaration" {
+test "parser - var declaration inside function" {
     const alloc = std.testing.allocator;
     var lex = lexer.Lexer.init((
         \\module main
+        \\func test_fn() void {
         \\var x: i32 = 42
+        \\}
         \\
     ));
     var tokens = try lex.tokenize(alloc);
@@ -2258,7 +2278,7 @@ test "parser - var declaration" {
     const prog = try parser.parseProgram();
     try std.testing.expect(!reporter.hasErrors());
     try std.testing.expectEqual(@as(usize, 1), prog.program.top_level.len);
-    try std.testing.expect(prog.program.top_level[0].* == .var_decl);
+    try std.testing.expect(prog.program.top_level[0].* == .func_decl);
 }
 
 test "parser - extern func" {
@@ -2671,4 +2691,44 @@ test "parser - function pointer type" {
     const func = prog.program.top_level[0];
     const param_type = func.func_decl.params[0].param.type_annotation;
     try std.testing.expect(param_type.* == .type_func);
+}
+
+test "parser - module-level var rejected" {
+    const alloc = std.testing.allocator;
+    var lex = lexer.Lexer.init((
+        \\module main
+        \\var x: i32 = 0
+        \\
+    ));
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var p = Parser.init(tokens.items, alloc, &reporter);
+    defer p.deinit();
+
+    _ = p.parseProgram() catch {};
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "parser - pub var rejected" {
+    const alloc = std.testing.allocator;
+    var lex = lexer.Lexer.init((
+        \\module main
+        \\pub var x: i32 = 0
+        \\
+    ));
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var p = Parser.init(tokens.items, alloc, &reporter);
+    defer p.deinit();
+
+    _ = p.parseProgram() catch {};
+    try std.testing.expect(reporter.hasErrors());
 }

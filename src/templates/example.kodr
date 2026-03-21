@@ -9,16 +9,19 @@ import std::str
 import std::system
 import std::time
 
-// ─── Variables & Constants ───────────────────────────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
 
-// mutable variable with explicit type
-
-var counter: i32 = 0
-
-// immutable constant
+// module-level declarations are const only — var lives inside functions
 
 const MAX_SIZE: i32 = 100
 const PI: f64 = 3.14159
+
+// numeric literal formats
+
+const DECIMAL: i32 = 1_000_000
+const HEX: u32 = 0xFF
+const BINARY: u8 = 0b1010
+const OCTAL: u8 = 0o77
 
 // compile-time function — entire body evaluated at compile time
 
@@ -26,16 +29,9 @@ compt func double(n: i32) i32 {
     return n * 2
 }
 
-// numeric literal formats
-
-var decimal: i32 = 1_000_000
-var hex: u32 = 0xFF
-var binary: u8 = 0b1010
-var octal: u8 = 0o77
-
 // type is inferred from #bitsize when no annotation is given
-// var x = 42          // i32 if #bitsize = 32
-// const y = 3.14      // f32 if #bitsize = 32
+// const x = 42          // i32 if #bitsize = 32
+// const y = 3.14        // f32 if #bitsize = 32
 
 // ─── Structs ─────────────────────────────────────────────────────────────────
 
@@ -878,7 +874,6 @@ test "match range" {
 // Syntax:
 //   extern func name(params) ReturnType    — bridge a Zig function
 //   extern const NAME: Type                — expose a Zig constant
-//   extern var NAME: Type                  — expose a mutable Zig variable
 //   extern struct Name                     — import an opaque Zig type
 //
 // Example (in a module with a paired .zig file):
