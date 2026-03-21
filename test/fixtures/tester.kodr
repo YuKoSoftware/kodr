@@ -50,13 +50,13 @@ pub struct Counter {
 
 // ─── Enums ───────────────────────────────────────────────────
 
-pub enum Color(u8) {
+pub enum(u8) Color {
     Red
     Green
     Blue
 }
 
-pub enum Direction(u8) {
+pub enum(u8) Direction {
     North
     South
     East
@@ -931,7 +931,7 @@ pub func test_thread_wait() i32 {
 
 // ─── Bitfield ───────────────────────────────────────────────
 
-bitfield Perms(u8) {
+bitfield(u8) Perms {
     Read
     Write
     Execute

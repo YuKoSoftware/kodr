@@ -82,7 +82,7 @@ func make_player() Player {
 
 // enum with explicit backing type
 
-pub enum Direction(u8) {
+pub enum(u8) Direction {
     North
     South
     East
@@ -100,7 +100,7 @@ func go_north() Direction {
 
 // bitfield — named bit flags backed by an integer, compiler assigns powers of 2
 
-bitfield FileMode(u8) {
+bitfield(u8) FileMode {
     Read
     Write
     Execute

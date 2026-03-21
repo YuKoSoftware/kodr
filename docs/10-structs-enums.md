@@ -106,7 +106,7 @@ Enums always require an explicit backing type — the compiler never silently ch
 
 ```
 // regular enum — named constants, explicit backing type
-enum Direction(u32) {
+enum(u32) Direction {
     North
     South
     East
@@ -114,7 +114,7 @@ enum Direction(u32) {
 }
 
 // data-carrying enum — explicit backing type
-enum Shape(u32) {
+enum(u32) Shape {
     Circle(radius: f32)
     Rectangle(width: f32, height: f32)
     Point                               // can mix — some variants with data, some without
@@ -131,7 +131,7 @@ var s: Shape = Circle(radius: 5.0)
 ### Methods on Enums
 Same rules as structs — `self` as first argument, match on self inside:
 ```
-enum Shape(u32) {
+enum(u32) Shape {
     Circle(radius: f32)
     Rectangle(width: f32, height: f32)
     Point
@@ -153,7 +153,7 @@ enum Shape(u32) {
 A `bitfield` is its own declaration keyword — distinct from `enum`. Use it for named bit flags backed by an integer. The compiler assigns powers of 2 to each flag automatically.
 
 ```
-bitfield Permissions(u32) {
+bitfield(u32) Permissions {
     Read      // 0b0001
     Write     // 0b0010
     Execute   // 0b0100

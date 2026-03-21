@@ -274,23 +274,47 @@ pub const Lexer = struct {
             const next_ch = self.peekAt(1);
             if (next_ch == 'x' or next_ch == 'X') {
                 _ = self.advance(); _ = self.advance();
+                const digit_start = self.pos;
                 while (self.peek()) |ch| {
                     if (std.ascii.isHex(ch) or ch == '_') _ = self.advance()
                     else break;
                 }
+                if (self.pos == digit_start)
+                    return .{ .kind = .invalid, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
+                // Check for invalid trailing alphanumeric (e.g. 0xGG)
+                if (self.peek()) |ch| {
+                    if (std.ascii.isAlphanumeric(ch))
+                        return .{ .kind = .invalid, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
+                }
                 return .{ .kind = .int_literal, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
             } else if (next_ch == 'b' or next_ch == 'B') {
                 _ = self.advance(); _ = self.advance();
+                const digit_start = self.pos;
                 while (self.peek()) |ch| {
                     if (ch == '0' or ch == '1' or ch == '_') _ = self.advance()
                     else break;
                 }
+                if (self.pos == digit_start)
+                    return .{ .kind = .invalid, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
+                // Check for invalid trailing digit (e.g. 0b12)
+                if (self.peek()) |ch| {
+                    if (std.ascii.isAlphanumeric(ch))
+                        return .{ .kind = .invalid, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
+                }
                 return .{ .kind = .int_literal, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
             } else if (next_ch == 'o' or next_ch == 'O') {
                 _ = self.advance(); _ = self.advance();
+                const digit_start = self.pos;
                 while (self.peek()) |ch| {
                     if ((ch >= '0' and ch <= '7') or ch == '_') _ = self.advance()
                     else break;
+                }
+                if (self.pos == digit_start)
+                    return .{ .kind = .invalid, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
+                // Check for invalid trailing digit (e.g. 0o89)
+                if (self.peek()) |ch| {
+                    if (std.ascii.isAlphanumeric(ch))
+                        return .{ .kind = .invalid, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
                 }
                 return .{ .kind = .int_literal, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
             }

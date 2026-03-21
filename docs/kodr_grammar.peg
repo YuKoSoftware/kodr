@@ -89,7 +89,7 @@ field_decl      <- name _ ":" _ type (_ "=" _ expr)? newline
 # ENUMS
 # ============================================================
 
-enum_decl       <- "enum" _ name _ "(" _ type _ ")" _ "{" _ enum_member* _ "}"
+enum_decl       <- "enum" _ "(" _ type _ ")" _ name _ "{" _ enum_member* _ "}"
 
 enum_member     <- func_decl
                  / enum_variant
@@ -103,7 +103,7 @@ variant_field   <- name _ ":" _ type
 # BITFIELDS
 # ============================================================
 
-bitfield_decl   <- "bitfield" _ name _ "(" _ type _ ")" _ "{" _ bitfield_member* _ "}"
+bitfield_decl   <- "bitfield" _ "(" _ type _ ")" _ name _ "{" _ bitfield_member* _ "}"
 
 bitfield_member <- func_decl
                  / bitfield_flag

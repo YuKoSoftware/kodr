@@ -973,10 +973,10 @@ pub const Parser = struct {
 
     fn parseEnumDecl(self: *Parser, is_pub: bool) anyerror!*Node {
         _ = try self.expect(.kw_enum);
-        const name_tok = try self.expect(.identifier);
         _ = try self.expect(.lparen);
         const backing = try self.parseType();
         _ = try self.expect(.rparen);
+        const name_tok = try self.expect(.identifier);
         _ = try self.expect(.lbrace);
         self.skipNewlines();
 
@@ -1005,10 +1005,10 @@ pub const Parser = struct {
 
     fn parseBitfieldDecl(self: *Parser, is_pub: bool) anyerror!*Node {
         _ = try self.expect(.kw_bitfield);
-        const name_tok = try self.expect(.identifier);
         _ = try self.expect(.lparen);
         const backing = try self.parseType();
         _ = try self.expect(.rparen);
+        const name_tok = try self.expect(.identifier);
         _ = try self.expect(.lbrace);
         self.skipNewlines();
 
@@ -1800,6 +1800,17 @@ pub const Parser = struct {
                 }});
             },
 
+            .invalid => {
+                const msg = try std.fmt.allocPrint(self.alloc(),
+                    "invalid numeric literal '{s}'", .{tok.text});
+                defer self.alloc().free(msg);
+                try self.reporter.report(.{
+                    .message = msg,
+                    .loc = .{ .file = "", .line = tok.line, .col = tok.col },
+                });
+                return error.ParseError;
+            },
+
             // Literals
             .int_literal => {
                 _ = self.advance();
@@ -2403,7 +2414,7 @@ test "parser - enum declaration" {
     const alloc = std.testing.allocator;
     var lex = lexer.Lexer.init((
         \\module main
-        \\enum Direction(u8) {
+        \\enum(u8) Direction {
         \\North
         \\South
         \\}
@@ -2598,7 +2609,7 @@ test "parser - bitfield declaration" {
     const alloc = std.testing.allocator;
     var lex = lexer.Lexer.init((
         \\module main
-        \\bitfield Perms(u8) {
+        \\bitfield(u8) Perms {
         \\Read
         \\Write
         \\Execute

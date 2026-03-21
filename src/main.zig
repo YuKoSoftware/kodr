@@ -1771,7 +1771,7 @@ test "codegen - enum with match" {
     defer reporter.deinit();
     const out = try codegenSource(alloc,
         \\module main
-        \\enum Color(u8) {
+        \\enum(u8) Color {
         \\    Red
         \\    Green
         \\    Blue
@@ -1814,7 +1814,7 @@ test "codegen - bitfield declaration" {
     defer reporter.deinit();
     const out = try codegenSource(alloc,
         \\module main
-        \\bitfield Perms(u8) {
+        \\bitfield(u8) Perms {
         \\    Read
         \\    Write
         \\    Execute
