@@ -223,6 +223,7 @@ pub const EnumVariant = struct {
 pub const Param = struct {
     name: []const u8,
     type_annotation: *Node,
+    default_value: ?*Node = null,
 };
 
 pub const Block = struct {
@@ -749,6 +750,23 @@ pub const Parser = struct {
         }
         _ = try self.expect(.rparen);
 
+        // Validate: default params must come last (no non-default after a default)
+        {
+            var seen_default = false;
+            for (params.items) |p| {
+                if (p.* != .param) continue;
+                if (p.param.default_value != null) {
+                    seen_default = true;
+                } else if (seen_default) {
+                    try self.reporter.report(.{
+                        .message = "parameters with defaults must come after all required parameters",
+                        .loc = .{ .file = "", .line = name_tok.line, .col = name_tok.col },
+                    });
+                    return error.ParseError;
+                }
+            }
+        }
+
         const ret_type = try self.parseType();
 
         // extern func has no body — implementation is in paired .zig file
@@ -800,9 +818,18 @@ pub const Parser = struct {
             _ = self.advance();
             _ = try self.expect(.colon);
             const type_ann = try self.parseType();
+
+            // Optional default value: param: Type = expr
+            var default: ?*Node = null;
+            if (self.check(.assign)) {
+                _ = self.advance();
+                default = try self.parseExpr();
+            }
+
             return self.newNode(.{ .param = .{
                 .name = name_tok.text,
                 .type_annotation = type_ann,
+                .default_value = default,
             }});
         }
 

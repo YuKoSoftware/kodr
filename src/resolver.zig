@@ -213,6 +213,13 @@ pub const TypeResolver = struct {
                 if (v.type_annotation) |t| {
                     try self.validateType(t, scope);
                 }
+                // Duplicate variable check (only inside functions/blocks, not top-level)
+                if (scope.parent != null and scope.vars.contains(v.name)) {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "variable '{s}' already declared in this scope", .{v.name});
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                }
                 const val_type = try self.resolveExpr(v.value, scope);
                 const resolved = if (v.type_annotation) |t|
                     try types.resolveTypeNode(self.decls.typeAllocator(), t)
@@ -228,6 +235,9 @@ pub const TypeResolver = struct {
                             .loc = self.nodeLoc(node),
                         });
                     }
+                } else {
+                    // Type mismatch: annotation vs value
+                    try self.checkAssignCompat(resolved, val_type, node);
                 }
                 try scope.define(v.name, resolved);
             },
@@ -235,6 +245,12 @@ pub const TypeResolver = struct {
                 if (v.type_annotation) |t| {
                     try self.validateType(t, scope);
                 }
+                if (scope.parent != null and scope.vars.contains(v.name)) {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "variable '{s}' already declared in this scope", .{v.name});
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                }
                 const val_type = try self.resolveExpr(v.value, scope);
                 const resolved = if (v.type_annotation) |t|
                     try types.resolveTypeNode(self.decls.typeAllocator(), t)
@@ -250,6 +266,8 @@ pub const TypeResolver = struct {
                             .loc = self.nodeLoc(node),
                         });
                     }
+                } else {
+                    try self.checkAssignCompat(resolved, val_type, node);
                 }
                 try scope.define(v.name, resolved);
             },
@@ -609,6 +627,22 @@ pub const TypeResolver = struct {
             else => {},
         }
     }
+
+    /// Check if a value type is compatible with an annotation type.
+    /// Only flags clear primitive-vs-primitive mismatches (e.g. i32 vs String).
+    /// Non-primitive types (arrays, structs, etc.) are left to Zig.
+    fn checkAssignCompat(self: *TypeResolver, expected: RT, actual: RT, node: *parser.Node) !void {
+        if (actual == .unknown or actual == .inferred) return;
+        if (expected == .unknown or expected == .inferred) return;
+        // Only check when both sides are primitive — that's where we can be confident
+        if (expected != .primitive or actual != .primitive) return;
+        if (typesCompatible(actual, expected)) return;
+        const msg = try std.fmt.allocPrint(self.allocator,
+            "type mismatch: expected '{s}', got '{s}'",
+            .{ expected.name(), actual.name() });
+        defer self.allocator.free(msg);
+        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+    }
 };
 
 /// Infer the element type for for-loop captures from the iterable.
@@ -636,6 +670,9 @@ fn typesCompatible(a: RT, b: RT) bool {
     // Float literals are compatible with any float type
     if (a == .primitive and std.mem.eql(u8, a.primitive, "float_literal") and
         b == .primitive and isFloatType(b.primitive)) return true;
+    // Integer-to-integer and float-to-float are compatible (Zig handles coercion)
+    if (a == .primitive and b == .primitive and isIntegerType(a.primitive) and isIntegerType(b.primitive)) return true;
+    if (a == .primitive and b == .primitive and isFloatType(a.primitive) and isFloatType(b.primitive)) return true;
     // Error/null/arbitrary unions accept their inner types
     if (b == .error_union or b == .null_union or b == .union_type) return true;
     if (a == .error_union or a == .null_union or a == .union_type) return true;
@@ -824,6 +861,7 @@ test "resolver - function return type resolves" {
     try decl_table.funcs.put("add", .{
         .name = "add",
         .params = &.{},
+        .param_nodes = &.{},
         .return_type = .{ .primitive = "i32" },
         .return_type_node = ret_node,
         .is_compt = false,

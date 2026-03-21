@@ -67,6 +67,7 @@ pub const CodeGen = struct {
     source_file: []const u8,     // anchor file path for location reporting
     uses_fs: bool,               // module uses File or Dir types
     uses_mem: bool,              // module uses allocator wrappers (Debug/Arena/Temp)
+    uses_string_alloc: bool,     // module uses allocating string methods (repeat)
     in_thread_block: bool,       // inside a Thread body — return → result assignment
     current_thread_name: []const u8, // name of the thread being generated
     thread_capture_renames: std.StringHashMapUnmanaged([]const u8), // original name → _cap_name
@@ -108,6 +109,7 @@ pub const CodeGen = struct {
             .source_file = "",
             .uses_fs = false,
             .uses_mem = false,
+            .uses_string_alloc = false,
             .in_thread_block = false,
             .current_thread_name = "",
             .thread_capture_renames = .{},
@@ -245,6 +247,9 @@ pub const CodeGen = struct {
             try self.write("const KodrFs = @import(\"fs_rt.zig\");\n");
         }
 
+        // String repeat helper
+        try self.write("fn kodrStringRepeat(alloc: std.mem.Allocator, s: []const u8, n: usize) ![]const u8 { const buf = try alloc.alloc(u8, s.len * n); for (0..n) |i| { @memcpy(buf[i * s.len ..][0..s.len], s); } return buf; }\n");
+
         // Generate imports
         for (ast.program.imports) |imp| {
             try self.generateImport(imp);
@@ -365,7 +370,7 @@ pub const CodeGen = struct {
     }
 
     /// True when a coll_expr owns its allocator:
-    /// - no alloc_arg (default) → owned GPA
+    /// - no alloc_arg (default) → SMP global singleton
     /// - inline mem.DebugAllocator() / mem.Arena() etc. → owned
     /// - named variable → shared (not owned)
     fn isOwnedColl(c: parser.CollExpr) bool {
@@ -856,6 +861,7 @@ pub const CodeGen = struct {
                         param.param.name,
                         try self.typeToZig(param.param.type_annotation),
                     });
+                    // Default params handled at call site, not in Zig signature
                 }
             }
         }
@@ -2075,6 +2081,8 @@ pub const CodeGen = struct {
                         if (i > 0) try self.write(", ");
                         try self.generateExpr(arg);
                     }
+                    // Fill in default args if caller passed fewer than the function expects
+                    try self.fillDefaultArgs(c);
                     try self.write(")");
                 }
             },
@@ -3009,6 +3017,54 @@ pub const CodeGen = struct {
             try self.write(", ");
             if (args.len > 0) try self.generateExpr(args[0]);
             try self.write(")");
+
+        // ── Allocating string methods ────────────────────────────
+
+        } else if (std.mem.eql(u8, method, "toUpper")) {
+            // s.toUpper() → std.ascii.allocUpperString(alloc, s) catch ""
+            try self.write("(std.ascii.allocUpperString(");
+            try self.writeStringAllocArg(args);
+            try self.write(", ");
+            try self.generateExpr(obj);
+            try self.write(") catch \"\")");
+        } else if (std.mem.eql(u8, method, "toLower")) {
+            // s.toLower() → std.ascii.allocLowerString(alloc, s) catch ""
+            try self.write("(std.ascii.allocLowerString(");
+            try self.writeStringAllocArg(args);
+            try self.write(", ");
+            try self.generateExpr(obj);
+            try self.write(") catch \"\")");
+        } else if (std.mem.eql(u8, method, "replace")) {
+            // s.replace(old, new) → std.mem.replaceOwned(u8, alloc, s, old, new) catch ""
+            try self.write("(std.mem.replaceOwned(u8, ");
+            try self.writeStringAllocArg(args);
+            try self.write(", ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(", ");
+            if (args.len > 1) try self.generateExpr(args[1]);
+            try self.write(") catch \"\")");
+        } else if (std.mem.eql(u8, method, "repeat")) {
+            // s.repeat(n) → kodrStringRepeat(alloc, s, n) catch ""
+            try self.write("(kodrStringRepeat(");
+            try self.writeStringAllocArg(args);
+            try self.write(", ");
+            try self.generateExpr(obj);
+            try self.write(", ");
+            if (args.len > 0) try self.generateExpr(args[0]);
+            try self.write(") catch \"\")");
+
+        } else if (std.mem.eql(u8, method, "parseInt")) {
+            // s.parseInt() → std.fmt.parseInt(i32, s, 10)
+            try self.write("std.fmt.parseInt(i32, ");
+            try self.generateExpr(obj);
+            try self.write(", 10) catch 0");
+        } else if (std.mem.eql(u8, method, "parseFloat")) {
+            // s.parseFloat() → std.fmt.parseFloat(f64, s)
+            try self.write("std.fmt.parseFloat(f64, ");
+            try self.generateExpr(obj);
+            try self.write(") catch 0.0");
         } else {
             // Unknown string method — pass through
             try self.generateExpr(obj);
@@ -3019,6 +3075,56 @@ pub const CodeGen = struct {
             }
             try self.write(")");
         }
+    }
+
+    /// Write the allocator argument for an allocating string method.
+    /// Last arg is allocator if it's a mem.* call, otherwise default to smp_allocator.
+    /// Fill in default argument values when a call provides fewer args than the function expects.
+    fn fillDefaultArgs(self: *CodeGen, c: parser.CallExpr) anyerror!void {
+        const func_name: []const u8 = if (c.callee.* == .identifier)
+            c.callee.identifier
+        else if (c.callee.* == .field_expr)
+            c.callee.field_expr.field
+        else
+            return;
+        const d = self.decls orelse return;
+        const fsig = d.funcs.get(func_name) orelse return;
+        if (c.args.len >= fsig.param_nodes.len) return;
+        var wrote_any = c.args.len > 0;
+        for (fsig.param_nodes[c.args.len..]) |p| {
+            if (p.* == .param) {
+                if (p.param.default_value) |dv| {
+                    if (wrote_any) try self.write(", ");
+                    try self.generateExpr(dv);
+                    wrote_any = true;
+                }
+            }
+        }
+    }
+
+    fn writeStringAllocArg(self: *CodeGen, args: []*parser.Node) anyerror!void {
+        // Check if the last argument is an allocator (mem.X() or a tracked allocator var)
+        if (args.len > 0) {
+            const last = args[args.len - 1];
+            if (getMemAllocKind(last) != null) {
+                // Inline allocator: s.toUpper(mem.Arena()) — but for string methods,
+                // the user should pass a named allocator, not inline.
+                // For simplicity, we accept named allocator vars only.
+            }
+            if (last.* == .identifier and self.allocator_vars.contains(last.identifier)) {
+                const info = self.allocator_vars.get(last.identifier).?;
+                switch (info.kind) {
+                    .smp, .page => try self.generateExpr(last),
+                    else => {
+                        try self.generateExpr(last);
+                        try self.write(".allocator()");
+                    },
+                }
+                return;
+            }
+        }
+        // Default: SMP allocator
+        try self.write("std.heap.smp_allocator");
     }
 
     /// Generate a collection declaration where the collection owns its allocator.

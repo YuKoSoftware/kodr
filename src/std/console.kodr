@@ -5,18 +5,23 @@ module console
 // Implementation lives in console.zig — do not generate body, use paired .zig file.
 
 // Print a String — no newline added
+
 extern func print(msg: String) void
 
 // Print a String followed by a newline
+
 extern func println(msg: String) void
 
 // Print to stderr — for debugging
+
 extern func debugPrint(msg: String) void
 
 // Read one line from stdin — returns Error on EOF or read failure
+
 extern func get() (Error | String)
 
 // Print a prefixed message: "[prefix] msg\n"
+
 pub func printPrefixed(prefix: String, msg: String) void {
     print("[")
     print(prefix)

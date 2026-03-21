@@ -12,6 +12,7 @@ const types = @import("types.zig");
 pub const FuncSig = struct {
     name: []const u8,
     params: []ParamSig,
+    param_nodes: []*parser.Node, // original AST param nodes (for default values)
     return_type: types.ResolvedType,
     return_type_node: *parser.Node, // original AST node (used by codegen)
     is_compt: bool,
@@ -199,6 +200,7 @@ pub const DeclCollector = struct {
         const sig = FuncSig{
             .name = f.name,
             .params = try params.toOwnedSlice(self.allocator),
+            .param_nodes = f.params,
             .return_type = try types.resolveTypeNode(self.table.typeAllocator(), f.return_type),
             .return_type_node = f.return_type,
             .is_compt = f.is_compt,

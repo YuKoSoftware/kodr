@@ -288,4 +288,57 @@ NEG_OUT=$("$KODR" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "var &T.*not valid"; then pass "rejects var &T (use &T)"
 else fail "rejects var &T (use &T)" "$NEG_OUT"; fi
 
+# type mismatch on assignment (string to int)
+cd "$TESTDIR"
+mkdir -p neg_typemismatch/src
+cat > neg_typemismatch/src/main.kodr <<'KODR'
+module main
+#name    = "neg_typemismatch"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void {
+    var x: i32 = "hello"
+}
+KODR
+cd neg_typemismatch
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "type mismatch"; then pass "rejects type mismatch on assignment"
+else fail "rejects type mismatch on assignment" "$NEG_OUT"; fi
+
+# duplicate variable in same scope
+cd "$TESTDIR"
+mkdir -p neg_dupvar/src
+cat > neg_dupvar/src/main.kodr <<'KODR'
+module main
+#name    = "neg_dupvar"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void {
+    const x: i32 = 1
+    const x: i32 = 2
+}
+KODR
+cd neg_dupvar
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "already declared"; then pass "rejects duplicate variable"
+else fail "rejects duplicate variable" "$NEG_OUT"; fi
+
+# default param before required param
+cd "$TESTDIR"
+mkdir -p neg_default_order/src
+cat > neg_default_order/src/main.kodr <<'KODR'
+module main
+#name    = "neg_default_order"
+#version = Version(1, 0, 0)
+#build   = exe
+func foo(a: i32 = 5, b: i32) i32 {
+    return a + b
+}
+func main() void { }
+KODR
+cd neg_default_order
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "defaults.*must.*after\|required.*param"; then pass "rejects default before required param"
+else fail "rejects default before required param" "$NEG_OUT"; fi
+
 report_results

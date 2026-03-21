@@ -16,15 +16,15 @@ unions (3+ types). Covered by runtime tests: return, match, field access, assign
 
 Propagation pass does not track arbitrary unions — by design, they are not error-bearing.
 
-### String Operations — PARTIALLY DONE
-Non-allocating string methods are implemented as compiler-known field operations on `String`:
-`s.contains()`, `s.startsWith()`, `s.endsWith()`, `s.trim()`, `s.trimLeft()`, `s.trimRight()`,
-`s.indexOf()`, `s.lastIndexOf()`, `s.count()`, `s.split()` (destructuring only).
+### String Operations — DONE
+Non-allocating: `s.contains()`, `s.startsWith()`, `s.endsWith()`, `s.trim()`, `s.trimLeft()`,
+`s.trimRight()`, `s.indexOf()`, `s.lastIndexOf()`, `s.count()`, `s.split()` (destructuring only),
+`s.parseInt()`, `s.parseFloat()`.
 
-Still missing (allocating — need design decision on allocator passing):
-`toUpper`, `toLower`, `replace`, `repeat`, `join`, `parseInt`, `parseFloat`, `toString`.
+Allocating (default SMP allocator, optional explicit allocator as last arg):
+`s.toUpper()`, `s.toLower()`, `s.replace(old, new)`, `s.repeat(n)`.
 
-**Priority: medium** — non-allocating ops done, allocating ones need allocator design.
+Still missing: `join` (needs slice-of-strings), `toString` (needs generic method dispatch on non-string types).
 
 ---
 

@@ -3,6 +3,7 @@ module example
 // ─── If / Else ───────────────────────────────────────────────────────────────
 
 // conditional with else branch
+
 func max(a: i32, b: i32) i32 {
     if(a > b) {
         return a
@@ -14,6 +15,7 @@ func max(a: i32, b: i32) i32 {
 // ─── While Loops ─────────────────────────────────────────────────────────────
 
 // basic while loop
+
 func countdown(n: i32) i32 {
     var result: i32 = 0
     var i: i32 = n
@@ -25,6 +27,7 @@ func countdown(n: i32) i32 {
 }
 
 // while loop with continue expression — runs after each iteration
+
 func sum_with_step(n: i32) i32 {
     var total: i32 = 0
     var i: i32 = 0
@@ -37,6 +40,7 @@ func sum_with_step(n: i32) i32 {
 // ─── For Loops ───────────────────────────────────────────────────────────────
 
 // for loop over array
+
 func sum_array(arr: []i32) i32 {
     var total: i32 = 0
     for(arr) |val| {
@@ -46,6 +50,7 @@ func sum_array(arr: []i32) i32 {
 }
 
 // for loop over a numeric range
+
 func sum_range(n: i32) i32 {
     var total: i32 = 0
     for(0..n) |i| {
@@ -55,6 +60,7 @@ func sum_range(n: i32) i32 {
 }
 
 // compile-time function — loop inside runs at compile time
+
 compt func sum_sizes(sizes: []i32) i32 {
     var total: i32 = 0
     for(sizes) |s| {
@@ -66,6 +72,7 @@ compt func sum_sizes(sizes: []i32) i32 {
 // ─── Match ───────────────────────────────────────────────────────────────────
 
 // match on integers
+
 func classify(n: i32) i32 {
     match(n) {
         0 => { return 0 }
@@ -78,6 +85,7 @@ func classify(n: i32) i32 {
 // ─── Defer ───────────────────────────────────────────────────────────────────
 
 // defer runs cleanup at end of scope
+
 func with_cleanup() i32 {
     var x: i32 = 0
     defer {
@@ -90,6 +98,7 @@ func with_cleanup() i32 {
 // ─── Break & Continue ────────────────────────────────────────────────────────
 
 // break exits the loop, continue skips to next iteration
+
 func count_odd(limit: i32) i32 {
     var count: i32 = 0
     var i: i32 = 0
@@ -106,6 +115,7 @@ func count_odd(limit: i32) i32 {
 // ─── Nested loops ────────────────────────────────────────────────────────
 
 // to break out of a nested loop, extract the inner logic into a func and use return
+
 func find_pair_inner(limit: i32, i: i32) i32 {
     var j: i32 = 0
     while(j < limit) {

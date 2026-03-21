@@ -6,16 +6,21 @@ module fs
 // This module provides path-level utility functions.
 
 // Check if a path exists (file or directory)
+
 extern func exists(path: String) bool
 
 // Delete a file
+
 extern func delete(path: String) (Error | void)
 
 // Rename a file or directory
+
 extern func rename(from: String, to: String) (Error | void)
 
 // Create a directory (and parents)
+
 extern func createDir(path: String) (Error | void)
 
 // Delete a directory
+
 extern func deleteDir(path: String) (Error | void)

@@ -78,6 +78,12 @@ func main() void {
         console.print("FAIL compt_func\n")
     }
 
+    if(tester.add_default(5, 10) == 15) {
+        console.print("PASS default_param\n")
+    } else {
+        console.print("FAIL default_param\n")
+    }
+
     if(tester.make_internal() == 42) {
         console.print("PASS struct_instantiation\n")
     } else {
@@ -431,6 +437,42 @@ func main() void {
         console.print("PASS arb_union_three\n")
     } else {
         console.print("FAIL arb_union_three\n")
+    }
+
+    if(tester.test_str_upper() == 1) {
+        console.print("PASS str_upper\n")
+    } else {
+        console.print("FAIL str_upper\n")
+    }
+
+    if(tester.test_str_lower() == 1) {
+        console.print("PASS str_lower\n")
+    } else {
+        console.print("FAIL str_lower\n")
+    }
+
+    if(tester.test_str_replace() == 1) {
+        console.print("PASS str_replace\n")
+    } else {
+        console.print("FAIL str_replace\n")
+    }
+
+    if(tester.test_str_repeat() == 1) {
+        console.print("PASS str_repeat\n")
+    } else {
+        console.print("FAIL str_repeat\n")
+    }
+
+    if(tester.test_str_parse_int() == 42) {
+        console.print("PASS str_parse_int\n")
+    } else {
+        console.print("FAIL str_parse_int\n")
+    }
+
+    if(tester.test_str_parse_float() == 1) {
+        console.print("PASS str_parse_float\n")
+    } else {
+        console.print("FAIL str_parse_float\n")
     }
 
     console.print("TESTER:DONE\n")

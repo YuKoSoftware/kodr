@@ -76,16 +76,19 @@ pub enum Direction(u8) {
 // ─── Functions ───────────────────────────────────────────────
 
 // basic function
+
 pub func add(a: i32, b: i32) i32 {
     return a + b
 }
 
 // pub function
+
 pub func sub(a: i32, b: i32) i32 {
     return a - b
 }
 
 // recursive function
+
 pub func factorial(n: i32) i32 {
     if(n <= 1) {
         return 1
@@ -94,16 +97,25 @@ pub func factorial(n: i32) i32 {
 }
 
 // compt function
+
 pub compt func doubled(n: i32) i32 {
     return n * 2
 }
 
 // function returning bool
+
 pub func is_positive(n: i32) bool {
     return n > 0
 }
 
+// function with default parameter
+
+pub func add_default(a: i32, b: i32 = 10) i32 {
+    return a + b
+}
+
 // function with String
+
 pub func greeting() String {
     return "hello" ++ " " ++ "world"
 }
@@ -201,6 +213,7 @@ pub func array_index_test() i32 {
 }
 
 // slice expression — arr[a..b] returns a sub-slice
+
 pub func slice_expr_test() i32 {
     var arr: [5]i32 = [1, 2, 3, 4, 5]
     const part: []i32 = arr[1..4]
@@ -262,6 +275,7 @@ pub func sum_slice(arr: []i32) i32 {
 }
 
 // for loop over slice — tests iteration over array elements
+
 pub func sum_slice_test() i32 {
     const arr: [3]i32 = [1, 2, 3]
     var total: i32 = 0
@@ -272,6 +286,7 @@ pub func sum_slice_test() i32 {
 }
 
 // for loop with index — iterates array and index simultaneously
+
 pub func indexed_sum() i32 {
     const arr: [3]i32 = [10, 20, 30]
     var total: i32 = 0
@@ -282,6 +297,7 @@ pub func indexed_sum() i32 {
 }
 
 // for loop with range
+
 pub func sum_range(n: i32) i32 {
     var total: i32 = 0
     for(0..n) |i| {
@@ -549,6 +565,11 @@ test "compt func" {
     assert(doubled(21) == 42)
 }
 
+test "default param" {
+    assert(add_default(5, 20) == 25)
+    assert(add_default(5) == 15)
+}
+
 test "struct instantiation" {
     assert(make_internal() == 42)
 }
@@ -810,6 +831,7 @@ pub func test_set() i32 {
 // ─── Map/Set iteration ──────────────────────────────────────
 
 // for over Map yields (key, value) tuples
+
 pub func test_map_iter() i32 {
     var m: Map(i32, i32) = Map(i32, i32)
     defer { m.free() }
@@ -823,6 +845,7 @@ pub func test_map_iter() i32 {
 }
 
 // for over Set yields keys
+
 pub func test_set_iter() i32 {
     var seen: Set(i32) = Set(i32)
     defer { seen.free() }
@@ -838,6 +861,7 @@ pub func test_set_iter() i32 {
 // ─── splitAt ────────────────────────────────────────────────
 
 // splitAt splits array into two non-overlapping slices
+
 pub func test_split_at() i32 {
     const arr: [6]i32 = [1, 2, 3, 4, 5, 6]
     const left, right = arr.splitAt(3)
@@ -848,6 +872,7 @@ pub func test_split_at() i32 {
 }
 
 // splitAt with threads — each thread sums its half
+
 pub func test_split_thread() i32 {
     const data: [4]i32 = [10, 20, 30, 40]
     const left, right = data.splitAt(2)
@@ -866,6 +891,7 @@ pub func test_split_thread() i32 {
 }
 
 // splitAt on a List
+
 pub func test_split_list() i32 {
     var items: List(i32) = List(i32)
     defer { items.free() }
@@ -883,6 +909,7 @@ pub func test_split_list() i32 {
 // ─── Thread ─────────────────────────────────────────────────
 
 // thread spawns OS thread, captures move in, .value returns result
+
 pub func test_thread_value() i32 {
     const x: i32 = 21
     thread(i32) worker {
@@ -893,6 +920,7 @@ pub func test_thread_value() i32 {
 }
 
 // thread with .wait() — join without getting value
+
 pub func test_thread_wait() i32 {
     thread(i32) bg {
         return 1
@@ -942,6 +970,7 @@ pub func test_overflow_ok() i32 {
 // ─── Allocators ─────────────────────────────────────────────
 
 // Default allocator (SMP) — collections use it implicitly
+
 pub func test_alloc_default() i32 {
     var items: List(i32) = List(i32)
     defer { items.free() }
@@ -951,6 +980,7 @@ pub func test_alloc_default() i32 {
 }
 
 // DebugAllocator — leak detection, shared across collections
+
 pub func test_alloc_debug() i32 {
     const alloc = mem.DebugAllocator()
     var a: List(i32) = List(i32, alloc)
@@ -963,6 +993,7 @@ pub func test_alloc_debug() i32 {
 }
 
 // Arena — batch allocation, freeAll at once
+
 pub func test_alloc_arena() i32 {
     const alloc = mem.Arena()
     var items: List(i32) = List(i32, alloc)
@@ -974,6 +1005,7 @@ pub func test_alloc_arena() i32 {
 }
 
 // Page allocator — OS page-sized chunks
+
 pub func test_alloc_page() i32 {
     const alloc = mem.Page()
     var items: List(i32) = List(i32, alloc)
@@ -983,6 +1015,7 @@ pub func test_alloc_page() i32 {
 }
 
 // Direct heap allocation — allocOne + free
+
 pub func test_alloc_one() i32 {
     const alloc = mem.DebugAllocator()
     const val: i32 = alloc.allocOne(i32, 42)
@@ -994,6 +1027,7 @@ pub func test_alloc_one() i32 {
 // ─── Arbitrary union return ──────────────────────────────────
 
 // Function returning an arbitrary union — return auto-wraps
+
 func get_int_or_str(flag: bool) (i32 | String) {
     if(flag) {
         return 42
@@ -1013,6 +1047,7 @@ pub func test_arb_union_return() i32 {
 }
 
 // Match on arbitrary union — type arms dispatch to ._tag
+
 pub func test_arb_union_match() i32 {
     const val = get_int_or_str(true)
     var result: i32 = 0
@@ -1024,12 +1059,14 @@ pub func test_arb_union_match() i32 {
 }
 
 // Field access — extract inner value via .type syntax
+
 pub func test_arb_union_field() i32 {
     const val: (i32 | String) = 99
     return val.i32
 }
 
 // Variable reassignment — auto-wraps new value
+
 pub func test_arb_union_assign() i32 {
     var val: (i32 | String) = 10
     val = "changed"
@@ -1040,6 +1077,7 @@ pub func test_arb_union_assign() i32 {
 }
 
 // Three-member union — more than two types
+
 func get_three(n: i32) (i32 | f32 | bool) {
     if(n == 1) { return 42 }
     if(n == 2) { return 3.14 }
@@ -1061,6 +1099,7 @@ pub func test_arb_union_three() i32 {
 }
 
 // Direct heap allocation — alloc slice + free
+
 pub func test_alloc_slice() i32 {
     const alloc = mem.DebugAllocator()
     var buf: []i32 = alloc.alloc(i32, 3)
@@ -1070,4 +1109,83 @@ pub func test_alloc_slice() i32 {
     const result: i32 = buf[0] + buf[1] + buf[2]
     alloc.free(buf)
     return result
+}
+
+// ─── Allocating string methods ──────────────────────────────
+
+// toUpper — returns new uppercase String
+
+pub func test_str_upper() i32 {
+    const s: String = "hello"
+    const upper: String = s.toUpper()
+    if(upper.contains("HELLO")) { return 1 }
+    return 0
+}
+
+// toLower — returns new lowercase String
+
+pub func test_str_lower() i32 {
+    const s: String = "WORLD"
+    const lower: String = s.toLower()
+    if(lower.contains("world")) { return 1 }
+    return 0
+}
+
+// replace — returns new String with substitution
+
+pub func test_str_replace() i32 {
+    const s: String = "hello world"
+    const r: String = s.replace("world", "kodr")
+    if(r.contains("kodr")) { return 1 }
+    return 0
+}
+
+// repeat — returns string repeated n times
+
+pub func test_str_repeat() i32 {
+    const s: String = "ha"
+    const r: String = s.repeat(3)
+    if(r.contains("hahaha")) { return 1 }
+    return 0
+}
+
+// parseInt — parse string to integer
+
+pub func test_str_parse_int() i32 {
+    const s: String = "42"
+    const n: i32 = s.parseInt()
+    return n
+}
+
+// parseFloat — parse string to float
+
+pub func test_str_parse_float() i32 {
+    const s: String = "3.14"
+    const f: f64 = s.parseFloat()
+    if(f > 3.0) { return 1 }
+    return 0
+}
+
+test "str upper" {
+    assert(test_str_upper() == 1)
+}
+
+test "str lower" {
+    assert(test_str_lower() == 1)
+}
+
+test "str replace" {
+    assert(test_str_replace() == 1)
+}
+
+test "str repeat" {
+    assert(test_str_repeat() == 1)
+}
+
+test "str parseInt" {
+    assert(test_str_parse_int() == 42)
+}
+
+test "str parseFloat" {
+    assert(test_str_parse_float() == 1)
 }

@@ -495,6 +495,7 @@ test "propagation - call expr resolved via decl table" {
     try decl_table.funcs.put("divide", .{
         .name = "divide",
         .params = params,
+        .param_nodes = &.{},
         .return_type = .{ .error_union = inner },
         .return_type_node = ret_node,
         .is_compt = false,
@@ -624,6 +625,7 @@ test "propagation - reassignment resets handled status" {
     try decl_table.funcs.put("divide", .{
         .name = "divide",
         .params = params,
+        .param_nodes = &.{},
         .return_type = .{ .error_union = inner },
         .return_type_node = ret_node,
         .is_compt = false,
