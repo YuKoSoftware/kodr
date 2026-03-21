@@ -197,14 +197,14 @@ func safe_divide(a: i32, b: i32) (Error | i32) {
     return a / b
 }
 
-// is keyword — check if result is an Error
+// is keyword — check if result is an Error, .value unwraps
 
 func divide_or_default(a: i32, b: i32) i32 {
     const result = safe_divide(a, b)
     if(result is Error) {
         return 0
     }
-    return result.i32
+    return result.value
 }
 
 // match on union type — clean alternative to if/is
@@ -213,7 +213,7 @@ func divide_match(a: i32, b: i32) i32 {
     const result = safe_divide(a, b)
     match(result) {
         Error => { return 0 }
-        i32   => { return result.i32 }
+        i32   => { return result.value }
     }
     return 0
 }
@@ -229,23 +229,23 @@ func find_value(id: i32) (null | i32) {
     return null
 }
 
-// is keyword — check if result is null
+// is keyword — check if result is null, .value unwraps
 
 func value_or_default(id: i32) i32 {
-    const result: (null | i32) = find_value(id)
+    const result = find_value(id)
     if(result is null) {
         return 0
     }
-    return result.i32
+    return result.value
 }
 
 // match on null union
 
 func find_match(id: i32) i32 {
-    const result: (null | i32) = find_value(id)
+    const result = find_value(id)
     match(result) {
         null => { return 0 }
-        i32  => { return result.i32 }
+        i32  => { return result.value }
     }
     return 0
 }
@@ -258,7 +258,7 @@ func nullable_var_demo() i32 {
     if(x is null) {
         return 0
     }
-    return x.i32
+    return x.value
 }
 
 // ─── Arbitrary Unions ────────────────────────────────────────────────────────
@@ -272,12 +272,12 @@ func get_value(flag: bool) (i32 | String) {
     return "hello"
 }
 
-// is keyword — check which type the union holds
+// is keyword — .value uses narrowing to unwrap the correct type
 
 func arb_union_check(flag: bool) i32 {
     const val = get_value(flag)
     if(val is i32) {
-        return val.i32
+        return val.value
     }
     return 0
 }
@@ -287,7 +287,7 @@ func arb_union_check(flag: bool) i32 {
 func arb_union_match(flag: bool) i32 {
     const val = get_value(flag)
     match(val) {
-        i32    => { return val.i32 }
+        i32    => { return val.value }
         String => { return 0 }
     }
     return 0

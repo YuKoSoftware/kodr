@@ -138,6 +138,12 @@ func main() void {
         console.println("FAIL null_none")
     }
 
+    if(tester.test_null_inferred() == 50) {
+        console.println("PASS null_inferred")
+    } else {
+        console.println("FAIL null_inferred")
+    }
+
     if(tester.test_null_reassign() == 42) {
         console.println("PASS null_reassign")
     } else {
@@ -439,6 +445,30 @@ func main() void {
         console.println("FAIL arb_union_three")
     }
 
+    if(tester.test_arb_value_positive() == 42) {
+        console.println("PASS arb_value_positive")
+    } else {
+        console.println("FAIL arb_value_positive")
+    }
+
+    if(tester.test_arb_value_negative() == 42) {
+        console.println("PASS arb_value_negative")
+    } else {
+        console.println("FAIL arb_value_negative")
+    }
+
+    if(tester.test_arb_value_inside() == 42) {
+        console.println("PASS arb_value_inside")
+    } else {
+        console.println("FAIL arb_value_inside")
+    }
+
+    if(tester.test_arb_value_match() == 42) {
+        console.println("PASS arb_value_match")
+    } else {
+        console.println("FAIL arb_value_match")
+    }
+
     if(tester.test_str_upper() == 1) {
         console.println("PASS str_upper")
     } else {
@@ -473,6 +503,42 @@ func main() void {
         console.println("PASS str_parse_float")
     } else {
         console.println("FAIL str_parse_float")
+    }
+
+    if(tester.test_join() == 1) {
+        console.println("PASS join")
+    } else {
+        console.println("FAIL join")
+    }
+
+    if(tester.test_tostring_int() == 1) {
+        console.println("PASS tostring_int")
+    } else {
+        console.println("FAIL tostring_int")
+    }
+
+    if(tester.test_tostring_bool() == 1) {
+        console.println("PASS tostring_bool")
+    } else {
+        console.println("FAIL tostring_bool")
+    }
+
+    if(tester.test_interpolation() == 1) {
+        console.println("PASS interpolation")
+    } else {
+        console.println("FAIL interpolation")
+    }
+
+    if(tester.test_interpolation_int() == 1) {
+        console.println("PASS interpolation_int")
+    } else {
+        console.println("FAIL interpolation_int")
+    }
+
+    if(tester.test_system_run() == 1) {
+        console.println("PASS system_run")
+    } else {
+        console.println("FAIL system_run")
     }
 
     console.println("TESTER:DONE")

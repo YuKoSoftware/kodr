@@ -4,17 +4,6 @@ Ideas and language decisions that are not yet committed.
 
 ---
 
-## Language Gaps
-
-- `join` — needs slice-of-strings support
-- `toString` — needs generic method dispatch on non-string types
-
-## Decided — Not Yet Implemented
-
-- **String interpolation `@{}`** — `"hello @{name}"` desugars to `"hello " ++ str.from(name)`. `@` alone is literal, only `@{` triggers interpolation.
-- **Union unwrap `.value`** — replaces `.i32`/`.String` style. Only works when narrowed to one remaining type via `is` checks with early exit or `match`. Unnarrowed `.value` is a compile error.
-- **Exhaustive match on unions** — `match` on a union type must cover all member types or have `else`. Missing arm without `else` is a compile error. Integer/string/range matches still allow partial coverage.
-
 ## Decided Against
 
 - **Closures** — function pointers cover the use case. Captures create ownership complexity. Pass variables as arguments instead.

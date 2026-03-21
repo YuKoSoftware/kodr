@@ -32,7 +32,7 @@ for TEST_NAME in \
     add sub factorial is_positive compound sum_to match match_default \
     break_continue abs compt_func struct_instantiation default_fields \
     default_override static_method mutable_method error_ok error_fail \
-    null_some null_none null_reassign enum_usage enum_method nested_scopes \
+    null_some null_none null_inferred null_reassign enum_usage enum_method nested_scopes \
     tuple tuple_destruct slice_for for_index for_range while_continue \
     cast_int cast_float cast_float_to_int func_ptr func_ptr_var \
     fixed_array array_index slice_expr raw_ptr safe_ptr typeid_same \
@@ -41,8 +41,10 @@ for TEST_NAME in \
     bitfield wrap sat overflow alloc_default alloc_debug alloc_arena \
     alloc_page alloc_one alloc_slice arb_union_return \
     arb_union_match arb_union_field arb_union_assign arb_union_three \
+    arb_value_positive arb_value_negative arb_value_inside arb_value_match \
     str_upper str_lower str_replace str_repeat str_parse_int str_parse_float \
-    default_param; do
+    default_param join tostring_int tostring_bool \
+    interpolation interpolation_int system_run; do
     if echo "$BINOUT" | grep -q "PASS $TEST_NAME"; then pass "runtime: $TEST_NAME"
     else fail "runtime: $TEST_NAME"; fi
 done

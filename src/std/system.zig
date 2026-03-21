@@ -37,3 +37,27 @@ pub fn exit(code: i32) void {
 pub fn pid() i32 {
     return @intCast(std.os.linux.getpid());
 }
+
+pub fn run(command: []const u8, arguments: []const []const u8) struct { code: i32, stdout: []const u8, stderr: []const u8 } {
+    const alloc = std.heap.smp_allocator;
+
+    // Build argv: command + arguments
+    var argv = std.ArrayListUnmanaged([]const u8){};
+    defer argv.deinit(alloc);
+    argv.append(alloc, command) catch return .{ .code = -1, .stdout = "", .stderr = "failed to build argv" };
+    for (arguments) |arg| {
+        argv.append(alloc, arg) catch return .{ .code = -1, .stdout = "", .stderr = "failed to build argv" };
+    }
+
+    const result = std.process.Child.run(.{
+        .allocator = alloc,
+        .argv = argv.items,
+    }) catch return .{ .code = -1, .stdout = "", .stderr = "failed to run process" };
+
+    const code: i32 = switch (result.term) {
+        .Exited => |c| @intCast(c),
+        else => -1,
+    };
+
+    return .{ .code = code, .stdout = result.stdout, .stderr = result.stderr };
+}

@@ -44,6 +44,7 @@ pub const CodeGen = struct {
     in_null_union_func: bool, // current function returns (null | T)
     in_arb_union_func: bool, // current function returns an arbitrary union like (i32 | String)
     arb_union_return_type: ?*parser.Node, // return type node for arbitrary union wrapping
+    error_vars: std.StringHashMapUnmanaged(void),       // variables with (Error | T) type
     null_vars: std.StringHashMapUnmanaged(void),       // variables with (null | T) type
     arb_union_vars: std.StringHashMapUnmanaged(*parser.Node),  // variables with arbitrary union type → type node
     rawptr_vars: std.StringHashMapUnmanaged(void),     // variables holding RawPtr(T) or VolatilePtr(T)
@@ -72,6 +73,7 @@ pub const CodeGen = struct {
     current_thread_name: []const u8, // name of the thread being generated
     thread_capture_renames: std.StringHashMapUnmanaged([]const u8), // original name → _cap_name
     module_builds: ?*const std.StringHashMapUnmanaged(module.BuildType), // imported module → build type
+    narrowed_vars: std.StringHashMapUnmanaged([]const u8), // var name → narrowed type (from `is` checks)
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
@@ -86,6 +88,7 @@ pub const CodeGen = struct {
             .in_null_union_func = false,
             .in_arb_union_func = false,
             .arb_union_return_type = null,
+            .error_vars = .{},
             .null_vars = .{},
             .arb_union_vars = .{},
             .rawptr_vars = .{},
@@ -114,6 +117,7 @@ pub const CodeGen = struct {
             .current_thread_name = "",
             .thread_capture_renames = .{},
             .module_builds = null,
+            .narrowed_vars = .{},
         };
     }
 
@@ -181,6 +185,8 @@ pub const CodeGen = struct {
             while (ti.next()) |v| self.allocator.free(v.result_type);
         }
         self.thread_vars.deinit(self.allocator);
+        self.error_vars.deinit(self.allocator);
+        self.narrowed_vars.deinit(self.allocator);
     }
 
     /// Get the generated Zig source
@@ -298,6 +304,16 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// Check if a type annotation AST node is a (Error | T) union
+    fn isErrorUnionType(node: *parser.Node) bool {
+        if (node.* == .type_union) {
+            for (node.type_union) |t| {
+                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) return true;
+            }
+        }
+        return false;
+    }
+
     /// Check if a type annotation AST node is a (null | T) union
     fn isNullUnionType(node: *parser.Node) bool {
         if (node.* == .type_union) {
@@ -322,6 +338,11 @@ pub const CodeGen = struct {
     /// Generate a Zig union tag name from a Kodr type name: i32 → _i32
     fn unionTagName(self: *CodeGen, kodr_name: []const u8) ![]const u8 {
         return try self.allocTypeStr("_{s}", .{kodr_name});
+    }
+
+    /// Check if a variable name is a tracked error union variable
+    fn isErrorVar(self: *const CodeGen, name: []const u8) bool {
+        return self.error_vars.contains(name);
     }
 
     /// Check if a variable name is a tracked null union variable
@@ -349,6 +370,117 @@ pub const CodeGen = struct {
             }
         }
         return null;
+    }
+
+    /// Check if a call expression returns a null union via the declaration table.
+    fn callReturnsNullUnion(self: *const CodeGen, value: *parser.Node) bool {
+        if (value.* != .call_expr) return false;
+        const c = value.call_expr;
+        const name = switch (c.callee.*) {
+            .identifier => |n| n,
+            else => return false,
+        };
+        if (self.decls) |d| {
+            if (d.funcs.get(name)) |fsig| {
+                return isNullUnionType(fsig.return_type_node);
+            }
+        }
+        return false;
+    }
+
+    /// Check if a call expression returns an error union via the declaration table.
+    fn callReturnsErrorUnion(self: *const CodeGen, value: *parser.Node) bool {
+        if (value.* != .call_expr) return false;
+        const c = value.call_expr;
+        const name = switch (c.callee.*) {
+            .identifier => |n| n,
+            else => return false,
+        };
+        if (self.decls) |d| {
+            if (d.funcs.get(name)) |fsig| {
+                return isErrorUnionType(fsig.return_type_node);
+            }
+        }
+        return false;
+    }
+
+    /// Info about an `x is T` / `x is not T` condition
+    const IsCheckInfo = struct {
+        var_name: []const u8,
+        type_name: []const u8,
+        is_positive: bool, // true for `is`, false for `is not`
+    };
+
+    /// Extract `is` check info from an if-condition.
+    /// Returns info if the condition is `x is T` or `x is not T` on an arb union var.
+    fn extractIsCheck(self: *const CodeGen, cond: *parser.Node) ?IsCheckInfo {
+        if (cond.* != .binary_expr) return null;
+        const b = cond.binary_expr;
+        const is_eq = std.mem.eql(u8, b.op, "==");
+        const is_ne = std.mem.eql(u8, b.op, "!=");
+        if (!is_eq and !is_ne) return null;
+        if (b.left.* != .compiler_func) return null;
+        if (!std.mem.eql(u8, b.left.compiler_func.name, K.Type.TYPE)) return null;
+        if (b.left.compiler_func.args.len == 0) return null;
+        const val_node = b.left.compiler_func.args[0];
+        if (val_node.* != .identifier) return null;
+        if (!self.isArbUnionVar(val_node.identifier)) return null;
+        if (b.right.* != .identifier) return null;
+        const rhs = b.right.identifier;
+        if (std.mem.eql(u8, rhs, K.Type.ERROR) or std.mem.eql(u8, rhs, K.Type.NULL)) return null;
+        return .{
+            .var_name = val_node.identifier,
+            .type_name = rhs,
+            .is_positive = is_eq,
+        };
+    }
+
+    /// Compute the remaining type after narrowing one type out of an arbitrary union.
+    /// Returns the single remaining type name, or null if multiple types remain.
+    fn remainingUnionType(type_node: *parser.Node, excluded: []const u8) ?[]const u8 {
+        if (type_node.* != .type_union) return null;
+        var remaining: ?[]const u8 = null;
+        for (type_node.type_union) |t| {
+            if (t.* != .type_named) return null;
+            if (std.mem.eql(u8, t.type_named, excluded)) continue;
+            if (std.mem.eql(u8, t.type_named, K.Type.ERROR) or std.mem.eql(u8, t.type_named, K.Type.NULL)) continue;
+            if (remaining != null) return null; // multiple remaining
+            remaining = t.type_named;
+        }
+        return remaining;
+    }
+
+    /// Check if a call is system.run — needs &args coercion
+    fn isSystemRunCall(_: *const CodeGen, c: parser.CallExpr) bool {
+        if (c.callee.* != .field_expr) return false;
+        const fe = c.callee.field_expr;
+        if (fe.object.* != .identifier) return false;
+        return std.mem.eql(u8, fe.object.identifier, "system") and std.mem.eql(u8, fe.field, "run");
+    }
+
+    /// Check if a call is a str module function that needs an injected allocator.
+    fn isStrModuleCall(_: *const CodeGen, c: parser.CallExpr) bool {
+        if (c.callee.* != .field_expr) return false;
+        const fe = c.callee.field_expr;
+        if (fe.object.* != .identifier) return false;
+        if (!std.mem.eql(u8, fe.object.identifier, "str")) return false;
+        return std.mem.eql(u8, fe.field, "join") or
+            std.mem.eql(u8, fe.field, "from") or
+            std.mem.eql(u8, fe.field, "toBytes");
+    }
+
+    /// Check if a block has an early exit (return, break, continue).
+    fn blockHasEarlyExit(node: *parser.Node) bool {
+        if (node.* != .block) return false;
+        for (node.block.statements) |stmt| {
+            switch (stmt.*) {
+                .return_stmt => return true,
+                .break_stmt => return true,
+                .continue_stmt => return true,
+                else => {},
+            }
+        }
+        return false;
     }
 
     /// Check if a variable name holds a RawPtr or VolatilePtr
@@ -756,6 +888,8 @@ pub const CodeGen = struct {
         const prev_string_vars = self.string_vars;
         const prev_format_vars = self.format_vars;
         const prev_thread_vars = self.thread_vars;
+        const prev_error_vars = self.error_vars;
+        const prev_narrowed_vars = self.narrowed_vars;
         self.null_vars = .{};
         self.arb_union_vars = .{};
         self.rawptr_vars = .{};
@@ -769,6 +903,8 @@ pub const CodeGen = struct {
         self.string_vars = .{};
         self.format_vars = .{};
         self.thread_vars = .{};
+        self.error_vars = .{};
+        self.narrowed_vars = .{};
         self.in_error_union_func = false;
         self.in_null_union_func = false;
         self.in_arb_union_func = false;
@@ -830,6 +966,10 @@ pub const CodeGen = struct {
             { var _ti = self.thread_vars.valueIterator(); while (_ti.next()) |v| self.allocator.free(v.result_type); }
             self.thread_vars.deinit(self.allocator);
             self.thread_vars = prev_thread_vars;
+            self.error_vars.deinit(self.allocator);
+            self.error_vars = prev_error_vars;
+            self.narrowed_vars.deinit(self.allocator);
+            self.narrowed_vars = prev_narrowed_vars;
         }
 
         // pub modifier — always pub for main (Zig requires pub fn main for exe entry)
@@ -1189,13 +1329,17 @@ pub const CodeGen = struct {
         }
         if (v.is_pub) try self.write("pub ");
         try self.writeFmt("{s} {s}", .{ kw, v.name });
+        const is_error_union = if (v.type_annotation) |t| isErrorUnionType(t) else false;
         const is_null_union = if (v.type_annotation) |t| isNullUnionType(t) else false;
         const is_arb_union = if (v.type_annotation) |t| isArbitraryUnion(t) else false;
         if (v.type_annotation) |t| {
             try self.writeFmt(": {s}", .{try self.typeToZig(t)});
         }
         try self.write(" = ");
-        if (is_null_union) {
+        if (is_error_union) {
+            try self.error_vars.put(self.allocator, v.name, {});
+            try self.generateExpr(v.value);
+        } else if (is_null_union) {
             try self.null_vars.put(self.allocator, v.name, {});
             try self.generateNullWrappedExpr(v.value);
         } else if (is_arb_union) {
@@ -1213,9 +1357,13 @@ pub const CodeGen = struct {
             }
             if (isStringType(v.type_annotation) or v.value.* == .string_literal)
                 try self.string_vars.put(self.allocator, v.name, {});
-            // Infer arb union from function call return type (no explicit annotation)
+            // Infer union kind from function call return type (no explicit annotation)
             if (v.type_annotation == null) {
-                if (self.callReturnsArbUnion(v.value)) |rt|
+                if (self.callReturnsErrorUnion(v.value))
+                    try self.error_vars.put(self.allocator, v.name, {})
+                else if (self.callReturnsNullUnion(v.value))
+                    try self.null_vars.put(self.allocator, v.name, {})
+                else if (self.callReturnsArbUnion(v.value)) |rt|
                     try self.arb_union_vars.put(self.allocator, v.name, rt);
             }
             try self.generateExpr(v.value);
@@ -1231,12 +1379,16 @@ pub const CodeGen = struct {
             try self.write("// format instance");
             return;
         }
+        const is_error_union = if (v.type_annotation) |t| isErrorUnionType(t) else false;
         const is_null_union = if (v.type_annotation) |t| isNullUnionType(t) else false;
         const is_arb_union = if (v.type_annotation) |t| isArbitraryUnion(t) else false;
         try self.writeFmt("{s} {s}", .{ kw, v.name });
         if (v.type_annotation) |t| try self.writeFmt(": {s}", .{try self.typeToZig(t)});
         try self.write(" = ");
-        if (is_null_union) {
+        if (is_error_union) {
+            try self.error_vars.put(self.allocator, v.name, {});
+            try self.generateExpr(v.value);
+        } else if (is_null_union) {
             try self.null_vars.put(self.allocator, v.name, {});
             try self.generateNullWrappedExpr(v.value);
         } else if (is_arb_union) {
@@ -1254,9 +1406,13 @@ pub const CodeGen = struct {
             }
             if (isStringType(v.type_annotation) or v.value.* == .string_literal)
                 try self.string_vars.put(self.allocator, v.name, {});
-            // Infer arb union from function call return type (no explicit annotation)
+            // Infer union kind from function call return type (no explicit annotation)
             if (v.type_annotation == null) {
-                if (self.callReturnsArbUnion(v.value)) |rt|
+                if (self.callReturnsErrorUnion(v.value))
+                    try self.error_vars.put(self.allocator, v.name, {})
+                else if (self.callReturnsNullUnion(v.value))
+                    try self.null_vars.put(self.allocator, v.name, {})
+                else if (self.callReturnsArbUnion(v.value)) |rt|
                     try self.arb_union_vars.put(self.allocator, v.name, rt);
             }
             const prev_ctx = self.type_ctx;
@@ -1543,10 +1699,49 @@ pub const CodeGen = struct {
                 try self.write("if (");
                 try self.generateExpr(i.condition);
                 try self.write(") ");
+                // Track type narrowing from `is` checks on arbitrary unions
+                const is_info = self.extractIsCheck(i.condition);
+                if (is_info) |info| {
+                    // Inside then-block: positive `is T` narrows to T, negative `is not T` narrows to remaining
+                    if (info.is_positive) {
+                        try self.narrowed_vars.put(self.allocator, info.var_name, info.type_name);
+                    } else if (self.arb_union_vars.get(info.var_name)) |type_node| {
+                        if (remainingUnionType(type_node, info.type_name)) |rem|
+                            try self.narrowed_vars.put(self.allocator, info.var_name, rem);
+                    }
+                }
                 try self.generateBlock(i.then_block);
+                if (is_info) |info| _ = self.narrowed_vars.remove(info.var_name);
                 if (i.else_block) |e| {
                     try self.write(" else ");
+                    // Inside else-block: opposite narrowing
+                    if (is_info) |info| {
+                        if (info.is_positive) {
+                            if (self.arb_union_vars.get(info.var_name)) |type_node| {
+                                if (remainingUnionType(type_node, info.type_name)) |rem|
+                                    try self.narrowed_vars.put(self.allocator, info.var_name, rem);
+                            }
+                        } else {
+                            try self.narrowed_vars.put(self.allocator, info.var_name, info.type_name);
+                        }
+                    }
                     try self.generateBlock(e);
+                    if (is_info) |info| _ = self.narrowed_vars.remove(info.var_name);
+                }
+                // After if with early exit: narrow to the opposite
+                if (is_info) |info| {
+                    if (blockHasEarlyExit(i.then_block)) {
+                        if (info.is_positive) {
+                            // `if x is T { return }` → after: x is not T
+                            if (self.arb_union_vars.get(info.var_name)) |type_node| {
+                                if (remainingUnionType(type_node, info.type_name)) |rem|
+                                    try self.narrowed_vars.put(self.allocator, info.var_name, rem);
+                            }
+                        } else {
+                            // `if x is not T { return }` → after: x is T
+                            try self.narrowed_vars.put(self.allocator, info.var_name, info.type_name);
+                        }
+                    }
                 }
             },
             .while_stmt => |w| {
@@ -1786,7 +1981,13 @@ pub const CodeGen = struct {
                 try self.write(text);
             },
             .float_literal => |text| try self.write(text),
-            .string_literal => |text| try self.write(text),
+            .string_literal => |text| {
+                if (std.mem.indexOf(u8, text, "@{")) |_| {
+                    try self.generateInterpolatedString(text);
+                } else {
+                    try self.write(text);
+                }
+            },
             .bool_literal => |b| try self.write(if (b) "true" else "false"),
             .null_literal => try self.write("null"),
             .error_literal => |msg| {
@@ -2008,6 +2209,39 @@ pub const CodeGen = struct {
                         return;
                     }
                 }
+                // toString method: x.toString() → std.fmt.allocPrint(alloc, "{any}", .{x}) catch ""
+                // On strings/string literals: no-op (just returns the string)
+                if (c.callee.* == .field_expr) {
+                    const fe = c.callee.field_expr;
+                    if (std.mem.eql(u8, fe.field, "toString")) {
+                        if (fe.object.* == .string_literal or
+                            (fe.object.* == .identifier and self.isStringVar(fe.object.identifier)))
+                        {
+                            try self.generateExpr(fe.object);
+                        } else {
+                            try self.write("(std.fmt.allocPrint(");
+                            try self.writeStringAllocArg(c.args);
+                            try self.write(", \"{any}\", .{");
+                            try self.generateExpr(fe.object);
+                            try self.write("}) catch \"\")");
+                        }
+                        return;
+                    }
+                }
+                // join method: parts.join(sep) → std.mem.join(alloc, sep, &parts) catch ""
+                if (c.callee.* == .field_expr) {
+                    const fe = c.callee.field_expr;
+                    if (std.mem.eql(u8, fe.field, "join") and c.args.len > 0) {
+                        try self.write("(std.mem.join(");
+                        try self.writeStringAllocArg(c.args);
+                        try self.write(", ");
+                        try self.generateExpr(c.args[0]);
+                        try self.write(", &");
+                        try self.generateExpr(fe.object);
+                        try self.write(") catch \"\")");
+                        return;
+                    }
+                }
                 // Format call: fmt("template {}", args) → std.fmt.allocPrint(alloc, "template {d}", .{args})
                 if (c.callee.* == .identifier and self.format_vars.contains(c.callee.identifier)) {
                     const info = self.format_vars.get(c.callee.identifier).?;
@@ -2115,6 +2349,30 @@ pub const CodeGen = struct {
                         try self.generateExpr(arg);
                     }
                     try self.write(" }");
+                } else if (self.isSystemRunCall(c)) {
+                    // system.run(cmd, args) — coerce args array to slice with &
+                    try self.generateExpr(c.callee);
+                    try self.write("(");
+                    if (c.args.len > 0) try self.generateExpr(c.args[0]);
+                    if (c.args.len > 1) {
+                        try self.write(", &");
+                        try self.generateExpr(c.args[1]);
+                    }
+                    try self.write(")");
+                } else if (self.isStrModuleCall(c)) {
+                    // str.join/from/toBytes — inject allocator as first Zig arg
+                    try self.generateExpr(c.callee);
+                    try self.write("(");
+                    try self.writeStringAllocArg(c.args);
+                    for (c.args) |arg| {
+                        // Skip allocator arg (last arg if it's a tracked allocator)
+                        if (arg == c.args[c.args.len - 1] and
+                            arg.* == .identifier and self.allocator_vars.contains(arg.identifier))
+                            continue;
+                        try self.write(", ");
+                        try self.generateExpr(arg);
+                    }
+                    try self.write(")");
                 } else {
                     // Positional arguments → regular function call
                     try self.generateExpr(c.callee);
@@ -2158,15 +2416,17 @@ pub const CodeGen = struct {
                     try self.generateExpr(f.object);
                     try self.write(".err");
                 } else if (std.mem.eql(u8, f.field, "value") and f.object.* == .identifier and
-                    (self.isArbUnionVar(f.object.identifier) or self.isNullVar(f.object.identifier)))
+                    (self.isArbUnionVar(f.object.identifier) or self.isNullVar(f.object.identifier) or self.isErrorVar(f.object.identifier)))
                 {
                     // .value unwrap — emit correct Zig field based on union kind
                     const vname = f.object.identifier;
                     try self.generateExpr(f.object);
                     if (self.isArbUnionVar(vname)) {
-                        // For arbitrary unions, we need the narrowed type
-                        // For now, fall back to the first non-error/non-null type
-                        if (self.arb_union_vars.get(vname)) |type_node| {
+                        // Use narrowed type from `is` checks if available
+                        if (self.narrowed_vars.get(vname)) |narrowed| {
+                            try self.writeFmt("._{s}", .{narrowed});
+                        } else if (self.arb_union_vars.get(vname)) |type_node| {
+                            // Fall back to first non-error/non-null type
                             if (type_node.* == .type_union) {
                                 for (type_node.type_union) |t| {
                                     if (t.* == .type_named and !std.mem.eql(u8, t.type_named, K.Type.ERROR) and !std.mem.eql(u8, t.type_named, K.Type.NULL)) {
@@ -2178,7 +2438,7 @@ pub const CodeGen = struct {
                         }
                     } else if (self.isNullVar(vname)) {
                         try self.write(".some");
-                    } else {
+                    } else if (self.isErrorVar(vname)) {
                         try self.write(".ok");
                     }
                 } else if (f.object.* == .identifier and self.isArbUnionVar(f.object.identifier) and
@@ -2607,7 +2867,17 @@ pub const CodeGen = struct {
             }
 
             try self.write(" => ");
+            // Set narrowing for the match value inside the arm body
+            const match_var = if (m.value.* == .identifier) m.value.identifier else null;
+            if (match_var) |vname| {
+                if (is_arbitrary and pat.* == .identifier and
+                    !std.mem.eql(u8, pat.identifier, "else"))
+                {
+                    try self.narrowed_vars.put(self.allocator, vname, pat.identifier);
+                }
+            }
             try self.generateBlock(arm.match_arm.body);
+            if (match_var) |vname| _ = self.narrowed_vars.remove(vname);
             try self.write(",\n");
         }
 
@@ -3032,6 +3302,52 @@ pub const CodeGen = struct {
     }
 
     /// Generate string method calls — non-allocating operations on []const u8
+    /// Generate an interpolated string: "hello @{name}, age @{x}"
+    /// → (std.fmt.allocPrint(smp, "hello {s}, age {any}", .{name, x}) catch "")
+    fn generateInterpolatedString(self: *CodeGen, text: []const u8) anyerror!void {
+        // text includes quotes: "hello @{name}"
+        const inner = text[1 .. text.len - 1];
+
+        // First pass: build the format string and collect expression names
+        var fmt_buf = std.ArrayListUnmanaged(u8){};
+        defer fmt_buf.deinit(self.allocator);
+        var expr_names = std.ArrayListUnmanaged([]const u8){};
+        defer expr_names.deinit(self.allocator);
+        var i: usize = 0;
+        while (i < inner.len) {
+            if (i + 1 < inner.len and inner[i] == '@' and inner[i + 1] == '{') {
+                const expr_start = i + 2;
+                const close = std.mem.indexOf(u8, inner[expr_start..], "}") orelse {
+                    // Unclosed @{ — emit remaining text as literal
+                    try fmt_buf.appendSlice(self.allocator, inner[i..]);
+                    break;
+                };
+                const expr_text = inner[expr_start .. expr_start + close];
+                try expr_names.append(self.allocator, expr_text);
+                // Use {s} for string vars, {any} for everything else
+                if (self.isStringVar(expr_text)) {
+                    try fmt_buf.appendSlice(self.allocator, "{s}");
+                } else {
+                    try fmt_buf.appendSlice(self.allocator, "{any}");
+                }
+                i = expr_start + close + 1;
+            } else {
+                try fmt_buf.append(self.allocator, inner[i]);
+                i += 1;
+            }
+        }
+
+        // Emit: (std.fmt.allocPrint(smp, "fmt", .{args}) catch "")
+        try self.write("(std.fmt.allocPrint(std.heap.smp_allocator, \"");
+        try self.write(fmt_buf.items);
+        try self.write("\", .{");
+        for (expr_names.items, 0..) |name, idx| {
+            if (idx > 0) try self.write(", ");
+            try self.write(name);
+        }
+        try self.write("}) catch \"\")");
+    }
+
     fn generateStringMethod(self: *CodeGen, obj: *parser.Node, method: []const u8, args: []*parser.Node) anyerror!void {
         if (std.mem.eql(u8, method, "contains")) {
             // s.contains(substr) → (std.mem.indexOf(u8, s, substr) != null)

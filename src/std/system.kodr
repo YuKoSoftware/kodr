@@ -27,3 +27,7 @@ extern func exit(code: i32) void
 // Get the current process ID
 
 extern func pid() i32
+
+// Run an external command — returns exit code, stdout, stderr
+
+extern func run(command: String, args: []String) (code: i32, stdout: String, stderr: String)

@@ -7,6 +7,7 @@ module tester
 // ═══════════════════════════════════════════════════════════════
 
 import std::console
+import std::system
 
 // ─── Variables ───────────────────────────────────────────────
 
@@ -410,7 +411,7 @@ pub func test_error_ok() i32 {
     if(result is Error) {
         return 0 - 1
     }
-    return result.i32
+    return result.value
 }
 
 pub func test_error_fail() i32 {
@@ -418,7 +419,7 @@ pub func test_error_fail() i32 {
     if(result is Error) {
         return 0 - 1
     }
-    return result.i32
+    return result.value
 }
 
 // ─── Null handling ──────────────────────────────────────
@@ -435,7 +436,7 @@ pub func test_null_some() i32 {
     if(result is null) {
         return 0 - 1
     }
-    return result.i32
+    return result.value
 }
 
 pub func test_null_none() i32 {
@@ -443,7 +444,16 @@ pub func test_null_none() i32 {
     if(result is null) {
         return 0 - 1
     }
-    return result.i32
+    return result.value
+}
+
+// Inferred null union — no type annotation, .value unwrap
+pub func test_null_inferred() i32 {
+    const result = find_player(5)
+    if(result is null) {
+        return 0 - 1
+    }
+    return result.value
 }
 
 pub func test_null_reassign() i32 {
@@ -452,7 +462,7 @@ pub func test_null_reassign() i32 {
     if(x is null) {
         return 0 - 1
     }
-    return x.i32
+    return x.value
 }
 
 // ─── Enum usage ─────────────────────────────────────────────
@@ -603,6 +613,10 @@ test "null some" {
 
 test "null none" {
     assert(test_null_none() == 0 - 1)
+}
+
+test "null inferred" {
+    assert(test_null_inferred() == 50)
 }
 
 test "null reassign" {
@@ -782,6 +796,22 @@ test "arb union assign" {
 
 test "arb union three" {
     assert(test_arb_union_three() == 1)
+}
+
+test "arb value positive" {
+    assert(test_arb_value_positive() == 42)
+}
+
+test "arb value negative" {
+    assert(test_arb_value_negative() == 42)
+}
+
+test "arb value inside" {
+    assert(test_arb_value_inside() == 42)
+}
+
+test "arb value match" {
+    assert(test_arb_value_match() == 42)
 }
 
 // ─── Collections ────────────────────────────────────────────
@@ -1075,6 +1105,47 @@ pub func test_arb_union_assign() i32 {
     return 0
 }
 
+// .value unwrap with narrowing — positive is check with early exit
+
+pub func test_arb_value_positive() i32 {
+    const val = get_int_or_str(true)
+    if(val is String) {
+        return 0
+    }
+    return val.value
+}
+
+// .value unwrap with narrowing — negative is check with early exit
+
+pub func test_arb_value_negative() i32 {
+    const val = get_int_or_str(true)
+    if(val is not i32) {
+        return 0
+    }
+    return val.value
+}
+
+// .value unwrap inside is check then-block
+
+pub func test_arb_value_inside() i32 {
+    const val = get_int_or_str(true)
+    if(val is i32) {
+        return val.value
+    }
+    return 0
+}
+
+// .value unwrap inside match arm
+
+pub func test_arb_value_match() i32 {
+    const val = get_int_or_str(true)
+    match(val) {
+        i32    => { return val.value }
+        String => { return 0 }
+    }
+    return 0
+}
+
 // Three-member union — more than two types
 
 func get_three(n: i32) (i32 | f32 | bool) {
@@ -1187,4 +1258,80 @@ test "str parseInt" {
 
 test "str parseFloat" {
     assert(test_str_parse_float() == 1)
+}
+
+// ─── Join ───────────────────────────────────────────────────
+
+pub func test_join() i32 {
+    const parts: [3]String = ["hello", "world", "foo"]
+    const result: String = parts.join(", ")
+    if(result.contains("hello, world, foo")) { return 1 }
+    return 0
+}
+
+test "join" {
+    assert(test_join() == 1)
+}
+
+// ─── toString ───────────────────────────────────────────────
+
+pub func test_tostring_int() i32 {
+    const x: i32 = 42
+    const s: String = x.toString()
+    if(s.contains("42")) { return 1 }
+    return 0
+}
+
+pub func test_tostring_bool() i32 {
+    const b: bool = true
+    const s: String = b.toString()
+    if(s.contains("true")) { return 1 }
+    return 0
+}
+
+test "toString int" {
+    assert(test_tostring_int() == 1)
+}
+
+test "toString bool" {
+    assert(test_tostring_bool() == 1)
+}
+
+// ─── String Interpolation ───────────────────────────────────
+
+pub func test_interpolation() i32 {
+    const name: String = "world"
+    const msg: String = "hello @{name}!"
+    if(msg.contains("hello world!")) { return 1 }
+    return 0
+}
+
+pub func test_interpolation_int() i32 {
+    const x: i32 = 42
+    const msg: String = "value is @{x}"
+    if(msg.contains("value is 42")) { return 1 }
+    return 0
+}
+
+test "interpolation" {
+    assert(test_interpolation() == 1)
+}
+
+test "interpolation int" {
+    assert(test_interpolation_int() == 1)
+}
+
+// ─── System ─────────────────────────────────────────────────
+
+pub func test_system_run() i32 {
+    const result = system.run("echo", ["hello"])
+    const out: String = result.stdout
+    if(result.code == 0) {
+        if(out.contains("hello")) { return 1 }
+    }
+    return 0
+}
+
+test "system run" {
+    assert(test_system_run() == 1)
 }
