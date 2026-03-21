@@ -22,7 +22,7 @@ struct Player {
     }
 
     // mutable instance method
-    func takeDamage(self: var &Player, amount: f32) void {
+    func takeDamage(self: &Player, amount: f32) void {
         self.health = self.health - amount
     }
 
@@ -66,7 +66,7 @@ var cfg = Config(width: 1920, height: 1080)                     // fullscreen us
 ### Rules
 - Named instantiation always — `Player(name: "john", score: 0, health: 100.0)`
 - `self` is always the explicit first argument for instance methods
-- No `self` = static, `const &T` = immutable, `var &T` = mutable, `T` = consuming
+- No `self` = static, `const &T` = immutable, `&T` = mutable, `T` = consuming
 - Fields are private by default — `pub` makes them accessible outside the module
 
 ### Static Struct Variables

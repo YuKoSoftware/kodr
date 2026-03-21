@@ -43,7 +43,7 @@ pub struct Counter {
         return self.count
     }
 
-    pub func increment(self: var &Counter) void {
+    pub func increment(self: &Counter) void {
         self.count = self.count + 1
     }
 }
@@ -748,6 +748,22 @@ test "arb union return" {
     assert(test_arb_union_return() == 1)
 }
 
+test "arb union match" {
+    assert(test_arb_union_match() == 1)
+}
+
+test "arb union field" {
+    assert(test_arb_union_field() == 99)
+}
+
+test "arb union assign" {
+    assert(test_arb_union_assign() == 1)
+}
+
+test "arb union three" {
+    assert(test_arb_union_three() == 1)
+}
+
 // ─── Collections ────────────────────────────────────────────
 
 pub func test_list() i32 {
@@ -991,6 +1007,54 @@ pub func test_arb_union_return() i32 {
     if(a is i32) {
         if(b is String) {
             return 1
+        }
+    }
+    return 0
+}
+
+// Match on arbitrary union — type arms dispatch to ._tag
+pub func test_arb_union_match() i32 {
+    const val = get_int_or_str(true)
+    var result: i32 = 0
+    match(val) {
+        i32    => { result = 1 }
+        String => { result = 2 }
+    }
+    return result
+}
+
+// Field access — extract inner value via .type syntax
+pub func test_arb_union_field() i32 {
+    const val: (i32 | String) = 99
+    return val.i32
+}
+
+// Variable reassignment — auto-wraps new value
+pub func test_arb_union_assign() i32 {
+    var val: (i32 | String) = 10
+    val = "changed"
+    if(val is String) {
+        return 1
+    }
+    return 0
+}
+
+// Three-member union — more than two types
+func get_three(n: i32) (i32 | f32 | bool) {
+    if(n == 1) { return 42 }
+    if(n == 2) { return 3.14 }
+    return true
+}
+
+pub func test_arb_union_three() i32 {
+    const a = get_three(1)
+    const b = get_three(2)
+    const c = get_three(3)
+    if(a is i32) {
+        if(b is f32) {
+            if(c is bool) {
+                return 1
+            }
         }
     }
     return 0

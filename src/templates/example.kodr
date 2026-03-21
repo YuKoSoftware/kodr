@@ -53,8 +53,8 @@ pub struct Player {
         return self.health > 0.0
     }
 
-    // mutable instance method — can modify fields
-    pub func take_damage(self: var &Player, amount: f32) void {
+    // mutable instance method — &T is mutable by default
+    pub func take_damage(self: &Player, amount: f32) void {
         self.health = self.health - amount
     }
 }
@@ -222,6 +222,45 @@ func nullable_var_demo() i32 {
         return 0
     }
     return x.i32
+}
+
+// ─── Arbitrary Unions ────────────────────────────────────────────────────────
+
+// function returning an arbitrary union — (A | B | ...)
+func get_value(flag: bool) (i32 | String) {
+    if(flag) {
+        return 42
+    }
+    return "hello"
+}
+
+// is keyword — check which type the union holds
+func arb_union_check(flag: bool) i32 {
+    const val = get_value(flag)
+    if(val is i32) {
+        return val.i32
+    }
+    return 0
+}
+
+// match on arbitrary union — arms are type names
+func arb_union_match(flag: bool) i32 {
+    const val = get_value(flag)
+    match(val) {
+        i32    => { return val.i32 }
+        String => { return 0 }
+    }
+    return 0
+}
+
+// variable with explicit type annotation — value auto-wraps
+func arb_union_var() i32 {
+    var x: (i32 | String) = 10
+    x = "changed"
+    if(x is String) {
+        return 1
+    }
+    return 0
 }
 
 // ─── Fixed-Size Arrays ───────────────────────────────────────

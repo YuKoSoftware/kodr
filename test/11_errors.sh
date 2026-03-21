@@ -180,4 +180,112 @@ NEG_OUT=$("$KODR" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "moved\|use of"; then pass "rejects use after splitAt"
 else fail "rejects use after splitAt" "$NEG_OUT"; fi
 
+# return type mismatch
+cd "$TESTDIR"
+mkdir -p neg_rettype/src
+cat > neg_rettype/src/main.kodr <<'KODR'
+module main
+#name    = "neg_rettype"
+#version = Version(1, 0, 0)
+#build   = exe
+func foo() i32 {
+    return "hello"
+}
+func main() void {
+}
+KODR
+cd neg_rettype
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "return type mismatch"; then pass "rejects return type mismatch"
+else fail "rejects return type mismatch" "$NEG_OUT"; fi
+
+# non-bool if condition
+cd "$TESTDIR"
+mkdir -p neg_ifcond/src
+cat > neg_ifcond/src/main.kodr <<'KODR'
+module main
+#name    = "neg_ifcond"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void {
+    if(42) { }
+}
+KODR
+cd neg_ifcond
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "condition must be bool"; then pass "rejects non-bool if condition"
+else fail "rejects non-bool if condition" "$NEG_OUT"; fi
+
+# non-bool while condition
+cd "$TESTDIR"
+mkdir -p neg_whilecond/src
+cat > neg_whilecond/src/main.kodr <<'KODR'
+module main
+#name    = "neg_whilecond"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void {
+    while(42) { }
+}
+KODR
+cd neg_whilecond
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "condition must be bool"; then pass "rejects non-bool while condition"
+else fail "rejects non-bool while condition" "$NEG_OUT"; fi
+
+# break outside loop
+cd "$TESTDIR"
+mkdir -p neg_break/src
+cat > neg_break/src/main.kodr <<'KODR'
+module main
+#name    = "neg_break"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void {
+    break
+}
+KODR
+cd neg_break
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "break.*outside"; then pass "rejects break outside loop"
+else fail "rejects break outside loop" "$NEG_OUT"; fi
+
+# continue outside loop
+cd "$TESTDIR"
+mkdir -p neg_continue/src
+cat > neg_continue/src/main.kodr <<'KODR'
+module main
+#name    = "neg_continue"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void {
+    continue
+}
+KODR
+cd neg_continue
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "continue.*outside"; then pass "rejects continue outside loop"
+else fail "rejects continue outside loop" "$NEG_OUT"; fi
+
+# var &T rejected (use &T instead)
+cd "$TESTDIR"
+mkdir -p neg_varref/src
+cat > neg_varref/src/main.kodr <<'KODR'
+module main
+#name    = "neg_varref"
+#version = Version(1, 0, 0)
+#build   = exe
+struct Foo {
+    x: i32
+    func set(self: var &Foo, v: i32) void {
+        self.x = v
+    }
+}
+func main() void { }
+KODR
+cd neg_varref
+NEG_OUT=$("$KODR" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "var &T.*not valid"; then pass "rejects var &T (use &T)"
+else fail "rejects var &T (use &T)" "$NEG_OUT"; fi
+
 report_results

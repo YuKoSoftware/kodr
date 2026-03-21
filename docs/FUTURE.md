@@ -4,39 +4,17 @@ Ideas and language decisions that are not yet committed. These may make it into 
 
 ---
 
-## Next Steps
-
-### Intra-project library linking
-When a project has multiple `#build` targets (e.g. an exe + a dynamic lib), the exe
-currently compiles the lib's Kodr source inline — it does NOT link against the built
-`.so`/`.a`. The artifacts are produced as standalone files but not wired together.
-
-What's needed:
-- In `zig_runner.buildZigContent`, when building the exe, detect which sibling modules
-  are lib targets and emit `exe.linkLibrary(lib)` / `b.installArtifact(lib)` calls so
-  Zig links them properly.
-- A single `build.zig` that builds all targets in one `zig build` invocation (instead
-  of N sequential invocations) would be cleaner and avoid redundant compilation.
-- The module system needs to distinguish "import as source" vs "link as library" —
-  when a module has `#build = dynamic`, importing it from the exe should mean linking,
-  not inlining the source.
-
-Until this is implemented: within a single project, share code via regular modules
-(no `#build`). Use `#build` only for artifacts meant to be distributed to other
-projects via `#dep`.
-
----
-
 ## Missing Core Language Features
 
 
-### Arbitrary Unions — BASIC DONE
-Arbitrary unions `(i32 | f32 | String)` now generate Zig tagged unions with codegen support for:
-type annotation, variable declaration wrapping, `is` type checks, field access (`result.i32`),
-and `match` arm generation. Still needs: return statement auto-wrapping in functions returning
-arbitrary unions, and propagation pass awareness.
+### Arbitrary Unions — DONE
+Arbitrary unions `(i32 | f32 | String)` generate Zig tagged unions with full codegen support:
+type annotation, variable declaration wrapping, return auto-wrapping, assignment wrapping,
+`is` type checks, field access (`result.i32`), `match` arm generation, smart tag inference
+from union member types (e.g. `int_literal` in `(i64 | String)` → `i64`), and multi-member
+unions (3+ types). Covered by runtime tests: return, match, field access, assignment, 3-member.
 
-**Priority: low** — basic infrastructure working, edge cases remain.
+Propagation pass does not track arbitrary unions — by design, they are not error-bearing.
 
 ### String Operations — PARTIALLY DONE
 Non-allocating string methods are implemented as compiler-known field operations on `String`:

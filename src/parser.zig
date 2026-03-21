@@ -1887,19 +1887,28 @@ pub const Parser = struct {
         self.skipNewlines();
         const tok = self.peek();
 
-        // Borrow types: const &T or var &T
-        if (tok.kind == .kw_const or tok.kind == .kw_var) {
-            // Check if followed by &
-            if (self.peekAt(1).kind == .ampersand) {
-                _ = self.advance(); // consume const/var
-                _ = self.advance(); // consume &
-                const inner = try self.parseType();
-                const prefix = if (tok.kind == .kw_const) "const &" else "var &";
-                // Represent as a named type with the borrow prefix
-                const full_name = try std.fmt.allocPrint(self.alloc(), "{s}{s}", .{ prefix, "T" });
-                _ = full_name;
-                return self.newNode(.{ .type_ptr = .{ .kind = prefix, .elem = inner } });
-            }
+        // Borrow types: const &T (immutable) or &T (mutable)
+        if (tok.kind == .kw_const and self.peekAt(1).kind == .ampersand) {
+            _ = self.advance(); // consume const
+            _ = self.advance(); // consume &
+            const inner = try self.parseType();
+            return self.newNode(.{ .type_ptr = .{ .kind = "const &", .elem = inner } });
+        }
+
+        // Reject var &T — redundant, use &T instead
+        if (tok.kind == .kw_var and self.peekAt(1).kind == .ampersand) {
+            try self.reporter.report(.{
+                .message = "'var &T' is not valid — use '&T' for mutable references",
+                .loc = .{ .file = "", .line = tok.line, .col = tok.col },
+            });
+            return error.ParseError;
+        }
+
+        // &T — mutable reference
+        if (tok.kind == .ampersand) {
+            _ = self.advance(); // consume &
+            const inner = try self.parseType();
+            return self.newNode(.{ .type_ptr = .{ .kind = "var &", .elem = inner } });
         }
 
         // Union type: (T | U | ...)

@@ -84,7 +84,7 @@ Source (.kodr)
 
     ↓
 7.  Borrow Checking
-    — validate const &T and var &T borrows
+    — validate const &T and &T borrows
     — no simultaneous mutable and immutable borrows
     — lexical lifetime enforcement
 

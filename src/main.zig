@@ -410,7 +410,6 @@ fn addToPath(allocator: std.mem.Allocator) !void {
     else
         export_line;
 
-    // Append to profile — create it if it doesn't exist yet
     // For fish, ensure the config directory exists first
     if (std.mem.endsWith(u8, shell, "fish")) {
         const fish_config_dir = try std.fs.path.join(allocator, &.{ home, ".config", "fish" });
@@ -418,12 +417,47 @@ fn addToPath(allocator: std.mem.Allocator) !void {
         try std.fs.cwd().makePath(fish_config_dir);
     }
 
-    const file = try std.fs.cwd().createFile(profile_path, .{ .truncate = false, .exclusive = false });
-    defer file.close();
-    try file.seekFromEnd(0);
-    try file.writeAll(line_to_write);
+    // Read existing profile to check for a previous kodr entry
+    const existing = std.fs.cwd().readFileAlloc(allocator, profile_path, 1024 * 1024) catch "";
+    defer if (existing.len > 0) allocator.free(existing);
 
-    std.debug.print("Added kodr to PATH in {s}\n", .{profile_path});
+    const marker = "# kodr compiler";
+
+    if (std.mem.indexOf(u8, existing, marker)) |start| {
+        // Find the end of the kodr block (marker line + export/path line)
+        // Look for the next newline after the export line
+        const after_marker = start + marker.len;
+        // Skip the marker line's newline
+        const after_first_nl = if (after_marker < existing.len and existing[after_marker] == '\n')
+            after_marker + 1
+        else
+            after_marker;
+        // Find end of the export/path line
+        const end = if (std.mem.indexOfPos(u8, existing, after_first_nl, "\n")) |nl|
+            nl + 1
+        else
+            existing.len;
+
+        // Also trim a leading newline before the marker if present
+        const real_start = if (start > 0 and existing[start - 1] == '\n') start - 1 else start;
+
+        // Rewrite the file with the old entry replaced
+        const file = try std.fs.cwd().createFile(profile_path, .{ .truncate = true });
+        defer file.close();
+        try file.writeAll(existing[0..real_start]);
+        try file.writeAll(line_to_write);
+        try file.writeAll(existing[end..]);
+
+        std.debug.print("Updated kodr PATH in {s} (replaced old entry)\n", .{profile_path});
+    } else {
+        // No existing entry — append
+        const file = try std.fs.cwd().createFile(profile_path, .{ .truncate = false, .exclusive = false });
+        defer file.close();
+        try file.seekFromEnd(0);
+        try file.writeAll(line_to_write);
+
+        std.debug.print("Added kodr to PATH in {s}\n", .{profile_path});
+    }
     std.debug.print("Run: source {s}\n", .{profile_path});
     std.debug.print("  or open a new terminal\n", .{});
 }

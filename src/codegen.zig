@@ -45,7 +45,7 @@ pub const CodeGen = struct {
     in_arb_union_func: bool, // current function returns an arbitrary union like (i32 | String)
     arb_union_return_type: ?*parser.Node, // return type node for arbitrary union wrapping
     null_vars: std.StringHashMapUnmanaged(void),       // variables with (null | T) type
-    arb_union_vars: std.StringHashMapUnmanaged(void),  // variables with arbitrary union type
+    arb_union_vars: std.StringHashMapUnmanaged(*parser.Node),  // variables with arbitrary union type → type node
     rawptr_vars: std.StringHashMapUnmanaged(void),     // variables holding RawPtr(T) or VolatilePtr(T)
     ptr_vars: std.StringHashMapUnmanaged(void),        // variables holding Ptr(T)
     list_vars: std.StringHashMapUnmanaged([]const u8), // variables holding List(T) → allocator name
@@ -537,15 +537,49 @@ pub const CodeGen = struct {
         }
     }
 
-    /// Infer which union tag a value belongs to based on its literal type
-    fn inferArbUnionTag(_: *const CodeGen, value: *parser.Node, _: *parser.Node) ?[]const u8 {
+    /// Infer which union tag a value belongs to based on its literal type.
+    /// Uses the union's type annotation to find the actual member name instead of
+    /// hardcoding defaults (e.g. int_literal in `(i64 | String)` → "i64", not "i32").
+    fn inferArbUnionTag(_: *const CodeGen, value: *parser.Node, type_ann: *parser.Node) ?[]const u8 {
+        if (type_ann.* != .type_union) return null;
+        const members = type_ann.type_union;
+
         return switch (value.*) {
-            .int_literal => "i32", // default integer tag
-            .float_literal => "f32", // default float tag
-            .string_literal => "String",
-            .bool_literal => "bool",
+            .int_literal => findMemberByKind(members, .int) orelse "i32",
+            .float_literal => findMemberByKind(members, .float) orelse "f32",
+            .string_literal => findMemberByKind(members, .string) orelse "String",
+            .bool_literal => findMemberByKind(members, .bool_) orelse "bool",
             else => null,
         };
+    }
+
+    const TypeKind = enum { int, float, string, bool_ };
+
+    /// Search union members for a type matching the given kind.
+    fn findMemberByKind(members: []*parser.Node, kind: TypeKind) ?[]const u8 {
+        for (members) |m| {
+            if (m.* != .type_named) continue;
+            const name = m.type_named;
+            switch (kind) {
+                .int => {
+                    if (std.mem.eql(u8, name, "i8") or std.mem.eql(u8, name, "i16") or
+                        std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "i64") or
+                        std.mem.eql(u8, name, "u8") or std.mem.eql(u8, name, "u16") or
+                        std.mem.eql(u8, name, "u32") or std.mem.eql(u8, name, "u64") or
+                        std.mem.eql(u8, name, "usize")) return name;
+                },
+                .float => {
+                    if (std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64")) return name;
+                },
+                .string => {
+                    if (std.mem.eql(u8, name, "String")) return name;
+                },
+                .bool_ => {
+                    if (std.mem.eql(u8, name, "bool")) return name;
+                },
+            }
+        }
+        return null;
     }
 
     /// Check if an expression already produces a null union value.
@@ -1117,7 +1151,7 @@ pub const CodeGen = struct {
             try self.null_vars.put(self.allocator, v.name, {});
             try self.generateNullWrappedExpr(v.value);
         } else if (is_arb_union) {
-            try self.arb_union_vars.put(self.allocator, v.name, {});
+            try self.arb_union_vars.put(self.allocator, v.name, v.type_annotation.?);
             try self.generateArbUnionWrappedExpr(v.value, v.type_annotation.?);
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
@@ -1132,8 +1166,10 @@ pub const CodeGen = struct {
             if (isStringType(v.type_annotation) or v.value.* == .string_literal)
                 try self.string_vars.put(self.allocator, v.name, {});
             // Infer arb union from function call return type (no explicit annotation)
-            if (v.type_annotation == null and self.callReturnsArbUnion(v.value) != null)
-                try self.arb_union_vars.put(self.allocator, v.name, {});
+            if (v.type_annotation == null) {
+                if (self.callReturnsArbUnion(v.value)) |rt|
+                    try self.arb_union_vars.put(self.allocator, v.name, rt);
+            }
             try self.generateExpr(v.value);
         }
         try self.write(";\n");
@@ -1156,7 +1192,7 @@ pub const CodeGen = struct {
             try self.null_vars.put(self.allocator, v.name, {});
             try self.generateNullWrappedExpr(v.value);
         } else if (is_arb_union) {
-            try self.arb_union_vars.put(self.allocator, v.name, {});
+            try self.arb_union_vars.put(self.allocator, v.name, v.type_annotation.?);
             try self.generateArbUnionWrappedExpr(v.value, v.type_annotation.?);
         } else {
             if (isPtrExpr(v.value)) try self.rawptr_vars.put(self.allocator, v.name, {});
@@ -1171,8 +1207,10 @@ pub const CodeGen = struct {
             if (isStringType(v.type_annotation) or v.value.* == .string_literal)
                 try self.string_vars.put(self.allocator, v.name, {});
             // Infer arb union from function call return type (no explicit annotation)
-            if (v.type_annotation == null and self.callReturnsArbUnion(v.value) != null)
-                try self.arb_union_vars.put(self.allocator, v.name, {});
+            if (v.type_annotation == null) {
+                if (self.callReturnsArbUnion(v.value)) |rt|
+                    try self.arb_union_vars.put(self.allocator, v.name, rt);
+            }
             const prev_ctx = self.type_ctx;
             self.type_ctx = v.type_annotation;
             try self.generateExpr(v.value);
@@ -1656,6 +1694,15 @@ pub const CodeGen = struct {
                     try self.generateExpr(a.left);
                     try self.write(" = ");
                     try self.generateNullWrappedExpr(a.right);
+                    try self.write(";");
+                } else if (std.mem.eql(u8, a.op, "=") and
+                    a.left.* == .identifier and self.arb_union_vars.get(a.left.identifier) != null)
+                {
+                    // Assignment to arb union var → wrap value
+                    const type_node = self.arb_union_vars.get(a.left.identifier).?;
+                    try self.generateExpr(a.left);
+                    try self.write(" = ");
+                    try self.generateArbUnionWrappedExpr(a.right, type_node);
                     try self.write(";");
                 } else {
                     try self.generateExpr(a.left);

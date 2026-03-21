@@ -57,6 +57,8 @@ pub const TypeResolver = struct {
     bitsize: ?u16 = null, // from #bitsize metadata
     locs: ?*const parser.LocMap = null,
     source_file: []const u8 = "",
+    loop_depth: u32 = 0, // track nesting depth for break/continue validation
+    current_return_type: ?RT = null, // expected return type of current function
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -180,6 +182,10 @@ pub const TypeResolver = struct {
                     }
                 }
 
+                const prev_return = self.current_return_type;
+                self.current_return_type = try types.resolveTypeNode(self.decls.typeAllocator(), f.return_type);
+                defer self.current_return_type = prev_return;
+
                 try self.resolveNode(f.body, &func_scope);
             },
             .struct_decl => |s| {
@@ -266,16 +272,49 @@ pub const TypeResolver = struct {
         switch (node.*) {
             .var_decl, .const_decl, .compt_decl => try self.resolveNode(node, scope),
             .return_stmt => |r| {
-                if (r.value) |v| _ = try self.resolveExpr(v, scope);
+                if (r.value) |v| {
+                    const val_type = try self.resolveExpr(v, scope);
+                    // Check return type matches function signature
+                    if (self.current_return_type) |expected| {
+                        if (expected != .unknown and expected != .inferred and
+                            val_type != .unknown and val_type != .inferred and
+                            !typesCompatible(val_type, expected))
+                        {
+                            const msg = try std.fmt.allocPrint(self.allocator,
+                                "return type mismatch: expected '{s}', got '{s}'",
+                                .{ expected.name(), val_type.name() });
+                            defer self.allocator.free(msg);
+                            try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                        }
+                    }
+                }
             },
             .if_stmt => |i| {
-                _ = try self.resolveExpr(i.condition, scope);
+                const cond_type = try self.resolveExpr(i.condition, scope);
+                if (cond_type == .primitive and !std.mem.eql(u8, cond_type.primitive, "bool") and
+                    cond_type != .unknown and cond_type != .inferred)
+                {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "if condition must be bool, got '{s}'", .{cond_type.name()});
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                }
                 try self.resolveNode(i.then_block, scope);
                 if (i.else_block) |e| try self.resolveNode(e, scope);
             },
             .while_stmt => |w| {
-                _ = try self.resolveExpr(w.condition, scope);
+                const cond_type = try self.resolveExpr(w.condition, scope);
+                if (cond_type == .primitive and !std.mem.eql(u8, cond_type.primitive, "bool") and
+                    cond_type != .unknown and cond_type != .inferred)
+                {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "while condition must be bool, got '{s}'", .{cond_type.name()});
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                }
                 if (w.continue_expr) |c| _ = try self.resolveExpr(c, scope);
+                self.loop_depth += 1;
+                defer self.loop_depth -= 1;
                 try self.resolveNode(w.body, scope);
             },
             .for_stmt => |f| {
@@ -286,6 +325,8 @@ pub const TypeResolver = struct {
                 const capture_type = inferCaptureType(f.iterable, iter_type);
                 for (f.captures) |v| try for_scope.define(v, capture_type);
                 if (f.index_var) |idx| try for_scope.define(idx, RT{ .primitive = "usize" });
+                self.loop_depth += 1;
+                defer self.loop_depth -= 1;
                 try self.resolveNode(f.body, &for_scope);
             },
             .match_stmt => |m| {
@@ -302,10 +343,31 @@ pub const TypeResolver = struct {
                 _ = try self.resolveExpr(a.right, scope);
             },
             .defer_stmt => |d| try self.resolveNode(d.body, scope),
-            .thread_block => |t| try self.resolveNode(t.body, scope),
+            .thread_block => |t| {
+                const prev_return = self.current_return_type;
+                self.current_return_type = types.resolveTypeNode(self.decls.typeAllocator(), t.result_type) catch null;
+                defer self.current_return_type = prev_return;
+                try self.resolveNode(t.body, scope);
+            },
             .destruct_decl => |d| {
                 _ = try self.resolveExpr(d.value, scope);
                 for (d.names) |name| try scope.define(name, RT.inferred);
+            },
+            .break_stmt => {
+                if (self.loop_depth == 0) {
+                    try self.reporter.report(.{
+                        .message = "'break' outside of loop",
+                        .loc = self.nodeLoc(node),
+                    });
+                }
+            },
+            .continue_stmt => {
+                if (self.loop_depth == 0) {
+                    try self.reporter.report(.{
+                        .message = "'continue' outside of loop",
+                        .loc = self.nodeLoc(node),
+                    });
+                }
             },
             .block => try self.resolveNode(node, scope),
             else => _ = try self.resolveExpr(node, scope),
@@ -560,6 +622,38 @@ fn inferCaptureType(iterable: *parser.Node, iter_type: RT) RT {
     if (iter_type == .slice) return iter_type.slice.*;
     if (iter_type == .array) return iter_type.array.elem.*;
     return RT.inferred;
+}
+
+/// Check if two resolved types are compatible (same kind and name).
+/// Unions, error unions, and null unions are compatible with their inner types.
+fn typesCompatible(a: RT, b: RT) bool {
+    const a_name = a.name();
+    const b_name = b.name();
+    if (a_name.len > 0 and b_name.len > 0 and std.mem.eql(u8, a_name, b_name)) return true;
+    // Numeric literals are compatible with any integer type
+    if (a == .primitive and std.mem.eql(u8, a.primitive, "numeric_literal") and
+        b == .primitive and isIntegerType(b.primitive)) return true;
+    // Float literals are compatible with any float type
+    if (a == .primitive and std.mem.eql(u8, a.primitive, "float_literal") and
+        b == .primitive and isFloatType(b.primitive)) return true;
+    // Error/null/arbitrary unions accept their inner types
+    if (b == .error_union or b == .null_union or b == .union_type) return true;
+    if (a == .error_union or a == .null_union or a == .union_type) return true;
+    // func_ptr / func returns are hard to check without full inference — allow
+    if (a == .func_ptr or b == .func_ptr) return true;
+    return false;
+}
+
+fn isIntegerType(name: []const u8) bool {
+    return std.mem.eql(u8, name, "i8") or std.mem.eql(u8, name, "i16") or
+        std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "i64") or
+        std.mem.eql(u8, name, "u8") or std.mem.eql(u8, name, "u16") or
+        std.mem.eql(u8, name, "u32") or std.mem.eql(u8, name, "u64") or
+        std.mem.eql(u8, name, "usize");
+}
+
+fn isFloatType(name: []const u8) bool {
+    return std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64");
 }
 
 test "resolver init" {

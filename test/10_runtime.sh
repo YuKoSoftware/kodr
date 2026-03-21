@@ -39,7 +39,8 @@ for TEST_NAME in \
     typeid_diff match_range match_string list list_len map set map_iter set_iter \
     split_at split_list split_thread thread_value thread_wait \
     bitfield wrap sat overflow alloc_default alloc_debug alloc_arena \
-    alloc_page alloc_one alloc_slice arb_union_return; do
+    alloc_page alloc_one alloc_slice arb_union_return \
+    arb_union_match arb_union_field arb_union_assign arb_union_three; do
     if echo "$BINOUT" | grep -q "PASS $TEST_NAME"; then pass "runtime: $TEST_NAME"
     else fail "runtime: $TEST_NAME"; fi
 done

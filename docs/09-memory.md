@@ -43,12 +43,12 @@ print(s)      // move, s is gone after this
 In function signatures:
 ```
 func read(x: const &String) void { }    // immutable borrow, read only
-func mutate(x: var &String) void { }    // mutable borrow, can modify
+func mutate(x: &String) void { }        // mutable borrow, can modify
 ```
 
 ### Borrow Rules
+- `&T` — mutable borrow, only one at a time (`var &T` is the explicit form, same thing)
 - `const &T` — immutable borrow, many allowed simultaneously
-- `var &T` — mutable borrow, only one at a time
 - Cannot have immutable and mutable borrow simultaneously — compile time error
 - Functions can never return references, only owned values
 - If you need to return borrowed data, use `copy` to return an owned copy
@@ -59,7 +59,7 @@ struct Game {
 
     // Don't return &Player — provide methods instead:
     func getPlayerName(self: const &Game) String { return self.player.name }
-    func damagePlayer(self: var &Game, amount: f32) void {
+    func damagePlayer(self: &Game, amount: f32) void {
         self.player.health = self.player.health - amount
     }
 }

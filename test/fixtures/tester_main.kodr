@@ -409,5 +409,29 @@ func main() void {
         console.print("FAIL arb_union_return\n")
     }
 
+    if(tester.test_arb_union_match() == 1) {
+        console.print("PASS arb_union_match\n")
+    } else {
+        console.print("FAIL arb_union_match\n")
+    }
+
+    if(tester.test_arb_union_field() == 99) {
+        console.print("PASS arb_union_field\n")
+    } else {
+        console.print("FAIL arb_union_field\n")
+    }
+
+    if(tester.test_arb_union_assign() == 1) {
+        console.print("PASS arb_union_assign\n")
+    } else {
+        console.print("FAIL arb_union_assign\n")
+    }
+
+    if(tester.test_arb_union_three() == 1) {
+        console.print("PASS arb_union_three\n")
+    } else {
+        console.print("FAIL arb_union_three\n")
+    }
+
     console.print("TESTER:DONE\n")
 }
