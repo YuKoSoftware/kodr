@@ -22,10 +22,30 @@ Ideas and language decisions that are not yet committed.
 
 ## Standard Library Roadmap
 
-Guiding rule: foundation and building blocks only. No opinionated high-level frameworks.
+All stdlib modules use the bridge pattern (module + `.zig` sidecar). The codegen has no knowledge of stdlib types — everything goes through `extern` declarations. Users can build their own bridge modules the same way.
+
+### Implemented (bridge modules)
+```
+std.console       // terminal I/O — print, println, get
+std.ziglib        // bridge testbed — exercises all interop patterns
+```
+
+### Being rebuilt (emptied for fresh bridge implementation)
+```
+std.fs            // filesystem + path operations
+std.json          // JSON parsing and serialization
+std.math          // mathematical functions
+std.mem           // memory allocators
+std.random        // random number generation
+std.sort          // sorting and ordering
+std.str           // string utilities
+std.system        // OS interaction
+std.time          // time and duration
+```
 
 ### Not started
 ```
+std.collections   // List, Map, Set — generic collection types (bridge)
 std.net           // raw sockets — TCP, UDP
 std.encoding      // base64, hex, UTF-8, UTF-16
 std.unicode       // full unicode support, normalization
@@ -38,12 +58,11 @@ std.compress      // algorithms only — lz4, zstd, deflate
 std.regex         // pattern matching
 std.xml           // parse and emit XML
 std.csv           // parse and emit CSV
-std.random        // random number generation
 std.hash          // fast general purpose hashing — FNV, xxHash, SipHash
 std.io            // raw streams, buffers, readers, writers
-std.path          // path join, split, normalize, extension, stem
 std.bytes         // raw byte manipulation, endianness, bit operations
-std.math.linear   // Vec2(T), Vec3(T), Vec4(T), Mat2(T), Mat3(T), Mat4(T), Quat(T)
+std.math.linear   // Vec2(T), Vec3(T), Vec4(T), Mat4(T), Quat(T)
+std.thread        // thread spawning, joining (bridge replacement for builtin thread)
 ```
 
 ### Far future
@@ -64,17 +83,29 @@ std.gpu           // GPU access, compute, backend agnostic (Vulkan, OpenGL, WebG
 
 ## Missing Tooling
 
-### Language Server (LSP)
-No editor integration. Blocks adoption. Needed before the language is usable day-to-day.
-
 ### Documentation Generator (`orhon doc`)
 Generate HTML/Markdown docs from `pub` declarations and doc comments.
 
 ### Fuzz Testing
-Use Zig's built-in `std.testing.fuzz` to fuzz the lexer and parser. Native speed, no external tools. Do this once the parser is stable.
+Use Zig's built-in `std.testing.fuzz` to fuzz the lexer and parser.
 
 ---
 
-## `#gpu` metadata
+## Pending Language Work
 
-Reserved for future GPU/concurrency design. `thread` is implemented; `async` is deferred.
+### String `==` comparison
+Currently generates invalid Zig for string comparison. Codegen should emit `std.mem.eql(u8, a, b)` when both sides are `String`.
+
+### String interpolation
+`@{name}` syntax was removed during codegen cleanup. Needs reimplementation — either in codegen as a core feature or through a bridge string module.
+
+### `for` loop over bridge types
+Solved by having bridge types expose `.items()` returning a slice. Standard `for` iteration works on slices. No codegen change needed — bridge modules implement the pattern.
+
+## Future Language Features
+
+### `unsafe` keyword
+Relaxes bridge safety rules within a block — allows mutable refs across the Orhon↔Zig boundary. Not yet implemented; strict mode (option 1) is the current default.
+
+### `#gpu` metadata
+Reserved for future GPU/concurrency design.

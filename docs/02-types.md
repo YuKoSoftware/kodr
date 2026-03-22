@@ -104,7 +104,7 @@ struct Wrapper {
 }
 
 // compt function — generates a new type
-compt func Box(T: any) type {
+compt func Box(T: type) type {
     return struct {
         value: T
     }
@@ -163,23 +163,33 @@ var result: MinMax = minMax(arr)
 result.min
 result.max
 
-// string split uses tuple destructuring
-var before, after = name.split(",")
-
 // hard compiler error if variable count doesn't match field count
 var a, b, c = minMax(arr)    // error — MinMax only has 2 fields
 ```
 
 ---
 
-## Builtin Collection Types
+## First-Class `type`
 
-`List(T)`, `Map(K, V)`, and `Set(T)` are builtin parameterized types — no import needed. They own their memory and require an explicit `free()` call.
+`type` is a keyword — it represents a type as a compile-time value. You can pass types as parameters, return them from functions, and store them in `const` variables.
 
 ```
-List(i32)           // dynamic array of i32
-Map(String, i32)    // hash map, String key → i32 value
-Set(i32)            // unique set of i32
+// type as a parameter
+compt func Box(T: type) type {
+    return struct {
+        value: T
+    }
+}
+
+// store a type in a const
+const IntBox = Box(i32)
+const b = IntBox(value: 42)
+
+// generic struct with type params
+pub struct Pair(A: type, B: type) {
+    pub first: A
+    pub second: B
+}
 ```
 
-All three accept an optional allocator argument. See [06-collections.md](06-collections.md) for full documentation.
+`type` is always resolved at compile time — it never exists at runtime. Use `typeOf(x)` to get the type of a value, `typename(x)` for a string name, and `typeid(x)` for a numeric identifier.

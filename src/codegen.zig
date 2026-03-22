@@ -39,8 +39,6 @@ pub const CodeGen = struct {
     generic_struct_name: ?[]const u8, // inside a generic struct — name to replace with @This()
     all_decls: ?*std.StringHashMap(*declarations.DeclTable), // all module decl tables for cross-module default args
     source_file: []const u8,     // anchor file path for location reporting
-    uses_fs: bool,               // module uses File or Dir types
-    uses_mem: bool,              // module uses allocator wrappers (Debug/Arena/Stack)
     module_builds: ?*const std.StringHashMapUnmanaged(module.BuildType), // imported module → build type
     narrowed_vars: std.StringHashMapUnmanaged([]const u8), // var name → narrowed type (from `is` checks)
 
@@ -72,8 +70,6 @@ pub const CodeGen = struct {
             .all_decls = null,
             .locs = null,
             .source_file = "",
-            .uses_fs = false,
-            .uses_mem = false,
             .module_builds = null,
             .narrowed_vars = .{},
         };
@@ -164,18 +160,6 @@ pub const CodeGen = struct {
         // Always emit OrhonNullable — used by null unions and string indexOf/lastIndexOf
         try self.write("fn OrhonNullable(comptime T: type) type { return union(enum) { some: T, none: void }; }\n");
         try self.write("fn orhonTypeId(comptime T: type) usize { return @intFromPtr(@typeName(T).ptr); }\n");
-
-        // Allocator wrappers — import if module uses Debug/Arena/Stack allocators
-        if (moduleUsesAllocWrappers(ast)) {
-            self.uses_mem = true;
-            try self.write("const OrhonMem = @import(\"mem_rt.zig\");\n");
-        }
-
-        // File/Dir runtime — import if module uses these types
-        if (moduleUsesFileOrDir(ast)) {
-            self.uses_fs = true;
-            try self.write("const OrhonFs = @import(\"fs_rt.zig\");\n");
-        }
 
         // BRIDGE TODO: Ring, ORing, stringRepeat moved to bridge modules
 
@@ -510,12 +494,6 @@ pub const CodeGen = struct {
     fn generateImport(self: *CodeGen, node: *parser.Node) anyerror!void {
         if (node.* != .import_decl) return;
         const imp = node.import_decl;
-
-        // std::mem is a built-in compiler module — no Zig import needed,
-        // allocator types map directly to std.heap.* which is always available.
-        if (imp.scope) |sc| {
-            if (std.mem.eql(u8, sc, "std") and std.mem.eql(u8, imp.path, K.Module.MEM)) return;
-        }
 
         // Alias defaults to the module name (last segment of path)
         const alias = imp.alias orelse imp.path;
@@ -1466,12 +1444,12 @@ pub const CodeGen = struct {
                     if (std.mem.eql(u8, name, gsn)) {
                         try self.write("@This()");
                     } else {
-                        const mapped = builtins.ZigMapping.primitiveToZig(name);
+                        const mapped = builtins.primitiveToZig(name);
                         try self.write(mapped);
                     }
                 } else {
                     // Map type names used as values (e.g. generic type args)
-                    const mapped = builtins.ZigMapping.primitiveToZig(name);
+                    const mapped = builtins.primitiveToZig(name);
                     try self.write(mapped);
                 }
             },
@@ -1541,7 +1519,7 @@ pub const CodeGen = struct {
                         }
                         // General type check: `val is i32` → `@TypeOf(val) == i32`
                         // Map Orhon type names to Zig (e.g. String → []const u8)
-                        const zig_rhs = builtins.ZigMapping.primitiveToZig(rhs);
+                        const zig_rhs = builtins.primitiveToZig(rhs);
                         try self.write("(@TypeOf(");
                         try self.generateExpr(val_node);
                         try self.writeFmt(") {s} {s})", .{ cmp, zig_rhs });
@@ -2218,14 +2196,11 @@ pub const CodeGen = struct {
         return switch (node.*) {
             .type_named => |name| {
                 if (std.mem.eql(u8, name, K.Type.ERROR)) return "OrhonError";
-                if (std.mem.eql(u8, name, "mem.Allocator")) return "std.mem.Allocator";
-                if (std.mem.eql(u8, name, K.Type.FILE)) return "OrhonFs.File";
-                if (std.mem.eql(u8, name, K.Type.DIR)) return "OrhonFs.Dir";
                 // Inside a generic struct, self-references use @This()
                 if (self.generic_struct_name) |gsn| {
                     if (std.mem.eql(u8, name, gsn)) return "@This()";
                 }
-                return builtins.ZigMapping.primitiveToZig(name);
+                return builtins.primitiveToZig(name);
             },
             .type_slice => |elem| blk: {
                 const inner = try self.typeToZig(elem);
@@ -2312,31 +2287,6 @@ pub const CodeGen = struct {
                         const inner = try self.typeToZig(g.args[0]);
                         break :blk try self.allocTypeStr("[*]volatile {s}", .{inner});
                     }
-                } else if (std.mem.eql(u8, g.name, K.Coll.LIST)) {
-                    // List(T) → std.ArrayList(T)
-                    if (g.args.len > 0) {
-                        const inner = try self.typeToZig(g.args[0]);
-                        break :blk try self.allocTypeStr("std.ArrayList({s})", .{inner});
-                    }
-                } else if (std.mem.eql(u8, g.name, K.Coll.MAP)) {
-                    // Map(K,V) → std.StringHashMapUnmanaged(V) if K is String, else std.AutoHashMapUnmanaged(K,V)
-                    if (g.args.len >= 2) {
-                        const key = try self.typeToZig(g.args[0]);
-                        const val = try self.typeToZig(g.args[1]);
-                        if (std.mem.eql(u8, key, "[]const u8")) {
-                            break :blk try self.allocTypeStr("std.StringHashMapUnmanaged({s})", .{val});
-                        }
-                        break :blk try self.allocTypeStr("std.AutoHashMapUnmanaged({s}, {s})", .{ key, val });
-                    }
-                } else if (std.mem.eql(u8, g.name, K.Coll.SET)) {
-                    // Set(T) → std.StringHashMapUnmanaged(void) if T is String, else std.AutoHashMapUnmanaged(T, void)
-                    if (g.args.len > 0) {
-                        const inner = try self.typeToZig(g.args[0]);
-                        if (std.mem.eql(u8, inner, "[]const u8")) {
-                            break :blk "std.StringHashMapUnmanaged(void)";
-                        }
-                        break :blk try self.allocTypeStr("std.AutoHashMapUnmanaged({s}, void)", .{inner});
-                    }
                 } else if (std.mem.eql(u8, g.name, "Ring")) {
                     if (g.args.len >= 2) {
                         const inner = try self.typeToZig(g.args[0]);
@@ -2389,7 +2339,7 @@ pub const CodeGen = struct {
                 break :blk try self.allocTypeStr("{s}", .{buf.items});
             },
             // cast(i64, x) — type arg parsed as identifier by parseExpr
-            .identifier => |name| builtins.ZigMapping.primitiveToZig(name),
+            .identifier => |name| builtins.primitiveToZig(name),
             else => "anyopaque",
         };
     }
@@ -2506,96 +2456,6 @@ fn nodeContainsNullUnion(node: *parser.Node) bool {
             }
             return false;
         },
-        else => return false,
-    }
-}
-
-/// Check if a module uses wrapper allocators (Debug/Arena/Stack) for preamble import
-fn moduleUsesAllocWrappers(ast: *parser.Node) bool {
-    if (ast.* != .program) return false;
-    for (ast.program.top_level) |node| {
-        if (nodeRefsAllocWrapper(node)) return true;
-    }
-    return false;
-}
-
-fn nodeRefsAllocWrapper(node: *parser.Node) bool {
-    switch (node.*) {
-        .call_expr => |c| {
-            // Check for mem.DebugAllocator(), mem.Arena(), mem.Stack()
-            if (c.callee.* == .field_expr) {
-                const fe = c.callee.field_expr;
-                if (fe.object.* == .identifier and std.mem.eql(u8, fe.object.identifier, K.Module.MEM)) {
-                    if (std.mem.eql(u8, fe.field, "DebugAllocator") or
-                        std.mem.eql(u8, fe.field, "Arena") or
-                        std.mem.eql(u8, fe.field, "Stack")) return true;
-                }
-            }
-            for (c.args) |arg| if (nodeRefsAllocWrapper(arg)) return true;
-            return false;
-        },
-        .func_decl => |f| return nodeRefsAllocWrapper(f.body),
-        .block => |b| {
-            for (b.statements) |s| if (nodeRefsAllocWrapper(s)) return true;
-            return false;
-        },
-        .var_decl, .const_decl => |v| return nodeRefsAllocWrapper(v.value),
-        .struct_decl => |s| {
-            for (s.members) |m| if (nodeRefsAllocWrapper(m)) return true;
-            return false;
-        },
-        .coll_expr => |c| {
-            if (c.alloc_arg) |arg| return nodeRefsAllocWrapper(arg);
-            return false;
-        },
-        else => return false,
-    }
-}
-
-/// Check if a module uses File or Dir types (for preamble import)
-fn moduleUsesFileOrDir(ast: *parser.Node) bool {
-    if (ast.* != .program) return false;
-    for (ast.program.top_level) |node| {
-        if (nodeRefsFileOrDir(node)) return true;
-    }
-    return false;
-}
-
-fn nodeRefsFileOrDir(node: *parser.Node) bool {
-    switch (node.*) {
-        .identifier => |name| return std.mem.eql(u8, name, K.Type.FILE) or std.mem.eql(u8, name, K.Type.DIR),
-        .type_named => |name| return std.mem.eql(u8, name, K.Type.FILE) or std.mem.eql(u8, name, K.Type.DIR),
-        .call_expr => |c| {
-            if (nodeRefsFileOrDir(c.callee)) return true;
-            for (c.args) |arg| if (nodeRefsFileOrDir(arg)) return true;
-            return false;
-        },
-        .func_decl => |f| {
-            if (nodeRefsFileOrDir(f.return_type)) return true;
-            return nodeRefsFileOrDir(f.body);
-        },
-        .block => |b| {
-            for (b.statements) |s| if (nodeRefsFileOrDir(s)) return true;
-            return false;
-        },
-        .var_decl, .const_decl => |v| {
-            if (v.type_annotation) |t| if (nodeRefsFileOrDir(t)) return true;
-            return nodeRefsFileOrDir(v.value);
-        },
-        .struct_decl => |s| {
-            for (s.members) |m| if (nodeRefsFileOrDir(m)) return true;
-            return false;
-        },
-        .return_stmt => |r| {
-            if (r.value) |v| return nodeRefsFileOrDir(v);
-            return false;
-        },
-        .if_stmt => |i| {
-            if (nodeRefsFileOrDir(i.then_block)) return true;
-            if (i.else_block) |eb| return nodeRefsFileOrDir(eb);
-            return false;
-        },
-        .field_expr => |f| return nodeRefsFileOrDir(f.object),
         else => return false,
     }
 }

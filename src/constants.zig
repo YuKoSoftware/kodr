@@ -9,24 +9,10 @@ pub const Type = struct {
     pub const VOID = "void";
     pub const ANY = "any";
     pub const TYPE = "type";
-    pub const FILE = "File";
-    pub const DIR = "Dir";
-};
-
-/// Collection type names (parser + codegen)
-pub const Coll = struct {
-    pub const LIST = "List";
-    pub const MAP = "Map";
-    pub const SET = "Set";
 };
 
 /// Pointer kind strings (parser + borrow + codegen)
 pub const Ptr = struct {
     pub const VAR_REF = "var &";
     pub const CONST_REF = "const &";
-};
-
-/// Builtin module namespace
-pub const Module = struct {
-    pub const MEM = "mem";
 };

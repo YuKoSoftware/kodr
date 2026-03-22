@@ -97,6 +97,13 @@ typeid(p1) == typeid(p2)          // true only if exact same type
 typeid(Point) == typeid(Velocity) // false — different types despite identical structure
 ```
 
+### `typeOf` — first-class type value
+Returns the actual type of a value as a compile-time `type`. Can be stored in a `const` or passed to functions.
+```
+const x: i32 = 42
+const T: type = typeOf(x)    // T is i32
+```
+
 ### `cast` — type conversion
 Target type is always explicit — no inference, no guessing:
 ```

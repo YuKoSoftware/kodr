@@ -36,7 +36,7 @@ Source (.orh)
     ↓
 10. MIR Generation
     ↓
-11. Zig Code Generation
+11. Zig Code Generation — pure 1:1 AST → Zig translation
     ↓
 12. Zig Compiler — produce final binary
 ```
@@ -50,9 +50,26 @@ Checked at step 3. Unchanged modules with unchanged dependencies skip passes 4-1
 
 Zig 0.15.2 is the single backend. Generated Zig code is readable and debuggable. `compt` maps to Zig's comptime. Cross-compilation, linking, and optimization are all handled by Zig.
 
+### Codegen philosophy (v0.4.0+)
+The codegen is a **pure 1:1 translator** — it maps Orhon syntax to Zig syntax with no domain knowledge of library types or methods. All stdlib functionality (collections, strings, allocators, etc.) lives in bridge modules (module + `.zig` sidecar), not in the codegen. This means adding new stdlib features never requires compiler changes.
+
 ### Zig discovery
 1. Same directory as orhon binary (portable)
 2. Global PATH (system installed)
+
+---
+
+## Bridge System
+
+Orhon interacts with Zig through the extern bridge. A module declares its interface using `extern`, and a paired `.zig` sidecar provides the implementation. The codegen re-exports from the sidecar — no special cases.
+
+### Bridge safety rules
+- `T` (by value) — moves across the bridge
+- `const &T` — read-only borrow, both directions
+- `&T` (mutable ref) — **not allowed** across the bridge (except `self` on extern struct methods)
+- Default arguments on extern funcs are filled at the call site by the codegen
+
+See [14-zig-bridge.md](14-zig-bridge.md) for full documentation.
 
 ---
 
@@ -73,12 +90,14 @@ src/
     thread_safety.zig       // pass 8
     propagation.zig         // pass 9
     mir.zig                 // pass 10 + MIR types
-    codegen.zig             // pass 11
+    codegen.zig             // pass 11 — pure 1:1 translator
     zig_runner.zig          // pass 12
     types.zig               // shared — type system
     errors.zig              // shared — error formatting
-    builtins.zig            // shared — builtin types
+    builtins.zig            // shared — language intrinsics only
     constants.zig           // shared — constants
     cache.zig               // shared — incremental cache
     formatter.zig           // orhon fmt
+    lsp.zig                 // language server
+    std/                    // stdlib bridge modules (module + .zig sidecar)
 ```

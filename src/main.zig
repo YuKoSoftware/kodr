@@ -935,15 +935,6 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         // Write generated .zig file to cache
         try cache.writeGeneratedZig(mod_name, cg.getOutput(), allocator);
 
-        // If module uses File/Dir types, copy fs.zig to generated dir
-        if (cg.uses_fs) {
-            try cache.writeGeneratedZig("fs_rt", FS_ZIG, allocator);
-        }
-        // If module uses allocator wrappers, copy mem.zig to generated dir
-        if (cg.uses_mem) {
-            try cache.writeGeneratedZig("mem_rt", MEM_ZIG, allocator);
-        }
-
         // Capture new warnings from this module for caching
         for (reporter.warnings.items[warn_start..]) |w| {
             try all_warnings.append(allocator, .{
@@ -1775,23 +1766,6 @@ test "codegen - enum with match" {
     try std.testing.expect(std.mem.indexOf(u8, out, "const Color = enum") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "Red") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "switch") != null);
-}
-
-test "codegen - List(T) declaration" {
-    const alloc = std.testing.allocator;
-    var reporter = errors.Reporter.init(alloc, .debug);
-    defer reporter.deinit();
-    const out = try codegenSource(alloc,
-        \\module main
-        \\func main() void {
-        \\    var alloc = mem.SMP()
-        \\    var items: List(i32) = List(i32).init(alloc)
-        \\}
-        \\
-    , &reporter);
-    defer alloc.free(out);
-    try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expect(std.mem.indexOf(u8, out, "ArrayList(i32)") != null);
 }
 
 test "codegen - bitfield declaration" {

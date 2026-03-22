@@ -1422,31 +1422,6 @@ test "resolver - struct constructor resolves to named type" {
     try std.testing.expectEqualStrings("Point", result.name());
 }
 
-test "resolver - builtin generic type resolves" {
-    const alloc = std.testing.allocator;
-    var decl_table = declarations.DeclTable.init(alloc);
-    defer decl_table.deinit();
-    var reporter = errors.Reporter.init(alloc, .debug);
-    defer reporter.deinit();
-    var resolver = TypeResolver.init(alloc, &decl_table, &reporter);
-    defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
-    defer scope.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const a = arena.allocator();
-
-    // List(i32) constructor → should resolve to "List"
-    const callee = try a.create(parser.Node);
-    callee.* = .{ .identifier = "List" };
-    const call = try a.create(parser.Node);
-    call.* = .{ .call_expr = .{ .callee = callee, .args = &.{}, .arg_names = &.{} } };
-
-    const result = try resolver.resolveExpr(call, &scope);
-    try std.testing.expectEqualStrings("List", result.name());
-}
-
 test "resolver - validateType catches unknown generic" {
     const alloc = std.testing.allocator;
     var decl_table = declarations.DeclTable.init(alloc);
@@ -1472,33 +1447,6 @@ test "resolver - validateType catches unknown generic" {
 
     try resolver.validateType(generic_node, &scope);
     try std.testing.expect(reporter.hasErrors());
-}
-
-test "resolver - validateType accepts known generic" {
-    const alloc = std.testing.allocator;
-    var decl_table = declarations.DeclTable.init(alloc);
-    defer decl_table.deinit();
-    var reporter = errors.Reporter.init(alloc, .debug);
-    defer reporter.deinit();
-    var resolver = TypeResolver.init(alloc, &decl_table, &reporter);
-    defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
-    defer scope.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const a = arena.allocator();
-
-    // List(i32) — should be fine (List is a builtin)
-    const i32_type = try a.create(parser.Node);
-    i32_type.* = .{ .type_named = "i32" };
-    const args = try a.alloc(*parser.Node, 1);
-    args[0] = i32_type;
-    const generic_node = try a.create(parser.Node);
-    generic_node.* = .{ .type_generic = .{ .name = "List", .args = args } };
-
-    try resolver.validateType(generic_node, &scope);
-    try std.testing.expect(!reporter.hasErrors());
 }
 
 test "resolver - array literal infers element type" {

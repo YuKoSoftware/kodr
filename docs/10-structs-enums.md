@@ -69,6 +69,36 @@ var cfg = Config(width: 1920, height: 1080)                     // fullscreen us
 - No `self` = static, `const &T` = immutable, `&T` = mutable, `T` = consuming
 - Fields are private by default — `pub` makes them accessible outside the module
 
+### Generic Structs
+Structs can take type parameters. The compiler generates a concrete type for each usage.
+```
+pub struct Pair(A: type, B: type) {
+    pub first: A
+    pub second: B
+}
+
+pub struct Stack(T: type) {
+    items: [100]T
+    top: i32 = 0
+
+    pub func push(self: &Stack, val: T) void {
+        self.items[self.top] = val
+        self.top = self.top + 1
+    }
+
+    pub func peek(self: const &Stack) T {
+        return self.items[self.top - 1]
+    }
+}
+
+// usage
+const p = Pair(i32, String)(first: 42, second: "hello")
+var s = Stack(i32)(items: [...], top: 0)
+s.push(10)
+```
+
+Inside a generic struct body, the struct name refers to the current instantiation (`@This()` in Zig). Type parameters are in scope for all fields and methods.
+
 ### Static Struct Constants
 Static constants are shared across all instances. Only `const` is supported — no mutable shared state.
 ```
