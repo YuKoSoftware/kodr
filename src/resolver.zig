@@ -564,7 +564,7 @@ pub const TypeResolver = struct {
                 if (std.mem.eql(u8, cf.name, "typename")) return RT{ .primitive = K.Type.STRING };
                 if (std.mem.eql(u8, cf.name, "assert")) return RT{ .primitive = "void" };
                 if (std.mem.eql(u8, cf.name, "swap")) return RT{ .primitive = "void" };
-                // @cast(T, x) → returns T (first arg is the target type)
+                // cast(T, x) → returns T (first arg is the target type)
                 if (std.mem.eql(u8, cf.name, "cast")) {
                     if (cf.args.len >= 1 and cf.args[0].* == .identifier) {
                         return RT{ .named = cf.args[0].identifier };
@@ -575,7 +575,7 @@ pub const TypeResolver = struct {
                         return RT{ .named = tn };
                     }
                 }
-                // @copy(x), @move(x) → returns same type as argument
+                // copy(x), move(x) → returns same type as argument
                 if (std.mem.eql(u8, cf.name, "copy") or std.mem.eql(u8, cf.name, "move")) {
                     return first_arg_type;
                 }
@@ -1218,7 +1218,7 @@ test "resolver - explicit type annotation preferred" {
     try std.testing.expectEqualStrings("i64", x_type.name());
 }
 
-test "resolver - compiler func @cast resolves to target type" {
+test "resolver - compiler func cast resolves to target type" {
     const alloc = std.testing.allocator;
     var decl_table = declarations.DeclTable.init(alloc);
     defer decl_table.deinit();
@@ -1234,7 +1234,7 @@ test "resolver - compiler func @cast resolves to target type" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    // @cast(i64, x) → i64
+    // cast(i64, x) → i64
     const target = try a.create(parser.Node);
     target.* = .{ .identifier = "i64" };
     const arg = try a.create(parser.Node);
@@ -1249,7 +1249,7 @@ test "resolver - compiler func @cast resolves to target type" {
     try std.testing.expectEqualStrings("i64", result.name());
 }
 
-test "resolver - compiler func @copy preserves type" {
+test "resolver - compiler func copy preserves type" {
     const alloc = std.testing.allocator;
     var decl_table = declarations.DeclTable.init(alloc);
     defer decl_table.deinit();
@@ -1265,7 +1265,7 @@ test "resolver - compiler func @copy preserves type" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    // @copy(data) → Player
+    // copy(data) → Player
     const arg = try a.create(parser.Node);
     arg.* = .{ .identifier = "data" };
     const args = try a.alloc(*parser.Node, 1);
@@ -1277,7 +1277,7 @@ test "resolver - compiler func @copy preserves type" {
     try std.testing.expectEqualStrings("Player", result.name());
 }
 
-test "resolver - compiler func @assert returns void" {
+test "resolver - compiler func assert returns void" {
     const alloc = std.testing.allocator;
     var decl_table = declarations.DeclTable.init(alloc);
     defer decl_table.deinit();

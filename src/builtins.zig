@@ -25,7 +25,7 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "ORing",
 };
 
-/// All compiler function names (prefixed with @ in Kodr source)
+/// All compiler function names (called as keywords, no prefix)
 pub const COMPILER_FUNCS = [_][]const u8{
     "typename",
     "typeid",
@@ -73,7 +73,7 @@ pub fn isBuiltinType(name: []const u8) bool {
     return false;
 }
 
-/// Check if a name is a compiler function (without @ prefix)
+/// Check if a name is a compiler function
 pub fn isCompilerFunc(name: []const u8) bool {
     for (COMPILER_FUNCS) |cf| {
         if (std.mem.eql(u8, name, cf)) return true;

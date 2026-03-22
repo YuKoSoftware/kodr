@@ -330,12 +330,38 @@ pub const ZigRunner = struct {
             if (line.len == 0) continue;
             // Try to parse Zig error format
             if (std.mem.indexOf(u8, line, ": error:")) |_| {
+                // "has no member named 'X'" → module has no function 'X'
+                if (self.reformatNoMember(line)) |msg| {
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg });
+                    continue;
+                }
                 const msg = try std.fmt.allocPrint(self.allocator,
                     "internal codegen error (please report): {s}", .{line});
                 defer self.allocator.free(msg);
                 try self.reporter.report(.{ .message = msg });
             }
         }
+    }
+
+    /// Try to reformat "has no member named 'X'" into a user-friendly message
+    fn reformatNoMember(self: *ZigRunner, line: []const u8) ?[]const u8 {
+        // Pattern: "struct 'module_name' has no member named 'func_name'"
+        const marker = "has no member named '";
+        const struct_marker = "struct '";
+        const idx = std.mem.indexOf(u8, line, marker) orelse return null;
+        const func_start = idx + marker.len;
+        const func_end = std.mem.indexOfPos(u8, line, func_start, "'") orelse return null;
+        const func_name = line[func_start..func_end];
+
+        // Extract module name from "struct 'name'"
+        const struct_idx = std.mem.indexOf(u8, line, struct_marker) orelse return null;
+        const mod_start = struct_idx + struct_marker.len;
+        const mod_end = std.mem.indexOfPos(u8, line, mod_start, "'") orelse return null;
+        const mod_name = line[mod_start..mod_end];
+
+        return std.fmt.allocPrint(self.allocator,
+            "module '{s}' has no function '{s}'", .{ mod_name, func_name }) catch null;
     }
 
     /// Run all test blocks in the generated Zig project

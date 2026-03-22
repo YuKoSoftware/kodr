@@ -54,7 +54,7 @@ pub const CodeGen = struct {
     set_vars: std.StringHashMapUnmanaged([]const u8), // variables holding Set(T) → allocator name
     allocator_vars: std.StringHashMapUnmanaged(AllocInfo), // variables holding a mem.* allocator
     heap_single_vars: std.StringHashMapUnmanaged([]const u8), // heap singles: var → allocator name
-    in_test_block: bool, // inside a test { } block — @assert uses std.testing.expect
+    in_test_block: bool, // inside a test { } block — assert uses std.testing.expect
     destruct_counter: usize, // unique index for destructuring temp vars
     warned_rawptr: bool,     // RawPtr/VolatilePtr warning printed once per module
     module_name: []const u8, // current module name — used for extern re-exports
@@ -3029,19 +3029,19 @@ pub const CodeGen = struct {
     }
 
     fn generateCompilerFunc(self: *CodeGen, cf: parser.CompilerFunc) anyerror!void {
-        // Map Kodr @functions to Zig equivalents
+        // Map Kodr compiler functions to Zig equivalents
         if (std.mem.eql(u8, cf.name, "typename")) {
-            // @typename(x) → @typeName(@TypeOf(x))
+            // typename(x) → @typeName(@TypeOf(x))
             try self.write("@typeName(@TypeOf(");
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write("))");
         } else if (std.mem.eql(u8, cf.name, "typeid")) {
-            // @typeid(x) → kodrTypeId(@TypeOf(x))
+            // typeid(x) → kodrTypeId(@TypeOf(x))
             try self.write("kodrTypeId(@TypeOf(");
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write("))");
         } else if (std.mem.eql(u8, cf.name, "cast")) {
-            // @cast(T, x) → Zig cast depending on target and source types:
+            // cast(T, x) → Zig cast depending on target and source types:
             //   int target,   float source literal: @as(T, @intFromFloat(x))
             //   int target,   other source:          @as(T, @intCast(x))
             //   float target, float source:          @as(T, @floatCast(x))
@@ -3069,20 +3069,20 @@ pub const CodeGen = struct {
                 try self.write(")");
             }
         } else if (std.mem.eql(u8, cf.name, "size")) {
-            // @size(T) → @sizeOf(T)
+            // size(T) → @sizeOf(T)
             try self.write("@sizeOf(");
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write(")");
         } else if (std.mem.eql(u8, cf.name, "align")) {
-            // @align(T) → @alignOf(T)
+            // align(T) → @alignOf(T)
             try self.write("@alignOf(");
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write(")");
         } else if (std.mem.eql(u8, cf.name, "copy")) {
-            // @copy(x) — for non-primitives, generate a copy
+            // copy(x) — for non-primitives, generate a copy
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
         } else if (std.mem.eql(u8, cf.name, "move")) {
-            // @move(x) — explicit move, same as value in Zig
+            // move(x) — explicit move, same as value in Zig
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
         } else if (std.mem.eql(u8, cf.name, "assert")) {
             if (self.in_test_block) {
@@ -3093,7 +3093,7 @@ pub const CodeGen = struct {
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write(")");
         } else if (std.mem.eql(u8, cf.name, "swap")) {
-            // @swap(a, b) → std.mem.swap(@TypeOf(a), &a, &b)
+            // swap(a, b) → std.mem.swap(@TypeOf(a), &a, &b)
             if (cf.args.len == 2) {
                 try self.write("std.mem.swap(@TypeOf(");
                 try self.generateExpr(cf.args[0]);
@@ -3757,7 +3757,7 @@ pub const CodeGen = struct {
                 try buf.appendSlice(self.allocator, "}");
                 break :blk try self.allocTypeStr("{s}", .{buf.items});
             },
-            // @cast(i64, x) — type arg parsed as identifier by parseExpr
+            // cast(i64, x) — type arg parsed as identifier by parseExpr
             .identifier => |name| builtins.ZigMapping.primitiveToZig(name),
             else => "anyopaque",
         };

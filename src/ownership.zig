@@ -455,17 +455,17 @@ pub const OwnershipChecker = struct {
 
             .compiler_func => |cf| {
                 if (std.mem.eql(u8, cf.name, "move")) {
-                    // @move(x) — explicit move, mark source as moved
+                    // move(x) — explicit move, mark source as moved
                     if (cf.args.len == 1) {
                         try self.checkExpr(cf.args[0], scope, false);
                     }
                 } else if (std.mem.eql(u8, cf.name, "copy")) {
-                    // @copy(x) — explicit copy, borrows (no move)
+                    // copy(x) — explicit copy, borrows (no move)
                     if (cf.args.len == 1) {
                         try self.checkExpr(cf.args[0], scope, true);
                     }
                 } else if (std.mem.eql(u8, cf.name, "swap")) {
-                    // @swap(a, b) — both stay owned, values exchanged
+                    // swap(a, b) — both stay owned, values exchanged
                     for (cf.args) |arg| {
                         try self.checkExpr(arg, scope, true);
                     }
@@ -629,7 +629,7 @@ test "ownership - string is copy type" {
     try std.testing.expect(!reporter.hasErrors());
 }
 
-test "ownership - @copy borrows without moving" {
+test "ownership - copy borrows without moving" {
     const alloc = std.testing.allocator;
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -642,7 +642,7 @@ test "ownership - @copy borrows without moving" {
     // Define 'data' as non-primitive (struct)
     try scope.define("data", false);
 
-    // @copy(data) — should borrow, not move
+    // copy(data) — should borrow, not move
     var inner = parser.Node{ .identifier = "data" };
     var copy_node = parser.Node{ .compiler_func = .{
         .name = "copy",
@@ -655,7 +655,7 @@ test "ownership - @copy borrows without moving" {
     try std.testing.expect(state.state == .owned);
 }
 
-test "ownership - @move marks as moved" {
+test "ownership - move marks as moved" {
     const alloc = std.testing.allocator;
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -668,7 +668,7 @@ test "ownership - @move marks as moved" {
     // Define 'data' as non-primitive
     try scope.define("data", false);
 
-    // @move(data) — should move
+    // move(data) — should move
     var inner = parser.Node{ .identifier = "data" };
     var move_node = parser.Node{ .compiler_func = .{
         .name = "move",
