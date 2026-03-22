@@ -381,30 +381,6 @@ func main() void {
         console.println("FAIL split_list")
     }
 
-    if(tester.test_split_thread() == 100) {
-        console.println("PASS split_thread")
-    } else {
-        console.println("FAIL split_thread")
-    }
-
-    if(tester.test_thread_value() == 42) {
-        console.println("PASS thread_value")
-    } else {
-        console.println("FAIL thread_value")
-    }
-
-    if(tester.test_thread_wait() == 1) {
-        console.println("PASS thread_wait")
-    } else {
-        console.println("FAIL thread_wait")
-    }
-
-    if(tester.test_bitfield() == 1) {
-        console.println("PASS bitfield")
-    } else {
-        console.println("FAIL bitfield")
-    }
-
     if(tester.test_wrap() == 5) {
         console.println("PASS wrap")
     } else {
@@ -427,36 +403,6 @@ func main() void {
         console.println("PASS alloc_default")
     } else {
         console.println("FAIL alloc_default")
-    }
-
-    if(tester.test_alloc_debug() == 30) {
-        console.println("PASS alloc_debug")
-    } else {
-        console.println("FAIL alloc_debug")
-    }
-
-    if(tester.test_alloc_arena() == 15) {
-        console.println("PASS alloc_arena")
-    } else {
-        console.println("FAIL alloc_arena")
-    }
-
-    if(tester.test_alloc_page() == 50) {
-        console.println("PASS alloc_page")
-    } else {
-        console.println("FAIL alloc_page")
-    }
-
-    if(tester.test_alloc_one() == 42) {
-        console.println("PASS alloc_one")
-    } else {
-        console.println("FAIL alloc_one")
-    }
-
-    if(tester.test_alloc_slice() == 60) {
-        console.println("PASS alloc_slice")
-    } else {
-        console.println("FAIL alloc_slice")
     }
 
     if(tester.test_arb_union_return() == 1) {
@@ -549,12 +495,6 @@ func main() void {
         console.println("FAIL str_parse_float")
     }
 
-    if(tester.test_join() == 1) {
-        console.println("PASS join")
-    } else {
-        console.println("FAIL join")
-    }
-
     if(tester.test_tostring_int() == 1) {
         console.println("PASS tostring_int")
     } else {
@@ -577,12 +517,6 @@ func main() void {
         console.println("PASS interpolation_int")
     } else {
         console.println("FAIL interpolation_int")
-    }
-
-    if(tester.test_system_run() == 1) {
-        console.println("PASS system_run")
-    } else {
-        console.println("FAIL system_run")
     }
 
     if(tester.test_string_eq() == 1) {

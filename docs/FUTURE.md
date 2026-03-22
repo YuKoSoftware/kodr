@@ -34,7 +34,7 @@ std.math          // math — abs, sqrt, pow, trig, floor, ceil, round + integer
 std.random        // random — int, float, boolean, seed
 std.sort          // sorting — intAsc, intDesc, floatAsc, strAsc, reverse
 std.str           // string utilities — contains, replace, toUpper, parseInt, toString, etc.
-std.system        // OS — run, getEnv, cwd, exit
+std.system        // OS — run, getEnv, cwd, exit, signals (trap, check, clear, raise)
 std.time          // time — now, sleepMs, elapsed, format
 std.collections   // List(T), Map(K,V), Set(T) — generic collections via bridge
 std.ziglib        // bridge testbed — exercises all interop patterns
@@ -46,7 +46,6 @@ std.net           // raw sockets — TCP, UDP
 std.encoding      // base64, hex, UTF-8, UTF-16
 std.unicode       // full unicode support, normalization
 std.process       // spawn processes, pipes, child processes
-std.signal        // OS signals — SIGINT, SIGTERM etc
 std.reflect       // type introspection
 std.crypto        // primitives only — hashing, symmetric, asymmetric encryption
 std.compress      // algorithms only — lz4, zstd, deflate
@@ -93,3 +92,16 @@ Relaxes bridge safety rules within a block — allows mutable refs across the Or
 
 ### `#gpu` metadata
 Reserved for future GPU/concurrency design.
+
+---
+
+## MIR Roadmap
+
+### Phase 1 — Typed Annotation Pass (implemented)
+The MIR annotator (pass 10) walks the AST + resolver type_map to produce a NodeMap — an annotation table keyed by AST node pointer. Each entry carries `ResolvedType`, `TypeClass`, and optional coercion/narrowing info. Codegen can query this instead of re-discovering types via ad-hoc hashmaps. Includes a `UnionRegistry` for canonical union type deduplication.
+
+### Phase 2 — Typed Tree
+Lower the NodeMap into a proper `MirNode` tree with its own node types. Codegen reads the MirNode tree instead of the AST. This enables desugaring and tree transformations before code emission.
+
+### Phase 3 — SSA + Optimization
+Flatten the MirNode tree to basic blocks with SSA form. Add optimization passes: dead code elimination, constant folding, inlining decisions. Codegen reads the SSA IR.

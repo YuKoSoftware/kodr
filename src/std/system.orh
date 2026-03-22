@@ -18,3 +18,27 @@ extern func cwd() String
 // Exit the process with a status code
 
 extern func exit(code: i32) void
+
+// Register to trap a signal (sets an internal flag on delivery)
+
+extern func trapSignal(sig: i32) void
+
+// Check whether a trapped signal has been received
+
+extern func checkSignal(sig: i32) bool
+
+// Clear a previously received signal flag
+
+extern func clearSignal(sig: i32) void
+
+// Send a signal to the current process
+
+extern func raise(sig: i32) void
+
+// Signal constants
+
+const SIGINT: i32 = 2
+const SIGTERM: i32 = 15
+const SIGHUP: i32 = 1
+const SIGUSR1: i32 = 10
+const SIGUSR2: i32 = 12

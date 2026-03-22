@@ -72,6 +72,49 @@ pub fn exit(code: i32) void {
     std.process.exit(@intCast(code));
 }
 
+// ── Signals ──
+
+const posix = std.posix;
+
+var signal_flags: [32]bool = .{false} ** 32;
+
+fn signalHandler(sig: i32) callconv(.c) void {
+    const idx: usize = @intCast(sig);
+    if (idx < signal_flags.len) {
+        signal_flags[idx] = true;
+    }
+}
+
+pub fn trapSignal(sig: i32) void {
+    const s: u6 = @intCast(sig);
+    const act = posix.Sigaction{
+        .handler = .{ .handler = signalHandler },
+        .mask = posix.empty_sigset,
+        .flags = .{ .RESTART = true },
+    };
+    posix.sigaction(s, &act, null) catch {};
+}
+
+pub fn checkSignal(sig: i32) bool {
+    const idx: usize = @intCast(sig);
+    if (idx < signal_flags.len) {
+        return signal_flags[idx];
+    }
+    return false;
+}
+
+pub fn clearSignal(sig: i32) void {
+    const idx: usize = @intCast(sig);
+    if (idx < signal_flags.len) {
+        signal_flags[idx] = false;
+    }
+}
+
+pub fn raise(sig: i32) void {
+    const s: u6 = @intCast(sig);
+    _ = posix.raise(s) catch {};
+}
+
 // ── Tests ──
 
 test "run echo" {
@@ -83,4 +126,13 @@ test "run echo" {
 test "cwd" {
     const c = cwd();
     try std.testing.expect(c.len > 0);
+}
+
+test "trap and raise signal" {
+    trapSignal(10); // SIGUSR1
+    try std.testing.expect(!checkSignal(10));
+    raise(10);
+    try std.testing.expect(checkSignal(10));
+    clearSignal(10);
+    try std.testing.expect(!checkSignal(10));
 }

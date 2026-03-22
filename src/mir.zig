@@ -1,365 +1,482 @@
 // mir.zig — MIR (Mid-level Intermediate Representation) pass (pass 10)
-// MIR instruction type definitions + generation from AST.
-// Simple SSA-based instructions. Bridge between AST and Zig codegen.
+// Typed annotation pass: walks the AST + resolver type_map to produce
+// a NodeMap (annotation table keyed by AST node pointer).
+// Codegen reads AST + NodeMap instead of re-discovering types.
 
 const std = @import("std");
 const parser = @import("parser.zig");
+const declarations = @import("declarations.zig");
 const errors = @import("errors.zig");
+const types = @import("types.zig");
+const K = @import("constants.zig");
 
-/// MIR instruction kinds
-pub const MirKind = enum {
-    alloc,      // allocate a variable slot
-    move,       // move value from one slot to another
-    borrow,     // create an immutable borrow
-    mut_borrow, // create a mutable borrow
-    drop,       // drop a value (scope exit)
-    call,       // function call
-    load,       // load a value
-    store,      // store a value
-    ret,        // return from function
-    jump,       // unconditional jump
-    branch,     // conditional branch
-    label,      // jump target label
-    phi,        // SSA phi node (merge point)
+const RT = types.ResolvedType;
+
+// ── Type Classification ─────────────────────────────────────
+
+/// How codegen should treat a variable or expression.
+/// Replaces the 7 ad-hoc hashmaps in CodeGen.
+pub const TypeClass = enum {
+    plain,
+    error_union,
+    null_union,
+    arb_union,
+    string,
+    raw_ptr,
+    safe_ptr,
 };
 
-/// A MIR value — either a local slot or a constant
-pub const MirValue = union(enum) {
-    local: usize,       // slot index
-    int_const: i64,
-    float_const: f64,
-    bool_const: bool,
-    string_const: []const u8,
-    null_const: void,
-    func_ref: []const u8,
+/// Classify a resolved type into a codegen category.
+pub fn classifyType(t: RT) TypeClass {
+    return switch (t) {
+        .error_union => .error_union,
+        .null_union => .null_union,
+        .union_type => .arb_union,
+        .primitive => |n| if (std.mem.eql(u8, n, K.Type.STRING)) .string else .plain,
+        .generic => |g| {
+            if (std.mem.eql(u8, g.name, "RawPtr") or std.mem.eql(u8, g.name, "VolatilePtr"))
+                return .raw_ptr;
+            if (std.mem.eql(u8, g.name, "Ptr"))
+                return .safe_ptr;
+            return .plain;
+        },
+        .ptr => .safe_ptr,
+        else => .plain,
+    };
+}
+
+// ── Coercion ────────────────────────────────────────────────
+
+/// An explicit coercion that codegen should emit.
+pub const Coercion = enum {
+    array_to_slice,
+    null_wrap,
+    error_wrap,
+    arb_union_wrap,
+    optional_unwrap,
 };
 
-/// A single MIR instruction
-pub const MirInstr = union(MirKind) {
-    alloc: struct {
-        slot: usize,
-        type_str: []const u8,
+// ── Node Info ───────────────────────────────────────────────
+
+/// Per-AST-node annotation produced by the MIR annotator.
+pub const NodeInfo = struct {
+    resolved_type: RT,
+    type_class: TypeClass,
+    coercion: ?Coercion = null,
+    coerce_tag: ?[]const u8 = null,
+    narrowed_to: ?[]const u8 = null,
+};
+
+/// Annotation table: AST node pointer → NodeInfo.
+pub const NodeMap = std.AutoHashMapUnmanaged(*parser.Node, NodeInfo);
+
+// ── Union Registry ──────────────────────────────────────────
+
+/// Canonical union type deduplication.
+/// Same structural union across functions shares one Zig type name.
+pub const UnionRegistry = struct {
+    /// Sorted member names → canonical Zig type name
+    entries: std.ArrayListUnmanaged(Entry),
+    allocator: std.mem.Allocator,
+
+    pub const Entry = struct {
+        members: []const []const u8,
         name: []const u8,
-    },
-    move: struct {
-        dst: usize,
-        src: MirValue,
-    },
-    borrow: struct {
-        dst: usize,
-        src: usize,
-    },
-    mut_borrow: struct {
-        dst: usize,
-        src: usize,
-    },
-    drop: struct {
-        slot: usize,
-    },
-    call: struct {
-        dst: ?usize,
-        func: MirValue,
-        args: []MirValue,
-    },
-    load: struct {
-        dst: usize,
-        src: MirValue,
-    },
-    store: struct {
-        dst: usize,
-        value: MirValue,
-    },
-    ret: struct {
-        value: ?MirValue,
-    },
-    jump: struct {
-        target: usize, // label index
-    },
-    branch: struct {
-        condition: MirValue,
-        true_target: usize,
-        false_target: usize,
-    },
-    label: struct {
-        id: usize,
-    },
-    phi: struct {
-        dst: usize,
-        sources: []usize,
-    },
-};
+    };
 
-/// A MIR function — sequence of instructions for one function
-pub const MirFunc = struct {
-    name: []const u8,
-    instructions: std.ArrayListUnmanaged(MirInstr),
-    slot_count: usize,
-
-    pub fn init(name: []const u8) MirFunc {
+    pub fn init(allocator: std.mem.Allocator) UnionRegistry {
         return .{
-            .name = name,
-            .instructions = .{},
-            .slot_count = 0,
+            .entries = .{},
+            .allocator = allocator,
         };
     }
 
-    pub fn deinit(self: *MirFunc, allocator: std.mem.Allocator) void {
-        for (self.instructions.items) |instr| {
-            switch (instr) {
-                .call => |c| allocator.free(c.args),
-                else => {},
+    pub fn deinit(self: *UnionRegistry) void {
+        for (self.entries.items) |entry| {
+            self.allocator.free(entry.members);
+            self.allocator.free(entry.name);
+        }
+        self.entries.deinit(self.allocator);
+    }
+
+    /// Get or create a canonical name for a union type.
+    pub fn canonicalize(self: *UnionRegistry, members: []const []const u8) ![]const u8 {
+        const sorted = try self.allocator.alloc([]const u8, members.len);
+        @memcpy(sorted, members);
+        std.mem.sort([]const u8, sorted, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.order(u8, a, b) == .lt;
+            }
+        }.lt);
+
+        // Look for existing entry
+        for (self.entries.items) |entry| {
+            if (entry.members.len == sorted.len) {
+                var match = true;
+                for (entry.members, sorted) |a, b| {
+                    if (!std.mem.eql(u8, a, b)) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    self.allocator.free(sorted);
+                    return entry.name;
+                }
             }
         }
-        self.instructions.deinit(allocator);
-    }
 
-    pub fn nextSlot(self: *MirFunc) usize {
-        const slot = self.slot_count;
-        self.slot_count += 1;
-        return slot;
-    }
-};
+        // Build name: "OrhonUnion_i32_String"
+        var buf = std.ArrayListUnmanaged(u8){};
+        try buf.appendSlice(self.allocator, "OrhonUnion");
+        for (sorted) |m| {
+            try buf.append(self.allocator, '_');
+            try buf.appendSlice(self.allocator, m);
+        }
+        const name = try self.allocator.dupe(u8, buf.items);
+        buf.deinit(self.allocator);
 
-/// The MIR module — collection of functions
-pub const MirModule = struct {
-    name: []const u8,
-    funcs: std.StringHashMap(MirFunc),
-    allocator: std.mem.Allocator,
-
-    pub fn init(name: []const u8, allocator: std.mem.Allocator) MirModule {
-        return .{
+        try self.entries.append(self.allocator, .{
+            .members = sorted,
             .name = name,
-            .funcs = std.StringHashMap(MirFunc).init(allocator),
-            .allocator = allocator,
-        };
-    }
-
-    pub fn deinit(self: *MirModule) void {
-        var it = self.funcs.iterator();
-        while (it.next()) |entry| {
-            entry.value_ptr.deinit(self.allocator);
-        }
-        self.funcs.deinit();
+        });
+        return name;
     }
 };
 
-/// The MIR generator
-pub const MirGen = struct {
-    module: MirModule,
-    reporter: *errors.Reporter,
-    allocator: std.mem.Allocator,
-    current_func: ?*MirFunc,
-    label_counter: usize,
+// ── MIR Annotator ───────────────────────────────────────────
 
-    pub fn init(mod_name: []const u8, allocator: std.mem.Allocator, reporter: *errors.Reporter) MirGen {
+/// The MIR annotator pass. Walks AST + type_map → NodeMap.
+pub const MirAnnotator = struct {
+    allocator: std.mem.Allocator,
+    reporter: *errors.Reporter,
+    decls: *declarations.DeclTable,
+    type_map: *const std.AutoHashMapUnmanaged(*parser.Node, RT),
+    node_map: NodeMap,
+    union_registry: UnionRegistry,
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        reporter: *errors.Reporter,
+        decls: *declarations.DeclTable,
+        type_map: *const std.AutoHashMapUnmanaged(*parser.Node, RT),
+    ) MirAnnotator {
         return .{
-            .module = MirModule.init(mod_name, allocator),
-            .reporter = reporter,
             .allocator = allocator,
-            .current_func = null,
-            .label_counter = 0,
+            .reporter = reporter,
+            .decls = decls,
+            .type_map = type_map,
+            .node_map = .{},
+            .union_registry = UnionRegistry.init(allocator),
         };
     }
 
-    pub fn deinit(self: *MirGen) void {
-        self.module.deinit();
+    pub fn deinit(self: *MirAnnotator) void {
+        self.node_map.deinit(self.allocator);
+        self.union_registry.deinit();
     }
 
-    fn nextLabel(self: *MirGen) usize {
-        const l = self.label_counter;
-        self.label_counter += 1;
-        return l;
-    }
-
-    fn emit(self: *MirGen, instr: MirInstr) !void {
-        if (self.current_func) |f| {
-            try f.instructions.append(self.allocator, instr);
-        }
-    }
-
-    /// Generate MIR from a program AST
-    pub fn generate(self: *MirGen, ast: *parser.Node) !void {
+    /// Annotate the entire program AST.
+    pub fn annotate(self: *MirAnnotator, ast: *parser.Node) !void {
         if (ast.* != .program) return;
         for (ast.program.top_level) |node| {
-            try self.generateTopLevel(node);
+            try self.annotateNode(node);
         }
     }
 
-    fn generateTopLevel(self: *MirGen, node: *parser.Node) anyerror!void {
+    fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
         switch (node.*) {
-            .func_decl => |f| try self.generateFunc(f),
+            .func_decl => |f| {
+                // Annotate the function declaration itself
+                if (self.decls.funcs.get(f.name)) |sig| {
+                    try self.recordNode(node, sig.return_type);
+                }
+                // Annotate parameters
+                for (f.params) |param| {
+                    if (param.* == .param) {
+                        const t = try types.resolveTypeNode(self.decls.typeAllocator(), param.param.type_annotation);
+                        try self.recordNode(param, t);
+                    }
+                }
+                // Annotate body
+                try self.annotateNode(f.body);
+            },
+
             .struct_decl => |s| {
+                try self.recordNode(node, RT{ .named = s.name });
                 for (s.members) |member| {
-                    if (member.* == .func_decl) try self.generateTopLevel(member);
+                    try self.annotateNode(member);
                 }
             },
-            else => {},
-        }
-    }
 
-    fn generateFunc(self: *MirGen, f: parser.FuncDecl) anyerror!void {
-        const func = MirFunc.init(f.name);
-        try self.module.funcs.put(f.name, func);
-        self.current_func = self.module.funcs.getPtr(f.name);
+            .enum_decl => |e| {
+                try self.recordNode(node, RT{ .named = e.name });
+            },
 
-        // Allocate slots for parameters
-        if (self.current_func) |cf| {
-            for (f.params) |param| {
-                if (param.* == .param) {
-                    const slot = cf.nextSlot();
-                    try self.emit(.{ .alloc = .{
-                        .slot = slot,
-                        .type_str = "param",
-                        .name = param.param.name,
-                    }});
-                }
-            }
-        }
+            .bitfield_decl => |b| {
+                try self.recordNode(node, RT{ .named = b.name });
+            },
 
-        // Generate body
-        try self.generateNode(f.body);
-
-        self.current_func = null;
-    }
-
-    fn generateNode(self: *MirGen, node: *parser.Node) anyerror!void {
-        switch (node.*) {
             .block => |b| {
                 for (b.statements) |stmt| {
-                    try self.generateStatement(stmt);
+                    try self.annotateNode(stmt);
                 }
             },
-            else => {},
-        }
-    }
 
-    fn generateStatement(self: *MirGen, node: *parser.Node) anyerror!void {
-        switch (node.*) {
-            .var_decl => |v| {
-                if (self.current_func) |cf| {
-                    const slot = cf.nextSlot();
-                    try self.emit(.{ .alloc = .{
-                        .slot = slot,
-                        .type_str = if (v.type_annotation) |t| typeStr(t) else "inferred",
-                        .name = v.name,
-                    }});
-                    const val = try self.generateExpr(v.value);
-                    try self.emit(.{ .store = .{ .dst = slot, .value = val } });
+            .var_decl, .const_decl => |v| {
+                const t = self.lookupType(node) orelse blk: {
+                    // Fall back: resolve from annotation or value
+                    if (v.type_annotation) |ta| {
+                        break :blk try types.resolveTypeNode(self.decls.typeAllocator(), ta);
+                    }
+                    // Infer from function call return type
+                    if (v.value.* == .call_expr) {
+                        if (self.lookupType(v.value)) |ct| break :blk ct;
+                        const callee = v.value.call_expr.callee;
+                        if (callee.* == .identifier) {
+                            if (self.decls.funcs.get(callee.identifier)) |sig| {
+                                break :blk sig.return_type;
+                            }
+                        }
+                    }
+                    break :blk RT.unknown;
+                };
+                try self.recordNode(node, t);
+
+                // Canonicalize arb union types
+                if (t == .union_type) {
+                    var members = try self.allocator.alloc([]const u8, t.union_type.len);
+                    defer self.allocator.free(members);
+                    for (t.union_type, 0..) |m, i| {
+                        members[i] = m.name();
+                    }
+                    _ = try self.union_registry.canonicalize(members);
                 }
+
+                // Annotate the value expression
+                try self.annotateNode(v.value);
+            },
+
+            .compt_decl => |v| {
+                const t = self.lookupType(node) orelse RT.unknown;
+                try self.recordNode(node, t);
+                try self.annotateNode(v.value);
             },
 
             .return_stmt => |r| {
                 if (r.value) |val| {
-                    const mir_val = try self.generateExpr(val);
-                    try self.emit(.{ .ret = .{ .value = mir_val } });
-                } else {
-                    try self.emit(.{ .ret = .{ .value = null } });
+                    try self.annotateNode(val);
                 }
             },
 
             .if_stmt => |i| {
-                const cond = try self.generateExpr(i.condition);
-                const true_label = self.nextLabel();
-                const false_label = self.nextLabel();
-                const end_label = self.nextLabel();
+                try self.annotateNode(i.condition);
+                try self.annotateNode(i.then_block);
+                if (i.else_block) |e| try self.annotateNode(e);
+            },
 
-                try self.emit(.{ .branch = .{
-                    .condition = cond,
-                    .true_target = true_label,
-                    .false_target = false_label,
-                }});
+            .while_stmt => |w| {
+                try self.annotateNode(w.condition);
+                if (w.continue_expr) |ce| try self.annotateNode(ce);
+                try self.annotateNode(w.body);
+            },
 
-                try self.emit(.{ .label = .{ .id = true_label } });
-                try self.generateNode(i.then_block);
-                try self.emit(.{ .jump = .{ .target = end_label } });
+            .for_stmt => |fs| {
+                try self.annotateNode(fs.iterable);
+                try self.annotateNode(fs.body);
+            },
 
-                try self.emit(.{ .label = .{ .id = false_label } });
-                if (i.else_block) |e| try self.generateNode(e);
+            .defer_stmt => |d| {
+                try self.annotateNode(d.body);
+            },
 
-                try self.emit(.{ .label = .{ .id = end_label } });
+            .match_stmt => |m| {
+                try self.annotateNode(m.value);
+                for (m.arms) |arm| {
+                    if (arm.* == .match_arm) {
+                        try self.annotateNode(arm.match_arm.body);
+                    }
+                }
             },
 
             .assignment => |a| {
-                const val = try self.generateExpr(a.right);
-                _ = val;
-                // Store to left-hand side (simplified)
+                try self.annotateNode(a.left);
+                try self.annotateNode(a.right);
             },
 
-            .block => try self.generateNode(node),
+            .test_decl => |td| {
+                try self.annotateNode(td.body);
+            },
 
-            else => _ = try self.generateExpr(node),
+            .destruct_decl => |d| {
+                try self.annotateNode(d.value);
+            },
+
+            .thread_block, .async_block => {},
+
+            // Expressions
+            .binary_expr => |b| {
+                try self.annotateExpr(node);
+                try self.annotateNode(b.left);
+                try self.annotateNode(b.right);
+            },
+            .unary_expr => |u| {
+                try self.annotateExpr(node);
+                try self.annotateNode(u.operand);
+            },
+            .call_expr => |c| {
+                try self.annotateExpr(node);
+                try self.annotateNode(c.callee);
+                for (c.args) |arg| try self.annotateNode(arg);
+            },
+            .field_expr => |f| {
+                try self.annotateExpr(node);
+                try self.annotateNode(f.object);
+            },
+            .index_expr => |i| {
+                try self.annotateExpr(node);
+                try self.annotateNode(i.object);
+                try self.annotateNode(i.index);
+            },
+            .slice_expr => |s| {
+                try self.annotateExpr(node);
+                try self.annotateNode(s.object);
+                try self.annotateNode(s.low);
+                try self.annotateNode(s.high);
+            },
+            .array_literal => |elems| {
+                try self.annotateExpr(node);
+                for (elems) |elem| try self.annotateNode(elem);
+            },
+            .tuple_literal => |t| {
+                try self.annotateExpr(node);
+                for (t.fields) |f| try self.annotateNode(f);
+            },
+            .compiler_func => |cf| {
+                try self.annotateExpr(node);
+                for (cf.args) |arg| try self.annotateNode(arg);
+            },
+            .borrow_expr => |b| {
+                try self.annotateExpr(node);
+                try self.annotateNode(b);
+            },
+            .ptr_expr => |p| {
+                try self.annotateExpr(node);
+                try self.annotateNode(p.type_arg);
+                try self.annotateNode(p.addr_arg);
+            },
+            .coll_expr => |c| {
+                try self.annotateExpr(node);
+                for (c.type_args) |arg| try self.annotateNode(arg);
+                if (c.alloc_arg) |a| try self.annotateNode(a);
+            },
+            .range_expr => |r| {
+                try self.annotateExpr(node);
+                try self.annotateNode(r.left);
+                try self.annotateNode(r.right);
+            },
+
+            // Leaf expressions
+            .int_literal,
+            .float_literal,
+            .string_literal,
+            .bool_literal,
+            .null_literal,
+            .error_literal,
+            .identifier,
+            .interpolated_string,
+            => try self.annotateExpr(node),
+
+            else => {},
         }
     }
 
-    fn generateExpr(self: *MirGen, node: *parser.Node) !MirValue {
-        return switch (node.*) {
-            .int_literal => |text| blk: {
-                const val = std.fmt.parseInt(i64, std.mem.trim(u8, text, "_"), 0) catch 0;
-                break :blk MirValue{ .int_const = val };
-            },
-            .float_literal => |text| blk: {
-                const val = std.fmt.parseFloat(f64, text) catch 0.0;
-                break :blk MirValue{ .float_const = val };
-            },
-            .bool_literal => |b| MirValue{ .bool_const = b },
-            .null_literal => MirValue{ .null_const = {} },
-            .string_literal => |s| MirValue{ .string_const = s },
-            .interpolated_string => MirValue{ .string_const = "\"<interpolated>\"" },
-            .identifier => |name| blk: {
-                // Look up slot — simplified, returns func_ref for now
-                break :blk MirValue{ .func_ref = name };
-            },
-            .call_expr => |c| blk: {
-                if (self.current_func) |cf| {
-                    const dst = cf.nextSlot();
-                    var args: std.ArrayListUnmanaged(MirValue) = .{};
-                    for (c.args) |arg| {
-                        try args.append(self.allocator, try self.generateExpr(arg));
-                    }
-                    const callee = try self.generateExpr(c.callee);
-                    try self.emit(.{ .call = .{
-                        .dst = dst,
-                        .func = callee,
-                        .args = try args.toOwnedSlice(self.allocator),
-                    }});
-                    break :blk MirValue{ .local = dst };
-                }
-                break :blk MirValue{ .null_const = {} };
-            },
-            else => MirValue{ .null_const = {} },
-        };
+    fn annotateExpr(self: *MirAnnotator, node: *parser.Node) !void {
+        const t = self.lookupType(node) orelse RT.unknown;
+        try self.recordNode(node, t);
+    }
+
+    fn lookupType(self: *const MirAnnotator, node: *parser.Node) ?RT {
+        return self.type_map.get(node);
+    }
+
+    fn recordNode(self: *MirAnnotator, node: *parser.Node, t: RT) !void {
+        try self.node_map.put(self.allocator, node, .{
+            .resolved_type = t,
+            .type_class = classifyType(t),
+        });
     }
 };
 
-fn typeStr(node: *parser.Node) []const u8 {
-    return switch (node.*) {
-        .type_named => |n| n,
-        else => "unknown",
-    };
+// ── Tests ───────────────────────────────────────────────────
+
+test "classifyType - primitives" {
+    try std.testing.expectEqual(TypeClass.plain, classifyType(RT{ .primitive = "i32" }));
+    try std.testing.expectEqual(TypeClass.plain, classifyType(RT{ .primitive = "bool" }));
+    try std.testing.expectEqual(TypeClass.string, classifyType(RT{ .primitive = K.Type.STRING }));
 }
 
-test "mir - basic generation" {
+test "classifyType - unions" {
+    const alloc = std.testing.allocator;
+    const inner = try alloc.create(RT);
+    defer alloc.destroy(inner);
+    inner.* = RT{ .primitive = "i32" };
+    try std.testing.expectEqual(TypeClass.error_union, classifyType(RT{ .error_union = inner }));
+    try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .null_union = inner }));
+}
+
+test "classifyType - pointers and named" {
+    try std.testing.expectEqual(TypeClass.raw_ptr, classifyType(RT{ .generic = .{
+        .name = "RawPtr",
+        .args = &.{},
+    } }));
+    try std.testing.expectEqual(TypeClass.safe_ptr, classifyType(RT{ .generic = .{
+        .name = "Ptr",
+        .args = &.{},
+    } }));
+    try std.testing.expectEqual(TypeClass.plain, classifyType(RT{ .named = "MyStruct" }));
+}
+
+test "union registry - canonicalize" {
+    const alloc = std.testing.allocator;
+    var reg = UnionRegistry.init(alloc);
+    defer reg.deinit();
+
+    const name1 = try reg.canonicalize(&.{ "i32", "String" });
+    const name2 = try reg.canonicalize(&.{ "String", "i32" });
+
+    // Same structural union → same name
+    try std.testing.expectEqualStrings(name1, name2);
+    try std.testing.expect(std.mem.indexOf(u8, name1, "OrhonUnion") != null);
+    try std.testing.expectEqual(@as(usize, 1), reg.entries.items.len);
+}
+
+test "union registry - different unions" {
+    const alloc = std.testing.allocator;
+    var reg = UnionRegistry.init(alloc);
+    defer reg.deinit();
+
+    const name1 = try reg.canonicalize(&.{ "i32", "String" });
+    const name2 = try reg.canonicalize(&.{ "i32", "f32" });
+
+    try std.testing.expect(!std.mem.eql(u8, name1, name2));
+    try std.testing.expectEqual(@as(usize, 2), reg.entries.items.len);
+}
+
+test "mir annotator - basic" {
     const alloc = std.testing.allocator;
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
 
-    var gen = MirGen.init("test", alloc, &reporter);
-    defer gen.deinit();
+    var type_map: std.AutoHashMapUnmanaged(*parser.Node, RT) = .{};
+    defer type_map.deinit(alloc);
+
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+
+    var annotator = MirAnnotator.init(alloc, &reporter, &decl_table, &type_map);
+    defer annotator.deinit();
 
     try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expectEqual(@as(usize, 0), gen.module.funcs.count());
-}
-
-test "mir - func registration" {
-    const alloc = std.testing.allocator;
-    var reporter = errors.Reporter.init(alloc, .debug);
-    defer reporter.deinit();
-
-    var gen = MirGen.init("test", alloc, &reporter);
-    defer gen.deinit();
-
-    // Manually add a function
-    const func = MirFunc.init("add");
-    try gen.module.funcs.put("add", func);
-    try std.testing.expectEqual(@as(usize, 1), gen.module.funcs.count());
+    try std.testing.expectEqual(@as(usize, 0), annotator.node_map.count());
 }

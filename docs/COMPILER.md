@@ -34,7 +34,7 @@ Source (.orh)
     ↓
 9.  Error Propagation Analysis
     ↓
-10. MIR Generation
+10. MIR Annotation — typed annotation pass (TypeClass, UnionRegistry, NodeMap)
     ↓
 11. Zig Code Generation — pure 1:1 AST → Zig translation
     ↓
@@ -89,7 +89,7 @@ src/
     borrow.zig              // pass 7
     thread_safety.zig       // pass 8
     propagation.zig         // pass 9
-    mir.zig                 // pass 10 + MIR types
+    mir.zig                 // pass 10 — typed annotation pass (TypeClass, NodeMap, UnionRegistry)
     codegen.zig             // pass 11 — pure 1:1 translator
     zig_runner.zig          // pass 12
     types.zig               // shared — type system

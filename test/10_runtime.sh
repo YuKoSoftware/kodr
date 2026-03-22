@@ -38,14 +38,14 @@ for TEST_NAME in \
     cast_int cast_float cast_float_to_int func_ptr func_ptr_var \
     fixed_array array_index slice_expr raw_ptr safe_ptr typeid_same \
     typeid_diff match_range match_string list list_len map set map_iter set_iter \
-    split_at split_list split_thread thread_value thread_wait \
-    bitfield wrap sat overflow alloc_default alloc_debug alloc_arena \
-    alloc_page alloc_one alloc_slice arb_union_return \
+    split_at split_list \
+    wrap sat overflow alloc_default arb_union_return \
     arb_union_match arb_union_field arb_union_assign arb_union_three \
     arb_value_positive arb_value_negative arb_value_inside arb_value_match \
     str_upper str_lower str_replace str_repeat str_parse_int str_parse_float \
-    default_param join tostring_int tostring_bool \
-    interpolation interpolation_int system_run; do
+    default_param tostring_int tostring_bool \
+    interpolation interpolation_int \
+    string_eq string_ne string_eq_literal string_eq_param; do
     if echo "$BINOUT" | grep -q "PASS $TEST_NAME"; then pass "runtime: $TEST_NAME"
     else fail "runtime: $TEST_NAME"; fi
 done

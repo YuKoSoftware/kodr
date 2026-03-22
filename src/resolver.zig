@@ -54,6 +54,7 @@ pub const TypeResolver = struct {
     reporter: *errors.Reporter,
     allocator: std.mem.Allocator,
     bindings: std.ArrayListUnmanaged(TypeBinding),
+    type_map: std.AutoHashMapUnmanaged(*parser.Node, RT),
     bitsize: ?u16 = null, // from #bitsize metadata
     locs: ?*const parser.LocMap = null,
     source_file: []const u8 = "",
@@ -70,6 +71,7 @@ pub const TypeResolver = struct {
             .reporter = reporter,
             .allocator = allocator,
             .bindings = .{},
+            .type_map = .{},
         };
     }
 
@@ -84,6 +86,7 @@ pub const TypeResolver = struct {
 
     pub fn deinit(self: *TypeResolver) void {
         self.bindings.deinit(self.allocator);
+        self.type_map.deinit(self.allocator);
     }
 
     /// Resolve types in a program AST
@@ -462,6 +465,12 @@ pub const TypeResolver = struct {
 
     /// Resolve an expression and return its ResolvedType
     fn resolveExpr(self: *TypeResolver, node: *parser.Node, scope: *Scope) anyerror!RT {
+        const result = try self.resolveExprInner(node, scope);
+        try self.type_map.put(self.allocator, node, result);
+        return result;
+    }
+
+    fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anyerror!RT {
         return switch (node.*) {
             .int_literal => if (self.bitsize) |bs| switch (bs) {
                 32 => RT{ .primitive = "i32" },

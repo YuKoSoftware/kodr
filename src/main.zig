@@ -902,11 +902,11 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         try prop_checker.check(ast);
         if (reporter.hasErrors()) return null;
 
-        // ── Pass 10: MIR Generation ────────────────────────────
-        var mir_gen = mir.MirGen.init(mod_name, allocator, reporter);
-        defer mir_gen.deinit();
+        // ── Pass 10: MIR Annotation ─────────────────────────────
+        var mir_annotator = mir.MirAnnotator.init(allocator, reporter, &decl_collector.table, &type_resolver.type_map);
+        defer mir_annotator.deinit();
 
-        try mir_gen.generate(ast);
+        try mir_annotator.annotate(ast);
         if (reporter.hasErrors()) return null;
 
         // ── Extern Sidecar Validation ──────────────────────────
@@ -958,6 +958,8 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         cg.locs = locs_ptr;
         cg.source_file = source_file;
         cg.module_builds = &module_builds;
+        cg.node_map = &mir_annotator.node_map;
+        cg.union_registry = &mir_annotator.union_registry;
 
         try cg.generate(ast, mod_name);
         if (reporter.hasErrors()) return null;
@@ -1670,9 +1672,9 @@ test "full pipeline - hello world" {
     try std.testing.expect(!reporter.hasErrors());
 
     // MIR
-    var mir_gen = mir.MirGen.init("main", alloc, &reporter);
-    defer mir_gen.deinit();
-    try mir_gen.generate(ast);
+    var mir_annotator = mir.MirAnnotator.init(alloc, &reporter, &decl_collector.table, &type_resolver.type_map);
+    defer mir_annotator.deinit();
+    try mir_annotator.annotate(ast);
     try std.testing.expect(!reporter.hasErrors());
 
     // Codegen

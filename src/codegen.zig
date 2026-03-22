@@ -42,6 +42,21 @@ pub const CodeGen = struct {
     module_builds: ?*const std.StringHashMapUnmanaged(module.BuildType), // imported module → build type
     narrowed_vars: std.StringHashMapUnmanaged([]const u8), // var name → narrowed type (from `is` checks)
     string_vars: std.StringHashMapUnmanaged(void), // variables holding String ([]const u8)
+    // MIR annotation table — Phase 1 typed annotation pass
+    node_map: ?*const mir.NodeMap = null,
+    union_registry: ?*const mir.UnionRegistry = null,
+
+    /// Query MIR annotation for an AST node.
+    pub fn getNodeInfo(self: *const CodeGen, node: *parser.Node) ?mir.NodeInfo {
+        if (self.node_map) |nm| return nm.get(node);
+        return null;
+    }
+
+    /// Get the TypeClass for an AST node from MIR annotations.
+    pub fn getTypeClass(self: *const CodeGen, node: *parser.Node) mir.TypeClass {
+        if (self.getNodeInfo(node)) |info| return info.type_class;
+        return .plain;
+    }
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
