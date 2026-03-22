@@ -51,6 +51,10 @@ function activate(context) {
   const clientOptions = {
     documentSelector: [{ scheme: "file", language: "orhon" }],
     outputChannel: outputChannel,
+    initializationOptions: {
+      inlayHints: config.get("inlayHints.enabled", false),
+      completionSnippets: config.get("completion.snippets", false),
+    },
   };
 
   client = new LanguageClient(

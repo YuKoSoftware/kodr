@@ -1,6 +1,8 @@
 // lsp.zig — Orhon Language Server Protocol
 // JSON-RPC over stdio. Runs analysis passes 1–9, publishes diagnostics,
-// and provides hover, go-to-definition, document symbols, and completion.
+// and provides hover, go-to-definition, completion, references, rename,
+// signature help, formatting, document symbols, highlights, folding,
+// inlay hints, code actions, and workspace symbol search.
 
 const std = @import("std");
 const lexer = @import("lexer.zig");
@@ -85,6 +87,18 @@ fn jsonInt(value: std.json.Value, key: []const u8) ?i64 {
     return switch (val) { .integer => |i| i, else => null };
 }
 
+fn jsonArray(value: std.json.Value, key: []const u8) ?[]std.json.Value {
+    const obj = switch (value) { .object => |o| o, else => return null };
+    const val = obj.get(key) orelse return null;
+    return switch (val) { .array => |a| a.items, else => null };
+}
+
+fn jsonBool(value: std.json.Value, key: []const u8) bool {
+    const obj = switch (value) { .object => |o| o, else => return false };
+    const val = obj.get(key) orelse return false;
+    return switch (val) { .bool => |b| b, else => false };
+}
+
 fn jsonId(root: std.json.Value) std.json.Value {
     return switch (root) {
         .object => |obj| obj.get("id") orelse .null,
@@ -147,8 +161,19 @@ fn buildInitializeResult(allocator: std.mem.Allocator, id: std.json.Value) ![]u8
     try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
     try writeJsonValue(&buf, allocator, id);
     try buf.appendSlice(allocator,
-        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]}},"serverInfo":{"name":"orhon-lsp","version":"0.3.0"}}}
+        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]},"referencesProvider":true,"renameProvider":{"prepareProvider":false},"signatureHelpProvider":{"triggerCharacters":["(", ","]},"documentFormattingProvider":true,"workspaceSymbolProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true,"inlayHintProvider":true,"codeActionProvider":true},"serverInfo":{"name":"orhon-lsp","version":"0.3.13"}}}
     );
+
+    return allocator.dupe(u8, buf.items);
+}
+
+fn buildEmptyArrayResponse(allocator: std.mem.Allocator, id: std.json.Value) ![]u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[]}");
 
     return allocator.dupe(u8, buf.items);
 }
@@ -239,15 +264,14 @@ const AnalysisResult = struct {
     symbols: []SymbolInfo,
 };
 
-fn freeAnalysisResult(allocator: std.mem.Allocator, result: *AnalysisResult) void {
-    if (result.diagnostics.len > 0) {
-        for (result.diagnostics) |d| {
+fn freeDiagnostics(allocator: std.mem.Allocator, diags: []Diagnostic) void {
+    if (diags.len > 0) {
+        for (diags) |d| {
             allocator.free(d.uri);
             allocator.free(d.message);
         }
-        allocator.free(result.diagnostics);
+        allocator.free(diags);
     }
-    freeSymbols(allocator, result.symbols);
 }
 
 fn freeSymbols(allocator: std.mem.Allocator, symbols: []SymbolInfo) void {
@@ -266,6 +290,18 @@ fn freeSymbols(allocator: std.mem.Allocator, symbols: []SymbolInfo) void {
 // ============================================================
 // URI HELPERS
 // ============================================================
+
+/// Get document source: from in-memory store if available, otherwise from disk.
+/// Caller must free the returned slice.
+fn getDocSource(allocator: std.mem.Allocator, uri: []const u8, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
+    // Check in-memory store first (has unsaved changes)
+    if (doc_store.get(uri)) |content| {
+        return allocator.dupe(u8, content);
+    }
+    // Fall back to disk
+    const path = uriToPath(uri) orelse return error.InvalidUri;
+    return std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024);
+}
 
 fn uriToPath(uri: []const u8) ?[]const u8 {
     const prefix = "file://";
@@ -451,9 +487,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
 
     mod_resolver.parseModules(allocator) catch {};
     if (reporter.hasErrors()) {
-        log("analysis: parse errors", .{});
-        empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
-        return empty;
+        log("analysis: parse errors (continuing with partial symbols)", .{});
     }
 
     // Second parse pass for std imports
@@ -465,27 +499,11 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         }
         if (has_unparsed) {
             mod_resolver.parseModules(allocator) catch {};
-            if (reporter.hasErrors()) {
-                log("analysis: std parse errors", .{});
-                empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
-                return empty;
-            }
         }
     }
 
     mod_resolver.scanAndParseDeps(allocator, "src") catch {};
-    if (reporter.hasErrors()) {
-        log("analysis: dep scan errors", .{});
-        empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
-        return empty;
-    }
-
     mod_resolver.validateImports(&reporter) catch {};
-    if (reporter.hasErrors()) {
-        log("analysis: import validation errors", .{});
-        empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
-        return empty;
-    }
 
     const order = mod_resolver.topologicalOrder(allocator) catch {
         log("analysis: topological order failed", .{});
@@ -498,12 +516,14 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
     var all_symbols: std.ArrayListUnmanaged(SymbolInfo) = .{};
     log("analysis: processing {d} modules", .{order.len});
 
-    // Passes 4–9 per module
+    // Passes 4–9 per module — continue to next module on errors so we
+    // still get symbols from modules that compiled successfully.
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
         const ast = mod_ptr.ast orelse continue;
         const locs_ptr: ?*const parser.LocMap = if (mod_ptr.locs) |*l| l else null;
         const source_file: []const u8 = if (mod_ptr.files.len > 0) mod_ptr.files[0] else "";
+        const errors_before = reporter.errors.items.len;
 
         // Pass 4: Declarations
         var dc = declarations.DeclCollector.init(allocator, &reporter);
@@ -511,7 +531,11 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         dc.locs = locs_ptr;
         dc.source_file = source_file;
         dc.collect(ast) catch {};
-        if (reporter.hasErrors()) break;
+        if (reporter.errors.items.len > errors_before) {
+            // Still extract what symbols we can from partial declarations
+            extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
+            continue;
+        }
 
         // Pass 5: Type Resolution
         var tr = resolver.TypeResolver.init(allocator, &dc.table, &reporter);
@@ -519,10 +543,11 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         tr.locs = locs_ptr;
         tr.source_file = source_file;
         tr.resolve(ast) catch {};
-        if (reporter.hasErrors()) break;
 
-        // Extract symbols from DeclTable + AST locations
+        // Extract symbols from DeclTable + AST locations (even if type resolution had errors)
         extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
+
+        if (reporter.errors.items.len > errors_before) continue;
 
         // Pass 6: Ownership
         var oc = ownership.OwnershipChecker.init(allocator, &reporter);
@@ -530,7 +555,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         oc.source_file = source_file;
         oc.decls = &dc.table;
         oc.check(ast) catch {};
-        if (reporter.hasErrors()) break;
+        if (reporter.errors.items.len > errors_before) continue;
 
         // Pass 7: Borrow Checking
         var bc = borrow.BorrowChecker.init(allocator, &reporter);
@@ -539,7 +564,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         bc.source_file = source_file;
         bc.decls = &dc.table;
         bc.check(ast) catch {};
-        if (reporter.hasErrors()) break;
+        if (reporter.errors.items.len > errors_before) continue;
 
         // Pass 8: Thread Safety
         var tc = thread_safety.ThreadSafetyChecker.init(allocator, &reporter);
@@ -547,14 +572,13 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         tc.locs = locs_ptr;
         tc.source_file = source_file;
         tc.check(ast) catch {};
-        if (reporter.hasErrors()) break;
+        if (reporter.errors.items.len > errors_before) continue;
 
         // Pass 9: Error Propagation
         var pc = propagation.PropChecker.init(allocator, &reporter, &dc.table);
         pc.locs = locs_ptr;
         pc.source_file = source_file;
         pc.check(ast) catch {};
-        if (reporter.hasErrors()) break;
     }
 
     const diags = toDiagnostics(allocator, &reporter, project_root) catch
@@ -584,20 +608,46 @@ fn extractSymbols(
         switch (node.*) {
             .func_decl => |f| {
                 const loc = nodeLocInfo(locs, node) orelse continue;
-                const detail = if (table.funcs.get(f.name)) |sig|
+                const func_sig = table.funcs.get(f.name);
+                const detail = if (func_sig) |sig|
                     formatFuncSig(allocator, sig) catch try allocator.dupe(u8, "func")
                 else
                     try allocator.dupe(u8, "func");
+                const func_uri = try makeUri(allocator, source_file, project_root);
                 try symbols.append(allocator, .{
                     .name = try allocator.dupe(u8, f.name),
                     .detail = detail,
                     .kind = .function,
                     .module = try allocator.dupe(u8, mod_name),
                     .parent = "",
-                    .uri = try makeUri(allocator, source_file, project_root),
+                    .uri = func_uri,
                     .line = if (loc.line > 0) loc.line - 1 else 0,
                     .col = if (loc.col > 0) loc.col - 1 else 0,
                 });
+                // Extract function parameters as symbols
+                if (func_sig) |sig| {
+                    for (f.params, 0..) |param_node, pi| {
+                        const ploc = nodeLocInfo(locs, param_node) orelse continue;
+                        const ptype = if (pi < sig.params.len)
+                            formatType(allocator, sig.params[pi].type_) catch try allocator.dupe(u8, "param")
+                        else
+                            try allocator.dupe(u8, "param");
+                        try symbols.append(allocator, .{
+                            .name = try allocator.dupe(u8, sig.params[pi].name),
+                            .detail = ptype,
+                            .kind = .variable,
+                            .module = try allocator.dupe(u8, mod_name),
+                            .parent = try allocator.dupe(u8, f.name),
+                            .uri = try allocator.dupe(u8, func_uri),
+                            .line = if (ploc.line > 0) ploc.line - 1 else 0,
+                            .col = if (ploc.col > 0) ploc.col - 1 else 0,
+                        });
+                    }
+                }
+                // Extract local variables from function body
+                if (f.body.* == .block) {
+                    extractLocals(allocator, symbols, f.body.block.statements, locs, func_uri, mod_name, f.name) catch {};
+                }
             },
             .struct_decl => |s| {
                 const loc = nodeLocInfo(locs, node) orelse continue;
@@ -715,6 +765,85 @@ fn extractSymbols(
     }
 }
 
+/// Walk statements to extract local var/const declarations.
+fn extractLocals(
+    allocator: std.mem.Allocator,
+    symbols: *std.ArrayListUnmanaged(SymbolInfo),
+    statements: []*parser.Node,
+    locs: ?*const parser.LocMap,
+    uri: []const u8,
+    mod_name: []const u8,
+    func_name: []const u8,
+) !void {
+    for (statements) |stmt| {
+        switch (stmt.*) {
+            .var_decl => |v| {
+                const loc = nodeLocInfo(locs, stmt) orelse continue;
+                const detail = if (v.type_annotation) |ta|
+                    nodeTypeStr(ta)
+                else
+                    "var";
+                try symbols.append(allocator, .{
+                    .name = try allocator.dupe(u8, v.name),
+                    .detail = try allocator.dupe(u8, detail),
+                    .kind = .variable,
+                    .module = try allocator.dupe(u8, mod_name),
+                    .parent = try allocator.dupe(u8, func_name),
+                    .uri = try allocator.dupe(u8, uri),
+                    .line = if (loc.line > 0) loc.line - 1 else 0,
+                    .col = if (loc.col > 0) loc.col - 1 else 0,
+                });
+            },
+            .const_decl => |c| {
+                const loc = nodeLocInfo(locs, stmt) orelse continue;
+                const detail = if (c.type_annotation) |ta|
+                    nodeTypeStr(ta)
+                else
+                    "const";
+                try symbols.append(allocator, .{
+                    .name = try allocator.dupe(u8, c.name),
+                    .detail = try allocator.dupe(u8, detail),
+                    .kind = .constant,
+                    .module = try allocator.dupe(u8, mod_name),
+                    .parent = try allocator.dupe(u8, func_name),
+                    .uri = try allocator.dupe(u8, uri),
+                    .line = if (loc.line > 0) loc.line - 1 else 0,
+                    .col = if (loc.col > 0) loc.col - 1 else 0,
+                });
+            },
+            // Recurse into nested blocks
+            .block => |b| try extractLocals(allocator, symbols, b.statements, locs, uri, mod_name, func_name),
+            .if_stmt => |ifs| {
+                if (ifs.then_block.* == .block)
+                    try extractLocals(allocator, symbols, ifs.then_block.block.statements, locs, uri, mod_name, func_name);
+                if (ifs.else_block) |eb| {
+                    if (eb.* == .block)
+                        try extractLocals(allocator, symbols, eb.block.statements, locs, uri, mod_name, func_name);
+                }
+            },
+            .for_stmt => |fs| {
+                if (fs.body.* == .block)
+                    try extractLocals(allocator, symbols, fs.body.block.statements, locs, uri, mod_name, func_name);
+            },
+            .while_stmt => |ws| {
+                if (ws.body.* == .block)
+                    try extractLocals(allocator, symbols, ws.body.block.statements, locs, uri, mod_name, func_name);
+            },
+            else => {},
+        }
+    }
+}
+
+/// Get a simple type name string from a type annotation AST node.
+fn nodeTypeStr(node: *parser.Node) []const u8 {
+    return switch (node.*) {
+        .type_primitive => |p| p,
+        .type_named => |n| n,
+        .identifier => |id| id,
+        else => "var",
+    };
+}
+
 fn nodeLocInfo(locs: ?*const parser.LocMap, node: *parser.Node) ?errors.SourceLoc {
     const l = locs orelse return null;
     return l.get(node);
@@ -810,31 +939,64 @@ fn buildDocumentSymbolsResponse(allocator: std.mem.Allocator, id: std.json.Value
     try writeJsonValue(&buf, allocator, id);
     try buf.appendSlice(allocator, ",\"result\":[");
 
+    // Use hierarchical DocumentSymbol format — children nested under parents
     var first = true;
     for (symbols) |s| {
         if (!std.mem.eql(u8, s.uri, uri)) continue;
+        if (s.parent.len > 0) continue; // children handled below
+
         if (!first) try buf.append(allocator, ',');
         first = false;
 
-        try buf.appendSlice(allocator, "{\"name\":\"");
-        try appendJsonString(&buf, allocator, s.name);
-        try buf.appendSlice(allocator, "\",\"kind\":");
-        try appendInt(&buf, allocator, @intFromEnum(s.kind));
-        try buf.appendSlice(allocator, ",\"location\":{\"uri\":\"");
-        try appendJsonString(&buf, allocator, s.uri);
-        try buf.appendSlice(allocator, "\",\"range\":{\"start\":{\"line\":");
-        try appendInt(&buf, allocator, s.line);
-        try buf.appendSlice(allocator, ",\"character\":");
-        try appendInt(&buf, allocator, s.col);
-        try buf.appendSlice(allocator, "},\"end\":{\"line\":");
-        try appendInt(&buf, allocator, s.line);
-        try buf.appendSlice(allocator, ",\"character\":");
-        try appendInt(&buf, allocator, s.col);
-        try buf.appendSlice(allocator, "}}}}");
+        try appendDocumentSymbol(&buf, allocator, s, symbols, uri);
     }
 
     try buf.appendSlice(allocator, "]}");
     return allocator.dupe(u8, buf.items);
+}
+
+fn appendDocumentSymbol(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, s: SymbolInfo, all_symbols: []const SymbolInfo, uri: []const u8) !void {
+    try buf.appendSlice(allocator, "{\"name\":\"");
+    try appendJsonString(buf, allocator, s.name);
+    try buf.appendSlice(allocator, "\",\"detail\":\"");
+    try appendJsonString(buf, allocator, s.detail);
+    try buf.appendSlice(allocator, "\",\"kind\":");
+    try appendInt(buf, allocator, @intFromEnum(s.kind));
+    // DocumentSymbol uses range + selectionRange (not location)
+    try buf.appendSlice(allocator, ",\"range\":{\"start\":{\"line\":");
+    try appendInt(buf, allocator, s.line);
+    try buf.appendSlice(allocator, ",\"character\":");
+    try appendInt(buf, allocator, s.col);
+    try buf.appendSlice(allocator, "},\"end\":{\"line\":");
+    try appendInt(buf, allocator, s.line);
+    try buf.appendSlice(allocator, ",\"character\":");
+    try appendInt(buf, allocator, s.col + s.name.len);
+    try buf.appendSlice(allocator, "}},\"selectionRange\":{\"start\":{\"line\":");
+    try appendInt(buf, allocator, s.line);
+    try buf.appendSlice(allocator, ",\"character\":");
+    try appendInt(buf, allocator, s.col);
+    try buf.appendSlice(allocator, "},\"end\":{\"line\":");
+    try appendInt(buf, allocator, s.line);
+    try buf.appendSlice(allocator, ",\"character\":");
+    try appendInt(buf, allocator, s.col + s.name.len);
+    try buf.appendSlice(allocator, "}}");
+
+    // Add children (fields, enum members)
+    var has_children = false;
+    for (all_symbols) |child| {
+        if (!std.mem.eql(u8, child.uri, uri)) continue;
+        if (!std.mem.eql(u8, child.parent, s.name)) continue;
+        if (!has_children) {
+            try buf.appendSlice(allocator, ",\"children\":[");
+            has_children = true;
+        } else {
+            try buf.append(allocator, ',');
+        }
+        try appendDocumentSymbol(buf, allocator, child, &.{}, uri); // no recursive children
+    }
+    if (has_children) try buf.append(allocator, ']');
+
+    try buf.append(allocator, '}');
 }
 
 // ============================================================
@@ -982,7 +1144,7 @@ fn isModuleName(symbols: []const SymbolInfo, name: []const u8) bool {
 fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8 {
     // Primitive types
     const primitives = [_][]const u8{
-        "String", "bool", "void",
+        "String", "bool",
         "i8", "i16", "i32", "i64", "i128",
         "u8", "u16", "u32", "u64", "u128",
         "isize", "usize",
@@ -999,10 +1161,53 @@ fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8 {
             return std.fmt.allocPrint(allocator, "(builtin type) {s}", .{bt}) catch null;
         }
     }
-    // Keywords that might be hovered
-    if (std.mem.eql(u8, name, "null")) return allocator.dupe(u8, "(keyword) null") catch null;
-    if (std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false"))
-        return allocator.dupe(u8, "(keyword) bool literal") catch null;
+    // Keywords
+    const keyword_info = std.StaticStringMap([]const u8).initComptime(.{
+        .{ "null", "(keyword) null — the absence of a value" },
+        .{ "true", "(keyword) bool literal" },
+        .{ "false", "(keyword) bool literal" },
+        .{ "func", "(keyword) function declaration" },
+        .{ "var", "(keyword) mutable variable declaration" },
+        .{ "const", "(keyword) immutable variable declaration" },
+        .{ "if", "(keyword) conditional branch" },
+        .{ "else", "(keyword) alternative branch" },
+        .{ "for", "(keyword) iteration over a collection or range" },
+        .{ "while", "(keyword) loop with condition" },
+        .{ "return", "(keyword) return a value from function" },
+        .{ "match", "(keyword) pattern matching" },
+        .{ "struct", "(keyword) composite data type" },
+        .{ "enum", "(keyword) enumerated type" },
+        .{ "bitfield", "(keyword) bit-level flag type" },
+        .{ "import", "(keyword) import a module" },
+        .{ "module", "(keyword) module declaration" },
+        .{ "pub", "(keyword) public visibility modifier" },
+        .{ "defer", "(keyword) execute on scope exit" },
+        .{ "break", "(keyword) exit loop" },
+        .{ "continue", "(keyword) skip to next iteration" },
+        .{ "and", "(keyword) logical AND operator" },
+        .{ "or", "(keyword) logical OR operator" },
+        .{ "not", "(keyword) logical NOT operator" },
+        .{ "as", "(keyword) type conversion" },
+        .{ "is", "(keyword) type check" },
+        .{ "cast", "(keyword) explicit type cast" },
+        .{ "copy", "(keyword) copy value" },
+        .{ "move", "(keyword) move ownership" },
+        .{ "swap", "(keyword) swap two values" },
+        .{ "thread", "(keyword) spawn a thread" },
+        .{ "compt", "(keyword) compile-time evaluation" },
+        .{ "test", "(keyword) test block" },
+        .{ "extern", "(keyword) external linkage" },
+        .{ "any", "(keyword) any type" },
+        .{ "void", "(keyword) no return value" },
+        .{ "assert", "(builtin) runtime assertion" },
+        .{ "size", "(builtin) size of a type in bytes" },
+        .{ "align", "(builtin) alignment of a type" },
+        .{ "typename", "(builtin) name of a type as String" },
+        .{ "typeid", "(builtin) unique type identifier" },
+    });
+    if (keyword_info.get(name)) |info| {
+        return allocator.dupe(u8, info) catch null;
+    }
     return null;
 }
 
@@ -1044,6 +1249,10 @@ pub fn serve(allocator: std.mem.Allocator) !void {
     var initialized = false;
     var project_root: ?[]const u8 = null;
 
+    // Client settings (from initializationOptions)
+    var enable_inlay_hints = false;
+    var enable_snippets = false;
+
     // Track open document URIs for clearing stale diagnostics
     var open_docs = std.StringHashMap(void).init(allocator);
     defer {
@@ -1051,6 +1260,21 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         while (it.next()) |entry| allocator.free(entry.key_ptr.*);
         open_docs.deinit();
     }
+
+    // In-memory document content (updated on didOpen/didChange)
+    var doc_store = std.StringHashMap([]u8).init(allocator);
+    defer {
+        var ds_it = doc_store.iterator();
+        while (ds_it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        doc_store.deinit();
+    }
+
+    // Cached diagnostics for code actions
+    var cached_diags: []Diagnostic = &.{};
+    defer freeDiagnostics(allocator, cached_diags);
 
     // Cached symbols from last analysis
     var cached_symbols: []SymbolInfo = &.{};
@@ -1083,6 +1307,12 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                         log("project root: {s}", .{path});
                     }
                 }
+                // Read client settings from initializationOptions
+                if (jsonObj(params, "initializationOptions")) |opts| {
+                    enable_inlay_hints = jsonBool(opts, "inlayHints");
+                    enable_snippets = jsonBool(opts, "completionSnippets");
+                    log("settings: inlayHints={}, snippets={}", .{ enable_inlay_hints, enable_snippets });
+                }
             }
             const resp = try buildInitializeResult(allocator, id);
             defer allocator.free(resp);
@@ -1092,7 +1322,10 @@ pub fn serve(allocator: std.mem.Allocator) !void {
             initialized = true;
             log("initialized", .{});
             if (project_root) |r| {
-                cached_symbols = try runAndPublish(allocator, stdout, r, &open_docs, cached_symbols);
+                const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
+                cached_symbols = result.symbols;
+                freeDiagnostics(allocator, cached_diags);
+                cached_diags = result.diags;
             }
 
         } else if (std.mem.eql(u8, method, "shutdown")) {
@@ -1113,6 +1346,16 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                         log("didOpen: {s}", .{uri});
                         if (!open_docs.contains(uri))
                             try open_docs.put(try allocator.dupe(u8, uri), {});
+                        // Store document content
+                        if (jsonStr(td, "text")) |text| {
+                            const text_owned = try allocator.dupe(u8, text);
+                            if (doc_store.getPtr(uri)) |val_ptr| {
+                                allocator.free(val_ptr.*);
+                                val_ptr.* = text_owned;
+                            } else {
+                                try doc_store.put(try allocator.dupe(u8, uri), text_owned);
+                            }
+                        }
                         if (project_root == null) {
                             if (uriToPath(uri)) |path| {
                                 if (findProjectRoot(path)) |r| {
@@ -1122,7 +1365,10 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                             }
                         }
                         if (project_root) |r| {
-                            cached_symbols = try runAndPublish(allocator, stdout, r, &open_docs, cached_symbols);
+                            const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
+                            cached_symbols = result.symbols;
+                            freeDiagnostics(allocator, cached_diags);
+                cached_diags = result.diags;
                         }
                     }
                 }
@@ -1132,12 +1378,36 @@ pub fn serve(allocator: std.mem.Allocator) !void {
             if (!initialized) continue;
             log("didSave", .{});
             if (project_root) |r| {
-                cached_symbols = try runAndPublish(allocator, stdout, r, &open_docs, cached_symbols);
+                const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
+                cached_symbols = result.symbols;
+                freeDiagnostics(allocator, cached_diags);
+                cached_diags = result.diags;
             }
 
         } else if (std.mem.eql(u8, method, "textDocument/didChange")) {
-            // Phase 1: analyze on save only (full sync mode registered but we skip re-analysis on typing)
-            // This avoids hammering the analysis on every keystroke.
+            // Update in-memory document content (full sync mode — change contains entire text)
+            if (!initialized) continue;
+            if (jsonObj(root, "params")) |params| {
+                if (jsonObj(params, "textDocument")) |td| {
+                    if (jsonStr(td, "uri")) |uri| {
+                        if (jsonArray(params, "contentChanges")) |arr| {
+                            if (arr.len > 0) {
+                                if (jsonStr(arr[0], "text")) |text| {
+                                    const text_owned = try allocator.dupe(u8, text);
+                                    if (doc_store.getPtr(uri)) |val_ptr| {
+                                        // Key already exists — just replace the value
+                                        allocator.free(val_ptr.*);
+                                        val_ptr.* = text_owned;
+                                    } else {
+                                        // New key
+                                        try doc_store.put(try allocator.dupe(u8, uri), text_owned);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
         } else if (std.mem.eql(u8, method, "textDocument/didClose")) {
             if (!initialized) continue;
@@ -1149,13 +1419,17 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                         defer allocator.free(clear);
                         writeMessage(stdout, clear) catch {};
                         if (open_docs.fetchRemove(uri)) |kv| allocator.free(kv.key);
+                        if (doc_store.fetchRemove(uri)) |kv| {
+                            allocator.free(kv.key);
+                            allocator.free(kv.value);
+                        }
                     }
                 }
             }
 
         } else if (std.mem.eql(u8, method, "textDocument/hover")) {
             if (!initialized) continue;
-            const resp = handleHover(allocator, root, id, cached_symbols) catch |err| {
+            const resp = handleHover(allocator, root, id, cached_symbols, &doc_store) catch |err| {
                 log("hover error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
@@ -1165,7 +1439,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
 
         } else if (std.mem.eql(u8, method, "textDocument/definition")) {
             if (!initialized) continue;
-            const resp = handleDefinition(allocator, root, id, cached_symbols) catch |err| {
+            const resp = handleDefinition(allocator, root, id, cached_symbols, &doc_store) catch |err| {
                 log("definition error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
@@ -1185,8 +1459,115 @@ pub fn serve(allocator: std.mem.Allocator) !void {
 
         } else if (std.mem.eql(u8, method, "textDocument/completion")) {
             if (!initialized) continue;
-            const resp = handleCompletion(allocator, root, id, cached_symbols) catch |err| {
+            const resp = handleCompletion(allocator, root, id, cached_symbols, enable_snippets, &doc_store) catch |err| {
                 log("completion error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/references")) {
+            if (!initialized) continue;
+            const resp = handleReferences(allocator, root, id, cached_symbols) catch |err| {
+                log("references error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/rename")) {
+            if (!initialized) continue;
+            const resp = handleRename(allocator, root, id, cached_symbols, project_root) catch |err| {
+                log("rename error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/signatureHelp")) {
+            if (!initialized) continue;
+            const resp = handleSignatureHelp(allocator, root, id, cached_symbols, &doc_store) catch |err| {
+                log("signatureHelp error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/formatting")) {
+            if (!initialized) continue;
+            const resp = handleFormatting(allocator, root, id) catch |err| {
+                log("formatting error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "workspace/symbol")) {
+            if (!initialized) continue;
+            const resp = handleWorkspaceSymbol(allocator, root, id, cached_symbols) catch |err| {
+                log("workspaceSymbol error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/codeAction")) {
+            if (!initialized) continue;
+            const resp = handleCodeAction(allocator, root, id, cached_diags) catch |err| {
+                log("codeAction error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyArrayResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/inlayHint")) {
+            if (!initialized or !enable_inlay_hints) {
+                if (id != .null) {
+                    const resp = try buildEmptyArrayResponse(allocator, id);
+                    defer allocator.free(resp);
+                    try writeMessage(stdout, resp);
+                }
+                continue;
+            }
+            const resp = handleInlayHint(allocator, root, id, cached_symbols, &doc_store) catch |err| {
+                log("inlayHint error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/documentHighlight")) {
+            if (!initialized) continue;
+            const resp = handleDocumentHighlight(allocator, root, id, &doc_store) catch |err| {
+                log("documentHighlight error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/foldingRange")) {
+            if (!initialized) continue;
+            const resp = handleFoldingRange(allocator, root, id, &doc_store) catch |err| {
+                log("foldingRange error: {}", .{err});
+                try writeMessage(stdout, try buildEmptyResponse(allocator, id));
+                continue;
+            };
+            defer allocator.free(resp);
+            try writeMessage(stdout, resp);
+
+        } else if (std.mem.eql(u8, method, "textDocument/semanticTokens/full")) {
+            if (!initialized) continue;
+            const resp = handleSemanticTokens(allocator, root, id) catch |err| {
+                log("semanticTokens error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1208,28 +1589,22 @@ pub fn serve(allocator: std.mem.Allocator) !void {
 }
 
 /// Run analysis, publish diagnostics, return new cached symbols.
-fn runAndPublish(
+const PublishResult = struct {
+    symbols: []SymbolInfo,
+    diags: []Diagnostic,
+};
+
+fn runAndPublishWithDiags(
     allocator: std.mem.Allocator,
     writer: *Io.Writer,
     project_root: []const u8,
     open_docs: *std.StringHashMap(void),
     old_symbols: []SymbolInfo,
-) ![]SymbolInfo {
+) !PublishResult {
     const result = try runAnalysis(allocator, project_root);
 
     // Free old symbols
     freeSymbols(allocator, old_symbols);
-
-    // Publish diagnostics
-    defer {
-        if (result.diagnostics.len > 0) {
-            for (result.diagnostics) |d| {
-                allocator.free(d.uri);
-                allocator.free(d.message);
-            }
-            allocator.free(result.diagnostics);
-        }
-    }
 
     // Collect unique URIs that have diagnostics
     var seen = std.StringHashMap(void).init(allocator);
@@ -1255,21 +1630,14 @@ fn runAndPublish(
     }
 
     log("cached {d} symbols", .{result.symbols.len});
-    for (result.symbols) |s| {
-        if (s.parent.len > 0) {
-            log("  symbol: {s}.{s} (module={s})", .{ s.parent, s.name, s.module });
-        } else {
-            log("  symbol: {s} (module={s})", .{ s.name, s.module });
-        }
-    }
-    return result.symbols;
+    return .{ .symbols = result.symbols, .diags = result.diagnostics };
 }
 
 // ============================================================
 // PHASE 2 HANDLERS
 // ============================================================
 
-fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
+fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
     const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
     const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
     const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
@@ -1277,10 +1645,9 @@ fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.
     const line_0: usize = @intCast(jsonInt(pos, "line") orelse return buildEmptyResponse(allocator, id));
     const col_0: usize = @intCast(jsonInt(pos, "character") orelse return buildEmptyResponse(allocator, id));
 
-    // Read the source file to find word at cursor
-    const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
-    const source = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| {
-        log("hover: failed to read {s}: {}", .{ path, err });
+    // Read source (in-memory if available, otherwise from disk)
+    const source = getDocSource(allocator, uri, doc_store) catch |err| {
+        log("hover: failed to read source: {}", .{err});
         return buildEmptyResponse(allocator, id);
     };
     defer allocator.free(source);
@@ -1339,7 +1706,7 @@ fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.
     return buildEmptyResponse(allocator, id);
 }
 
-fn handleDefinition(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
+fn handleDefinition(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
     const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
     const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
     const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
@@ -1347,8 +1714,7 @@ fn handleDefinition(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     const line_0: usize = @intCast(jsonInt(pos, "line") orelse return buildEmptyResponse(allocator, id));
     const col_0: usize = @intCast(jsonInt(pos, "character") orelse return buildEmptyResponse(allocator, id));
 
-    const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
-    const source = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
+    const source = getDocSource(allocator, uri, doc_store) catch
         return buildEmptyResponse(allocator, id);
     defer allocator.free(source);
 
@@ -1369,8 +1735,18 @@ fn handleDefinition(allocator: std.mem.Allocator, root: std.json.Value, id: std.
         }
     }
 
-    const sym = findVisibleSymbolByName(symbols, word, current_module, imports) orelse return buildEmptyResponse(allocator, id);
-    return buildDefinitionResponse(allocator, id, sym.uri, sym.line, sym.col);
+    if (findVisibleSymbolByName(symbols, word, current_module, imports)) |sym|
+        return buildDefinitionResponse(allocator, id, sym.uri, sym.line, sym.col);
+
+    // Fallback: if the word is a module name, jump to the first symbol's file (line 0)
+    if (isModuleName(symbols, word)) {
+        for (symbols) |s| {
+            if (std.mem.eql(u8, s.module, word) and s.parent.len == 0)
+                return buildDefinitionResponse(allocator, id, s.uri, 0, 0);
+        }
+    }
+
+    return buildEmptyResponse(allocator, id);
 }
 
 fn handleDocumentSymbols(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
@@ -1399,7 +1775,7 @@ const CompletionItemKind = enum(u8) {
     type_ = 25, // for builtin/primitive types
 };
 
-fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
+fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo, use_snippets: bool, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
     const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
     const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
     const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
@@ -1408,8 +1784,7 @@ fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     const col_0: usize = @intCast(jsonInt(pos, "character") orelse return buildEmptyResponse(allocator, id));
 
     // Read source to determine context
-    const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
-    const source = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
+    const source = getDocSource(allocator, uri, doc_store) catch
         return buildEmptyResponse(allocator, id);
     defer allocator.free(source);
 
@@ -1425,11 +1800,11 @@ fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     // Check if we're after a dot — offer struct fields or module functions
     if (getDotPrefix(prefix)) |obj_name| {
         log("completion: dot context, object='{s}'", .{obj_name});
-        return buildDotCompletionResponse(allocator, id, symbols, obj_name);
+        return buildDotCompletionResponse(allocator, id, symbols, obj_name, use_snippets);
     }
 
     // General completion: keywords + symbols + types
-    return buildGeneralCompletionResponse(allocator, id, symbols, current_module, imports);
+    return buildGeneralCompletionResponse(allocator, id, symbols, current_module, imports, use_snippets);
 }
 
 fn getLinePrefix(source: []const u8, line_0: usize, col_0: usize) []const u8 {
@@ -1521,7 +1896,12 @@ fn getImportedModules(source: []const u8, allocator: std.mem.Allocator) ?[]const
         list.deinit(allocator);
         return null;
     }
-    return list.items;
+    const result = allocator.dupe([]const u8, list.items) catch {
+        list.deinit(allocator);
+        return null;
+    };
+    list.deinit(allocator);
+    return result;
 }
 
 fn isVisibleModule(mod: []const u8, current_module: ?[]const u8, imports: ?[]const []const u8) bool {
@@ -1536,7 +1916,7 @@ fn isVisibleModule(mod: []const u8, current_module: ?[]const u8, imports: ?[]con
     return false;
 }
 
-fn buildDotCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, symbols: []const SymbolInfo, obj_name: []const u8) ![]u8 {
+fn buildDotCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, symbols: []const SymbolInfo, obj_name: []const u8, use_snippets: bool) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
 
@@ -1548,30 +1928,22 @@ fn buildDotCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, 
 
     for (symbols) |s| {
         // Struct fields: parent matches obj_name (e.g. MyStruct.name)
-        if (s.parent.len > 0 and std.mem.eql(u8, s.parent, obj_name)) {
-            if (!first) try buf.append(allocator, ',');
-            first = false;
-            const kind: CompletionItemKind = switch (s.kind) {
-                .field => .field,
-                .enum_member => .enum_member,
-                else => .field,
-            };
-            try appendCompletionItem(&buf, allocator, s.name, s.detail, kind);
-            continue;
-        }
+        const is_field = s.parent.len > 0 and std.mem.eql(u8, s.parent, obj_name);
         // Module functions: module matches obj_name (e.g. console.println)
-        if (std.mem.eql(u8, s.module, obj_name) and s.parent.len == 0) {
+        const is_mod = std.mem.eql(u8, s.module, obj_name) and s.parent.len == 0;
+        if (is_field or is_mod) {
             if (!first) try buf.append(allocator, ',');
             first = false;
-            const kind: CompletionItemKind = switch (s.kind) {
-                .function => .function,
-                .struct_ => .struct_,
-                .enum_ => .enum_,
-                .variable => .variable,
-                .constant => .constant,
-                else => .function,
-            };
-            try appendCompletionItem(&buf, allocator, s.name, s.detail, kind);
+            if (use_snippets) {
+                try appendSymbolCompletionItem(&buf, allocator, s);
+            } else {
+                const kind: CompletionItemKind = switch (s.kind) {
+                    .function => .function, .struct_ => .struct_, .enum_ => .enum_,
+                    .variable => .variable, .constant => .constant,
+                    .field => .field, .enum_member => .enum_member,
+                };
+                try appendCompletionItem(&buf, allocator, s.name, s.detail, kind);
+            }
         }
     }
 
@@ -1579,7 +1951,7 @@ fn buildDotCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, 
     return allocator.dupe(u8, buf.items);
 }
 
-fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, symbols: []const SymbolInfo, current_module: ?[]const u8, imports: ?[]const []const u8) ![]u8 {
+fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, symbols: []const SymbolInfo, current_module: ?[]const u8, imports: ?[]const []const u8, use_snippets: bool) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
 
@@ -1627,16 +1999,16 @@ fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Val
         if (!isVisibleModule(s.module, current_module, imports)) continue;
         if (!first) try buf.append(allocator, ',');
         first = false;
-        const kind: CompletionItemKind = switch (s.kind) {
-            .function => .function,
-            .struct_ => .struct_,
-            .enum_ => .enum_,
-            .variable => .variable,
-            .constant => .constant,
-            .field => .field,
-            .enum_member => .enum_member,
-        };
-        try appendCompletionItem(&buf, allocator, s.name, s.detail, kind);
+        if (use_snippets) {
+            try appendSymbolCompletionItem(&buf, allocator, s);
+        } else {
+            const kind: CompletionItemKind = switch (s.kind) {
+                .function => .function, .struct_ => .struct_, .enum_ => .enum_,
+                .variable => .variable, .constant => .constant,
+                .field => .field, .enum_member => .enum_member,
+            };
+            try appendCompletionItem(&buf, allocator, s.name, s.detail, kind);
+        }
     }
 
     try buf.appendSlice(allocator, "]}}");
@@ -1651,6 +2023,1098 @@ fn appendCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.All
     try buf.appendSlice(allocator, ",\"detail\":\"");
     try appendJsonString(buf, allocator, detail);
     try buf.appendSlice(allocator, "\"}");
+}
+
+/// Append a completion item with snippet insertText for functions.
+fn appendSymbolCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, sym: SymbolInfo) !void {
+    try buf.appendSlice(allocator, "{\"label\":\"");
+    try appendJsonString(buf, allocator, sym.name);
+    try buf.appendSlice(allocator, "\",\"kind\":");
+    const kind: CompletionItemKind = switch (sym.kind) {
+        .function => .function,
+        .struct_ => .struct_,
+        .enum_ => .enum_,
+        .variable => .variable,
+        .constant => .constant,
+        .field => .field,
+        .enum_member => .enum_member,
+    };
+    try appendInt(buf, allocator, @intFromEnum(kind));
+    try buf.appendSlice(allocator, ",\"detail\":\"");
+    try appendJsonString(buf, allocator, sym.detail);
+    try buf.append(allocator, '"');
+
+    // For functions, add a snippet that includes parameter placeholders
+    if (sym.kind == .function) {
+        try buf.appendSlice(allocator, ",\"insertTextFormat\":2,\"insertText\":\"");
+        try appendJsonString(buf, allocator, sym.name);
+        // Build snippet: funcname(${1:param1}, ${2:param2})
+        const labels = extractParamLabels(sym.detail);
+        if (labels.count == 0) {
+            try buf.appendSlice(allocator, "()$0");
+        } else {
+            try buf.append(allocator, '(');
+            for (0..labels.count) |i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try buf.appendSlice(allocator, "${");
+                try appendInt(buf, allocator, i + 1);
+                try buf.append(allocator, ':');
+                // Extract parameter name from the detail string
+                const param_text = sym.detail[labels.starts[i]..labels.ends[i]];
+                // Use just the param name (before the colon) as placeholder
+                if (std.mem.indexOfScalar(u8, param_text, ':')) |colon_pos| {
+                    try appendJsonString(buf, allocator, std.mem.trimRight(u8, param_text[0..colon_pos], " "));
+                } else {
+                    try appendJsonString(buf, allocator, param_text);
+                }
+                try buf.append(allocator, '}');
+            }
+            try buf.appendSlice(allocator, ")$0");
+        }
+        try buf.append(allocator, '"');
+    }
+
+    try buf.append(allocator, '}');
+}
+
+// ============================================================
+// REFERENCES — find all usages of a symbol across source files
+// ============================================================
+
+fn handleReferences(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+    const pos = jsonObj(params, "position") orelse return buildEmptyResponse(allocator, id);
+    const line_0: usize = @intCast(jsonInt(pos, "line") orelse return buildEmptyResponse(allocator, id));
+    const col_0: usize = @intCast(jsonInt(pos, "character") orelse return buildEmptyResponse(allocator, id));
+
+    const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
+    const source = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(source);
+
+    const word = getWordAtPosition(source, line_0, col_0) orelse return buildEmptyResponse(allocator, id);
+    log("references: '{s}'", .{word});
+
+    // Collect all .orh files in the project by scanning symbol URIs
+    var file_uris = std.StringHashMap(void).init(allocator);
+    defer file_uris.deinit();
+    for (symbols) |s| {
+        if (!file_uris.contains(s.uri)) try file_uris.put(s.uri, {});
+    }
+    // Also include the current file
+    if (!file_uris.contains(uri)) try file_uris.put(uri, {});
+
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[");
+
+    var first = true;
+    var it = file_uris.iterator();
+    while (it.next()) |entry| {
+        const file_uri = entry.key_ptr.*;
+        const file_path = uriToPath(file_uri) orelse continue;
+        const file_source = std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024) catch continue;
+        defer allocator.free(file_source);
+
+        // Find all occurrences of `word` as a whole identifier
+        var line_num: usize = 0;
+        var line_start: usize = 0;
+        var i: usize = 0;
+        while (i < file_source.len) {
+            if (file_source[i] == '\n') {
+                line_num += 1;
+                line_start = i + 1;
+                i += 1;
+                continue;
+            }
+            // Check for word match at this position
+            if (i + word.len <= file_source.len and
+                std.mem.eql(u8, file_source[i .. i + word.len], word) and
+                (i == 0 or !isIdentChar(file_source[i - 1])) and
+                (i + word.len >= file_source.len or !isIdentChar(file_source[i + word.len])))
+            {
+                if (!first) try buf.append(allocator, ',');
+                first = false;
+                const col = i - line_start;
+                try buf.appendSlice(allocator, "{\"uri\":\"");
+                try appendJsonString(&buf, allocator, file_uri);
+                try buf.appendSlice(allocator, "\",\"range\":{\"start\":{\"line\":");
+                try appendInt(&buf, allocator, line_num);
+                try buf.appendSlice(allocator, ",\"character\":");
+                try appendInt(&buf, allocator, col);
+                try buf.appendSlice(allocator, "},\"end\":{\"line\":");
+                try appendInt(&buf, allocator, line_num);
+                try buf.appendSlice(allocator, ",\"character\":");
+                try appendInt(&buf, allocator, col + word.len);
+                try buf.appendSlice(allocator, "}}}");
+                i += word.len;
+                continue;
+            }
+            i += 1;
+        }
+    }
+
+    try buf.appendSlice(allocator, "]}");
+    return allocator.dupe(u8, buf.items);
+}
+
+// ============================================================
+// RENAME — rename a symbol across the project
+// ============================================================
+
+fn handleRename(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo, project_root: ?[]const u8) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+    const pos = jsonObj(params, "position") orelse return buildEmptyResponse(allocator, id);
+    const line_0: usize = @intCast(jsonInt(pos, "line") orelse return buildEmptyResponse(allocator, id));
+    const col_0: usize = @intCast(jsonInt(pos, "character") orelse return buildEmptyResponse(allocator, id));
+    const new_name = jsonStr(params, "newName") orelse return buildEmptyResponse(allocator, id);
+
+    const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
+    const source = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(source);
+
+    const word = getWordAtPosition(source, line_0, col_0) orelse return buildEmptyResponse(allocator, id);
+    log("rename: '{s}' -> '{s}'", .{ word, new_name });
+
+    // Only rename if symbol is known (not a keyword/builtin)
+    const current_module = getModuleName(source);
+    const imports = getImportedModules(source, allocator);
+    defer if (imports) |imps| allocator.free(imps);
+    if (findVisibleSymbolByName(symbols, word, current_module, imports) == null)
+        return buildEmptyResponse(allocator, id);
+
+    // Collect source files from symbol URIs
+    var file_uris = std.StringHashMap(void).init(allocator);
+    defer file_uris.deinit();
+    for (symbols) |s| {
+        if (!file_uris.contains(s.uri)) try file_uris.put(s.uri, {});
+    }
+    if (!file_uris.contains(uri)) try file_uris.put(uri, {});
+
+    // Also scan for any .orh files under src/ that might reference the symbol
+    if (project_root) |pr| {
+        const src_path = try std.fmt.allocPrint(allocator, "{s}/src", .{pr});
+        defer allocator.free(src_path);
+        collectOrhFiles(allocator, src_path, pr, &file_uris) catch {};
+    }
+
+    // Build WorkspaceEdit with TextEdits per document
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":{\"changes\":{");
+
+    var first_doc = true;
+    var it = file_uris.iterator();
+    while (it.next()) |entry| {
+        const file_uri = entry.key_ptr.*;
+        const file_path = uriToPath(file_uri) orelse continue;
+        const file_source = std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024) catch continue;
+        defer allocator.free(file_source);
+
+        // Collect edits for this file
+        var edits: std.ArrayListUnmanaged(u8) = .{};
+        defer edits.deinit(allocator);
+        var first_edit = true;
+        var line_num: usize = 0;
+        var line_start: usize = 0;
+        var i: usize = 0;
+        while (i < file_source.len) {
+            if (file_source[i] == '\n') {
+                line_num += 1;
+                line_start = i + 1;
+                i += 1;
+                continue;
+            }
+            if (i + word.len <= file_source.len and
+                std.mem.eql(u8, file_source[i .. i + word.len], word) and
+                (i == 0 or !isIdentChar(file_source[i - 1])) and
+                (i + word.len >= file_source.len or !isIdentChar(file_source[i + word.len])))
+            {
+                if (!first_edit) try edits.append(allocator, ',');
+                first_edit = false;
+                const col = i - line_start;
+                try edits.appendSlice(allocator, "{\"range\":{\"start\":{\"line\":");
+                try appendInt(&edits, allocator, line_num);
+                try edits.appendSlice(allocator, ",\"character\":");
+                try appendInt(&edits, allocator, col);
+                try edits.appendSlice(allocator, "},\"end\":{\"line\":");
+                try appendInt(&edits, allocator, line_num);
+                try edits.appendSlice(allocator, ",\"character\":");
+                try appendInt(&edits, allocator, col + word.len);
+                try edits.appendSlice(allocator, "}},\"newText\":\"");
+                try appendJsonString(&edits, allocator, new_name);
+                try edits.appendSlice(allocator, "\"}");
+                i += word.len;
+                continue;
+            }
+            i += 1;
+        }
+
+        if (edits.items.len > 0) {
+            if (!first_doc) try buf.append(allocator, ',');
+            first_doc = false;
+            try buf.append(allocator, '"');
+            try appendJsonString(&buf, allocator, file_uri);
+            try buf.appendSlice(allocator, "\":[");
+            try buf.appendSlice(allocator, edits.items);
+            try buf.append(allocator, ']');
+        }
+    }
+
+    try buf.appendSlice(allocator, "}}}");
+    return allocator.dupe(u8, buf.items);
+}
+
+/// Recursively collect .orh file URIs from a directory.
+fn collectOrhFiles(allocator: std.mem.Allocator, dir_path: []const u8, project_root: []const u8, uris: *std.StringHashMap(void)) !void {
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return;
+    defer dir.close();
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind == .directory) {
+            const sub = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
+            defer allocator.free(sub);
+            try collectOrhFiles(allocator, sub, project_root, uris);
+        } else if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".orh")) {
+            const full = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
+            defer allocator.free(full);
+            const file_uri = try pathToUri(allocator, full);
+            if (!uris.contains(file_uri)) {
+                try uris.put(file_uri, {});
+            } else {
+                allocator.free(file_uri);
+            }
+        }
+    }
+}
+
+// ============================================================
+// SIGNATURE HELP — show parameter hints for function calls
+// ============================================================
+
+fn handleSignatureHelp(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+    const pos = jsonObj(params, "position") orelse return buildEmptyResponse(allocator, id);
+    const line_0: usize = @intCast(jsonInt(pos, "line") orelse return buildEmptyResponse(allocator, id));
+    const col_0: usize = @intCast(jsonInt(pos, "character") orelse return buildEmptyResponse(allocator, id));
+
+    const source = getDocSource(allocator, uri, doc_store) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(source);
+
+    // Find the function name by scanning backwards from cursor to find `funcname(`
+    const prefix = getLinePrefix(source, line_0, col_0);
+    const call_info = findCallContext(prefix) orelse return buildEmptyResponse(allocator, id);
+    log("signatureHelp: func='{s}' activeParam={d}", .{ call_info.func_name, call_info.active_param });
+
+    // Look up the function symbol — check dot context (module.func or struct.method)
+    const sym = if (call_info.obj_name) |obj|
+        findSymbolInContext(symbols, call_info.func_name, obj)
+    else
+        findSymbolByName(symbols, call_info.func_name);
+
+    const func_sym = sym orelse return buildEmptyResponse(allocator, id);
+    if (func_sym.kind != .function) return buildEmptyResponse(allocator, id);
+
+    // Build signature help response with parameter labels
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":{\"signatures\":[{\"label\":\"");
+    try appendJsonString(&buf, allocator, func_sym.detail);
+    try buf.append(allocator, '"');
+
+    // Extract parameter labels from signature like "func name(a: i32, b: String) void"
+    const param_labels = extractParamLabels(func_sym.detail);
+    if (param_labels.count > 0) {
+        try buf.appendSlice(allocator, ",\"parameters\":[");
+        for (0..param_labels.count) |i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try buf.appendSlice(allocator, "{\"label\":[");
+            try appendInt(&buf, allocator, param_labels.starts[i]);
+            try buf.append(allocator, ',');
+            try appendInt(&buf, allocator, param_labels.ends[i]);
+            try buf.appendSlice(allocator, "]}");
+        }
+        try buf.append(allocator, ']');
+    }
+
+    try buf.appendSlice(allocator, "}],\"activeSignature\":0,\"activeParameter\":");
+    try appendInt(&buf, allocator, call_info.active_param);
+    try buf.appendSlice(allocator, "}}");
+
+    return allocator.dupe(u8, buf.items);
+}
+
+const CallContext = struct {
+    func_name: []const u8,
+    obj_name: ?[]const u8, // e.g. "console" in "console.println("
+    active_param: usize,
+};
+
+/// Scan backwards from cursor through `prefix` to find `funcname(` and count commas for active param.
+fn findCallContext(prefix: []const u8) ?CallContext {
+    if (prefix.len == 0) return null;
+
+    // Walk backwards to find the opening paren, tracking nesting
+    var depth: usize = 0;
+    var commas: usize = 0;
+    var i = prefix.len;
+    while (i > 0) {
+        i -= 1;
+        switch (prefix[i]) {
+            ')' => depth += 1,
+            '(' => {
+                if (depth == 0) {
+                    // Found the opening paren — extract function name before it
+                    if (i == 0) return null;
+                    var end = i;
+                    // Skip whitespace between name and paren
+                    while (end > 0 and prefix[end - 1] == ' ') : (end -= 1) {}
+                    if (end == 0) return null;
+                    var start = end;
+                    while (start > 0 and isIdentChar(prefix[start - 1])) : (start -= 1) {}
+                    if (start == end) return null;
+                    const func_name = prefix[start..end];
+                    // Check for dot prefix (obj.func)
+                    var obj_name: ?[]const u8 = null;
+                    if (start > 1 and prefix[start - 1] == '.') {
+                        const obj_end = start - 1;
+                        var obj_start = obj_end;
+                        while (obj_start > 0 and isIdentChar(prefix[obj_start - 1])) : (obj_start -= 1) {}
+                        if (obj_start < obj_end) obj_name = prefix[obj_start..obj_end];
+                    }
+                    return .{
+                        .func_name = func_name,
+                        .obj_name = obj_name,
+                        .active_param = commas,
+                    };
+                }
+                depth -= 1;
+            },
+            ',' => {
+                if (depth == 0) commas += 1;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+// ============================================================
+// FORMATTING — run `orhon fmt` on the file
+// ============================================================
+
+fn handleFormatting(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+
+    const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
+    log("formatting: {s}", .{path});
+
+    // Read original content
+    const original = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(original);
+
+    // Find the orhon binary (it's us — use /proc/self/exe on Linux)
+    const self_exe = std.fs.selfExePathAlloc(allocator) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(self_exe);
+
+    // Run `orhon fmt <path>`
+    var child = std.process.Child.init(&.{ self_exe, "fmt", path }, allocator);
+    child.stderr_behavior = .Ignore;
+    child.stdout_behavior = .Ignore;
+    const term = child.spawnAndWait() catch return buildEmptyResponse(allocator, id);
+    switch (term) {
+        .Exited => |code| if (code != 0) return buildEmptyResponse(allocator, id),
+        else => return buildEmptyResponse(allocator, id),
+    }
+
+    // Read formatted content
+    const formatted = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(formatted);
+
+    // If no change, return empty edits
+    if (std.mem.eql(u8, original, formatted))
+        return buildEmptyResponse(allocator, id);
+
+    // Count lines in original to create a full-file replacement edit
+    var line_count: usize = 0;
+    for (original) |c| {
+        if (c == '\n') line_count += 1;
+    }
+
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":");
+    try appendInt(&buf, allocator, line_count + 1);
+    try buf.appendSlice(allocator, ",\"character\":0}},\"newText\":\"");
+    try appendJsonString(&buf, allocator, formatted);
+    try buf.appendSlice(allocator, "\"}]}");
+
+    return allocator.dupe(u8, buf.items);
+}
+
+// ============================================================
+// WORKSPACE SYMBOL — cross-file symbol search
+// ============================================================
+
+fn handleWorkspaceSymbol(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const query = jsonStr(params, "query") orelse "";
+    log("workspaceSymbol: query='{s}'", .{query});
+
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[");
+
+    var first = true;
+    var count: usize = 0;
+    for (symbols) |s| {
+        // Filter by query (case-insensitive substring match)
+        if (query.len > 0 and !containsIgnoreCase(s.name, query)) continue;
+        if (count >= 200) break; // limit results
+
+        if (!first) try buf.append(allocator, ',');
+        first = false;
+        count += 1;
+
+        try buf.appendSlice(allocator, "{\"name\":\"");
+        try appendJsonString(&buf, allocator, s.name);
+        try buf.appendSlice(allocator, "\",\"kind\":");
+        try appendInt(&buf, allocator, @intFromEnum(s.kind));
+        if (s.module.len > 0) {
+            try buf.appendSlice(allocator, ",\"containerName\":\"");
+            try appendJsonString(&buf, allocator, s.module);
+            try buf.append(allocator, '"');
+        }
+        try buf.appendSlice(allocator, ",\"location\":{\"uri\":\"");
+        try appendJsonString(&buf, allocator, s.uri);
+        try buf.appendSlice(allocator, "\",\"range\":{\"start\":{\"line\":");
+        try appendInt(&buf, allocator, s.line);
+        try buf.appendSlice(allocator, ",\"character\":");
+        try appendInt(&buf, allocator, s.col);
+        try buf.appendSlice(allocator, "},\"end\":{\"line\":");
+        try appendInt(&buf, allocator, s.line);
+        try buf.appendSlice(allocator, ",\"character\":");
+        try appendInt(&buf, allocator, s.col);
+        try buf.appendSlice(allocator, "}}}}");
+    }
+
+    try buf.appendSlice(allocator, "]}");
+    return allocator.dupe(u8, buf.items);
+}
+
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len > haystack.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        var matches = true;
+        for (0..needle.len) |j| {
+            if (toLowerAscii(haystack[i + j]) != toLowerAscii(needle[j])) {
+                matches = false;
+                break;
+            }
+        }
+        if (matches) return true;
+    }
+    return false;
+}
+
+fn toLowerAscii(c: u8) u8 {
+    return if (c >= 'A' and c <= 'Z') c + 32 else c;
+}
+
+// ============================================================
+// INLAY HINTS — show inferred types for variables
+// ============================================================
+
+fn handleInlayHint(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+
+    const source = getDocSource(allocator, uri, doc_store) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(source);
+    log("inlayHint: {s}", .{uri});
+
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[");
+
+    var first = true;
+
+    // Find variable/const declarations without explicit type annotations
+    // Pattern: "var name = ..." or "const name = ..." (no ": Type" after name)
+    var line_num: usize = 0;
+    var line_start: usize = 0;
+    for (source, 0..) |c, idx| {
+        if (c == '\n') {
+            const line = source[line_start..idx];
+            const trimmed = std.mem.trimLeft(u8, line, " \t");
+            const indent = idx - line_start - trimmed.len;
+            _ = indent;
+
+            // Check for "var name = ..." or "const name = ..."
+            const is_var = std.mem.startsWith(u8, trimmed, "var ");
+            const is_const = std.mem.startsWith(u8, trimmed, "const ");
+            if (is_var or is_const) {
+                const prefix_len: usize = if (is_var) 4 else 6;
+                const after_kw = std.mem.trimLeft(u8, trimmed[prefix_len..], " ");
+                // Extract variable name
+                var name_end: usize = 0;
+                while (name_end < after_kw.len and isIdentChar(after_kw[name_end])) : (name_end += 1) {}
+                if (name_end > 0) {
+                    const var_name = after_kw[0..name_end];
+                    const after_name = std.mem.trimLeft(u8, after_kw[name_end..], " ");
+                    // Only add hint if no explicit type (line has "= ..." not ": Type = ...")
+                    if (std.mem.startsWith(u8, after_name, "= ") or std.mem.startsWith(u8, after_name, "=\t")) {
+                        // Look up the type from symbols
+                        if (findSymbolInFile(symbols, var_name, uri)) |sym| {
+                            // Don't show "var" or "const" as the type — only actual types
+                            if (!std.mem.eql(u8, sym.detail, "var") and
+                                !std.mem.eql(u8, sym.detail, "const"))
+                            {
+                                if (!first) try buf.append(allocator, ',');
+                                first = false;
+
+                                // Position hint right after the variable name
+                                const name_col = @as(usize, @intCast(line.len - trimmed.len)) + prefix_len + (@as(usize, @intCast(trimmed.len - prefix_len)) - after_kw.len) + name_end;
+                                try buf.appendSlice(allocator, "{\"position\":{\"line\":");
+                                try appendInt(&buf, allocator, line_num);
+                                try buf.appendSlice(allocator, ",\"character\":");
+                                try appendInt(&buf, allocator, name_col);
+                                try buf.appendSlice(allocator, "},\"label\":\": ");
+                                try appendJsonString(&buf, allocator, sym.detail);
+                                try buf.appendSlice(allocator, "\",\"kind\":1,\"paddingLeft\":false,\"paddingRight\":true}");
+                            }
+                        }
+                    }
+                }
+            }
+
+            line_num += 1;
+            line_start = idx + 1;
+        }
+    }
+
+    try buf.appendSlice(allocator, "]}");
+    return allocator.dupe(u8, buf.items);
+}
+
+/// Find a symbol by name that belongs to a specific file URI.
+fn findSymbolInFile(symbols: []const SymbolInfo, name: []const u8, uri: []const u8) ?SymbolInfo {
+    for (symbols) |s| {
+        if (std.mem.eql(u8, s.name, name) and std.mem.eql(u8, s.uri, uri) and s.parent.len == 0)
+            return s;
+    }
+    // Fallback: any symbol with this name
+    for (symbols) |s| {
+        if (std.mem.eql(u8, s.name, name) and s.parent.len == 0) return s;
+    }
+    return null;
+}
+
+// ============================================================
+// CODE ACTIONS — quick fixes for diagnostics
+// ============================================================
+
+fn handleCodeAction(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, diags: []const Diagnostic) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyArrayResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyArrayResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyArrayResponse(allocator, id);
+    const range = jsonObj(params, "range") orelse return buildEmptyArrayResponse(allocator, id);
+    const start = jsonObj(range, "start") orelse return buildEmptyArrayResponse(allocator, id);
+    const start_line: usize = @intCast(jsonInt(start, "line") orelse return buildEmptyArrayResponse(allocator, id));
+
+    log("codeAction: {s} line {d}", .{ uri, start_line });
+
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[");
+
+    var first = true;
+
+    // Find diagnostics that overlap with the requested range
+    for (diags) |d| {
+        if (!std.mem.eql(u8, d.uri, uri)) continue;
+        if (d.line != start_line) continue;
+
+        // Suggest fixes based on diagnostic message patterns
+        if (std.mem.indexOf(u8, d.message, "unknown type")) |_| {
+            // "unknown type 'Foo'" → suggest checking spelling or adding import
+            if (!first) try buf.append(allocator, ',');
+            first = false;
+            try appendQuickFix(&buf, allocator, "Add import for this type", uri, 0,
+                \\import std::
+            );
+        }
+        if (std.mem.indexOf(u8, d.message, "unknown variable")) |_| {
+            if (!first) try buf.append(allocator, ',');
+            first = false;
+            try appendQuickFix(&buf, allocator, "Declare this variable", uri, d.line,
+                \\var
+            );
+        }
+        if (std.mem.indexOf(u8, d.message, "unused")) |_| {
+            if (!first) try buf.append(allocator, ',');
+            first = false;
+            try buf.appendSlice(allocator, "{\"title\":\"Prefix with underscore\",\"kind\":\"quickfix\",\"diagnostics\":[{\"range\":{\"start\":{\"line\":");
+            try appendInt(&buf, allocator, d.line);
+            try buf.appendSlice(allocator, ",\"character\":");
+            try appendInt(&buf, allocator, d.col);
+            try buf.appendSlice(allocator, "},\"end\":{\"line\":");
+            try appendInt(&buf, allocator, d.line);
+            try buf.appendSlice(allocator, ",\"character\":");
+            try appendInt(&buf, allocator, d.col);
+            try buf.appendSlice(allocator, "}},\"message\":\"");
+            try appendJsonString(&buf, allocator, d.message);
+            try buf.appendSlice(allocator, "\"}]}");
+        }
+    }
+
+    try buf.appendSlice(allocator, "]}");
+    return allocator.dupe(u8, buf.items);
+}
+
+fn appendQuickFix(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, title: []const u8, uri: []const u8, line: usize, insert_text: []const u8) !void {
+    try buf.appendSlice(allocator, "{\"title\":\"");
+    try appendJsonString(buf, allocator, title);
+    try buf.appendSlice(allocator, "\",\"kind\":\"quickfix\",\"edit\":{\"changes\":{\"");
+    try appendJsonString(buf, allocator, uri);
+    try buf.appendSlice(allocator, "\":[{\"range\":{\"start\":{\"line\":");
+    try appendInt(buf, allocator, line);
+    try buf.appendSlice(allocator, ",\"character\":0},\"end\":{\"line\":");
+    try appendInt(buf, allocator, line);
+    try buf.appendSlice(allocator, ",\"character\":0}},\"newText\":\"");
+    try appendJsonString(buf, allocator, insert_text);
+    try buf.appendSlice(allocator, "\"}]}}}");
+}
+
+// ============================================================
+// PARAMETER LABEL EXTRACTION — for signature help highlights
+// ============================================================
+
+const MAX_PARAMS = 16;
+
+const ParamLabels = struct {
+    starts: [MAX_PARAMS]usize,
+    ends: [MAX_PARAMS]usize,
+    count: usize,
+};
+
+/// Parse parameter byte ranges from a signature like "func name(a: i32, b: String) void".
+/// Returns offsets into the original string for each parameter.
+fn extractParamLabels(sig: []const u8) ParamLabels {
+    var result = ParamLabels{
+        .starts = undefined,
+        .ends = undefined,
+        .count = 0,
+    };
+
+    // Find opening paren
+    const paren_start = std.mem.indexOfScalar(u8, sig, '(') orelse return result;
+    // Find matching closing paren
+    var depth: usize = 0;
+    var paren_end: usize = paren_start;
+    for (sig[paren_start..], paren_start..) |c, idx| {
+        if (c == '(') depth += 1;
+        if (c == ')') {
+            depth -= 1;
+            if (depth == 0) {
+                paren_end = idx;
+                break;
+            }
+        }
+    }
+    if (paren_end == paren_start) return result;
+
+    const params_str = sig[paren_start + 1 .. paren_end];
+    if (params_str.len == 0) return result;
+
+    // Split by commas at depth 0
+    var start: usize = 0;
+    var param_depth: usize = 0;
+    for (params_str, 0..) |c, i| {
+        if (c == '(') param_depth += 1;
+        if (c == ')') param_depth -= 1;
+        if (c == ',' and param_depth == 0) {
+            if (result.count >= MAX_PARAMS) return result;
+            const trimmed = trimRange(params_str, start, i);
+            result.starts[result.count] = paren_start + 1 + trimmed.start;
+            result.ends[result.count] = paren_start + 1 + trimmed.end;
+            result.count += 1;
+            start = i + 1;
+        }
+    }
+    // Last parameter
+    if (result.count < MAX_PARAMS) {
+        const trimmed = trimRange(params_str, start, params_str.len);
+        if (trimmed.end > trimmed.start) {
+            result.starts[result.count] = paren_start + 1 + trimmed.start;
+            result.ends[result.count] = paren_start + 1 + trimmed.end;
+            result.count += 1;
+        }
+    }
+    return result;
+}
+
+const TrimResult = struct { start: usize, end: usize };
+
+fn trimRange(s: []const u8, start: usize, end: usize) TrimResult {
+    var a = start;
+    while (a < end and s[a] == ' ') : (a += 1) {}
+    var b = end;
+    while (b > a and s[b - 1] == ' ') : (b -= 1) {}
+    return .{ .start = a, .end = b };
+}
+
+// ============================================================
+// DOCUMENT HIGHLIGHT — highlight all occurrences of word in file
+// ============================================================
+
+fn handleDocumentHighlight(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+    const pos = jsonObj(params, "position") orelse return buildEmptyResponse(allocator, id);
+    const line_0: usize = @intCast(jsonInt(pos, "line") orelse return buildEmptyResponse(allocator, id));
+    const col_0: usize = @intCast(jsonInt(pos, "character") orelse return buildEmptyResponse(allocator, id));
+
+    const source = getDocSource(allocator, uri, doc_store) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(source);
+
+    const word = getWordAtPosition(source, line_0, col_0) orelse return buildEmptyResponse(allocator, id);
+    log("documentHighlight: '{s}'", .{word});
+
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[");
+
+    var first = true;
+    var line_num: usize = 0;
+    var line_start: usize = 0;
+    var i: usize = 0;
+    while (i < source.len) {
+        if (source[i] == '\n') {
+            line_num += 1;
+            line_start = i + 1;
+            i += 1;
+            continue;
+        }
+        if (i + word.len <= source.len and
+            std.mem.eql(u8, source[i .. i + word.len], word) and
+            (i == 0 or !isIdentChar(source[i - 1])) and
+            (i + word.len >= source.len or !isIdentChar(source[i + word.len])))
+        {
+            if (!first) try buf.append(allocator, ',');
+            first = false;
+            const col = i - line_start;
+            // kind: 1=Text (read), 2=Read, 3=Write — use 1 for all
+            try buf.appendSlice(allocator, "{\"range\":{\"start\":{\"line\":");
+            try appendInt(&buf, allocator, line_num);
+            try buf.appendSlice(allocator, ",\"character\":");
+            try appendInt(&buf, allocator, col);
+            try buf.appendSlice(allocator, "},\"end\":{\"line\":");
+            try appendInt(&buf, allocator, line_num);
+            try buf.appendSlice(allocator, ",\"character\":");
+            try appendInt(&buf, allocator, col + word.len);
+            try buf.appendSlice(allocator, "}},\"kind\":1}");
+            i += word.len;
+            continue;
+        }
+        i += 1;
+    }
+
+    try buf.appendSlice(allocator, "]}");
+    return allocator.dupe(u8, buf.items);
+}
+
+// ============================================================
+// FOLDING RANGES — code folding for blocks
+// ============================================================
+
+fn handleFoldingRange(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, doc_store: *const std.StringHashMap([]u8)) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+
+    const source = getDocSource(allocator, uri, doc_store) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(source);
+    log("foldingRange: {s}", .{uri});
+
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":[");
+
+    // Track brace-delimited blocks + comment blocks + import blocks
+    var brace_stack: [256]usize = undefined; // line numbers of opening braces
+    var brace_depth: usize = 0;
+    var first = true;
+    var line_num: usize = 0;
+    var in_comment_block = false;
+    var comment_start: usize = 0;
+    var in_import_block = false;
+    var import_start: usize = 0;
+    var line_start: usize = 0;
+
+    for (source, 0..) |c, idx| {
+        if (c == '\n') {
+            // Check if this line is a comment or import before moving on
+            const line = source[line_start..idx];
+            const trimmed = std.mem.trimLeft(u8, line, " \t");
+
+            // Track consecutive comment blocks
+            const is_comment = std.mem.startsWith(u8, trimmed, "//");
+            if (is_comment and !in_comment_block) {
+                in_comment_block = true;
+                comment_start = line_num;
+            } else if (!is_comment and in_comment_block) {
+                in_comment_block = false;
+                if (line_num > comment_start + 1) {
+                    if (!first) try buf.append(allocator, ',');
+                    first = false;
+                    try appendFoldingRange(&buf, allocator, comment_start, line_num - 2, "comment");
+                }
+            }
+
+            // Track import blocks
+            const is_import = std.mem.startsWith(u8, trimmed, "import ");
+            if (is_import and !in_import_block) {
+                in_import_block = true;
+                import_start = line_num;
+            } else if (!is_import and in_import_block and trimmed.len > 0) {
+                in_import_block = false;
+                if (line_num > import_start + 1) {
+                    if (!first) try buf.append(allocator, ',');
+                    first = false;
+                    try appendFoldingRange(&buf, allocator, import_start, line_num - 2, "imports");
+                }
+            }
+
+            line_num += 1;
+            line_start = idx + 1;
+            continue;
+        }
+        if (c == '{') {
+            if (brace_depth < brace_stack.len) {
+                brace_stack[brace_depth] = line_num;
+                brace_depth += 1;
+            }
+        } else if (c == '}') {
+            if (brace_depth > 0) {
+                brace_depth -= 1;
+                const open_line = brace_stack[brace_depth];
+                if (line_num > open_line) {
+                    if (!first) try buf.append(allocator, ',');
+                    first = false;
+                    try appendFoldingRange(&buf, allocator, open_line, line_num - 1, "region");
+                }
+            }
+        }
+    }
+
+    // Close any trailing comment block
+    if (in_comment_block and line_num > comment_start + 1) {
+        if (!first) try buf.append(allocator, ',');
+        first = false;
+        try appendFoldingRange(&buf, allocator, comment_start, line_num - 1, "comment");
+    }
+
+    try buf.appendSlice(allocator, "]}");
+    return allocator.dupe(u8, buf.items);
+}
+
+fn appendFoldingRange(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, start_line: usize, end_line: usize, kind: []const u8) !void {
+    try buf.appendSlice(allocator, "{\"startLine\":");
+    try appendInt(buf, allocator, start_line);
+    try buf.appendSlice(allocator, ",\"endLine\":");
+    try appendInt(buf, allocator, end_line);
+    try buf.appendSlice(allocator, ",\"kind\":\"");
+    try buf.appendSlice(allocator, kind);
+    try buf.appendSlice(allocator, "\"}");
+}
+
+// ============================================================
+// SEMANTIC TOKENS — rich syntax highlighting via LSP
+// ============================================================
+
+/// Token type indices (must match legend in capabilities)
+const SemanticTokenType = enum(u8) {
+    keyword = 0,
+    type_ = 1,
+    function = 2,
+    variable = 3,
+    string = 4,
+    number = 5,
+    comment = 6,
+    operator = 7,
+    parameter = 8,
+    enum_member = 9,
+    property = 10,
+    namespace = 11,
+};
+
+/// Token modifier bit flags (must match legend)
+const SemanticModifier = struct {
+    const declaration: u32 = 1 << 0;
+    const definition: u32 = 1 << 1;
+    const readonly: u32 = 1 << 2;
+};
+
+fn handleSemanticTokens(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value) ![]u8 {
+    const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
+    const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
+    const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
+
+    const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
+    const source = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
+        return buildEmptyResponse(allocator, id);
+    defer allocator.free(source);
+    log("semanticTokens: {s}", .{path});
+
+    // Lex the source to get tokens
+    var lex = lexer.Lexer.init(source);
+    var tokens: std.ArrayListUnmanaged(SemanticToken) = .{};
+    defer tokens.deinit(allocator);
+
+    while (true) {
+        const tok = lex.next();
+        if (tok.kind == .eof) break;
+        if (tok.kind == .newline) continue;
+
+        const sem = classifyToken(tok.kind);
+        if (sem.token_type) |tt| {
+            try tokens.append(allocator, .{
+                .line = if (tok.line > 0) tok.line - 1 else 0, // lexer is 1-based
+                .col = if (tok.col > 0) tok.col - 1 else 0,
+                .length = tok.text.len,
+                .token_type = @intFromEnum(tt),
+                .modifiers = sem.modifiers,
+            });
+        }
+    }
+
+    // Encode as delta-encoded data array per LSP spec
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(allocator);
+
+    try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
+    try writeJsonValue(&buf, allocator, id);
+    try buf.appendSlice(allocator, ",\"result\":{\"data\":[");
+
+    var prev_line: usize = 0;
+    var prev_col: usize = 0;
+    for (tokens.items, 0..) |tok, idx| {
+        if (idx > 0) try buf.append(allocator, ',');
+        const delta_line = tok.line -| prev_line;
+        const delta_col = if (tok.line == prev_line) tok.col -| prev_col else tok.col;
+        try appendInt(&buf, allocator, delta_line);
+        try buf.append(allocator, ',');
+        try appendInt(&buf, allocator, delta_col);
+        try buf.append(allocator, ',');
+        try appendInt(&buf, allocator, tok.length);
+        try buf.append(allocator, ',');
+        try appendInt(&buf, allocator, tok.token_type);
+        try buf.append(allocator, ',');
+        try appendInt(&buf, allocator, tok.modifiers);
+        prev_line = tok.line;
+        prev_col = tok.col;
+    }
+
+    try buf.appendSlice(allocator, "]}}");
+    return allocator.dupe(u8, buf.items);
+}
+
+const SemanticToken = struct {
+    line: usize,
+    col: usize,
+    length: usize,
+    token_type: u8,
+    modifiers: u32,
+};
+
+const TokenClassification = struct {
+    token_type: ?SemanticTokenType,
+    modifiers: u32,
+};
+
+fn classifyToken(kind: lexer.TokenKind) TokenClassification {
+    return switch (kind) {
+        // Keywords
+        .kw_func, .kw_var, .kw_const, .kw_struct, .kw_enum, .kw_bitfield,
+        .kw_module, .kw_import, .kw_pub, .kw_extern, .kw_compt, .kw_test,
+        .kw_if, .kw_else, .kw_for, .kw_while, .kw_return, .kw_match,
+        .kw_break, .kw_continue, .kw_defer, .kw_thread, .kw_any,
+        .kw_and, .kw_or, .kw_not, .kw_as, .kw_is, .kw_cast,
+        .kw_copy, .kw_move, .kw_swap, .kw_true, .kw_false, .kw_null,
+        .kw_void, .kw_main,
+        => .{ .token_type = .keyword, .modifiers = 0 },
+
+        // Builtin functions
+        .kw_assert, .kw_size, .kw_align, .kw_typename, .kw_typeid,
+        => .{ .token_type = .function, .modifiers = SemanticModifier.readonly },
+
+        // Literals
+        .string_literal => .{ .token_type = .string, .modifiers = 0 },
+        .int_literal, .float_literal => .{ .token_type = .number, .modifiers = 0 },
+
+        // Operators
+        .plus, .plus_plus, .minus, .star, .slash, .percent,
+        .eq, .neq, .lt, .gt, .lte, .gte,
+        .caret, .lshift, .rshift, .bang, .ampersand,
+        .assign, .plus_assign, .minus_assign, .star_assign, .slash_assign,
+        .arrow, .dotdot, .pipe,
+        => .{ .token_type = .operator, .modifiers = 0 },
+
+        .hash => .{ .token_type = .keyword, .modifiers = 0 },
+
+        // Identifiers classified by context later, but base case
+        .identifier => .{ .token_type = null, .modifiers = 0 },
+
+        // Skip punctuation and structural tokens
+        else => .{ .token_type = null, .modifiers = 0 },
+    };
 }
 
 // ============================================================
@@ -1705,4 +3169,70 @@ test "isIdentChar recognizes valid chars" {
     try std.testing.expect(isIdentChar('5'));
     try std.testing.expect(!isIdentChar('.'));
     try std.testing.expect(!isIdentChar(' '));
+}
+
+test "findCallContext finds function name and active param" {
+    const ctx1 = findCallContext("foo(").?;
+    try std.testing.expectEqualStrings("foo", ctx1.func_name);
+    try std.testing.expect(ctx1.obj_name == null);
+    try std.testing.expectEqual(@as(usize, 0), ctx1.active_param);
+
+    const ctx2 = findCallContext("foo(a, b, ").?;
+    try std.testing.expectEqualStrings("foo", ctx2.func_name);
+    try std.testing.expectEqual(@as(usize, 2), ctx2.active_param);
+
+    const ctx3 = findCallContext("console.println(").?;
+    try std.testing.expectEqualStrings("println", ctx3.func_name);
+    try std.testing.expectEqualStrings("console", ctx3.obj_name.?);
+    try std.testing.expectEqual(@as(usize, 0), ctx3.active_param);
+}
+
+test "findCallContext returns null for no call" {
+    try std.testing.expect(findCallContext("var x = 42") == null);
+    try std.testing.expect(findCallContext("") == null);
+}
+
+test "findCallContext handles nested parens" {
+    const ctx = findCallContext("foo(bar(1), ").?;
+    try std.testing.expectEqualStrings("foo", ctx.func_name);
+    try std.testing.expectEqual(@as(usize, 1), ctx.active_param);
+}
+
+test "containsIgnoreCase matches" {
+    try std.testing.expect(containsIgnoreCase("MyFunction", "func"));
+    try std.testing.expect(containsIgnoreCase("MyFunction", "FUNC"));
+    try std.testing.expect(containsIgnoreCase("abc", "abc"));
+    try std.testing.expect(!containsIgnoreCase("abc", "xyz"));
+    try std.testing.expect(!containsIgnoreCase("ab", "abc"));
+}
+
+test "extractParamLabels single param" {
+    const labels = extractParamLabels("func println(msg: String) void");
+    try std.testing.expectEqual(@as(usize, 1), labels.count);
+    // "msg: String" starts at index 13, ends at 24
+    try std.testing.expectEqualStrings("msg: String", "func println(msg: String) void"[labels.starts[0]..labels.ends[0]]);
+}
+
+test "extractParamLabels multiple params" {
+    const labels = extractParamLabels("func add(a: i32, b: i32) i32");
+    try std.testing.expectEqual(@as(usize, 2), labels.count);
+    const sig = "func add(a: i32, b: i32) i32";
+    try std.testing.expectEqualStrings("a: i32", sig[labels.starts[0]..labels.ends[0]]);
+    try std.testing.expectEqualStrings("b: i32", sig[labels.starts[1]..labels.ends[1]]);
+}
+
+test "extractParamLabels no params" {
+    const labels = extractParamLabels("func main() void");
+    try std.testing.expectEqual(@as(usize, 0), labels.count);
+}
+
+test "classifyToken keywords" {
+    const kw = classifyToken(.kw_func);
+    try std.testing.expectEqual(SemanticTokenType.keyword, kw.token_type.?);
+    const num = classifyToken(.int_literal);
+    try std.testing.expectEqual(SemanticTokenType.number, num.token_type.?);
+    const str = classifyToken(.string_literal);
+    try std.testing.expectEqual(SemanticTokenType.string, str.token_type.?);
+    const ident = classifyToken(.identifier);
+    try std.testing.expect(ident.token_type == null);
 }
