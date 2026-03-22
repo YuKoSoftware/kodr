@@ -57,6 +57,8 @@ pub const TokenKind = enum {
     kw_align,
     kw_typename,
     kw_typeid,
+    kw_typeof,
+    kw_type,
 
     // Punctuation
     lparen,     // (
@@ -157,6 +159,8 @@ const KEYWORDS = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "align",    .kw_align },
     .{ "typename", .kw_typename },
     .{ "typeid",   .kw_typeid },
+    .{ "typeOf",   .kw_typeof },
+    .{ "type",     .kw_type },
 });
 
 /// The lexer state machine

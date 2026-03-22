@@ -173,19 +173,32 @@ pub const Resolver = struct {
         const file = std.fs.cwd().openFile(path, .{}) catch return null;
         defer file.close();
 
-        var buf: [256]u8 = undefined;
+        var buf: [512]u8 = undefined;
         const n = try file.read(&buf);
         const content = buf[0..n];
 
-        // Find "module " prefix
-        if (!std.mem.startsWith(u8, std.mem.trimLeft(u8, content, " \t"), MODULE_KEYWORD)) {
-            return null;
+        // Skip blank lines and comment lines to find "module " declaration
+        var pos: usize = 0;
+        while (pos < content.len) {
+            // Skip whitespace
+            while (pos < content.len and (content[pos] == ' ' or content[pos] == '\t')) pos += 1;
+            if (pos >= content.len) return null;
+            // Skip blank lines
+            if (content[pos] == '\n') { pos += 1; continue; }
+            if (content[pos] == '\r') { pos += 1; if (pos < content.len and content[pos] == '\n') pos += 1; continue; }
+            // Skip line comments
+            if (pos + 1 < content.len and content[pos] == '/' and content[pos + 1] == '/') {
+                while (pos < content.len and content[pos] != '\n') pos += 1;
+                continue;
+            }
+            break; // found a non-comment, non-blank line
         }
 
+        const rest = content[pos..];
+        if (!std.mem.startsWith(u8, rest, MODULE_KEYWORD)) return null;
+
         // Extract module name
-        var start: usize = 0;
-        while (start < content.len and (content[start] == ' ' or content[start] == '\t')) start += 1;
-        start += MODULE_KEYWORD.len; // skip "module "
+        const start = pos + MODULE_KEYWORD.len;
         var end = start;
         while (end < content.len and content[end] != '\n' and content[end] != '\r' and content[end] != ' ') end += 1;
 

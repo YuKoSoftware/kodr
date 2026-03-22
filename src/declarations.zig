@@ -411,6 +411,7 @@ test "declaration collector - struct" {
     fields[0] = field;
     struct_node.* = .{ .struct_decl = .{
         .name = "Point",
+        .type_params = &.{},
         .members = fields,
         .is_pub = false,
     }};

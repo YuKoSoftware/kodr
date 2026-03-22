@@ -250,8 +250,12 @@ fn printHelp() void {
 // Templates are embedded from src/templates/ at compile time.
 // Never put multi-line file content inline in .zig source — use @embedFile instead.
 const MAIN_ORH_TEMPLATE         = @embedFile("templates/main.orh");
-const EXAMPLE_ORH_TEMPLATE      = @embedFile("templates/example.orh");
-const CONTROL_FLOW_ORH_TEMPLATE = @embedFile("templates/control_flow.orh");
+
+// Example module — split across multiple files in templates/example/
+const EXAMPLE_ORH_TEMPLATE      = @embedFile("templates/example/example.orh");
+const CONTROL_FLOW_ORH_TEMPLATE = @embedFile("templates/example/control_flow.orh");
+const ERROR_HANDLING_TEMPLATE   = @embedFile("templates/example/error_handling.orh");
+const DATA_TYPES_TEMPLATE       = @embedFile("templates/example/data_types.orh");
 
 
 fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool) !void {
@@ -267,11 +271,15 @@ fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool) !
         }
     }
 
-    // Create project directory and src/ subdirectory
+    // Create project directory, src/ and src/example/ subdirectories
     const base = if (in_place) "." else name;
     const src_dir_path = try std.fs.path.join(allocator, &.{ base, "src" });
     defer allocator.free(src_dir_path);
     try std.fs.cwd().makePath(src_dir_path);
+
+    const example_dir_path = try std.fs.path.join(allocator, &.{ base, "src", "example" });
+    defer allocator.free(example_dir_path);
+    try std.fs.cwd().makePath(example_dir_path);
 
     // Write src/main.orh from template (skip if exists)
     // Template contains a single {s} placeholder for the project name.
@@ -295,35 +303,31 @@ fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool) !
         }
     }
 
-    // Write src/example.orh from template (skip if exists)
-    const example_orh_path = try std.fs.path.join(allocator, &.{ base, "src", "example.orh" });
-    defer allocator.free(example_orh_path);
+    // Write example module files into src/example/ (skip each if exists)
+    const example_files = .{
+        .{ "example.orh",        EXAMPLE_ORH_TEMPLATE },
+        .{ "control_flow.orh",   CONTROL_FLOW_ORH_TEMPLATE },
+        .{ "error_handling.orh", ERROR_HANDLING_TEMPLATE },
+        .{ "data_types.orh",     DATA_TYPES_TEMPLATE },
+    };
 
-    if (std.fs.cwd().access(example_orh_path, .{})) |_| {
-        // example.orh exists — don't overwrite
-    } else |_| {
-        const example_file = try std.fs.cwd().createFile(example_orh_path, .{});
-        defer example_file.close();
-        try example_file.writeAll(EXAMPLE_ORH_TEMPLATE);
-    }
+    inline for (example_files) |entry| {
+        const file_path = try std.fs.path.join(allocator, &.{ base, "src", "example", entry[0] });
+        defer allocator.free(file_path);
 
-    // Write src/control_flow.orh from template (skip if exists)
-    const control_flow_path = try std.fs.path.join(allocator, &.{ base, "src", "control_flow.orh" });
-    defer allocator.free(control_flow_path);
-
-    if (std.fs.cwd().access(control_flow_path, .{})) |_| {
-        // control_flow.orh exists — don't overwrite
-    } else |_| {
-        const control_flow_file = try std.fs.cwd().createFile(control_flow_path, .{});
-        defer control_flow_file.close();
-        try control_flow_file.writeAll(CONTROL_FLOW_ORH_TEMPLATE);
+        if (std.fs.cwd().access(file_path, .{})) |_| {
+            // file exists — don't overwrite
+        } else |_| {
+            const file = try std.fs.cwd().createFile(file_path, .{});
+            defer file.close();
+            try file.writeAll(entry[1]);
+        }
     }
 
     std.debug.print("Created project '{s}'\n", .{name});
     std.debug.print("  {s}/src/\n", .{base});
     std.debug.print("  {s}/src/main.orh\n", .{base});
-    std.debug.print("  {s}/src/example.orh\n", .{base});
-    std.debug.print("  {s}/src/control_flow.orh\n", .{base});
+    std.debug.print("  {s}/src/example/  (4 files — language manual)\n", .{base});
     if (!in_place) {
         std.debug.print("\nGet started:\n", .{});
         std.debug.print("  cd {s}\n", .{name});
@@ -356,6 +360,10 @@ const JSON_ORH    = @embedFile("std/json.orh");
 const JSON_ZIG    = @embedFile("std/json.zig");
 const SORT_ORH    = @embedFile("std/sort.orh");
 const SORT_ZIG    = @embedFile("std/sort.zig");
+const RANDOM_ORH  = @embedFile("std/random.orh");
+const RANDOM_ZIG  = @embedFile("std/random.zig");
+const ZIGLIB_ORH  = @embedFile("std/ziglib.orh");
+const ZIGLIB_ZIG  = @embedFile("std/ziglib.zig");
 
 /// Write an embedded file to .orh-cache/std/ if it doesn't already exist
 fn writeStdFile(dir: []const u8, name: []const u8, content: []const u8, allocator: std.mem.Allocator) !void {
@@ -392,6 +400,10 @@ fn ensureStdFiles(allocator: std.mem.Allocator) !void {
         .{ .name = "json.zig",    .content = JSON_ZIG },
         .{ .name = "sort.orh",    .content = SORT_ORH },
         .{ .name = "sort.zig",    .content = SORT_ZIG },
+        .{ .name = "random.orh",  .content = RANDOM_ORH },
+        .{ .name = "random.zig",  .content = RANDOM_ZIG },
+        .{ .name = "ziglib.orh",  .content = ZIGLIB_ORH },
+        .{ .name = "ziglib.zig",  .content = ZIGLIB_ZIG },
     };
 
     for (files) |f| {
@@ -761,6 +773,18 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         all_warnings.deinit(allocator);
     }
 
+    // Accumulate declaration tables across modules for cross-module default arg resolution
+    var all_module_decls = std.StringHashMap(*declarations.DeclTable).init(allocator);
+    defer all_module_decls.deinit();
+    var decl_collector_ptrs = std.ArrayListUnmanaged(*declarations.DeclCollector){};
+    defer {
+        for (decl_collector_ptrs.items) |dc| {
+            dc.deinit();
+            allocator.destroy(dc);
+        }
+        decl_collector_ptrs.deinit(allocator);
+    }
+
     // Process each module in dependency order
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
@@ -795,13 +819,15 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         const warn_start = reporter.warnings.items.len;
 
         // ── Pass 4: Declaration Collection ────────────────────
-        var decl_collector = declarations.DeclCollector.init(allocator, reporter);
-        defer decl_collector.deinit();
+        const decl_collector = try allocator.create(declarations.DeclCollector);
+        decl_collector.* = declarations.DeclCollector.init(allocator, reporter);
+        try decl_collector_ptrs.append(allocator, decl_collector);
         decl_collector.locs = locs_ptr;
         decl_collector.source_file = source_file;
 
         try decl_collector.collect(ast);
         if (reporter.hasErrors()) return null;
+        try all_module_decls.put(mod_name, &decl_collector.table);
 
         // ── Pass 5: Type Resolution ────────────────────────────
         var type_resolver = resolver.TypeResolver.init(allocator, &decl_collector.table, reporter);
@@ -898,6 +924,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         var cg = codegen.CodeGen.init(allocator, reporter, is_debug);
         defer cg.deinit();
         cg.decls = &decl_collector.table;
+        cg.all_decls = &all_module_decls;
         cg.locs = locs_ptr;
         cg.source_file = source_file;
         cg.module_builds = &module_builds;
@@ -1363,16 +1390,6 @@ fn emitInterfaceDecl(node: *parser.Node, buf: *std.ArrayListUnmanaged(u8), alloc
                     .const_decl => |v| {
                         if (!v.is_pub) continue;
                         try buf.appendSlice(alloc, "    pub const ");
-                        try buf.appendSlice(alloc, v.name);
-                        if (v.type_annotation) |t| {
-                            try buf.appendSlice(alloc, ": ");
-                            try formatType(t, buf, alloc);
-                        }
-                        try buf.append(alloc, '\n');
-                    },
-                    .var_decl => |v| {
-                        if (!v.is_pub) continue;
-                        try buf.appendSlice(alloc, "    pub var ");
                         try buf.appendSlice(alloc, v.name);
                         if (v.type_annotation) |t| {
                             try buf.appendSlice(alloc, ": ");

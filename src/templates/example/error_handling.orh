@@ -1,0 +1,66 @@
+module example
+
+// ─── Error Handling ──────────────────────────────────────────────────────────
+
+const ErrNotFound = Error("not found")
+
+func safe_divide(a: i32, b: i32) (Error | i32) {
+    if(b == 0) {
+        return Error("division by zero")
+    }
+    return a / b
+}
+
+func divide_or_default(a: i32, b: i32) i32 {
+    const result = safe_divide(a, b)
+    if(result is Error) {
+        return 0
+    }
+    return result.value
+}
+
+// ─── Null Handling ───────────────────────────────────────────────────────────
+
+func find_value(id: i32) (null | i32) {
+    if(id > 0) {
+        return id * 10
+    }
+    return null
+}
+
+func value_or_default(id: i32) i32 {
+    const result = find_value(id)
+    if(result is null) {
+        return 0
+    }
+    return result.value
+}
+
+// ─── Arbitrary Unions ────────────────────────────────────────────────────────
+
+func get_value(flag: bool) (i32 | String) {
+    if(flag) {
+        return 42
+    }
+    return "hello"
+}
+
+func arb_union_check(flag: bool) i32 {
+    const val = get_value(flag)
+    if(val is i32) {
+        return val.value
+    }
+    return 0
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+test "error handling" {
+    assert(divide_or_default(10, 2) == 5)
+    assert(divide_or_default(10, 0) == 0)
+}
+
+test "null handling" {
+    assert(value_or_default(5) == 50)
+    assert(value_or_default(0) == 0)
+}

@@ -33,6 +33,7 @@ for TEST_NAME in \
     break_continue abs compt_func struct_instantiation default_fields \
     default_override static_method mutable_method error_ok error_fail \
     null_some null_none null_inferred null_reassign enum_usage enum_method nested_scopes \
+    arithmetic comparisons logical bitwise defer greeting concat \
     tuple tuple_destruct slice_for for_index for_range while_continue \
     cast_int cast_float cast_float_to_int func_ptr func_ptr_var \
     fixed_array array_index slice_expr raw_ptr safe_ptr typeid_same \

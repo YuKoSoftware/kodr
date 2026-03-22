@@ -178,6 +178,7 @@ pub const FuncDecl = struct {
 
 pub const StructDecl = struct {
     name: []const u8,
+    type_params: []*Node, // generic params: (T: type, U: type)
     members: []*Node,
     is_pub: bool,
     is_extern: bool = false,
@@ -779,10 +780,52 @@ pub const Parser = struct {
     fn parseExternStructDecl(self: *Parser) anyerror!*Node {
         _ = self.advance(); // consume 'struct'
         const name_tok = try self.expect(.identifier);
-        try self.expectNewlineOrEof();
+
+        // Optional generic type params: extern struct Foo(T: type)
+        var type_params: std.ArrayListUnmanaged(*Node) = .{};
+        if (self.check(.lparen)) {
+            _ = self.advance();
+            self.skipNewlines();
+            if (!self.check(.rparen)) {
+                try type_params.append(self.alloc(), try self.parseParam());
+                while (self.check(.comma)) {
+                    _ = self.advance();
+                    self.skipNewlines();
+                    if (self.check(.rparen)) break;
+                    try type_params.append(self.alloc(), try self.parseParam());
+                }
+            }
+            _ = try self.expect(.rparen);
+        }
+
+        // No body — opaque extern struct
+        if (!self.check(.lbrace)) {
+            try self.expectNewlineOrEof();
+            return self.newNode(.{ .struct_decl = .{
+                .name = name_tok.text,
+                .type_params = try type_params.toOwnedSlice(self.alloc()),
+                .members = &.{},
+                .is_pub = true,
+                .is_extern = true,
+            }});
+        }
+
+        // Body with extern method declarations
+        _ = self.advance(); // consume {
+        self.skipNewlines();
+        var members: std.ArrayListUnmanaged(*Node) = .{};
+        while (!self.check(.rbrace) and !self.check(.eof)) {
+            self.skipNewlines();
+            if (self.check(.rbrace)) break;
+            try members.append(self.alloc(), try self.parseExternDecl());
+            self.skipNewlines();
+        }
+        _ = try self.expect(.rbrace);
+
         return self.newNode(.{ .struct_decl = .{
             .name = name_tok.text,
-            .members = &.{},
+            .type_params = try type_params.toOwnedSlice(self.alloc()),
+            .members = try members.toOwnedSlice(self.alloc()),
             .is_pub = true,
             .is_extern = true,
         }});
@@ -843,8 +886,8 @@ pub const Parser = struct {
 
         const ret_type = try self.parseType();
 
-        // extern func has no body — implementation is in paired .zig file
-        const body = if (is_extern) blk: {
+        // extern func or body-less declaration (interface files) — no body
+        const body = if (is_extern or !self.check(.lbrace)) blk: {
             try self.expectNewlineOrEof();
             const empty_block = try self.newNode(.{ .block = .{ .statements = &.{} } });
             break :blk empty_block;
@@ -921,6 +964,24 @@ pub const Parser = struct {
     fn parseStructDecl(self: *Parser, is_pub: bool) anyerror!*Node {
         _ = try self.expect(.kw_struct);
         const name_tok = try self.expect(.identifier);
+
+        // Optional generic type params: struct Foo(T: type, U: type)
+        var type_params: std.ArrayListUnmanaged(*Node) = .{};
+        if (self.check(.lparen)) {
+            _ = self.advance(); // consume (
+            self.skipNewlines();
+            if (!self.check(.rparen)) {
+                try type_params.append(self.alloc(), try self.parseParam());
+                while (self.check(.comma)) {
+                    _ = self.advance();
+                    self.skipNewlines();
+                    if (self.check(.rparen)) break;
+                    try type_params.append(self.alloc(), try self.parseParam());
+                }
+            }
+            _ = try self.expect(.rparen);
+        }
+
         _ = try self.expect(.lbrace);
         self.skipNewlines();
 
@@ -960,6 +1021,7 @@ pub const Parser = struct {
 
         return self.newNode(.{ .struct_decl = .{
             .name = name_tok.text,
+            .type_params = try type_params.toOwnedSlice(self.alloc()),
             .members = try members.toOwnedSlice(self.alloc()),
             .is_pub = is_pub,
         }});
@@ -1797,7 +1859,7 @@ pub const Parser = struct {
         switch (tok.kind) {
             // Compiler functions — reserved keywords, called like regular functions
             .kw_cast, .kw_copy, .kw_move, .kw_swap,
-            .kw_assert, .kw_size, .kw_align, .kw_typename, .kw_typeid => {
+            .kw_assert, .kw_size, .kw_align, .kw_typename, .kw_typeid, .kw_typeof => {
                 const func_tok = self.advance();
                 _ = try self.expect(.lparen);
                 var args: std.ArrayListUnmanaged(*Node) = .{};
@@ -2073,6 +2135,12 @@ pub const Parser = struct {
                 .params = try params.toOwnedSlice(self.alloc()),
                 .ret = ret,
             }});
+        }
+
+        // type — first-class type keyword
+        if (tok.kind == .kw_type) {
+            _ = self.advance();
+            return self.newNode(.{ .type_named = "type" });
         }
 
         // Named type or generic: Name or Name(T, U)

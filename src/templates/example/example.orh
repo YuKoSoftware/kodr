@@ -1,0 +1,162 @@
+module example
+
+// ─── Imports ─────────────────────────────────────────────────────────────────
+
+import std::console
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+// module-level declarations are const only — var lives inside functions
+
+const MAX_SIZE: i32 = 100
+const PI: f64 = 3.14159
+
+// numeric literal formats
+
+const DECIMAL: i32 = 1_000_000
+const HEX: u32 = 0xFF
+const BINARY: u8 = 0b1010
+const OCTAL: u8 = 0o77
+
+// compile-time function — entire body evaluated at compile time
+
+compt func double(n: i32) i32 {
+    return n * 2
+}
+
+// ─── Structs ─────────────────────────────────────────────────────────────────
+
+pub struct Point {
+    pub x: f64
+    pub y: f64
+}
+
+pub struct Player {
+    pub name: String
+    health: f32
+
+    pub func create(n: String) Player {
+        return Player(name: n, health: 100.0)
+    }
+
+    pub func is_alive(self: const &Player) bool {
+        return self.health > 0.0
+    }
+
+    pub func take_damage(self: &Player, amount: f32) void {
+        self.health = self.health - amount
+    }
+}
+
+func make_player() Player {
+    return Player(name: "hero", health: 100.0)
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+pub enum(u8) Direction {
+    North
+    South
+    East
+    West
+}
+
+func go_north() Direction {
+    const d: Direction = North
+    return d
+}
+
+// ─── Functions ───────────────────────────────────────────────────────────────
+
+func add(a: i32, b: i32) i32 {
+    return a + b
+}
+
+pub func multiply(a: i32, b: i32) i32 {
+    return a * b
+}
+
+func is_even(n: i32) bool {
+    return (n % 2) == 0
+}
+
+func greet_msg(name: String, greeting: String = "hello") String {
+    return greeting ++ " " ++ name
+}
+
+func fibonacci(n: i32) i32 {
+    if(n <= 1) {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+// ─── Operators ───────────────────────────────────────────────────────────────
+
+func arithmetic(a: i32, b: i32) i32 {
+    return (a + b) * (a - b) / (a % b)
+}
+
+func in_range(value: i32, low: i32, high: i32) bool {
+    return (value >= low) and (value <= high)
+}
+
+func is_valid(a: bool, b: bool) bool {
+    return (a and b) or (not a)
+}
+
+func bitwise_ops(a: i32, b: i32) i32 {
+    return (a & b) | (a ^ b)
+}
+
+func shift_ops(a: i32) i32 {
+    return (a << 2) >> 1
+}
+
+func greet(name: String) String {
+    return "Hello, " ++ name ++ "!"
+}
+
+// ─── Generic Structs ─────────────────────────────────────────────────────────
+
+// generic struct — type params resolved at compile time
+
+pub struct Pair(A: type, B: type) {
+    pub first: A
+    pub second: B
+}
+
+pub struct Box(T: type) {
+    pub value: T
+
+    pub func get(self: const &Box) T {
+        return self.value
+    }
+}
+
+// type-returning compt func — generates a new struct type at compile time
+
+compt func Wrapper(T: type) type {
+    return struct {
+        inner: T
+    }
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+test "add works" {
+    assert(add(2, 3) == 5)
+}
+
+test "fibonacci" {
+    assert(fibonacci(10) == 55)
+}
+
+test "struct methods" {
+    var p: Player = Player.create("test")
+    assert(p.is_alive())
+    p.take_damage(150.0)
+    assert(not p.is_alive())
+    p = Player.create("revived")
+    assert(p.is_alive())
+}

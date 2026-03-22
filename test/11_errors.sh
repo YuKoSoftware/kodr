@@ -385,6 +385,43 @@ NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "anchor"; then pass "rejects duplicate anchor files"
 else fail "rejects duplicate anchor files" "$NEG_OUT"; fi
 
+# mutable ref across bridge
+cd "$TESTDIR"
+mkdir -p neg_bridge_ref/src
+cat > neg_bridge_ref/src/main.orh <<'ORHON'
+module main
+#name    = "neg_bridge"
+#version = Version(1, 0, 0)
+#build   = exe
+extern func modify(data: &i32) void
+func main() void { }
+ORHON
+cat > neg_bridge_ref/src/main.zig <<'ZIG'
+pub fn modify(data: *i32) void { data.* = 0; }
+ZIG
+cd neg_bridge_ref
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "mutable reference.*not allowed.*bridge"; then pass "rejects mutable ref across bridge"
+else fail "rejects mutable ref across bridge" "$NEG_OUT"; fi
+
+# Version() outside metadata
+cd "$TESTDIR"
+mkdir -p neg_version/src
+cat > neg_version/src/main.orh <<'ORHON'
+module main
+#name    = "neg_version"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+func main() void {
+    const v = Version(2, 0, 0)
+}
+ORHON
+cd neg_version
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "Version.*metadata"; then pass "rejects Version() in function body"
+else fail "rejects Version() in function body" "$NEG_OUT"; fi
+
 # ── Fixture-based category tests ─────────────────────────────
 # Each fixture tests one compiler pass with multiple error cases.
 # Helper: run a fixture as a project and check for expected error

@@ -29,6 +29,7 @@ pub const BUILTIN_TYPES = [_][]const u8{
 pub const COMPILER_FUNCS = [_][]const u8{
     "typename",
     "typeid",
+    "typeOf",
     "cast",
     "copy",
     "move",

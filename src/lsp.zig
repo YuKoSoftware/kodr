@@ -161,7 +161,7 @@ fn buildInitializeResult(allocator: std.mem.Allocator, id: std.json.Value) ![]u8
     try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
     try writeJsonValue(&buf, allocator, id);
     try buf.appendSlice(allocator,
-        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]},"referencesProvider":true,"renameProvider":{"prepareProvider":false},"signatureHelpProvider":{"triggerCharacters":["(", ","]},"documentFormattingProvider":true,"workspaceSymbolProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true,"inlayHintProvider":true,"codeActionProvider":true},"serverInfo":{"name":"orhon-lsp","version":"0.3.13"}}}
+        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]},"referencesProvider":true,"renameProvider":{"prepareProvider":false},"signatureHelpProvider":{"triggerCharacters":["(", ","]},"documentFormattingProvider":true,"workspaceSymbolProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true,"inlayHintProvider":true,"codeActionProvider":true},"serverInfo":{"name":"orhon-lsp","version":"0.4.0"}}}
     );
 
     return allocator.dupe(u8, buf.items);
@@ -1204,6 +1204,8 @@ fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8 {
         .{ "align", "(builtin) alignment of a type" },
         .{ "typename", "(builtin) name of a type as String" },
         .{ "typeid", "(builtin) unique type identifier" },
+        .{ "typeOf", "(builtin) returns the type of a value as a first-class type" },
+        .{ "type", "(keyword) first-class type — use as parameter type or return type" },
     });
     if (keyword_info.get(name)) |info| {
         return allocator.dupe(u8, info) catch null;
@@ -3088,11 +3090,11 @@ fn classifyToken(kind: lexer.TokenKind) TokenClassification {
         .kw_break, .kw_continue, .kw_defer, .kw_thread, .kw_any,
         .kw_and, .kw_or, .kw_not, .kw_as, .kw_is, .kw_cast,
         .kw_copy, .kw_move, .kw_swap, .kw_true, .kw_false, .kw_null,
-        .kw_void, .kw_main,
+        .kw_void, .kw_main, .kw_type,
         => .{ .token_type = .keyword, .modifiers = 0 },
 
         // Builtin functions
-        .kw_assert, .kw_size, .kw_align, .kw_typename, .kw_typeid,
+        .kw_assert, .kw_size, .kw_align, .kw_typename, .kw_typeid, .kw_typeof,
         => .{ .token_type = .function, .modifiers = SemanticModifier.readonly },
 
         // Literals

@@ -12,34 +12,75 @@ cd "$TESTDIR"
 cd "$TESTDIR/gentest"
 "$ORHON" build >/dev/null 2>&1
 
-if grep -q "// generated from module main" .orh-cache/generated/main.zig; then
+MAIN_ZIG=".orh-cache/generated/main.zig"
+EXAMPLE_ZIG=".orh-cache/generated/example.zig"
+
+# ── Basic structure ───────────────────────────────────────────
+
+if grep -q "// generated from module main" "$MAIN_ZIG"; then
     pass "module header comment"
 else
     fail "module header comment"
 fi
 
-if grep -q 'const std = @import("std")' .orh-cache/generated/main.zig; then
+if grep -q 'const std = @import("std")' "$MAIN_ZIG"; then
     pass "imports std"
 else
     fail "imports std"
 fi
 
-if grep -q 'const console = @import("console.zig")' .orh-cache/generated/main.zig; then
+if grep -q 'const console = @import("console.zig")' "$MAIN_ZIG"; then
     pass "imports console"
 else
     fail "imports console"
 fi
 
-if grep -q "const Point" .orh-cache/generated/example.zig; then
+# ── Example module codegen ────────────────────────────────────
+
+if grep -q "const Point" "$EXAMPLE_ZIG"; then
     pass "struct definitions"
 else
     fail "struct definitions"
 fi
 
-if grep -q "fn add" .orh-cache/generated/example.zig; then
+if grep -q "fn add" "$EXAMPLE_ZIG"; then
     pass "function definitions"
 else
     fail "function definitions"
 fi
+
+# ── Specific codegen patterns ────────────────────────────────
+
+if grep -q "inline fn" "$EXAMPLE_ZIG"; then pass "compt func → inline fn"
+else fail "compt func → inline fn"; fi
+
+if grep -q "pub fn main" "$MAIN_ZIG"; then pass "main is pub"
+else fail "main is pub"; fi
+
+# ── Bare call discard ────────────────────────────────────────
+
+# Build a project with a bare call to a non-void function
+cd "$TESTDIR"
+mkdir -p discardtest/src
+cat > discardtest/src/main.orh <<'ORHON'
+module main
+#name    = "discardtest"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+import std::console
+func compute() i32 {
+    return 42
+}
+func main() void {
+    compute()
+    console.println("ok")
+}
+ORHON
+cd discardtest
+"$ORHON" build >/dev/null 2>&1
+
+if grep -q '_ = ' .orh-cache/generated/main.zig; then pass "bare call discards return value"
+else fail "bare call discards return value"; fi
 
 report_results

@@ -134,3 +134,61 @@ pub fn deleteDir(path: []const u8) FsResult(void) {
         return .{ .err = .{ .message = "cannot delete directory" } };
     return .{ .ok = {} };
 }
+
+// ── Path manipulation ───────────────────────────────────────
+
+pub fn basename(path: []const u8) []const u8 {
+    return std.fs.path.basename(path);
+}
+
+pub fn dirname(path: []const u8) []const u8 {
+    return std.fs.path.dirname(path) orelse "";
+}
+
+pub fn extension(path: []const u8) []const u8 {
+    return std.fs.path.extension(path);
+}
+
+pub fn stem(path: []const u8) []const u8 {
+    const base = std.fs.path.basename(path);
+    const ext = std.fs.path.extension(base);
+    if (ext.len > 0) return base[0 .. base.len - ext.len];
+    return base;
+}
+
+pub fn isAbsolute(path: []const u8) bool {
+    return std.fs.path.isAbsolute(path);
+}
+
+pub fn joinPath(parts: anytype) []const u8 {
+    const alloc = std.heap.smp_allocator;
+    return std.fs.path.join(alloc, &parts) catch @panic("fs.joinPath: out of memory");
+}
+
+pub fn normalize(path: []const u8) []const u8 {
+    // Zig doesn't have a direct normalize — use resolve with cwd context
+    // For a simple normalize, we strip redundant separators and resolve . and ..
+    const alloc = std.heap.smp_allocator;
+    // resolve() normalizes relative to CWD; for pure normalization we
+    // resolve against "." and strip the CWD prefix if the input was relative
+    if (std.fs.path.isAbsolute(path)) {
+        const parts: []const []const u8 = &.{path};
+        return std.fs.path.resolve(alloc, parts) catch return path;
+    }
+    // Relative path: resolve against "." then make relative again
+    const parts: []const []const u8 = &.{path};
+    const resolved = std.fs.path.resolve(alloc, parts) catch return path;
+    const cwd = std.fs.cwd().realpathAlloc(alloc, ".") catch return path;
+    defer alloc.free(cwd);
+    if (std.mem.startsWith(u8, resolved, cwd)) {
+        const rel = resolved[cwd.len..];
+        if (rel.len > 0 and rel[0] == '/') return rel[1..];
+        if (rel.len == 0) return ".";
+        return rel;
+    }
+    return resolved;
+}
+
+pub fn separator() []const u8 {
+    return std.fs.path.sep_str;
+}

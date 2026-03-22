@@ -383,7 +383,7 @@ pub func test_defaults_override() i32 {
 // ─── Struct methods ──────────────────────────────────────────
 
 pub func test_static_method() i32 {
-    var c: Counter = Counter.create(10)
+    const c: Counter = Counter.create(10)
     return c.get()
 }
 
@@ -675,13 +675,13 @@ pub func raw_ptr_read() i32 {
 }
 
 pub func raw_ptr_index() i32 {
-    var arr: [3]i32 = [1, 2, 3]
+    const arr: [3]i32 = [1, 2, 3]
     const raw: RawPtr(i32) = RawPtr(i32, &arr)
     return raw[1]
 }
 
 pub func safe_ptr_read() i32 {
-    var x: i32 = 77
+    const x: i32 = 77
     const p: Ptr(i32) = Ptr(i32, &x)
     return p.value
 }

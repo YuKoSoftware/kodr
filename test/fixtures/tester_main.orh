@@ -84,6 +84,50 @@ func main() void {
         console.println("FAIL default_param")
     }
 
+    if(tester.test_arithmetic(10, 5) == 0) {
+        console.println("PASS arithmetic")
+    } else {
+        console.println("FAIL arithmetic")
+    }
+
+    if(tester.test_comparisons(3, 5)) {
+        console.println("PASS comparisons")
+    } else {
+        console.println("FAIL comparisons")
+    }
+
+    if(tester.test_logical(true, false)) {
+        console.println("PASS logical")
+    } else {
+        console.println("FAIL logical")
+    }
+
+    if(tester.test_bitwise(6, 3) == 3) {
+        console.println("PASS bitwise")
+    } else {
+        console.println("FAIL bitwise")
+    }
+
+    if(tester.with_defer() == 99) {
+        console.println("PASS defer")
+    } else {
+        console.println("FAIL defer")
+    }
+
+    const greet_result: String = tester.greeting()
+    if(greet_result.contains("hello world")) {
+        console.println("PASS greeting")
+    } else {
+        console.println("FAIL greeting")
+    }
+
+    const concat_result: String = tester.concat_test()
+    if(concat_result.contains("foobar")) {
+        console.println("PASS concat")
+    } else {
+        console.println("FAIL concat")
+    }
+
     if(tester.make_internal() == 42) {
         console.println("PASS struct_instantiation")
     } else {

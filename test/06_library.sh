@@ -50,4 +50,44 @@ else fail "dynamic: generates interface file"; fi
 if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "dynamic: no memory leaks"
 else fail "dynamic: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')"; fi
 
+section "Interface file import"
+
+# Build a minimal library with a pub function
+cd "$TESTDIR"
+mkdir -p ifacelib/src
+cat > ifacelib/src/ifacelib.orh <<'ORHON'
+module ifacelib
+#name    = "ifacelib"
+#version = Version(1, 0, 0)
+#build   = static
+#bitsize = 32
+pub func add(a: i32, b: i32) i32 {
+    return a + b
+}
+ORHON
+cd ifacelib
+"$ORHON" build >/dev/null 2>&1
+
+if [ -f bin/ifacelib.orh ]; then pass "iface: library interface generated"
+else fail "iface: library interface generated"; fi
+
+# Verify the interface file can be parsed by another project
+cd "$TESTDIR"
+mkdir -p ifaceuser/src
+cat > ifaceuser/src/main.orh <<'ORHON'
+module main
+#name    = "ifaceuser"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+import ifacelib
+func main() void {
+}
+ORHON
+cp "$TESTDIR/ifacelib/bin/ifacelib.orh" ifaceuser/src/ifacelib.orh
+cd ifaceuser
+IFACE_OUT=$("$ORHON" build 2>&1)
+if echo "$IFACE_OUT" | grep -q "Built:"; then pass "iface: consumer project builds"
+else fail "iface: consumer project builds" "$IFACE_OUT"; fi
+
 report_results

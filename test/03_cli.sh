@@ -2,6 +2,8 @@
 # 03_cli.sh — CLI argument handling and help output
 source "$(dirname "$0")/helpers.sh"
 require_orhon
+setup_tmpdir
+trap cleanup_tmpdir EXIT
 
 section "CLI basics"
 

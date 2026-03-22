@@ -175,17 +175,59 @@ pub const TypeResolver = struct {
                 var func_scope = Scope.init(self.allocator, scope);
                 defer func_scope.deinit();
 
-                for (f.params) |param| {
-                    if (param.* == .param) {
-                        try self.validateType(param.param.type_annotation, &func_scope);
-                        const t = try types.resolveTypeNode(self.decls.typeAllocator(), param.param.type_annotation);
-                        try func_scope.define(param.param.name, t);
+                // Bridge safety: extern funcs cannot accept mutable refs (&T)
+                // Exception: self param on extern struct methods (Zig mutates its own data)
+                if (f.is_extern) {
+                    for (f.params) |param| {
+                        if (param.* == .param) {
+                            const ta = param.param.type_annotation;
+                            if (ta.* == .type_ptr and std.mem.eql(u8, ta.type_ptr.kind, K.Ptr.VAR_REF)) {
+                                // Allow self: &StructName on extern struct methods
+                                if (std.mem.eql(u8, param.param.name, "self")) continue;
+                                const msg = try std.fmt.allocPrint(self.allocator,
+                                    "mutable reference '&{s}' not allowed across bridge — use 'const &{s}' or pass by value",
+                                    .{ param.param.name, param.param.name });
+                                defer self.allocator.free(msg);
+                                try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                            }
+                        }
+                    }
+                    // Bridge safety: extern funcs cannot return mutable refs
+                    if (f.return_type.* == .type_ptr and
+                        std.mem.eql(u8, f.return_type.type_ptr.kind, K.Ptr.VAR_REF))
+                    {
+                        try self.reporter.report(.{
+                            .message = "mutable reference return not allowed across bridge — return by value or const &",
+                            .loc = self.nodeLoc(node),
+                        });
                     }
                 }
 
-                try self.validateType(f.return_type, scope);
+                var has_type_param = false;
+                for (f.params) |param| {
+                    if (param.* == .param) {
+                        const is_type_param = param.param.type_annotation.* == .type_named and
+                            std.mem.eql(u8, param.param.type_annotation.type_named, "type");
+                        if (is_type_param) {
+                            has_type_param = true;
+                            try func_scope.define(param.param.name, .{ .primitive = "type" });
+                        } else {
+                            try self.validateType(param.param.type_annotation, &func_scope);
+                            const t = try types.resolveTypeNode(self.decls.typeAllocator(), param.param.type_annotation);
+                            try func_scope.define(param.param.name, t);
+                        }
+                    }
+                }
+
+                // Validate return type in func_scope so type params (T: type) are visible
+                try self.validateType(f.return_type, &func_scope);
                 const prev_return = self.current_return_type;
-                self.current_return_type = try types.resolveTypeNode(self.decls.typeAllocator(), f.return_type);
+                // If function has type params, return type is generic — skip return type checking
+                if (has_type_param) {
+                    self.current_return_type = .inferred;
+                } else {
+                    self.current_return_type = try types.resolveTypeNode(self.decls.typeAllocator(), f.return_type);
+                }
                 defer self.current_return_type = prev_return;
 
                 try self.resolveNode(f.body, &func_scope);
@@ -193,6 +235,16 @@ pub const TypeResolver = struct {
             .struct_decl => |s| {
                 var struct_scope = Scope.init(self.allocator, scope);
                 defer struct_scope.deinit();
+                // Add type params to scope (T: type → T is a known type)
+                for (s.type_params) |param| {
+                    if (param.* == .param) {
+                        const is_tp = param.param.type_annotation.* == .type_named and
+                            std.mem.eql(u8, param.param.type_annotation.type_named, "type");
+                        if (is_tp) {
+                            try struct_scope.define(param.param.name, .{ .primitive = "type" });
+                        }
+                    }
+                }
                 for (s.members) |member| {
                     try self.resolveNode(member, &struct_scope);
                 }
@@ -562,6 +614,7 @@ pub const TypeResolver = struct {
                 if (std.mem.eql(u8, cf.name, "size") or std.mem.eql(u8, cf.name, "align")) return RT{ .primitive = "usize" };
                 if (std.mem.eql(u8, cf.name, "typeid")) return RT{ .primitive = "usize" };
                 if (std.mem.eql(u8, cf.name, "typename")) return RT{ .primitive = K.Type.STRING };
+                if (std.mem.eql(u8, cf.name, "typeOf")) return RT{ .primitive = K.Type.TYPE };
                 if (std.mem.eql(u8, cf.name, "assert")) return RT{ .primitive = "void" };
                 if (std.mem.eql(u8, cf.name, "swap")) return RT{ .primitive = "void" };
                 // cast(T, x) → returns T (first arg is the target type)
@@ -876,10 +929,24 @@ fn inferCaptureType(iterable: *parser.Node, iter_type: RT) RT {
 
 /// Check if two resolved types are compatible (same kind and name).
 /// Unions, error unions, and null unions are compatible with their inner types.
+fn isTypeParam(t: RT) bool {
+    // A type param is a .named type that isn't a known primitive and looks like a param name.
+    // Type params defined via T: type get stored as .primitive = "type" in scope,
+    // but field types referencing T resolve as .named = "T" since T isn't a declared struct.
+    if (t != .named) return false;
+    const n = t.named;
+    // Single uppercase letter or short uppercase name — likely a type param
+    if (n.len == 0) return false;
+    if (n[0] >= 'A' and n[0] <= 'Z' and n.len <= 4) return true;
+    return false;
+}
+
 fn typesCompatible(a: RT, b: RT) bool {
     const a_name = a.name();
     const b_name = b.name();
     if (a_name.len > 0 and b_name.len > 0 and std.mem.eql(u8, a_name, b_name)) return true;
+    // Unresolved type params are compatible with anything — resolved at compile time by Zig
+    if (isTypeParam(a) or isTypeParam(b)) return true;
     // Numeric literals are compatible with any integer type
     if (a == .primitive and std.mem.eql(u8, a.primitive, "numeric_literal") and
         b == .primitive and isIntegerType(b.primitive)) return true;

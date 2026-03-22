@@ -28,6 +28,29 @@ else
     pass "orhon test — no failures reported"
 fi
 
+# ── orhon test with failing test ──────────────────────────────
+
+cd "$TESTDIR"
+mkdir -p failtest/src
+cat > failtest/src/main.orh <<'ORHON'
+module main
+#name    = "failtest"
+#version = Version(1, 0, 0)
+#build   = exe
+#bitsize = 32
+func add(a: i32, b: i32) i32 {
+    return a + b
+}
+test "wrong" {
+    assert(add(2, 2) == 5)
+}
+func main() void { }
+ORHON
+cd failtest
+FAIL_OUT=$("$ORHON" test 2>&1 || true)
+if echo "$FAIL_OUT" | grep -qi "fail\|FAIL\|error"; then pass "orhon test — detects failure"
+else fail "orhon test — detects failure" "$FAIL_OUT"; fi
+
 # ── orhon build ───────────────────────────────────────────────
 
 section "orhon build"
@@ -59,6 +82,11 @@ fi
 BINOUT=$(./bin/buildproj 2>&1)
 if echo "$BINOUT" | grep -q "hello orhon"; then pass "binary runs"
 else fail "binary runs" "$BINOUT"; fi
+
+# Only the expected RawPtr warning from the example module — no other warnings
+WARN_COUNT=$(echo "$OUTPUT" | grep -c "WARNING" || true)
+if [ "$WARN_COUNT" -le 1 ]; then pass "no unexpected warnings"
+else fail "no unexpected warnings" "got $WARN_COUNT warnings"; fi
 
 
 # ── orhon run ─────────────────────────────────────────────────
