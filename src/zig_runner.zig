@@ -442,6 +442,11 @@ pub fn buildZigContent(
         \\        .target = target,
         \\        .optimize = optimize,
         \\    });
+        \\    const coll_mod = b.createModule(.{
+        \\        .root_source_file = b.path("_orhon_collections.zig"),
+        \\        .target = target,
+        \\        .optimize = optimize,
+        \\    });
         \\
     );
 
@@ -464,6 +469,7 @@ pub fn buildZigContent(
             \\    }});
             \\    exe.root_module.addImport("_orhon_rt", rt_mod);
             \\    exe.root_module.addImport("_orhon_str", str_mod);
+            \\    exe.root_module.addImport("_orhon_collections", coll_mod);
             \\    b.installArtifact(exe);
             \\
             \\    const run_cmd = b.addRunArtifact(exe);
@@ -487,6 +493,7 @@ pub fn buildZigContent(
             \\    }});
             \\    lib.root_module.addImport("_orhon_rt", rt_mod);
             \\    lib.root_module.addImport("_orhon_str", str_mod);
+            \\    lib.root_module.addImport("_orhon_collections", coll_mod);
             \\    b.installArtifact(lib);
             \\
         , .{ project_name, module_name });
@@ -505,6 +512,7 @@ pub fn buildZigContent(
             \\    }});
             \\    lib.root_module.addImport("_orhon_rt", rt_mod);
             \\    lib.root_module.addImport("_orhon_str", str_mod);
+            \\    lib.root_module.addImport("_orhon_collections", coll_mod);
             \\    b.installArtifact(lib);
             \\
         , .{ project_name, module_name });
@@ -523,6 +531,7 @@ pub fn buildZigContent(
         \\    }});
         \\    unit_tests.root_module.addImport("_orhon_rt", rt_mod);
         \\    unit_tests.root_module.addImport("_orhon_str", str_mod);
+        \\    unit_tests.root_module.addImport("_orhon_collections", coll_mod);
         \\    const run_tests = b.addRunArtifact(unit_tests);
         \\    const test_step = b.step("test", "Run tests");
         \\    test_step.dependOn(&run_tests.step);
@@ -576,6 +585,11 @@ pub fn buildZigContentMulti(
         \\        .target = target,
         \\        .optimize = optimize,
         \\    });
+        \\    const coll_mod = b.createModule(.{
+        \\        .root_source_file = b.path("_orhon_collections.zig"),
+        \\        .target = target,
+        \\        .optimize = optimize,
+        \\    });
         \\
     );
 
@@ -601,9 +615,10 @@ pub fn buildZigContentMulti(
             \\    }});
             \\    lib_{s}.root_module.addImport("_orhon_rt", rt_mod);
             \\    lib_{s}.root_module.addImport("_orhon_str", str_mod);
+            \\    lib_{s}.root_module.addImport("_orhon_collections", coll_mod);
             \\    b.installArtifact(lib_{s});
             \\
-        , .{ t.module_name, t.project_name, linkage, t.module_name, t.module_name, t.module_name, t.module_name });
+        , .{ t.module_name, t.project_name, linkage, t.module_name, t.module_name, t.module_name, t.module_name, t.module_name });
         defer allocator.free(lib_chunk);
         try buf.appendSlice(allocator, lib_chunk);
 
@@ -631,8 +646,9 @@ pub fn buildZigContentMulti(
             \\    }});
             \\    exe_{s}.root_module.addImport("_orhon_rt", rt_mod);
             \\    exe_{s}.root_module.addImport("_orhon_str", str_mod);
+            \\    exe_{s}.root_module.addImport("_orhon_collections", coll_mod);
             \\
-        , .{ t.module_name, t.project_name, ver_line, t.module_name, t.module_name, t.module_name });
+        , .{ t.module_name, t.project_name, ver_line, t.module_name, t.module_name, t.module_name, t.module_name });
         defer allocator.free(exe_chunk);
         try buf.appendSlice(allocator, exe_chunk);
 

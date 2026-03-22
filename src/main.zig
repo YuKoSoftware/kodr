@@ -344,6 +344,8 @@ fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool) !
 
 const RT_ORH = @embedFile("std/_rt.orh");
 const RT_ZIG = @embedFile("std/_rt.zig");
+const COLLECTIONS_ORH = @embedFile("std/collections.orh");
+const COLLECTIONS_ZIG = @embedFile("std/collections.zig");
 const ALLOCATOR_ORH = @embedFile("std/allocator.orh");
 const ALLOCATOR_ZIG = @embedFile("std/allocator.zig");
 const CONSOLE_ORH = @embedFile("std/console.orh");
@@ -388,6 +390,8 @@ fn ensureStdFiles(allocator: std.mem.Allocator) !void {
     const files = [_]struct { name: []const u8, content: []const u8 }{
         .{ .name = "_rt.orh",       .content = RT_ORH },
         .{ .name = "_rt.zig",       .content = RT_ZIG },
+        .{ .name = "collections.orh", .content = COLLECTIONS_ORH },
+        .{ .name = "collections.zig", .content = COLLECTIONS_ZIG },
         .{ .name = "allocator.orh", .content = ALLOCATOR_ORH },
         .{ .name = "allocator.zig", .content = ALLOCATOR_ZIG },
         .{ .name = "console.orh", .content = CONSOLE_ORH },
@@ -700,6 +704,11 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         const file = try std.fs.cwd().createFile(cache.GENERATED_DIR ++ "/_orhon_str.zig", .{});
         defer file.close();
         try file.writeAll(STR_ZIG);
+    }
+    {
+        const file = try std.fs.cwd().createFile(cache.GENERATED_DIR ++ "/_orhon_collections.zig", .{});
+        defer file.close();
+        try file.writeAll(COLLECTIONS_ZIG);
     }
 
     // ── Pass 3: Module Resolution ──────────────────────────────

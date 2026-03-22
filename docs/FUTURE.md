@@ -36,12 +36,12 @@ std.sort          // sorting — intAsc, intDesc, floatAsc, strAsc, reverse
 std.str           // string utilities — contains, replace, toUpper, parseInt, toString, etc.
 std.system        // OS — run, getEnv, cwd, exit
 std.time          // time — now, sleepMs, elapsed, format
+std.collections   // List(T), Map(K,V), Set(T) — generic collections via bridge
 std.ziglib        // bridge testbed — exercises all interop patterns
 ```
 
 ### Not started
 ```
-std.collections   // List, Map, Set — generic collection types (bridge)
 std.net           // raw sockets — TCP, UDP
 std.encoding      // base64, hex, UTF-8, UTF-16
 std.unicode       // full unicode support, normalization
@@ -85,11 +85,6 @@ Generate HTML/Markdown docs from `pub` declarations and doc comments.
 Use Zig's built-in `std.testing.fuzz` to fuzz the lexer and parser.
 
 ---
-
-## Pending Language Work
-
-### `for` loop over bridge types
-Solved by having bridge types expose `.items()` returning a slice. Standard `for` iteration works on slices. No codegen change needed — bridge modules implement the pattern.
 
 ## Future Language Features
 

@@ -13,6 +13,9 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "Version",
     "VersionRule",
     "Dependency",
+    "List",
+    "Map",
+    "Set",
 };
 
 /// Compiler function names (called as keywords, no prefix)
@@ -111,7 +114,9 @@ test "builtin type detection" {
     try std.testing.expect(isBuiltinType("Error"));
     try std.testing.expect(!isBuiltinType("Player"));
     try std.testing.expect(!isBuiltinType("i32"));
-    try std.testing.expect(!isBuiltinType("List"));
+    try std.testing.expect(isBuiltinType("List"));
+    try std.testing.expect(isBuiltinType("Map"));
+    try std.testing.expect(isBuiltinType("Set"));
 }
 
 test "compiler func detection" {

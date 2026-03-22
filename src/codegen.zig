@@ -156,6 +156,7 @@ pub const CodeGen = struct {
         try self.write("const std = @import(\"std\");\n");
         try self.write("const _rt = @import(\"_orhon_rt\");\n");
         try self.write("const _str = @import(\"_orhon_str\");\n");
+        try self.write("const _collections = @import(\"_orhon_collections\");\n");
 
         // Generate imports
         for (ast.program.imports) |imp| {
@@ -2382,10 +2383,16 @@ pub const CodeGen = struct {
                         break :blk try self.allocTypeStr("OrhonORing({s}, {s})", .{ inner, size_str });
                     }
                 }
+                // Collection types → _collections.Name(zigT, ...)
+                const is_collection = std.mem.eql(u8, g.name, "List") or
+                    std.mem.eql(u8, g.name, "Map") or
+                    std.mem.eql(u8, g.name, "Set");
+
                 // User-defined generic type — Name(T, U) → Name(zigT, zigU)
                 if (g.args.len > 0) {
                     var buf = std.ArrayListUnmanaged(u8){};
                     defer buf.deinit(self.allocator);
+                    if (is_collection) try buf.appendSlice(self.allocator, "_collections.");
                     try buf.appendSlice(self.allocator, g.name);
                     try buf.append(self.allocator, '(');
                     for (g.args, 0..) |arg, ai| {
