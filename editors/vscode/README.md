@@ -1,28 +1,28 @@
-# Kodr for VS Code
+# Orhon for VS Code
 
-Language support for [Kodr](https://github.com/YuKoSoftware/kodr) — a compiled, memory-safe programming language that transpiles to Zig.
+Language support for [Orhon](https://github.com/YuKoSoftware/orhon) — a compiled, memory-safe programming language that transpiles to Zig.
 
 ## Features
 
-- Syntax highlighting for `.kodr` files
+- Syntax highlighting for `.orh` files
 - Real-time diagnostics via the built-in language server
 - Error and warning squiggles as you code
 
 ## Requirements
 
-Install the `kodr` compiler and ensure it's on your `PATH`:
+Install the `orhon` compiler and ensure it's on your `PATH`:
 
 ```bash
-kodr addtopath
+orhon addtopath
 ```
 
 ## Usage
 
-Open any `.kodr` file. The extension automatically starts the language server and shows diagnostics on save.
+Open any `.orh` file. The extension automatically starts the language server and shows diagnostics on save.
 
 ## Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `kodr.lsp.enabled` | `true` | Enable the language server |
-| `kodr.lsp.path` | `"kodr"` | Path to the kodr binary |
+| `orhon.lsp.enabled` | `true` | Enable the language server |
+| `orhon.lsp.path` | `"orhon"` | Path to the orhon binary |

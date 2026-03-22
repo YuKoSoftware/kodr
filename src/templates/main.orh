@@ -8,5 +8,5 @@ module main
 import std::console
 
 func main() void {
-    console.println("hello kodr !")
+    console.println("hello orhon !")
 }

@@ -1,15 +1,15 @@
-// system.zig — OS/system operations implementation for Kodr's std::system
-// Hand-written implementation. Paired with system.kodr.
-// Do not edit the generated system.zig in .kodr-cache/generated/ —
+// system.zig — OS/system operations implementation for Orhon's std::system
+// Hand-written implementation. Paired with system.orh.
+// Do not edit the generated system.zig in .orh-cache/generated/ —
 // edit this source file — embedded into the compiler at build time.
 
 const std = @import("std");
 
-fn KodrNullable(comptime T: type) type {
+fn OrhonNullable(comptime T: type) type {
     return union(enum) { some: T, none: void };
 }
 
-pub fn getEnv(key: []const u8) KodrNullable([]const u8) {
+pub fn getEnv(key: []const u8) OrhonNullable([]const u8) {
     const val = std.process.getEnvVarOwned(std.heap.smp_allocator, key) catch {
         return .{ .none = {} };
     };

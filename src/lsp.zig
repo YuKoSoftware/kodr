@@ -1,4 +1,4 @@
-// lsp.zig — Kodr Language Server Protocol
+// lsp.zig — Orhon Language Server Protocol
 // JSON-RPC over stdio. Runs analysis passes 1–9, publishes diagnostics,
 // and provides hover, go-to-definition, document symbols, and completion.
 
@@ -147,7 +147,7 @@ fn buildInitializeResult(allocator: std.mem.Allocator, id: std.json.Value) ![]u8
     try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
     try writeJsonValue(&buf, allocator, id);
     try buf.appendSlice(allocator,
-        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]}},"serverInfo":{"name":"kodr-lsp","version":"0.3.0"}}}
+        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]}},"serverInfo":{"name":"orhon-lsp","version":"0.3.0"}}}
     );
 
     return allocator.dupe(u8, buf.items);
@@ -196,7 +196,7 @@ fn buildDiagnosticsMsg(allocator: std.mem.Allocator, uri: []const u8, diags: []c
         try appendInt(&buf, allocator, d.col + 1);
         try buf.appendSlice(allocator, "}},\"severity\":");
         try appendInt(&buf, allocator, d.severity);
-        try buf.appendSlice(allocator, ",\"source\":\"kodr\",\"message\":\"");
+        try buf.appendSlice(allocator, ",\"source\":\"orhon\",\"message\":\"");
         try appendJsonString(&buf, allocator, d.message);
         try buf.appendSlice(allocator, "\"}");
     }
@@ -407,9 +407,15 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
     var empty = AnalysisResult{ .diagnostics = &.{}, .symbols = &.{} };
 
     const saved_cwd = std.fs.cwd();
-    var proj_dir = std.fs.cwd().openDir(project_root, .{}) catch return empty;
+    var proj_dir = std.fs.cwd().openDir(project_root, .{}) catch {
+        log("analysis: failed to open project dir '{s}'", .{project_root});
+        return empty;
+    };
     defer proj_dir.close();
-    proj_dir.setAsCwd() catch return empty;
+    proj_dir.setAsCwd() catch {
+        log("analysis: failed to setAsCwd", .{});
+        return empty;
+    };
     defer saved_cwd.setAsCwd() catch {};
 
     // Ensure std files exist
@@ -421,24 +427,31 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
     var mod_resolver = module.Resolver.init(allocator, &reporter);
     defer mod_resolver.deinit();
 
-    std.fs.cwd().access("src", .{}) catch return empty;
+    std.fs.cwd().access("src", .{}) catch {
+        log("analysis: no 'src' directory in '{s}'", .{project_root});
+        return empty;
+    };
     mod_resolver.scanDirectory("src") catch {
+        log("analysis: scanDirectory failed", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     };
     if (reporter.hasErrors()) {
+        log("analysis: errors after scan", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     }
 
     mod_resolver.checkCircularImports() catch {};
     if (reporter.hasErrors()) {
+        log("analysis: circular import errors", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     }
 
     mod_resolver.parseModules(allocator) catch {};
     if (reporter.hasErrors()) {
+        log("analysis: parse errors", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     }
@@ -453,6 +466,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         if (has_unparsed) {
             mod_resolver.parseModules(allocator) catch {};
             if (reporter.hasErrors()) {
+                log("analysis: std parse errors", .{});
                 empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
                 return empty;
             }
@@ -461,17 +475,20 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
 
     mod_resolver.scanAndParseDeps(allocator, "src") catch {};
     if (reporter.hasErrors()) {
+        log("analysis: dep scan errors", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     }
 
     mod_resolver.validateImports(&reporter) catch {};
     if (reporter.hasErrors()) {
+        log("analysis: import validation errors", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     }
 
     const order = mod_resolver.topologicalOrder(allocator) catch {
+        log("analysis: topological order failed", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     };
@@ -479,6 +496,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
 
     // Collect symbols from all modules
     var all_symbols: std.ArrayListUnmanaged(SymbolInfo) = .{};
+    log("analysis: processing {d} modules", .{order.len});
 
     // Passes 4–9 per module
     for (order) |mod_name| {
@@ -728,7 +746,7 @@ fn toDiagnostics(allocator: std.mem.Allocator, reporter: *errors.Reporter, proje
     return if (diags.items.len > 0) allocator.dupe(Diagnostic, diags.items) else &.{};
 }
 
-fn makeDiag(allocator: std.mem.Allocator, err: errors.KodrError, severity: u8, project_root: []const u8) !Diagnostic {
+fn makeDiag(allocator: std.mem.Allocator, err: errors.OrhonError, severity: u8, project_root: []const u8) !Diagnostic {
     const loc = err.loc orelse return error.NoLoc;
     if (loc.file.len == 0) return error.NoLoc;
 
@@ -756,7 +774,7 @@ fn buildHoverResponse(allocator: std.mem.Allocator, id: std.json.Value, detail: 
 
     try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
     try writeJsonValue(&buf, allocator, id);
-    try buf.appendSlice(allocator, ",\"result\":{\"contents\":{\"kind\":\"markdown\",\"value\":\"```kodr\\n");
+    try buf.appendSlice(allocator, ",\"result\":{\"contents\":{\"kind\":\"markdown\",\"value\":\"```orhon\\n");
     try appendJsonString(&buf, allocator, detail);
     try buf.appendSlice(allocator, "\\n```\"}}}");
 
@@ -912,6 +930,18 @@ fn findSymbolByName(symbols: []const SymbolInfo, name: []const u8) ?SymbolInfo {
     return null;
 }
 
+fn findVisibleSymbolByName(symbols: []const SymbolInfo, name: []const u8, current_module: ?[]const u8, imports: ?[]const []const u8) ?SymbolInfo {
+    // Prefer top-level symbols from visible modules
+    for (symbols) |s| {
+        if (std.mem.eql(u8, s.name, name) and s.parent.len == 0 and isVisibleModule(s.module, current_module, imports)) return s;
+    }
+    // Fallback: any symbol with this name from visible modules
+    for (symbols) |s| {
+        if (std.mem.eql(u8, s.name, name) and isVisibleModule(s.module, current_module, imports)) return s;
+    }
+    return null;
+}
+
 /// Find a symbol by name within a specific module or parent context
 fn findSymbolInContext(symbols: []const SymbolInfo, name: []const u8, context: []const u8) ?SymbolInfo {
     // Check if it's a module function (e.g. console.println → module=console, name=println)
@@ -926,6 +956,21 @@ fn findSymbolInContext(symbols: []const SymbolInfo, name: []const u8, context: [
 }
 
 /// Check if a name is a known module in the symbol cache
+fn isOnModuleLine(source: []const u8, line_0: usize) bool {
+    var cur_line: usize = 0;
+    var i: usize = 0;
+    while (i < source.len) : (i += 1) {
+        if (cur_line == line_0) {
+            // Skip leading whitespace
+            while (i < source.len and source[i] == ' ') : (i += 1) {}
+            const rest = source[i..];
+            return std.mem.startsWith(u8, rest, "module ");
+        }
+        if (source[i] == '\n') cur_line += 1;
+    }
+    return false;
+}
+
 fn isModuleName(symbols: []const SymbolInfo, name: []const u8) bool {
     for (symbols) |s| {
         if (std.mem.eql(u8, s.module, name)) return true;
@@ -969,13 +1014,13 @@ fn log(comptime fmt: []const u8, args: anytype) void {
     var buf: [4096]u8 = undefined;
     var w = std.fs.File.stderr().writer(&buf);
     const stderr = &w.interface;
-    stderr.print("[kodr-lsp] " ++ fmt ++ "\n", args) catch {};
+    stderr.print("[orhon-lsp] " ++ fmt ++ "\n", args) catch {};
     stderr.flush() catch {};
 
     // Format into a stack buffer, then append to log file
     var log_buf: [4096]u8 = undefined;
-    const msg = std.fmt.bufPrint(&log_buf, "[kodr-lsp] " ++ fmt ++ "\n", args) catch return;
-    const log_path = "/tmp/kodr-lsp.log";
+    const msg = std.fmt.bufPrint(&log_buf, "[orhon-lsp] " ++ fmt ++ "\n", args) catch return;
+    const log_path = "/tmp/orhon-lsp.log";
     const file = std.fs.cwd().openFile(log_path, .{ .mode = .write_only }) catch
         std.fs.cwd().createFile(log_path, .{}) catch return;
     defer file.close();
@@ -1252,15 +1297,28 @@ fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.
         log("hover: '{s}' at {d}:{d} ({d} symbols cached)", .{ word, line_0, col_0, symbols.len });
     }
 
+    // Determine which modules are visible in this file
+    const current_module = getModuleName(source);
+    const imports = getImportedModules(source, allocator);
+    defer if (imports) |imps| allocator.free(imps);
+
+    // 0. If cursor is on a "module <name>" line, show module info
+    if (isOnModuleLine(source, line_0)) {
+        const detail = try std.fmt.allocPrint(allocator, "(module) {s}", .{word});
+        defer allocator.free(detail);
+        return buildHoverResponse(allocator, id, detail);
+    }
+
     // 1. Context-aware lookup (module.func or struct.field)
     if (dot_ctx) |ctx| {
         if (findSymbolInContext(symbols, word, ctx)) |sym| {
-            return buildHoverResponse(allocator, id, sym.detail);
+            if (isVisibleModule(sym.module, current_module, imports))
+                return buildHoverResponse(allocator, id, sym.detail);
         }
     }
 
-    // 2. Check project symbols by name
-    if (findSymbolByName(symbols, word)) |sym| {
+    // 2. Check project symbols by name (only from visible modules)
+    if (findVisibleSymbolByName(symbols, word, current_module, imports)) |sym| {
         return buildHoverResponse(allocator, id, sym.detail);
     }
 
@@ -1298,14 +1356,20 @@ fn handleDefinition(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     const dot_ctx = getDotContext(source, line_0, col_0);
     log("definition: '{s}' ({d} symbols)", .{ word, symbols.len });
 
+    // Determine which modules are visible in this file
+    const current_module = getModuleName(source);
+    const imports = getImportedModules(source, allocator);
+    defer if (imports) |imps| allocator.free(imps);
+
     // Context-aware lookup first
     if (dot_ctx) |ctx| {
         if (findSymbolInContext(symbols, word, ctx)) |sym| {
-            return buildDefinitionResponse(allocator, id, sym.uri, sym.line, sym.col);
+            if (isVisibleModule(sym.module, current_module, imports))
+                return buildDefinitionResponse(allocator, id, sym.uri, sym.line, sym.col);
         }
     }
 
-    const sym = findSymbolByName(symbols, word) orelse return buildEmptyResponse(allocator, id);
+    const sym = findVisibleSymbolByName(symbols, word, current_module, imports) orelse return buildEmptyResponse(allocator, id);
     return buildDefinitionResponse(allocator, id, sym.uri, sym.line, sym.col);
 }
 
@@ -1353,6 +1417,11 @@ fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     const prefix = getLinePrefix(source, line_0, col_0);
     log("completion: prefix='{s}'", .{prefix});
 
+    // Determine which modules are visible in this file
+    const current_module = getModuleName(source);
+    const imports = getImportedModules(source, allocator);
+    defer if (imports) |imps| allocator.free(imps);
+
     // Check if we're after a dot — offer struct fields or module functions
     if (getDotPrefix(prefix)) |obj_name| {
         log("completion: dot context, object='{s}'", .{obj_name});
@@ -1360,7 +1429,7 @@ fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     }
 
     // General completion: keywords + symbols + types
-    return buildGeneralCompletionResponse(allocator, id, symbols);
+    return buildGeneralCompletionResponse(allocator, id, symbols, current_module, imports);
 }
 
 fn getLinePrefix(source: []const u8, line_0: usize, col_0: usize) []const u8 {
@@ -1400,6 +1469,71 @@ fn getDotPrefix(prefix: []const u8) ?[]const u8 {
         if (!isIdentChar(prefix[i - 1])) return null;
     }
     return null;
+}
+
+/// Extract "module <name>" from source, return the name or null.
+fn getModuleName(source: []const u8) ?[]const u8 {
+    var i: usize = 0;
+    while (i < source.len) {
+        // Skip whitespace
+        while (i < source.len and (source[i] == ' ' or source[i] == '\t')) : (i += 1) {}
+        if (i + 7 <= source.len and std.mem.eql(u8, source[i .. i + 7], "module ")) {
+            var start = i + 7;
+            while (start < source.len and source[start] == ' ') : (start += 1) {}
+            var end = start;
+            while (end < source.len and isIdentChar(source[end])) : (end += 1) {}
+            if (end > start) return source[start..end];
+        }
+        // Skip to next line
+        while (i < source.len and source[i] != '\n') : (i += 1) {}
+        if (i < source.len) i += 1;
+    }
+    return null;
+}
+
+/// Extract imported module names from "import std::console" → "console", "import mymod" → "mymod".
+fn getImportedModules(source: []const u8, allocator: std.mem.Allocator) ?[]const []const u8 {
+    var list: std.ArrayListUnmanaged([]const u8) = .{};
+    var i: usize = 0;
+    while (i < source.len) {
+        // Skip whitespace
+        while (i < source.len and (source[i] == ' ' or source[i] == '\t')) : (i += 1) {}
+        if (i + 7 <= source.len and std.mem.eql(u8, source[i .. i + 7], "import ")) {
+            var start = i + 7;
+            while (start < source.len and source[start] == ' ') : (start += 1) {}
+            var end = start;
+            while (end < source.len and (isIdentChar(source[end]) or source[end] == ':')) : (end += 1) {}
+            if (end > start) {
+                // Get the last segment: "std::console" → "console"
+                const full = source[start..end];
+                const name = if (std.mem.lastIndexOf(u8, full, "::")) |sep|
+                    full[sep + 2 ..]
+                else
+                    full;
+                if (name.len > 0) list.append(allocator, name) catch {};
+            }
+        }
+        // Skip to next line
+        while (i < source.len and source[i] != '\n') : (i += 1) {}
+        if (i < source.len) i += 1;
+    }
+    if (list.items.len == 0) {
+        list.deinit(allocator);
+        return null;
+    }
+    return list.items;
+}
+
+fn isVisibleModule(mod: []const u8, current_module: ?[]const u8, imports: ?[]const []const u8) bool {
+    if (current_module) |cm| {
+        if (std.mem.eql(u8, mod, cm)) return true;
+    }
+    if (imports) |imps| {
+        for (imps) |imp| {
+            if (std.mem.eql(u8, mod, imp)) return true;
+        }
+    }
+    return false;
 }
 
 fn buildDotCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, symbols: []const SymbolInfo, obj_name: []const u8) ![]u8 {
@@ -1445,7 +1579,7 @@ fn buildDotCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, 
     return allocator.dupe(u8, buf.items);
 }
 
-fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
+fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, symbols: []const SymbolInfo, current_module: ?[]const u8, imports: ?[]const []const u8) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
 
@@ -1488,8 +1622,9 @@ fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Val
         try appendCompletionItem(&buf, allocator, bt, "builtin type", .type_);
     }
 
-    // Project symbols
+    // Project symbols (only from current module + imported modules)
     for (symbols) |s| {
+        if (!isVisibleModule(s.module, current_module, imports)) continue;
         if (!first) try buf.append(allocator, ',');
         first = false;
         const kind: CompletionItemKind = switch (s.kind) {
@@ -1523,8 +1658,8 @@ fn appendCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.All
 // ============================================================
 
 test "uriToPath converts file URI" {
-    const path = uriToPath("file:///home/user/project/src/main.kodr");
-    try std.testing.expectEqualStrings("/home/user/project/src/main.kodr", path.?);
+    const path = uriToPath("file:///home/user/project/src/main.orh");
+    try std.testing.expectEqualStrings("/home/user/project/src/main.orh", path.?);
 }
 
 test "uriToPath returns null for non-file URI" {
@@ -1532,7 +1667,7 @@ test "uriToPath returns null for non-file URI" {
 }
 
 test "findProjectRoot detects src directory" {
-    const root = findProjectRoot("/home/user/project/src/main.kodr");
+    const root = findProjectRoot("/home/user/project/src/main.orh");
     try std.testing.expectEqualStrings("/home/user/project", root.?);
 }
 

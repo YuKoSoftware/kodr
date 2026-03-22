@@ -1,4 +1,4 @@
-// main.zig — Kodr compiler entry point
+// main.zig — Orhon compiler entry point
 // CLI argument parsing and pipeline orchestration.
 // No business logic here — delegates to each pass.
 
@@ -34,6 +34,7 @@ const Command = enum {
     version,
     fmt,
     lsp,
+    which,
     help,
 };
 
@@ -87,7 +88,7 @@ const CliArgs = struct {
     verbose: bool,        // -verbose flag (show Zig compiler output)
     source_dir: []const u8,
     project_name: []const u8, // for init command
-    init_in_place: bool, // kodr init (no name) — init in current dir
+    init_in_place: bool, // orhon init (no name) — init in current dir
     allocator: std.mem.Allocator, // owns duped strings
 
     pub fn deinit(self: *const CliArgs) void {
@@ -151,6 +152,8 @@ fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         cli.command = .version;
     } else if (std.mem.eql(u8, cmd_str, "lsp")) {
         cli.command = .lsp;
+    } else if (std.mem.eql(u8, cmd_str, "which")) {
+        cli.command = .which;
     } else if (std.mem.eql(u8, cmd_str, "help") or std.mem.eql(u8, cmd_str, "--help")) {
         cli.command = .help;
     } else {
@@ -193,7 +196,7 @@ fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
 
 fn printUsage() void {
     const usage =
-        \\kodr — The Kodr compiler  (kodr help for more info)
+        \\orhon — The Orhon compiler  (orhon help for more info)
         \\
         \\  build   run   test   fmt   init   lsp   addtopath   debug   version
         \\
@@ -203,20 +206,20 @@ fn printUsage() void {
 
 fn printHelp() void {
     const help =
-        \\kodr — The Kodr programming language compiler
+        \\orhon — The Orhon programming language compiler
         \\
         \\Commands:
         \\  build               Compile the project in the current directory
         \\  run                 Build and immediately execute the binary
         \\  test                Run all test { } blocks in the project
         \\  init [name]         Create a new project (in ./<name>/ or current dir if no name)
-        \\  fmt                 Format all .kodr files in the project
+        \\  fmt                 Format all .orh files in the project
         \\  lsp                 Start the language server (for editor integration)
-        \\  addtopath           Add kodr to your shell PATH
+        \\  addtopath           Add orhon to your shell PATH
         \\  debug               Show project info — modules, files, source directory
         \\  version             Print the compiler version
         \\
-        \\Targets (combinable — e.g. kodr build -linux_x64 -win_x64):
+        \\Targets (combinable — e.g. orhon build -linux_x64 -win_x64):
         \\  -linux_x64          Linux x86-64
         \\  -linux_arm          Linux ARM64
         \\  -win_x64            Windows x86-64
@@ -246,9 +249,9 @@ fn printHelp() void {
 
 // Templates are embedded from src/templates/ at compile time.
 // Never put multi-line file content inline in .zig source — use @embedFile instead.
-const MAIN_KODR_TEMPLATE         = @embedFile("templates/main.kodr");
-const EXAMPLE_KODR_TEMPLATE      = @embedFile("templates/example.kodr");
-const CONTROL_FLOW_KODR_TEMPLATE = @embedFile("templates/control_flow.kodr");
+const MAIN_ORH_TEMPLATE         = @embedFile("templates/main.orh");
+const EXAMPLE_ORH_TEMPLATE      = @embedFile("templates/example.orh");
+const CONTROL_FLOW_ORH_TEMPLATE = @embedFile("templates/control_flow.orh");
 
 
 fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool) !void {
@@ -270,91 +273,91 @@ fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool) !
     defer allocator.free(src_dir_path);
     try std.fs.cwd().makePath(src_dir_path);
 
-    // Write src/main.kodr from template (skip if exists)
+    // Write src/main.orh from template (skip if exists)
     // Template contains a single {s} placeholder for the project name.
     // Split on it and write in two parts — avoids allocPrint brace escaping issues.
-    const main_kodr_path = try std.fs.path.join(allocator, &.{ base, "src", "main.kodr" });
-    defer allocator.free(main_kodr_path);
+    const main_orh_path = try std.fs.path.join(allocator, &.{ base, "src", "main.orh" });
+    defer allocator.free(main_orh_path);
 
-    if (std.fs.cwd().access(main_kodr_path, .{})) |_| {
-        // main.kodr exists — don't overwrite
+    if (std.fs.cwd().access(main_orh_path, .{})) |_| {
+        // main.orh exists — don't overwrite
     } else |_| {
-        const main_file = try std.fs.cwd().createFile(main_kodr_path, .{});
+        const main_file = try std.fs.cwd().createFile(main_orh_path, .{});
         defer main_file.close();
 
         const placeholder = "{s}";
-        if (std.mem.indexOf(u8, MAIN_KODR_TEMPLATE, placeholder)) |pos| {
-            try main_file.writeAll(MAIN_KODR_TEMPLATE[0..pos]);
+        if (std.mem.indexOf(u8, MAIN_ORH_TEMPLATE, placeholder)) |pos| {
+            try main_file.writeAll(MAIN_ORH_TEMPLATE[0..pos]);
             try main_file.writeAll(name);
-            try main_file.writeAll(MAIN_KODR_TEMPLATE[pos + placeholder.len..]);
+            try main_file.writeAll(MAIN_ORH_TEMPLATE[pos + placeholder.len..]);
         } else {
-            try main_file.writeAll(MAIN_KODR_TEMPLATE);
+            try main_file.writeAll(MAIN_ORH_TEMPLATE);
         }
     }
 
-    // Write src/example.kodr from template (skip if exists)
-    const example_kodr_path = try std.fs.path.join(allocator, &.{ base, "src", "example.kodr" });
-    defer allocator.free(example_kodr_path);
+    // Write src/example.orh from template (skip if exists)
+    const example_orh_path = try std.fs.path.join(allocator, &.{ base, "src", "example.orh" });
+    defer allocator.free(example_orh_path);
 
-    if (std.fs.cwd().access(example_kodr_path, .{})) |_| {
-        // example.kodr exists — don't overwrite
+    if (std.fs.cwd().access(example_orh_path, .{})) |_| {
+        // example.orh exists — don't overwrite
     } else |_| {
-        const example_file = try std.fs.cwd().createFile(example_kodr_path, .{});
+        const example_file = try std.fs.cwd().createFile(example_orh_path, .{});
         defer example_file.close();
-        try example_file.writeAll(EXAMPLE_KODR_TEMPLATE);
+        try example_file.writeAll(EXAMPLE_ORH_TEMPLATE);
     }
 
-    // Write src/control_flow.kodr from template (skip if exists)
-    const control_flow_path = try std.fs.path.join(allocator, &.{ base, "src", "control_flow.kodr" });
+    // Write src/control_flow.orh from template (skip if exists)
+    const control_flow_path = try std.fs.path.join(allocator, &.{ base, "src", "control_flow.orh" });
     defer allocator.free(control_flow_path);
 
     if (std.fs.cwd().access(control_flow_path, .{})) |_| {
-        // control_flow.kodr exists — don't overwrite
+        // control_flow.orh exists — don't overwrite
     } else |_| {
         const control_flow_file = try std.fs.cwd().createFile(control_flow_path, .{});
         defer control_flow_file.close();
-        try control_flow_file.writeAll(CONTROL_FLOW_KODR_TEMPLATE);
+        try control_flow_file.writeAll(CONTROL_FLOW_ORH_TEMPLATE);
     }
 
     std.debug.print("Created project '{s}'\n", .{name});
     std.debug.print("  {s}/src/\n", .{base});
-    std.debug.print("  {s}/src/main.kodr\n", .{base});
-    std.debug.print("  {s}/src/example.kodr\n", .{base});
-    std.debug.print("  {s}/src/control_flow.kodr\n", .{base});
+    std.debug.print("  {s}/src/main.orh\n", .{base});
+    std.debug.print("  {s}/src/example.orh\n", .{base});
+    std.debug.print("  {s}/src/control_flow.orh\n", .{base});
     if (!in_place) {
         std.debug.print("\nGet started:\n", .{});
         std.debug.print("  cd {s}\n", .{name});
     } else {
         std.debug.print("\nGet started:\n", .{});
     }
-    std.debug.print("  kodr build\n", .{});
-    std.debug.print("  kodr run\n", .{});
+    std.debug.print("  orhon build\n", .{});
+    std.debug.print("  orhon run\n", .{});
 }
 
 // ============================================================
 // STD INIT
 // ============================================================
 
-const CONSOLE_KODR = @embedFile("std/console.kodr");
-const CONSOLE_ZIG  = @embedFile("std/console.zig");
-const FS_KODR      = @embedFile("std/fs.kodr");
-const FS_ZIG       = @embedFile("std/fs.zig");
-const MATH_KODR    = @embedFile("std/math.kodr");
-const MATH_ZIG     = @embedFile("std/math.zig");
-const MEM_KODR     = @embedFile("std/mem.kodr");
-const MEM_ZIG      = @embedFile("std/mem.zig");
-const STR_KODR     = @embedFile("std/str.kodr");
-const STR_ZIG      = @embedFile("std/str.zig");
-const SYSTEM_KODR  = @embedFile("std/system.kodr");
-const SYSTEM_ZIG   = @embedFile("std/system.zig");
-const TIME_KODR    = @embedFile("std/time.kodr");
-const TIME_ZIG     = @embedFile("std/time.zig");
-const JSON_KODR    = @embedFile("std/json.kodr");
-const JSON_ZIG     = @embedFile("std/json.zig");
-const SORT_KODR    = @embedFile("std/sort.kodr");
-const SORT_ZIG     = @embedFile("std/sort.zig");
+const CONSOLE_ORH = @embedFile("std/console.orh");
+const CONSOLE_ZIG = @embedFile("std/console.zig");
+const FS_ORH      = @embedFile("std/fs.orh");
+const FS_ZIG      = @embedFile("std/fs.zig");
+const MATH_ORH    = @embedFile("std/math.orh");
+const MATH_ZIG    = @embedFile("std/math.zig");
+const MEM_ORH     = @embedFile("std/mem.orh");
+const MEM_ZIG     = @embedFile("std/mem.zig");
+const STR_ORH     = @embedFile("std/str.orh");
+const STR_ZIG     = @embedFile("std/str.zig");
+const SYSTEM_ORH  = @embedFile("std/system.orh");
+const SYSTEM_ZIG  = @embedFile("std/system.zig");
+const TIME_ORH    = @embedFile("std/time.orh");
+const TIME_ZIG    = @embedFile("std/time.zig");
+const JSON_ORH    = @embedFile("std/json.orh");
+const JSON_ZIG    = @embedFile("std/json.zig");
+const SORT_ORH    = @embedFile("std/sort.orh");
+const SORT_ZIG    = @embedFile("std/sort.zig");
 
-/// Write an embedded file to .kodr-cache/std/ if it doesn't already exist
+/// Write an embedded file to .orh-cache/std/ if it doesn't already exist
 fn writeStdFile(dir: []const u8, name: []const u8, content: []const u8, allocator: std.mem.Allocator) !void {
     const path = try std.fs.path.join(allocator, &.{ dir, name });
     defer allocator.free(path);
@@ -365,30 +368,30 @@ fn writeStdFile(dir: []const u8, name: []const u8, content: []const u8, allocato
     };
 }
 
-/// Ensure all embedded std files exist in .kodr-cache/std/
+/// Ensure all embedded std files exist in .orh-cache/std/
 fn ensureStdFiles(allocator: std.mem.Allocator) !void {
     const std_dir = cache.CACHE_DIR ++ "/std";
     try std.fs.cwd().makePath(std_dir);
 
     const files = [_]struct { name: []const u8, content: []const u8 }{
-        .{ .name = "console.kodr", .content = CONSOLE_KODR },
-        .{ .name = "console.zig",  .content = CONSOLE_ZIG },
-        .{ .name = "fs.kodr",      .content = FS_KODR },
-        .{ .name = "fs.zig",       .content = FS_ZIG },
-        .{ .name = "math.kodr",    .content = MATH_KODR },
-        .{ .name = "math.zig",     .content = MATH_ZIG },
-        .{ .name = "mem.kodr",     .content = MEM_KODR },
-        .{ .name = "mem.zig",      .content = MEM_ZIG },
-        .{ .name = "str.kodr",     .content = STR_KODR },
-        .{ .name = "str.zig",      .content = STR_ZIG },
-        .{ .name = "system.kodr",  .content = SYSTEM_KODR },
-        .{ .name = "system.zig",   .content = SYSTEM_ZIG },
-        .{ .name = "time.kodr",    .content = TIME_KODR },
-        .{ .name = "time.zig",     .content = TIME_ZIG },
-        .{ .name = "json.kodr",    .content = JSON_KODR },
-        .{ .name = "json.zig",     .content = JSON_ZIG },
-        .{ .name = "sort.kodr",    .content = SORT_KODR },
-        .{ .name = "sort.zig",     .content = SORT_ZIG },
+        .{ .name = "console.orh", .content = CONSOLE_ORH },
+        .{ .name = "console.zig", .content = CONSOLE_ZIG },
+        .{ .name = "fs.orh",      .content = FS_ORH },
+        .{ .name = "fs.zig",      .content = FS_ZIG },
+        .{ .name = "math.orh",    .content = MATH_ORH },
+        .{ .name = "math.zig",    .content = MATH_ZIG },
+        .{ .name = "mem.orh",     .content = MEM_ORH },
+        .{ .name = "mem.zig",     .content = MEM_ZIG },
+        .{ .name = "str.orh",     .content = STR_ORH },
+        .{ .name = "str.zig",     .content = STR_ZIG },
+        .{ .name = "system.orh",  .content = SYSTEM_ORH },
+        .{ .name = "system.zig",  .content = SYSTEM_ZIG },
+        .{ .name = "time.orh",    .content = TIME_ORH },
+        .{ .name = "time.zig",    .content = TIME_ZIG },
+        .{ .name = "json.orh",    .content = JSON_ORH },
+        .{ .name = "json.zig",    .content = JSON_ZIG },
+        .{ .name = "sort.orh",    .content = SORT_ORH },
+        .{ .name = "sort.zig",    .content = SORT_ZIG },
     };
 
     for (files) |f| {
@@ -403,7 +406,7 @@ fn ensureStdFiles(allocator: std.mem.Allocator) !void {
 // ============================================================
 
 fn addToPath(allocator: std.mem.Allocator) !void {
-    // Get the directory containing the kodr binary
+    // Get the directory containing the orhon binary
     var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
     const exe_path = try std.fs.selfExePath(&exe_buf);
     const exe_dir = std.fs.path.dirname(exe_path) orelse ".";
@@ -413,7 +416,7 @@ fn addToPath(allocator: std.mem.Allocator) !void {
     defer if (path_env.len > 0) allocator.free(path_env);
 
     if (std.mem.indexOf(u8, path_env, exe_dir) != null) {
-        std.debug.print("kodr is already in PATH ({s})\n", .{exe_dir});
+        std.debug.print("orhon is already in PATH ({s})\n", .{exe_dir});
         return;
     }
 
@@ -439,13 +442,13 @@ fn addToPath(allocator: std.mem.Allocator) !void {
 
     // The line to append
     const export_line = try std.fmt.allocPrint(allocator,
-        "\n# kodr compiler\nexport PATH=\"$PATH:{s}\"\n",
+        "\n# orhon compiler\nexport PATH=\"$PATH:{s}\"\n",
         .{exe_dir});
     defer allocator.free(export_line);
 
     // Fish uses a different syntax
     const fish_line = try std.fmt.allocPrint(allocator,
-        "\n# kodr compiler\nfish_add_path {s}\n",
+        "\n# orhon compiler\nfish_add_path {s}\n",
         .{exe_dir});
     defer allocator.free(fish_line);
 
@@ -461,14 +464,14 @@ fn addToPath(allocator: std.mem.Allocator) !void {
         try std.fs.cwd().makePath(fish_config_dir);
     }
 
-    // Read existing profile to check for a previous kodr entry
+    // Read existing profile to check for a previous orhon entry
     const existing = std.fs.cwd().readFileAlloc(allocator, profile_path, 1024 * 1024) catch "";
     defer if (existing.len > 0) allocator.free(existing);
 
-    const marker = "# kodr compiler";
+    const marker = "# orhon compiler";
 
     if (std.mem.indexOf(u8, existing, marker)) |start| {
-        // Find the end of the kodr block (marker line + export/path line)
+        // Find the end of the orhon block (marker line + export/path line)
         // Look for the next newline after the export line
         const after_marker = start + marker.len;
         // Skip the marker line's newline
@@ -492,7 +495,7 @@ fn addToPath(allocator: std.mem.Allocator) !void {
         try file.writeAll(line_to_write);
         try file.writeAll(existing[end..]);
 
-        std.debug.print("Updated kodr PATH in {s} (replaced old entry)\n", .{profile_path});
+        std.debug.print("Updated orhon PATH in {s} (replaced old entry)\n", .{profile_path});
     } else {
         // No existing entry — append
         const file = try std.fs.cwd().createFile(profile_path, .{ .truncate = false, .exclusive = false });
@@ -500,7 +503,7 @@ fn addToPath(allocator: std.mem.Allocator) !void {
         try file.seekFromEnd(0);
         try file.writeAll(line_to_write);
 
-        std.debug.print("Added kodr to PATH in {s}\n", .{profile_path});
+        std.debug.print("Added orhon to PATH in {s}\n", .{profile_path});
     }
     std.debug.print("Run: source {s}\n", .{profile_path});
     std.debug.print("  or open a new terminal\n", .{});
@@ -525,7 +528,7 @@ pub fn main() !void {
 
     if (cli.command == .addtopath) {
         addToPath(allocator) catch |err| {
-            std.debug.print("error: failed to add kodr to PATH: {}\n", .{err});
+            std.debug.print("error: failed to add orhon to PATH: {}\n", .{err});
             std.process.exit(1);
         };
         return;
@@ -543,6 +546,22 @@ pub fn main() !void {
         return;
     }
 
+    if (cli.command == .which) {
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const path = std.fs.selfExePath(&buf) catch {
+            std.debug.print("error: could not resolve executable path\n", .{});
+            std.process.exit(1);
+        };
+        const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+        var buf2: [4096]u8 = undefined;
+        var w = stdout_file.writer(&buf2);
+        const writer = &w.interface;
+        writer.writeAll(path) catch {};
+        writer.writeAll("\n") catch {};
+        writer.flush() catch {};
+        return;
+    }
+
     if (cli.command == .debug) {
         try runDebug(allocator, &cli);
         return;
@@ -554,7 +573,7 @@ pub fn main() !void {
     }
 
     if (cli.command == .version) {
-        std.debug.print("kodr {s}\n", .{build_options.version});
+        std.debug.print("orhon {s}\n", .{build_options.version});
         return;
     }
 
@@ -583,7 +602,7 @@ pub fn main() !void {
     }
     defer allocator.free(binary_name.?);
 
-    // kodr run — execute the built binary
+    // orhon run — execute the built binary
     if (cli.command == .run) {
         const bin_path = try std.fmt.allocPrint(allocator, "bin/{s}", .{binary_name.?});
         defer allocator.free(bin_path);
@@ -600,7 +619,7 @@ fn runDebug(allocator: std.mem.Allocator, cli: *const CliArgs) !void {
     var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
     const exe_path = std.fs.selfExePath(&exe_buf) catch "<unknown>";
 
-    std.debug.print("=== kodr debug ===\n", .{});
+    std.debug.print("=== orhon debug ===\n", .{});
     std.debug.print("  binary:     {s}\n", .{exe_path});
     std.debug.print("  source_dir: {s}\n", .{cli.source_dir});
 
@@ -613,11 +632,11 @@ fn runDebug(allocator: std.mem.Allocator, cli: *const CliArgs) !void {
 
     if (!dir_exists) {
         std.debug.print("ERROR: source directory '{s}' not found.\n", .{cli.source_dir});
-        std.debug.print("  Run `kodr build` from inside a kodr project directory.\n", .{});
+        std.debug.print("  Run `orhon build` from inside an orhon project directory.\n", .{});
         return;
     }
 
-    // Scan and report every .kodr file found
+    // Scan and report every .orh file found
     var reporter = errors.Reporter.init(allocator, .debug);
     defer reporter.deinit();
 
@@ -639,7 +658,7 @@ fn runDebug(allocator: std.mem.Allocator, cli: *const CliArgs) !void {
     }
 
     if (mod_resolver.modules.count() == 0) {
-        std.debug.print("  (no .kodr files found in '{s}')\n", .{cli.source_dir});
+        std.debug.print("  (no .orh files found in '{s}')\n", .{cli.source_dir});
     }
 
     std.debug.print("\n", .{});
@@ -647,7 +666,7 @@ fn runDebug(allocator: std.mem.Allocator, cli: *const CliArgs) !void {
 
 fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Reporter) !?[]const u8 {
 
-    // Ensure embedded std files exist in .kodr-cache/std/
+    // Ensure embedded std files exist in .orh-cache/std/
     try ensureStdFiles(allocator);
 
     // ── Pass 3: Module Resolution ──────────────────────────────
@@ -657,8 +676,8 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
     // Check source dir exists before scanning — give a clear error if not
     std.fs.cwd().access(cli.source_dir, .{}) catch {
         std.debug.print("error: source directory '{s}' not found\n", .{cli.source_dir});
-        std.debug.print("  run `kodr build` from inside a kodr project directory\n", .{});
-        std.debug.print("  expected: {s}/main.kodr\n", .{cli.source_dir});
+        std.debug.print("  run `orhon build` from inside an orhon project directory\n", .{});
+        std.debug.print("  expected: {s}/main.orh\n", .{cli.source_dir});
         return null;
     };
 
@@ -836,7 +855,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
 
         // ── Extern Sidecar Validation ──────────────────────────
         // If the module has extern func declarations, a paired .zig sidecar
-        // must exist next to the anchor .kodr file.
+        // must exist next to the anchor .orh file.
         if (collectExternFuncNames(ast, allocator)) |extern_names| {
             defer {
                 for (extern_names) |n| allocator.free(n);
@@ -986,7 +1005,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         lib_import_lists.deinit(allocator);
     }
 
-    var exe_binary_name: ?[]const u8 = null; // tracked for `kodr run`
+    var exe_binary_name: ?[]const u8 = null; // tracked for `orhon run`
 
     {
         var mod_it = mod_resolver.modules.iterator();
@@ -1157,7 +1176,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         }
     }
 
-    // Return exe name for `kodr run`; empty string signals lib-only success
+    // Return exe name for `orhon run`; empty string signals lib-only success
     return exe_binary_name orelse try allocator.dupe(u8, "");
 }
 
@@ -1203,11 +1222,11 @@ fn collectExternFuncNames(ast: *parser.Node, allocator: std.mem.Allocator) ![][]
 // ============================================================
 //
 // When a module is compiled as static or dynamic, emit a pub-only
-// `.kodr` file into bin/ so consumers can type-check against the API.
-// The interface file is valid Kodr — it has the module declaration,
+// `.orh` file into bin/ so consumers can type-check against the API.
+// The interface file is valid Orhon — it has the module declaration,
 // version, and all pub signatures, but no bodies or private members.
 
-/// Write a type node as Kodr source syntax into a buffer
+/// Write a type node as Orhon source syntax into a buffer
 fn formatType(node: *parser.Node, buf: *std.ArrayListUnmanaged(u8), alloc: std.mem.Allocator) anyerror!void {
     switch (node.*) {
         .type_primitive => |s| try buf.appendSlice(alloc, s),
@@ -1431,9 +1450,9 @@ fn emitInterfaceDecl(node: *parser.Node, buf: *std.ArrayListUnmanaged(u8), alloc
     }
 }
 
-/// Generate a pub-only interface `.kodr` file into `bin/<binary_name>.kodr`.
+/// Generate a pub-only interface `.orh` file into `bin/<binary_name>.orh`.
 /// Called after a successful static or dynamic library build.
-/// Copy the generated Zig project from .kodr-cache/generated/ to bin/zig/
+/// Copy the generated Zig project from .orh-cache/generated/ to bin/zig/
 fn emitZigProject(allocator: std.mem.Allocator) !void {
     const dst_dir = "bin/zig";
     try std.fs.cwd().makePath(dst_dir);
@@ -1490,7 +1509,7 @@ fn generateInterface(
     defer buf.deinit(alloc);
 
     // Header comment + module declaration
-    try buf.appendSlice(alloc, "// Kodr interface file — generated by kodr, do not edit\n\n");
+    try buf.appendSlice(alloc, "// Orhon interface file — generated by orhon, do not edit\n\n");
     try buf.appendSlice(alloc, "module ");
     try buf.appendSlice(alloc, mod_name);
     try buf.appendSlice(alloc, "\n\n");
@@ -1510,9 +1529,9 @@ fn generateInterface(
         try emitInterfaceDecl(node, &buf, alloc);
     }
 
-    // Write to bin/<binary_name>.kodr
+    // Write to bin/<binary_name>.orh
     try std.fs.cwd().makePath("bin");
-    const path = try std.fmt.allocPrint(alloc, "bin/{s}.kodr", .{binary_name});
+    const path = try std.fmt.allocPrint(alloc, "bin/{s}.orh", .{binary_name});
     defer alloc.free(path);
     const file = try std.fs.cwd().createFile(path, .{});
     defer file.close();

@@ -1,4 +1,4 @@
-# Kodr — Compiler Internals
+# Orhon — Compiler Internals
 
 ---
 
@@ -7,7 +7,7 @@
 Each pass runs only if the previous succeeded. Multiple errors per pass are collected before stopping.
 
 ```
-Source (.kodr)
+Source (.orh)
     ↓
 1.  Lexer           — raw text → tokens
     ↓
@@ -42,7 +42,7 @@ Source (.kodr)
 ```
 
 ### Incremental compilation
-Checked at step 3. Unchanged modules with unchanged dependencies skip passes 4-12, reusing cached `.zig` files. Cache stored in `.kodr-cache/`.
+Checked at step 3. Unchanged modules with unchanged dependencies skip passes 4-12, reusing cached `.zig` files. Cache stored in `.orh-cache/`.
 
 ---
 
@@ -51,7 +51,7 @@ Checked at step 3. Unchanged modules with unchanged dependencies skip passes 4-1
 Zig 0.15.2 is the single backend. Generated Zig code is readable and debuggable. `compt` maps to Zig's comptime. Cross-compilation, linking, and optimization are all handled by Zig.
 
 ### Zig discovery
-1. Same directory as kodr binary (portable)
+1. Same directory as orhon binary (portable)
 2. Global PATH (system installed)
 
 ---
@@ -80,5 +80,5 @@ src/
     builtins.zig            // shared — builtin types
     constants.zig           // shared — constants
     cache.zig               // shared — incremental cache
-    formatter.zig           // kodr fmt
+    formatter.zig           // orhon fmt
 ```

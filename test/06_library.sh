@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 # 06_library.sh — Static and dynamic library builds
 source "$(dirname "$0")/helpers.sh"
-require_kodr
+require_orhon
 setup_tmpdir
 trap cleanup_tmpdir EXIT
 
 section "Static library"
 
 cd "$TESTDIR"
-"$KODR" init testlib >/dev/null 2>&1
+"$ORHON" init testlib >/dev/null 2>&1
 cd "$TESTDIR/testlib"
 
-sed -i 's/#build   = exe/#build   = static/' src/main.kodr
+sed -i 's/#build   = exe/#build   = static/' src/main.orh
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built: bin/libtestlib.a"; then pass "static: reports success"
 else fail "static: reports success" "$OUTPUT"; fi
 
 if [ -f bin/libtestlib.a ]; then pass "static: produces .a archive"
 else fail "static: produces .a archive"; fi
 
-if [ -f bin/testlib.kodr ]; then pass "static: generates interface file"
+if [ -f bin/testlib.orh ]; then pass "static: generates interface file"
 else fail "static: generates interface file"; fi
 
-if head -1 bin/testlib.kodr | grep -q "// Kodr interface file"; then pass "static: interface has header comment"
+if head -1 bin/testlib.orh | grep -q "// Orhon interface file"; then pass "static: interface has header comment"
 else fail "static: interface has header comment"; fi
 
-if grep -q "^module " bin/testlib.kodr; then pass "static: interface has module declaration"
+if grep -q "^module " bin/testlib.orh; then pass "static: interface has module declaration"
 else fail "static: interface has module declaration"; fi
 
 if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "static: no memory leaks"
@@ -34,17 +34,17 @@ else fail "static: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')"; fi
 
 section "Dynamic library"
 
-sed -i 's/#build   = static/#build   = dynamic/' src/main.kodr
-rm -rf .kodr-cache bin
+sed -i 's/#build   = static/#build   = dynamic/' src/main.orh
+rm -rf .orh-cache bin
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built: bin/libtestlib.so"; then pass "dynamic: reports success"
 else fail "dynamic: reports success" "$OUTPUT"; fi
 
 if [ -f bin/libtestlib.so ]; then pass "dynamic: produces .so library"
 else fail "dynamic: produces .so library"; fi
 
-if [ -f bin/testlib.kodr ]; then pass "dynamic: generates interface file"
+if [ -f bin/testlib.orh ]; then pass "dynamic: generates interface file"
 else fail "dynamic: generates interface file"; fi
 
 if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "dynamic: no memory leaks"

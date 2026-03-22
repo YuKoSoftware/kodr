@@ -1,4 +1,4 @@
-// formatter.zig — Kodr source code formatter
+// formatter.zig — Orhon source code formatter
 // One canonical style, no configuration.
 //
 // Rules:
@@ -14,7 +14,7 @@
 
 const std = @import("std");
 
-/// Format all .kodr files in a project directory (recursive).
+/// Format all .orh files in a project directory (recursive).
 pub fn formatProject(allocator: std.mem.Allocator, source_dir: []const u8) !void {
     var dir = std.fs.cwd().openDir(source_dir, .{ .iterate = true }) catch |err| {
         std.debug.print("error: could not open '{s}': {}\n", .{ source_dir, err });
@@ -34,7 +34,7 @@ fn formatDirRecursive(allocator: std.mem.Allocator, dir: *std.fs.Dir, dir_path: 
             var sub_dir = try dir.openDir(entry.name, .{ .iterate = true });
             defer sub_dir.close();
             try formatDirRecursive(allocator, &sub_dir, sub_path);
-        } else if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".kodr")) {
+        } else if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".orh")) {
             const file_path = try std.fs.path.join(allocator, &.{ dir_path, entry.name });
             defer allocator.free(file_path);
             try formatFile(allocator, file_path);
@@ -42,7 +42,7 @@ fn formatDirRecursive(allocator: std.mem.Allocator, dir: *std.fs.Dir, dir_path: 
     }
 }
 
-/// Format a single .kodr file in place.
+/// Format a single .orh file in place.
 fn formatFile(allocator: std.mem.Allocator, path: []const u8) !void {
     const content = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| {
         std.debug.print("  skip {s}: {}\n", .{ path, err });
@@ -64,7 +64,7 @@ fn formatFile(allocator: std.mem.Allocator, path: []const u8) !void {
     std.debug.print("  formatted {s}\n", .{path});
 }
 
-/// Format Kodr source code according to the canonical style.
+/// Format Orhon source code according to the canonical style.
 pub fn format(allocator: std.mem.Allocator, source: []const u8) ![]u8 {
     var output = std.ArrayListUnmanaged(u8){};
     errdefer output.deinit(allocator);

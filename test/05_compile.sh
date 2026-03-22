@@ -1,41 +1,41 @@
 #!/usr/bin/env bash
-# 05_compile.sh — kodr build, run, test, incremental compilation
+# 05_compile.sh — orhon build, run, test, incremental compilation
 source "$(dirname "$0")/helpers.sh"
-require_kodr
+require_orhon
 setup_tmpdir
 trap cleanup_tmpdir EXIT
 
-# ── kodr test command ────────────────────────────────────────
+# ── orhon test command ────────────────────────────────────────
 
-section "kodr test command"
+section "orhon test command"
 
 cd "$TESTDIR"
-mkdir -p kodrtest/src
-cp "$FIXTURES/tester_main.kodr" kodrtest/src/main.kodr
-cp "$FIXTURES/tester.kodr" kodrtest/src/tester.kodr
-cd "$TESTDIR/kodrtest"
+mkdir -p orhontest/src
+cp "$FIXTURES/tester_main.orh" orhontest/src/main.orh
+cp "$FIXTURES/tester.orh" orhontest/src/tester.orh
+cd "$TESTDIR/orhontest"
 
-TEST_OUT=$("$KODR" test 2>&1)
+TEST_OUT=$("$ORHON" test 2>&1)
 if echo "$TEST_OUT" | grep -q "all tests passed"; then
-    pass "kodr test — all tests pass"
+    pass "orhon test — all tests pass"
 else
-    fail "kodr test — all tests pass" "$TEST_OUT"
+    fail "orhon test — all tests pass" "$TEST_OUT"
 fi
 
 if echo "$TEST_OUT" | grep -q "FAIL"; then
-    fail "kodr test — no failures reported"
+    fail "orhon test — no failures reported"
 else
-    pass "kodr test — no failures reported"
+    pass "orhon test — no failures reported"
 fi
 
-# ── kodr build ───────────────────────────────────────────────
+# ── orhon build ───────────────────────────────────────────────
 
-section "kodr build"
+section "orhon build"
 
 cd "$TESTDIR"
-"$KODR" init buildproj >/dev/null 2>&1
+"$ORHON" init buildproj >/dev/null 2>&1
 cd "$TESTDIR/buildproj"
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 
 if echo "$OUTPUT" | grep -q "Built: bin/buildproj"; then pass "reports success"
 else fail "reports success" "$OUTPUT"; fi
@@ -43,44 +43,44 @@ else fail "reports success" "$OUTPUT"; fi
 if [ -x bin/buildproj ]; then pass "produces executable"
 else fail "produces executable"; fi
 
-if [ -f .kodr-cache/generated/main.zig ]; then pass "generates main.zig"
+if [ -f .orh-cache/generated/main.zig ]; then pass "generates main.zig"
 else fail "generates main.zig"; fi
 
-if [ -f .kodr-cache/generated/example.zig ]; then pass "generates example.zig"
+if [ -f .orh-cache/generated/example.zig ]; then pass "generates example.zig"
 else fail "generates example.zig"; fi
 
-if grep -q "pub fn print" .kodr-cache/generated/console_extern.zig && \
-   grep -q "console_extern.zig" .kodr-cache/generated/console.zig; then
+if grep -q "pub fn print" .orh-cache/generated/console_extern.zig && \
+   grep -q "console_extern.zig" .orh-cache/generated/console.zig; then
     pass "sidecar preserved"
 else
     fail "sidecar preserved"
 fi
 
 BINOUT=$(./bin/buildproj 2>&1)
-if echo "$BINOUT" | grep -q "hello kodr"; then pass "binary runs"
+if echo "$BINOUT" | grep -q "hello orhon"; then pass "binary runs"
 else fail "binary runs" "$BINOUT"; fi
 
 
-# ── kodr run ─────────────────────────────────────────────────
+# ── orhon run ─────────────────────────────────────────────────
 
-section "kodr run"
+section "orhon run"
 
-rm -rf .kodr-cache bin
-OUTPUT=$("$KODR" run 2>&1)
+rm -rf .orh-cache bin
+OUTPUT=$("$ORHON" run 2>&1)
 
 if echo "$OUTPUT" | grep -q "Built: bin/buildproj"; then pass "builds the project"
 else fail "builds the project" "$OUTPUT"; fi
 
-if echo "$OUTPUT" | grep -q "hello kodr"; then pass "executes the binary"
+if echo "$OUTPUT" | grep -q "hello orhon"; then pass "executes the binary"
 else fail "executes the binary" "$OUTPUT"; fi
 
-# ── kodr debug ───────────────────────────────────────────────
+# ── orhon debug ───────────────────────────────────────────────
 
-section "kodr debug"
+section "orhon debug"
 
-OUTPUT=$("$KODR" debug 2>&1)
+OUTPUT=$("$ORHON" debug 2>&1)
 
-if echo "$OUTPUT" | grep -q "=== kodr debug ==="; then pass "shows header"
+if echo "$OUTPUT" | grep -q "=== orhon debug ==="; then pass "shows header"
 else fail "shows header" "$OUTPUT"; fi
 
 if echo "$OUTPUT" | grep -q "module 'main'"; then pass "finds main module"
@@ -93,11 +93,11 @@ else fail "finds example module" "$OUTPUT"; fi
 
 section "Incremental build"
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built: bin/buildproj"; then pass "rebuild succeeds"
 else fail "rebuild succeeds" "$OUTPUT"; fi
 
-if [ -f .kodr-cache/timestamps ]; then pass "cache timestamps exist"
+if [ -f .orh-cache/timestamps ]; then pass "cache timestamps exist"
 else fail "cache timestamps exist"; fi
 
 report_results

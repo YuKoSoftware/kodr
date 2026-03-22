@@ -63,7 +63,7 @@ var d: u8 = 0o777
 Numeric literals without a type annotation resolve to the project's `#bitsize` setting. If `#bitsize = 32`, bare `42` becomes `i32` and `3.14` becomes `f32`. If `#bitsize = 64`, they become `i64` and `f64`. If `#bitsize` is not set, bare numeric literals are a compile error — the type must be explicit.
 
 ```
-// in main.kodr
+// in main.orh
 #bitsize = 32
 
 // now these work:

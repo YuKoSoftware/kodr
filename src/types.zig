@@ -1,4 +1,4 @@
-// types.zig — Kodr type system shared definitions
+// types.zig — Orhon type system shared definitions
 // Used by declarations, resolver, ownership, borrow, and propagation passes.
 
 const std = @import("std");

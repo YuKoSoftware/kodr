@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # 09_language.sh — Language feature verification via example + tester modules
 source "$(dirname "$0")/helpers.sh"
-require_kodr
+require_orhon
 setup_tmpdir
 trap cleanup_tmpdir EXIT
 
 section "Language features (example module)"
 
 cd "$TESTDIR"
-"$KODR" init langtest >/dev/null 2>&1
+"$ORHON" init langtest >/dev/null 2>&1
 cd "$TESTDIR/langtest"
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built: bin/langtest"; then
     pass "example module compiles (all features)"
 else
     fail "example module compiles (all features)" "$OUTPUT"
 fi
 
-GEN_EXAMPLE=".kodr-cache/generated/example.zig"
+GEN_EXAMPLE=".orh-cache/generated/example.zig"
 
 if grep -q "inline fn" "$GEN_EXAMPLE"; then pass "compt func generates inline fn"
 else fail "compt func generates inline fn"; fi
@@ -36,25 +36,25 @@ else
 fi
 
 BINOUT=$(./bin/langtest 2>&1)
-if echo "$BINOUT" | grep -q "hello kodr"; then pass "langtest binary runs"
+if echo "$BINOUT" | grep -q "hello orhon"; then pass "langtest binary runs"
 else fail "langtest binary runs" "$BINOUT"; fi
 
 section "Tester module codegen"
 
 cd "$TESTDIR"
 mkdir -p comptest/src
-cp "$FIXTURES/tester_main.kodr" comptest/src/main.kodr
-cp "$FIXTURES/tester.kodr" comptest/src/tester.kodr
+cp "$FIXTURES/tester_main.orh" comptest/src/main.orh
+cp "$FIXTURES/tester.orh" comptest/src/tester.orh
 cd "$TESTDIR/comptest"
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built: bin/comptest"; then
     pass "tester module compiles"
 else
     fail "tester module compiles" "$OUTPUT"
 fi
 
-GEN_TESTER=".kodr-cache/generated/tester.zig"
+GEN_TESTER=".orh-cache/generated/tester.zig"
 
 if [ -f "$GEN_TESTER" ]; then pass "tester.zig generated"
 else fail "tester.zig generated"; fi
@@ -89,7 +89,7 @@ else fail "for loop codegen"; fi
 if grep -q "std.testing.expect" "$GEN_TESTER" 2>/dev/null; then pass "@assert codegen"
 else fail "@assert codegen"; fi
 
-if grep -q "KodrNullable" "$GEN_TESTER" 2>/dev/null; then pass "null union codegen"
+if grep -q "OrhonNullable" "$GEN_TESTER" 2>/dev/null; then pass "null union codegen"
 else fail "null union codegen"; fi
 
 if grep -q ".none" "$GEN_TESTER" 2>/dev/null; then pass "null → .none codegen"

@@ -1,6 +1,6 @@
 module json
 
-// json — JSON parsing and emission for Kodr programs
+// json — JSON parsing and emission for Orhon programs
 // Import with: import std::json
 
 // Validate and pretty-print a JSON string

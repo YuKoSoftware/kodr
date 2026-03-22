@@ -1,7 +1,7 @@
-# Kodr — Claude Project Instructions
+# Orhon — Claude Project Instructions
 
 ## What This Project Is
-Kodr is a compiled, memory-safe programming language that transpiles to Zig.
+Orhon is a compiled, memory-safe programming language that transpiles to Zig.
 Written in Zig 0.15.x. Lives entirely in `src/`.
 One-sentence pitch: *"A simple yet powerful language that is safe."*
 
@@ -29,8 +29,8 @@ runnable. Pipeline order:
 | `test/01_unit.sh` | Zig unit tests (`zig build test`) |
 | `test/02_build.sh` | Compile the compiler (`zig build`) |
 | `test/03_cli.sh` | CLI args, help, error exits |
-| `test/04_init.sh` | `kodr init` + embedded std scaffolding |
-| `test/05_compile.sh` | `kodr build`, `kodr run`, `kodr test`, `kodr debug`, incremental |
+| `test/04_init.sh` | `orhon init` + embedded std scaffolding |
+| `test/05_compile.sh` | `orhon build`, `orhon run`, `orhon test`, `orhon debug`, incremental |
 | `test/06_library.sh` | Static + dynamic library builds |
 | `test/07_multimodule.sh` | Multi-module project builds |
 | `test/08_codegen.sh` | Generated Zig quality checks |
@@ -38,7 +38,7 @@ runnable. Pipeline order:
 | `test/10_runtime.sh` | Runtime correctness (tester binary output) |
 | `test/11_errors.sh` | Negative tests (expected compilation failures) |
 
-Test fixtures (`.kodr` files used by tests) live in `test/fixtures/`.
+Test fixtures (`.orh` files used by tests) live in `test/fixtures/`.
 
 ---
 
@@ -99,7 +99,7 @@ Never inline multi-line file content in `.zig` source. Use `@embedFile`.
 Paths are relative to the source file using it.
 
 ### Template substitution — split-write not allocPrint
-Real `.kodr` files have `{` and `}` everywhere. Never pass to `allocPrint`.
+Real `.orh` files have `{` and `}` everywhere. Never pass to `allocPrint`.
 Split on the placeholder and write in parts:
 ```zig
 if (std.mem.indexOf(u8, TEMPLATE, "{s}")) |pos| {
@@ -113,18 +113,18 @@ if (std.mem.indexOf(u8, TEMPLATE, "{s}")) |pos| {
 
 ## Example Module — Built-in Language Manual
 
-The `example` module (`src/templates/example*.kodr`) serves as a **living language
-manual** that ships with every new project via `kodr init`. It must:
+The `example` module (`src/templates/example*.orh`) serves as a **living language
+manual** that ships with every new project via `orhon init`. It must:
 
 - **Cover every implemented language feature** — if it compiles, it should be in the manual
 - **Stay up to date** — when a new feature lands, add it to the example module
 - **Use short descriptive comments** with 1 blank line between comment and code
 - **Stay readable** — split across multiple files in the same `module example` when
-  a single file gets too long. Files can be named anything (e.g., `types_guide.kodr`,
-  `loops.kodr`) as long as they declare `module example` — the compiler only cares
-  about the module tag, not file names. `example.kodr` must exist as the anchor file.
-- **Compile successfully** — the example module is part of `kodr build`, so it must
-  always be valid Kodr code. This also makes it a built-in integration test.
+  a single file gets too long. Files can be named anything (e.g., `types_guide.orh`,
+  `loops.orh`) as long as they declare `module example` — the compiler only cares
+  about the module tag, not file names. `example.orh` must exist as the anchor file.
+- **Compile successfully** — the example module is part of `orhon build`, so it must
+  always be valid Orhon code. This also makes it a built-in integration test.
 
 Each file in the example module starts with `module example` and is embedded via
 `@embedFile` in `main.zig`. When adding new files, add the corresponding

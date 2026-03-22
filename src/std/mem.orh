@@ -1,6 +1,6 @@
 module mem
 
-// mem — memory allocators for Kodr programs
+// mem — memory allocators for Orhon programs
 // Import with: import std::mem
 //
 // Allocator constructors:

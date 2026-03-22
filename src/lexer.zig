@@ -1,10 +1,10 @@
-// lexer.zig — Kodr tokenizer
+// lexer.zig — Orhon tokenizer
 // Follows std.zig.Tokenizer state machine pattern.
 // Produces a flat list of tokens from source text.
 
 const std = @import("std");
 
-/// All token kinds in Kodr
+/// All token kinds in Orhon
 pub const TokenKind = enum {
     // Literals
     int_literal,
@@ -367,7 +367,7 @@ pub const Lexer = struct {
             return .{ .kind = .eof, .text = "", .line = start_line, .col = start_col };
         };
 
-        // Newline — significant in Kodr (statement terminator)
+        // Newline — significant in Orhon (statement terminator)
         if (ch == '\n') {
             const start = self.pos;
             _ = self.advance();

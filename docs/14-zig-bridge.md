@@ -1,20 +1,20 @@
 # Zig Bridge — `extern` Declarations and Paired `.zig` Files
 
-Kodr handles all external interop through Zig. Kodr never talks to C, system APIs,
+Orhon handles all external interop through Zig. Orhon never talks to C, system APIs,
 or external libraries directly — that complexity always lives in a paired `.zig` file.
 Zig already has first-class C interop, handles ABI, calling conventions, and struct
-layouts. No need to duplicate that work in Kodr.
+layouts. No need to duplicate that work in Orhon.
 
 ---
 
 ## How It Works
 
-A Kodr module can be paired with a hand-written `.zig` file that provides the actual
-implementation. The `.kodr` file declares the interface using `extern` — always implicitly public.
+A Orhon module can be paired with a hand-written `.zig` file that provides the actual
+implementation. The `.orh` file declares the interface using `extern` — always implicitly public.
 The compiler emits nothing for `extern` bodies — it re-exports from the paired `.zig` directly.
 
 ```
-// console.kodr — public Kodr interface
+// console.orh — public Orhon interface
 module console
 
 extern func print(msg: String) void
@@ -42,7 +42,7 @@ pub fn println(msg: []const u8) void {
 ## `extern` Declaration Types
 
 All `extern` declarations are implicitly public. `pub extern` is a compiler error (redundant).
-A paired `.zig` sidecar file must exist alongside the `.kodr` file — hard error if missing.
+A paired `.zig` sidecar file must exist alongside the `.orh` file — hard error if missing.
 
 ### `extern func` — bridge a Zig function
 ```
@@ -90,7 +90,7 @@ pub fn get() GetResult {
 
 ## Calling C Through Zig
 
-C interop goes through `.zig` bridge files. The `.kodr` file exposes a clean Kodr API,
+C interop goes through `.zig` bridge files. The `.orh` file exposes a clean Orhon API,
 the `.zig` file handles all C details internally:
 
 ```zig
@@ -103,14 +103,14 @@ pub fn windowNew() *c.GtkWidget {
 ```
 
 ```
-// gtk.kodr — clean Kodr interface, no C visible
+// gtk.orh — clean Orhon interface, no C visible
 module gtk
 
 extern func windowNew() Ptr(u8)
 ```
 
 ```
-// usage — place gtk.kodr + gtk.zig in your project src/
+// usage — place gtk.orh + gtk.zig in your project src/
 import gtk
 
 const window = gtk.windowNew()

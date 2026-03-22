@@ -1,8 +1,8 @@
 {
-  "name": "kodr",
-  "displayName": "Kodr",
-  "description": "Language support for Kodr — syntax highlighting, diagnostics, and LSP integration",
-  "version": "0.3.2",
+  "name": "orhon",
+  "displayName": "Orhon",
+  "description": "Language support for Orhon — syntax highlighting, diagnostics, and LSP integration",
+  "version": "0.3.3",
   "publisher": "YuKoSoftware",
   "license": "MIT",
   "engines": {
@@ -12,7 +12,7 @@
     "Programming Languages"
   ],
   "keywords": [
-    "kodr",
+    "orhon",
     "programming language",
     "compiled",
     "memory-safe",
@@ -20,46 +20,46 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/YuKoSoftware/kodr"
+    "url": "https://github.com/YuKoSoftware/orhon"
   },
   "icon": "icon.png",
   "activationEvents": [
-    "onLanguage:kodr"
+    "onLanguage:orhon"
   ],
   "main": "./extension.js",
   "contributes": {
     "languages": [
       {
-        "id": "kodr",
+        "id": "orhon",
         "aliases": [
-          "Kodr",
-          "kodr"
+          "Orhon",
+          "orhon"
         ],
         "extensions": [
-          ".kodr"
+          ".orh"
         ],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "kodr",
-        "scopeName": "source.kodr",
-        "path": "./syntaxes/kodr.tmLanguage.json"
+        "language": "orhon",
+        "scopeName": "source.orhon",
+        "path": "./syntaxes/orhon.tmLanguage.json"
       }
     ],
     "configuration": {
-      "title": "Kodr",
+      "title": "Orhon",
       "properties": {
-        "kodr.lsp.enabled": {
+        "orhon.lsp.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable the Kodr language server for diagnostics"
+          "description": "Enable the Orhon language server for diagnostics"
         },
-        "kodr.lsp.path": {
+        "orhon.lsp.path": {
           "type": "string",
-          "default": "kodr",
-          "description": "Path to the kodr binary"
+          "default": "orhon",
+          "description": "Path to the orhon binary"
         }
       }
     }

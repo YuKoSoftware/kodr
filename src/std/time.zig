@@ -1,6 +1,6 @@
-// time.zig — time operations implementation for Kodr's std::time
-// Hand-written implementation. Paired with time.kodr.
-// Do not edit the generated time.zig in .kodr-cache/generated/ —
+// time.zig — time operations implementation for Orhon's std::time
+// Hand-written implementation. Paired with time.orh.
+// Do not edit the generated time.zig in .orh-cache/generated/ —
 // edit this source file — embedded into the compiler at build time.
 
 const std = @import("std");

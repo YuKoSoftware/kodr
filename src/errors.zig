@@ -1,4 +1,4 @@
-// errors.zig — Kodr compiler error formatting
+// errors.zig — Orhon compiler error formatting
 // Single source of truth for all error output.
 // Emits full trace in debug builds, message only in release builds.
 
@@ -9,7 +9,7 @@ pub const BuildMode = enum {
     release,
 };
 
-/// A source location in a .kodr file
+/// A source location in a .orh file
 pub const SourceLoc = struct {
     file: []const u8,
     line: usize,
@@ -17,7 +17,7 @@ pub const SourceLoc = struct {
 };
 
 /// A single error with optional location and trace
-pub const KodrError = struct {
+pub const OrhonError = struct {
     message: []const u8,
     loc: ?SourceLoc = null,
     notes: []const []const u8 = &.{},
@@ -26,8 +26,8 @@ pub const KodrError = struct {
 /// The error reporter — used by every pass
 pub const Reporter = struct {
     mode: BuildMode,
-    errors: std.ArrayListUnmanaged(KodrError),
-    warnings: std.ArrayListUnmanaged(KodrError),
+    errors: std.ArrayListUnmanaged(OrhonError),
+    warnings: std.ArrayListUnmanaged(OrhonError),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, mode: BuildMode) Reporter {
@@ -56,7 +56,7 @@ pub const Reporter = struct {
         self.warnings.deinit(self.allocator);
     }
 
-    fn storeOwned(self: *Reporter, diag: KodrError, list: *std.ArrayListUnmanaged(KodrError)) !void {
+    fn storeOwned(self: *Reporter, diag: OrhonError, list: *std.ArrayListUnmanaged(OrhonError)) !void {
         const owned_msg = try self.allocator.dupe(u8, diag.message);
         const owned_loc: ?SourceLoc = if (diag.loc) |loc| .{
             .file = if (loc.file.len > 0) (self.allocator.dupe(u8, loc.file) catch "") else "",
@@ -70,12 +70,12 @@ pub const Reporter = struct {
         });
     }
 
-    pub fn report(self: *Reporter, err: KodrError) !void {
+    pub fn report(self: *Reporter, err: OrhonError) !void {
         try self.storeOwned(err, &self.errors);
     }
 
     /// Record a non-fatal warning. Compilation continues after warnings.
-    pub fn warn(self: *Reporter, w: KodrError) !void {
+    pub fn warn(self: *Reporter, w: OrhonError) !void {
         try self.storeOwned(w, &self.warnings);
     }
 
@@ -126,7 +126,7 @@ const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
 
-fn printDiagnostic(stderr: anytype, diag: *const KodrError, label: []const u8, mode: BuildMode) !void {
+fn printDiagnostic(stderr: anytype, diag: *const OrhonError, label: []const u8, mode: BuildMode) !void {
     const is_error = std.mem.eql(u8, label, "ERROR");
     const color = if (is_error) RED else YELLOW;
 

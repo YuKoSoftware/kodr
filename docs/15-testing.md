@@ -10,6 +10,6 @@ test "adds two numbers correctly" {
 }
 ```
 
-Run with `kodr test`.
+Run with `orhon test`.
 
 Tests live in the same file as the code they test. One or two focused tests per feature is enough — don't clutter. If a feature is a stub or placeholder, skip the test until it's real.

@@ -1,4 +1,4 @@
-# Kodr — Complete Language Reference
+# Orhon — Complete Language Reference
 
 Everything the compiler supports as of v0.3.5.
 
@@ -18,7 +18,7 @@ void                          // no value
 ```
 
 ### Numeric Literals
-```kodr
+```orhon
 const a: i32 = 1_000_000      // decimal
 const b: u32 = 0xFF            // hex
 const c: u8  = 0b1010          // binary
@@ -28,7 +28,7 @@ const e: f64 = 3.141_592       // float
 Bare literals resolve to `#bitsize` default or require explicit type.
 
 ### Union Types
-```kodr
+```orhon
 (Error | i32)                  // error union
 (null | User)                  // nullable union
 (i32 | String)                 // arbitrary union
@@ -39,7 +39,7 @@ Bare literals resolve to `#bitsize` default or require explicit type.
 
 ## Variables
 
-```kodr
+```orhon
 const x: i32 = 10             // immutable — module or function level
 var y: i32 = 5                // mutable — function level only
 var z: (null | i32) = null    // nullable
@@ -48,7 +48,7 @@ var z: (null | i32) = null    // nullable
 Module-level must be `const`. All variables must be initialized.
 
 ### Type Inference
-```kodr
+```orhon
 var name = "hello"             // String
 var p = Player.create("hero")  // Player
 var flag = true                // bool
@@ -56,7 +56,7 @@ const result = divide(10, 2)   // (Error | i32)
 ```
 
 ### Destructuring
-```kodr
+```orhon
 const min, max = minMax(3, 7)
 const before, after = s.split(":")
 const left, right = arr.splitAt(3)
@@ -67,39 +67,39 @@ const left, right = arr.splitAt(3)
 ## Operators
 
 ### Arithmetic
-```kodr
+```orhon
 a + b    a - b    a * b    a / b    a % b
 a ++ b   // concatenation (strings, arrays)
 ```
 
 ### Comparison
-```kodr
+```orhon
 a == b   a != b   a < b   a > b   a <= b   a >= b
 ```
 
 ### Type Check
-```kodr
+```orhon
 x is Error        x is not null
 x is i32          x is not String
 ```
 
 ### Logical
-```kodr
+```orhon
 a and b    a or b    not a
 ```
 
 ### Bitwise
-```kodr
+```orhon
 a & b    a | b    a ^ b    a << n    a >> n
 ```
 
 ### Compound Assignment
-```kodr
+```orhon
 x += y    x -= y    x *= y    x /= y
 ```
 
 ### Overflow Control
-```kodr
+```orhon
 overflow(a + b)    // returns (Error | T)
 wrap(a + b)        // wrapping arithmetic
 sat(a + b)         // saturating arithmetic
@@ -109,7 +109,7 @@ sat(a + b)         // saturating arithmetic
 
 ## Functions
 
-```kodr
+```orhon
 func add(a: i32, b: i32) i32 {
     return a + b
 }
@@ -136,7 +136,7 @@ compt func Box(T: any) type {
 ```
 
 ### Function Pointers
-```kodr
+```orhon
 func negate(x: i32) i32 { return 0 - x }
 
 func apply(f: func(i32) i32, x: i32) i32 {
@@ -151,7 +151,7 @@ f(10)
 
 ## Structs
 
-```kodr
+```orhon
 pub struct Player {
     pub name: String
     health: f32               // private by default
@@ -178,7 +178,7 @@ p.takeDamage(25.0)
 
 ## Enums
 
-```kodr
+```orhon
 pub enum(u8) Direction {
     North
     South
@@ -204,7 +204,7 @@ const o: Direction = d.opposite()
 
 ## Bitfields
 
-```kodr
+```orhon
 bitfield(u8) FileMode {
     Read
     Write
@@ -223,7 +223,7 @@ mode.toggle(Read)
 ## Control Flow
 
 ### if / else
-```kodr
+```orhon
 if(x > 0) {
     return x
 } else {
@@ -232,7 +232,7 @@ if(x > 0) {
 ```
 
 ### while
-```kodr
+```orhon
 while(i < n) {
     i += 1
 }
@@ -244,7 +244,7 @@ while(i < n) : (i += 1) {
 ```
 
 ### for
-```kodr
+```orhon
 for(arr) |val| { }               // iterate values
 for(arr) |val, i| { }            // with index
 for(0..10) |i| { }               // range
@@ -253,7 +253,7 @@ for(my_set) |key| { }            // set yields keys
 ```
 
 ### match
-```kodr
+```orhon
 // integers
 match(n) {
     1 => { return "one" }
@@ -284,13 +284,13 @@ match(result) {
 ```
 
 ### defer
-```kodr
+```orhon
 defer { cleanup() }
 // runs at scope exit, LIFO order for multiple defers
 ```
 
 ### break / continue
-```kodr
+```orhon
 while(true) {
     if(done) { break }
     if(skip) { continue }
@@ -301,7 +301,7 @@ while(true) {
 
 ## Error Handling
 
-```kodr
+```orhon
 const ErrNotFound = Error("not found")
 
 func divide(a: i32, b: i32) (Error | i32) {
@@ -330,7 +330,7 @@ Unhandled error unions at scope exit are a compile error.
 
 ## Null Handling
 
-```kodr
+```orhon
 func find(id: i32) (null | User) {
     if(id <= 0) { return null }
     return lookupUser(id)
@@ -349,7 +349,7 @@ x = 42
 
 ## Arbitrary Unions
 
-```kodr
+```orhon
 func getValue(flag: bool) (i32 | String) {
     if(flag) { return 42 }
     return "hello"
@@ -368,7 +368,7 @@ x = "changed"
 
 ## Arrays & Slices
 
-```kodr
+```orhon
 const arr: [3]i32 = [10, 20, 30]
 var buf: [5]i32 = [1, 2, 3, 4, 5]
 const part: []i32 = buf[1..4]        // slice [2,3,4]
@@ -378,7 +378,7 @@ arr[i]           // index access
 ```
 
 ### splitAt
-```kodr
+```orhon
 const left, right = arr.splitAt(3)
 // arr is consumed — using it after is a compile error
 ```
@@ -387,7 +387,7 @@ const left, right = arr.splitAt(3)
 
 ## Tuples
 
-```kodr
+```orhon
 func minMax(a: i32, b: i32) (min: i32, max: i32) {
     if(a < b) { return (min: a, max: b) }
     return (min: b, max: a)
@@ -405,7 +405,7 @@ const min, max = minMax(3, 7)
 
 ## Generics
 
-```kodr
+```orhon
 // generic function
 func identity(val: any) any {
     return val
@@ -430,7 +430,7 @@ const b = Box(i32)(value: 99)
 
 ## Pointers
 
-```kodr
+```orhon
 // Ptr(T) — safe, read-only
 var x: i32 = 42
 const p: Ptr(i32) = Ptr(i32, &x)
@@ -449,7 +449,7 @@ const reg: VolatilePtr(u32) = VolatilePtr(u32, 0xFF200000)
 
 ## Ownership & Borrowing
 
-```kodr
+```orhon
 // primitives copy
 var a: i32 = 5
 var b: i32 = a         // copy
@@ -478,7 +478,7 @@ const m: &Point = &p           // mutable borrow
 ## Memory
 
 ### Allocators
-```kodr
+```orhon
 import std::mem
 
 const alloc = mem.DebugAllocator()
@@ -498,7 +498,7 @@ var items: List(i32) = List(i32)
 | `mem.Pool(T)` | Object pool |
 
 ### Direct Allocation
-```kodr
+```orhon
 const alloc = mem.DebugAllocator()
 var buf: []i32 = alloc.alloc(i32, 100)
 var val: i32 = alloc.allocOne(i32, 42)
@@ -511,7 +511,7 @@ alloc.free(val)
 ## Collections
 
 ### List(T)
-```kodr
+```orhon
 var items: List(i32) = List(i32)
 defer { items.free() }
 items.add(10)
@@ -523,7 +523,7 @@ for(items) |v| { }
 ```
 
 ### Map(K, V)
-```kodr
+```orhon
 var m: Map(String, i32) = Map(String, i32)
 defer { m.free() }
 m.put("key", 42)
@@ -534,7 +534,7 @@ for(m) |(k, v)| { }
 ```
 
 ### Set(T)
-```kodr
+```orhon
 var s: Set(i32) = Set(i32)
 defer { s.free() }
 s.add(1)
@@ -544,7 +544,7 @@ for(s) |k| { }
 ```
 
 ### Ring / ORing
-```kodr
+```orhon
 var r: Ring(i32, 8) = Ring(i32, 8)
 r.push(1)
 r.pop()          // (null | i32)
@@ -560,7 +560,7 @@ var o: ORing(i32, 4) = ORing(i32, 4)
 
 ## Threads
 
-```kodr
+```orhon
 const x: i32 = 21
 thread(i32) worker {
     return x * 2
@@ -583,7 +583,7 @@ Rules:
 
 ## Compiler Functions
 
-```kodr
+```orhon
 cast(i64, x)          // type cast
 copy(data)            // explicit copy
 move(data)            // explicit move
@@ -601,7 +601,7 @@ typeid(x)             // unique type ID
 ## String Methods
 
 ### Non-Allocating
-```kodr
+```orhon
 s.contains("x")       s.startsWith("x")    s.endsWith("x")
 s.trim()               s.trimLeft()          s.trimRight()
 s.indexOf("x")         s.lastIndexOf("x")   s.count("x")
@@ -609,7 +609,7 @@ s.split(":")           s.parseInt()          s.parseFloat()
 ```
 
 ### Allocating
-```kodr
+```orhon
 s.toUpper()    s.toLower()    s.replace("a", "b")    s.repeat(3)
 ```
 
@@ -617,7 +617,7 @@ s.toUpper()    s.toLower()    s.replace("a", "b")    s.repeat(3)
 
 ## Standard Library
 
-```kodr
+```orhon
 import std::console    // print, println, flush, debugPrint, get
 import std::str        // from, join, fromBytes, toBytes
 import std::math       // pow, sqrt, abs, min, max, floor, ceil, sin, cos, tan, ln, log2, PI, E
@@ -633,7 +633,7 @@ import std::sort       // sort, sortDesc, isSorted, reverse, min, max
 
 ## Modules & Imports
 
-```kodr
+```orhon
 module main                    // module declaration (required)
 
 import math                    // project-local module
@@ -648,7 +648,7 @@ func hidden() void { }        // module-private
 
 ## Project Metadata
 
-```kodr
+```orhon
 #name    = "myproject"
 #version = Version(1, 0, 0)
 #build   = exe                 // exe | static | dynamic
@@ -659,8 +659,8 @@ func hidden() void { }        // module-private
 
 ## Extern (Zig Bridge)
 
-```kodr
-// kodr side (math.kodr)
+```orhon
+// orhon side (math.orh)
 extern func sqrt(x: any) any
 extern const PI: f64
 extern struct Socket
@@ -675,7 +675,7 @@ pub const Socket = struct { ... };
 
 ## Testing
 
-```kodr
+```orhon
 test "add works" {
     assert(add(2, 3) == 5)
 }
@@ -686,32 +686,32 @@ test "division error" {
 }
 ```
 
-Run with `kodr test`. Stripped from release builds.
+Run with `orhon test`. Stripped from release builds.
 
 ---
 
 ## CLI
 
 ```
-kodr build                     // debug build
-kodr build -fast               // release, max speed
-kodr build -small              // release, min size
-kodr build -linux_x64          // cross-compile
-kodr build -zig                // emit Zig source
-kodr run                       // build and execute
-kodr test                      // run all test blocks
-kodr fmt                       // format all .kodr files
-kodr init <name>               // create new project
-kodr debug                     // dump project info
-kodr addtopath                 // add kodr to PATH
-kodr version                   // print version
+orhon build                     // debug build
+orhon build -fast               // release, max speed
+orhon build -small              // release, min size
+orhon build -linux_x64          // cross-compile
+orhon build -zig                // emit Zig source
+orhon run                       // build and execute
+orhon test                      // run all test blocks
+orhon fmt                       // format all .orh files
+orhon init <name>               // create new project
+orhon debug                     // dump project info
+orhon addtopath                 // add orhon to PATH
+orhon version                   // print version
 ```
 
 ---
 
 ## Comments
 
-```kodr
+```orhon
 // single line
 
 /* block comment

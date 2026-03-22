@@ -1,6 +1,6 @@
-// console.zig — terminal I/O implementation for Kodr's std::console
-// Hand-written implementation. Paired with console.kodr.
-// Do not edit the generated console.zig in .kodr-cache/generated/ —
+// console.zig — terminal I/O implementation for Orhon's std::console
+// Hand-written implementation. Paired with console.orh.
+// Do not edit the generated console.zig in .orh-cache/generated/ —
 // edit this source file — embedded into the compiler at build time.
 
 const std = @import("std");

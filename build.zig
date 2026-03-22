@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const version = std.SemanticVersion{ .major = 0, .minor = 3, .patch = 11 };
+pub const version = std.SemanticVersion{ .major = 0, .minor = 3, .patch = 12 };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
     // Version string for runtime use
     const version_str = std.fmt.comptimePrint("{d}.{d}.{d}", .{ version.major, version.minor, version.patch });
 
-    // Main kodr compiler executable
+    // Main orhon compiler executable
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
         break :blk opts;
     });
     const exe = b.addExecutable(.{
-        .name = "kodr",
+        .name = "orhon",
         .root_module = root_module,
         .version = version,
     });
@@ -35,7 +35,7 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run the kodr compiler");
+    const run_step = b.step("run", "Run the orhon compiler");
     run_step.dependOn(&run_cmd.step);
 
     // Test step — runs all embedded tests across all source files

@@ -2,7 +2,7 @@
 
 ## Module Declaration
 
-Every `.kodr` file must declare its module at the top — this is mandatory, no exceptions.
+Every `.orh` file must declare its module at the top — this is mandatory, no exceptions.
 The module tag is the only thing that determines which module a file belongs to.
 Folder structure, file names, and directory nesting have no significance whatsoever.
 
@@ -11,11 +11,11 @@ module math
 ```
 
 ### How the Compiler Finds Modules
-The compiler scans all `.kodr` files in `src/`, reads the module tag at the top of each,
+The compiler scans all `.orh` files in `src/`, reads the module tag at the top of each,
 and groups files by module name. Each group becomes one **compilation unit**.
 
-- File location doesn't matter — `src/math.kodr`, `src/extra/more_math.kodr`,
-  `src/deep/nested/stuff.kodr` — all fine as long as they declare `module math`
+- File location doesn't matter — `src/math.orh`, `src/extra/more_math.orh`,
+  `src/deep/nested/stuff.orh` — all fine as long as they declare `module math`
 - Folder organization is purely for the developer's convenience
 - The compiler only cares about module tags, not paths
 
@@ -24,18 +24,18 @@ Among all files in a module, exactly one must be named after the module — the 
 This is what `import math` resolves to. Only the anchor file can contain metadata
 (`#build`, `#name`, `#version`, `#bitsize`, `#dep`, etc.).
 
-- `module math` → one of the files must be `math.kodr` (anywhere in `src/`)
-- `module main` → one of the files must be `main.kodr`
+- `module math` → one of the files must be `math.orh` (anywhere in `src/`)
+- `module main` → one of the files must be `main.orh`
 - Other files in the same module can be named anything
 - No anchor file found = hard compiler error
-- Every project root is `main.kodr` / `module main` — for both executables and libraries
+- Every project root is `main.orh` / `module main` — for both executables and libraries
 
 Example — module math spanning three files, freely organized:
 ```
 src/
-    math.kodr              ← anchor file — required
-    utils/algebra.kodr     ← also module math, any location
-    utils/geometry.kodr    ← also module math, any location
+    math.orh              ← anchor file — required
+    utils/algebra.orh     ← also module math, any location
+    utils/geometry.orh    ← also module math, any location
 ```
 
 All three declare `module math`. The compiler groups them into one compilation unit.
@@ -45,21 +45,21 @@ Parallel compilation: each module compiles independently of others.
 
 **Regular module** — no `build`, compiled as part of whatever project imports it:
 ```
-// math.kodr — anchor file, must exist
+// math.orh — anchor file, must exist
 module math
 
 pub func add(a: i32, b: i32) i32 { }
 
-// algebra.kodr — also part of module math, any name is fine
+// algebra.orh — also part of module math, any name is fine
 module math
 
 pub func solve(a: f64, b: f64, c: f64) f64 { }
 ```
 Regular modules are only compiled if something imports them (dead code elimination).
 
-**Project root** — always `main.kodr` / `module main`. Metadata uses `#key = value`:
+**Project root** — always `main.orh` / `module main`. Metadata uses `#key = value`:
 ```
-// main.kodr — project root for executable
+// main.orh — project root for executable
 module main
 
 #build   = exe
@@ -72,7 +72,7 @@ func main() void {
 ```
 
 ```
-// main.kodr — project root for library
+// main.orh — project root for library
 module main
 
 #build   = static
@@ -85,10 +85,10 @@ A project can contain additional library modules alongside the root.
 Each has its own anchor file and build declaration:
 ```
 src/
-    main.kodr              ← module main, #build = exe (root)
-    math/math.kodr         ← module math, #build = static (anchor)
-    math/vectors.kodr      ← module math (additional file)
-    network/network.kodr   ← module network, #build = dynamic (anchor)
+    main.orh              ← module main, #build = exe (root)
+    math/math.orh         ← module math, #build = static (anchor)
+    math/vectors.orh      ← module math (additional file)
+    network/network.orh   ← module network, #build = dynamic (anchor)
 ```
 Library modules are only built as separate artifacts if they are actually imported.
 
@@ -96,11 +96,11 @@ Library modules are only built as separate artifacts if they are actually import
 ```
 my_project/
     src/
-        main.kodr                // root — module main, #build = exe
-        player.kodr              // module main — additional file
-        math/math.kodr           // module math, #build = static (anchor)
-        math/vectors.kodr        // module math — additional file
-        utils/utils.kodr         // module utils — regular module (no #build)
+        main.orh                // root — module main, #build = exe
+        player.orh              // module main — additional file
+        math/math.orh           // module math, #build = static (anchor)
+        math/vectors.orh        // module math — additional file
+        utils/utils.orh         // module utils — regular module (no #build)
 ```
 
 ---
@@ -116,7 +116,7 @@ Three import forms — origin is always explicit:
 import math
 math.add(1, 2)
 
-// Stdlib module — std:: scope, looks in <kodr_dir>/std/
+// Stdlib module — std:: scope, looks in <orhon_dir>/std/
 import std::alpha
 alpha.println("hello")
 
@@ -127,7 +127,7 @@ io.println("hello")
 
 **Scope rules:**
 - No `::` → project-local (`src/`)
-- `std::name` → embedded stdlib (auto-extracted to `.kodr-cache/std/`)
+- `std::name` → embedded stdlib (auto-extracted to `.orh-cache/std/`)
 - Only one level of `::` — `std::a::b` is never valid
 - `std` is reserved — cannot be a project module name
 - Default alias is always the module name, never the scope prefix
@@ -144,15 +144,15 @@ my_utils.doSomething()
 
 ### Library Interface File
 When compiling a `#build = static` or `#build = dynamic` module, the compiler generates
-a `.kodr` interface file alongside the binary output. This file contains only the
+a `.orh` interface file alongside the binary output. This file contains only the
 `pub` declarations — functions, types, structs — and serves as the public API surface.
 
 ```
 mylib.a        // compiled binary
-mylib.kodr     // generated interface — pub declarations only, for type checking
+mylib.orh     // generated interface — pub declarations only, for type checking
 ```
 
-The interface file is a valid Kodr source file. Consumers can read it to understand
+The interface file is a valid Orhon source file. Consumers can read it to understand
 the library's public API. The compiler uses it for type checking when importing
 a precompiled library without its full source.
 
@@ -167,7 +167,7 @@ a precompiled library without its full source.
 - Circular imports across any boundary
 - Project metadata written in any file other than the anchor file
 - No anchor file found — at least one file in the module must be named after the module
-- `module main` not in `main.kodr`
+- `module main` not in `main.orh`
 - `func main()` missing when `#build = exe`
 - Unknown import scope (only `std` is supported)
 - `extern func` with a body — extern functions must have no body
@@ -183,7 +183,7 @@ file other than the anchor is a hard compiler error. No build files ever — the
 compiler is the build system.
 
 ```
-// main.kodr — executable
+// main.orh — executable
 module main
 
 #name    = "my_project"
@@ -195,7 +195,7 @@ func main() void { }
 ```
 
 ```
-// main.kodr — library project root
+// main.orh — library project root
 module main
 
 #name    = "mylib"
@@ -204,7 +204,7 @@ module main
 ```
 
 ```
-// math/math.kodr — additional library module within a project
+// math/math.orh — additional library module within a project
 module math
 
 #build = static
@@ -213,8 +213,8 @@ module math
 
 ### Build Types
 - `#build = exe` — `func main()` required, produces runnable binary
-- `#build = static` — no `func main()` needed, produces `.a` or `.lib` + `.kodr` interface file
-- `#build = dynamic` — no `func main()` needed, produces `.so` or `.dll` + `.kodr` interface file
+- `#build = static` — no `func main()` needed, produces `.a` or `.lib` + `.orh` interface file
+- `#build = dynamic` — no `func main()` needed, produces `.so` or `.dll` + `.orh` interface file
 
 ### External Dependencies
 

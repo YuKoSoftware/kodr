@@ -1,6 +1,6 @@
 module system
 
-// system — OS/system operations for Kodr programs
+// system — OS/system operations for Orhon programs
 // Import with: import std::system
 // Implementation lives in system.zig — do not generate body, use paired .zig file.
 

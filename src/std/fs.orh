@@ -1,6 +1,6 @@
 module fs
 
-// fs — filesystem operations for Kodr programs
+// fs — filesystem operations for Orhon programs
 // Import with: import std::fs
 // File and Dir types are builtins — no import needed for those.
 // This module provides path-level utility functions.

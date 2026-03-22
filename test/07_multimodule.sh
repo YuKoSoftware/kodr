@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # 07_multimodule.sh — Multi-module project builds
 source "$(dirname "$0")/helpers.sh"
-require_kodr
+require_orhon
 setup_tmpdir
 trap cleanup_tmpdir EXIT
 
 section "Multi-module project"
 
 cd "$TESTDIR"
-"$KODR" init multimod >/dev/null 2>&1
+"$ORHON" init multimod >/dev/null 2>&1
 cd "$TESTDIR/multimod"
 
-cat > src/utils.kodr <<'KODR'
+cat > src/utils.orh <<'ORHON'
 module utils
 pub func double(n: i32) i32 {
     return n + n
 }
-KODR
+ORHON
 
-cat > src/main.kodr <<'KODR'
+cat > src/main.orh <<'ORHON'
 module main
 #name    = "multimod"
 #version = Version(1, 0, 0)
@@ -28,9 +28,9 @@ import utils
 func main() void {
     console.println("multi-module works")
 }
-KODR
+ORHON
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built: bin/multimod"; then pass "multi-module builds"
 else fail "multi-module builds" "$OUTPUT"; fi
 
@@ -41,21 +41,21 @@ else fail "multi-module runs" "$BINOUT"; fi
 section "Multi-target: exe + dynamic lib"
 
 cd "$TESTDIR"
-"$KODR" init dynlink >/dev/null 2>&1
+"$ORHON" init dynlink >/dev/null 2>&1
 cd "$TESTDIR/dynlink"
 
 # Create a dynamic lib module
-cat > src/mathlib.kodr <<'KODR'
+cat > src/mathlib.orh <<'ORHON'
 module mathlib
 #name    = "mathlib"
 #build   = dynamic
 pub func add(a: i32, b: i32) i32 {
     return a + b
 }
-KODR
+ORHON
 
 # Create an exe that imports the dynamic lib
-cat > src/main.kodr <<'KODR'
+cat > src/main.orh <<'ORHON'
 module main
 #name    = "dynlink"
 #build   = exe
@@ -64,12 +64,12 @@ import mathlib
 func main() void {
     console.println("dynlink ok")
 }
-KODR
+ORHON
 
 # Remove example module (not needed)
-rm -f src/example.kodr src/control_flow.kodr
+rm -f src/example.orh src/control_flow.orh
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built:.*dynlink"; then pass "multi-target: exe built"
 else fail "multi-target: exe built" "$OUTPUT"; fi
 
@@ -79,7 +79,7 @@ else fail "multi-target: dynamic lib built" "$OUTPUT"; fi
 if [ -f bin/libmathlib.so ]; then pass "multi-target: .so exists"
 else fail "multi-target: .so exists"; fi
 
-if [ -f bin/mathlib.kodr ]; then pass "multi-target: interface file generated"
+if [ -f bin/mathlib.orh ]; then pass "multi-target: interface file generated"
 else fail "multi-target: interface file generated"; fi
 
 if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "multi-target: no memory leaks"
@@ -88,21 +88,21 @@ else fail "multi-target: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')
 section "Multi-target: exe + static lib"
 
 cd "$TESTDIR"
-"$KODR" init statlink >/dev/null 2>&1
+"$ORHON" init statlink >/dev/null 2>&1
 cd "$TESTDIR/statlink"
 
 # Create a static lib module
-cat > src/utils.kodr <<'KODR'
+cat > src/utils.orh <<'ORHON'
 module utils
 #name    = "utils"
 #build   = static
 pub func triple(n: i32) i32 {
     return n * 3
 }
-KODR
+ORHON
 
 # Create an exe that imports the static lib
-cat > src/main.kodr <<'KODR'
+cat > src/main.orh <<'ORHON'
 module main
 #name    = "statlink"
 #build   = exe
@@ -111,11 +111,11 @@ import utils
 func main() void {
     console.println("statlink ok")
 }
-KODR
+ORHON
 
-rm -f src/example.kodr src/control_flow.kodr
+rm -f src/example.orh src/control_flow.orh
 
-OUTPUT=$("$KODR" build 2>&1)
+OUTPUT=$("$ORHON" build 2>&1)
 if echo "$OUTPUT" | grep -q "Built:.*statlink"; then pass "static-link: exe built"
 else fail "static-link: exe built" "$OUTPUT"; fi
 

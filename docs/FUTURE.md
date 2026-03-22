@@ -1,4 +1,4 @@
-# Kodr — Future Ideas
+# Orhon — Future Ideas
 
 Ideas and language decisions that are not yet committed.
 
@@ -9,7 +9,7 @@ Ideas and language decisions that are not yet committed.
 - **Closures** — function pointers cover the use case. Captures create ownership complexity. Pass variables as arguments instead.
 - **Traits / interfaces** — `any` + `compt` covers generic type dispatch. Traits add complexity (hierarchies, orphan rules, associated types) without proportional value.
 - **Coroutines / async** — threads + move semantics cover parallelism. Coroutines need a runtime, colored functions, and an executor.
-- **REPL** — compiled language. `kodr run` is fast enough. A REPL needs an interpreter or incremental compiler.
+- **REPL** — compiled language. `orhon run` is fast enough. A REPL needs an interpreter or incremental compiler.
 - **Top-level `println`** — keep in `std::console`. One import, all I/O. No special-case global functions.
 - **Collection method chaining** — `.filter().map().take()` allocates intermediate collections. For loops are explicit, zero-alloc, and already work.
 - **Untagged unions** — all unions carry a tag. Safety requires knowing which type is active. Use `extern struct` with Zig sidecar for unsafe C interop.
@@ -67,7 +67,7 @@ std.gpu           // GPU access, compute, backend agnostic (Vulkan, OpenGL, WebG
 ### Language Server (LSP)
 No editor integration. Blocks adoption. Needed before the language is usable day-to-day.
 
-### Documentation Generator (`kodr doc`)
+### Documentation Generator (`orhon doc`)
 Generate HTML/Markdown docs from `pub` declarations and doc comments.
 
 ### Fuzz Testing

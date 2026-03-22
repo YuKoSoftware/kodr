@@ -1,6 +1,6 @@
 module console
 
-// console — terminal I/O for Kodr programs
+// console — terminal I/O for Orhon programs
 // Import with: import std::console
 // Implementation lives in console.zig — do not generate body, use paired .zig file.
 

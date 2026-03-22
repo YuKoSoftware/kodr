@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# testall.sh — Run the complete Kodr test suite
+# testall.sh — Run the complete Orhon test suite
 # Each test file is independently runnable: bash test/03_cli.sh
 # This script runs them all in pipeline order and aggregates results.
 

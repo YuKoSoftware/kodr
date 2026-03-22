@@ -1,6 +1,6 @@
 module math
 
-// math — mathematical functions for Kodr programs
+// math — mathematical functions for Orhon programs
 // Import with: import std::math
 // All functions use `any` — type determined by arguments + variable annotation.
 

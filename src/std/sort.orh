@@ -1,6 +1,6 @@
 module sort
 
-// sort — sorting and ordering utilities for Kodr programs
+// sort — sorting and ordering utilities for Orhon programs
 // Import with: import std::sort
 // All functions use `any` — type determined by arguments + variable annotation.
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# helpers.sh — Shared test utilities for Kodr test suite
+# helpers.sh — Shared test utilities for Orhon test suite
 # Source this from individual test scripts.
 
 set -euo pipefail
 
 # ── Paths ────────────────────────────────────────────────────
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KODR="$REPO_DIR/zig-out/bin/kodr"
+ORHON="$REPO_DIR/zig-out/bin/orhon"
 FIXTURES="$REPO_DIR/test/fixtures"
 TESTDIR=""
 
@@ -37,7 +37,7 @@ section() {
 
 # ── Temp directory ───────────────────────────────────────────
 setup_tmpdir() {
-    TESTDIR="$(mktemp -d /tmp/kodr-test-XXXXXX)"
+    TESTDIR="$(mktemp -d /tmp/orhon-test-XXXXXX)"
 }
 
 cleanup_tmpdir() {
@@ -54,10 +54,10 @@ report_results() {
     return "$FAILED"
 }
 
-# ── Require kodr binary ─────────────────────────────────────
-require_kodr() {
-    if [ ! -x "$KODR" ]; then
-        printf "\033[31mKodr binary not found at %s — run 02_build.sh first.\033[0m\n" "$KODR"
+# ── Require orhon binary ────────────────────────────────────
+require_orhon() {
+    if [ ! -x "$ORHON" ]; then
+        printf "\033[31mOrhon binary not found at %s — run 02_build.sh first.\033[0m\n" "$ORHON"
         exit 1
     fi
 }

@@ -1,5 +1,5 @@
 // module.zig — Module resolution pass (pass 3)
-// Groups .kodr files by module name, builds dependency graph,
+// Groups .orh files by module name, builds dependency graph,
 // detects circular imports, checks incremental cache.
 
 const std = @import("std");
@@ -12,7 +12,7 @@ const MODULE_KEYWORD = "module ";
 
 pub const BuildType = enum { none, exe, static, dynamic };
 
-/// A resolved module — one or more .kodr files sharing the same module name
+/// A resolved module — one or more .orh files sharing the same module name
 pub const Module = struct {
     name: []const u8,
     files: [][]const u8,
@@ -60,7 +60,7 @@ pub const Resolver = struct {
         self.modules.deinit();
     }
 
-    /// Scan a directory for .kodr files and group by module name
+    /// Scan a directory for .orh files and group by module name
     pub fn scanDirectory(self: *Resolver, dir_path: []const u8) !void {
         var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
         defer dir.close();
@@ -80,8 +80,8 @@ pub const Resolver = struct {
             const mod_name = entry.key_ptr.*;
             const files = try entry.value_ptr.toOwnedSlice(self.allocator);
 
-            // Put anchor file (module_name.kodr) first in the list
-            const anchor_name = try std.fmt.allocPrint(self.allocator, "{s}.kodr", .{mod_name});
+            // Put anchor file (module_name.orh) first in the list
+            const anchor_name = try std.fmt.allocPrint(self.allocator, "{s}.orh", .{mod_name});
             defer self.allocator.free(anchor_name);
             var anchor_count: usize = 0;
             var anchor_idx: usize = 0;
@@ -135,7 +135,7 @@ pub const Resolver = struct {
         while (try iter.next()) |entry| {
             if (entry.kind == .directory) {
                 // Skip cache directory
-                if (std.mem.eql(u8, entry.name, ".kodr-cache")) continue;
+                if (std.mem.eql(u8, entry.name, ".orh-cache")) continue;
 
                 var sub_dir = try dir.openDir(entry.name, .{ .iterate = true });
                 defer sub_dir.close();
@@ -143,7 +143,7 @@ pub const Resolver = struct {
                 defer self.allocator.free(sub_path);
                 try self.scanDirRecursive(&sub_dir, sub_path, file_map);
             } else if (entry.kind == .file) {
-                if (!std.mem.endsWith(u8, entry.name, ".kodr")) continue;
+                if (!std.mem.endsWith(u8, entry.name, ".orh")) continue;
 
                 const full_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ dir_path, entry.name });
 
@@ -244,7 +244,7 @@ pub const Resolver = struct {
                             !std.mem.startsWith(u8, trimmed_line, "//"))
                         {
                             const msg = try std.fmt.allocPrint(self.allocator,
-                                "metadata (#{s}...) only allowed in anchor file '{s}.kodr', found in '{s}'",
+                                "metadata (#{s}...) only allowed in anchor file '{s}.orh', found in '{s}'",
                                 .{ trimmed_line[1..@min(trimmed_line.len, 10)], mod_name, file_path });
                             defer self.allocator.free(msg);
                             try self.reporter.report(.{ .message = msg });
@@ -314,7 +314,7 @@ pub const Resolver = struct {
                 if (decl.is_c_header) continue;
 
                 if (decl.scope) |sc| {
-                    // std::mem is a built-in compiler module — no .kodr file needed
+                    // std::mem is a built-in compiler module — no .orh file needed
                     if (std.mem.eql(u8, sc, "std") and std.mem.eql(u8, decl.path, "mem")) continue;
 
                     // Only std:: imports are supported
@@ -326,14 +326,14 @@ pub const Resolver = struct {
                         continue;
                     }
 
-                    // std:: resolves from .kodr-cache/std/ (embedded in compiler)
+                    // std:: resolves from .orh-cache/std/ (embedded in compiler)
                     const scope_dir = try std.fs.path.join(self.allocator, &.{ cache.CACHE_DIR, "std" });
                     defer self.allocator.free(scope_dir);
 
                     const file_path = try std.fmt.allocPrint(self.allocator,
-                        "{s}/{s}.kodr", .{ scope_dir, decl.path });
+                        "{s}/{s}.orh", .{ scope_dir, decl.path });
 
-                    // Check the .kodr file exists
+                    // Check the .orh file exists
                     std.fs.cwd().access(file_path, .{}) catch {
                         const msg = try std.fmt.allocPrint(self.allocator,
                             "module '{s}::{s}' not found",
@@ -436,7 +436,7 @@ pub const Resolver = struct {
             for (mod.imports) |imp_name| {
                 if (!self.modules.contains(imp_name)) {
                     const msg = try std.fmt.allocPrint(self.allocator,
-                        "module '{s}' not found — add '{s}.kodr' to src/", .{ imp_name, imp_name });
+                        "module '{s}' not found — add '{s}.orh' to src/", .{ imp_name, imp_name });
                     defer self.allocator.free(msg);
                     try reporter.report(.{ .message = msg });
                 }
@@ -702,7 +702,7 @@ test "compareVersions" {
 
 test "read module name" {
     // Create a temp file
-    const tmp_path = "/tmp/test_module.kodr";
+    const tmp_path = "/tmp/test_module.orh";
     {
         const f = try std.fs.cwd().createFile(tmp_path, .{});
         defer f.close();

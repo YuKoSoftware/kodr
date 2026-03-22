@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 02_build.sh — Compile the Kodr compiler
+# 02_build.sh — Compile the Orhon compiler
 source "$(dirname "$0")/helpers.sh"
 
 section "Zig build"
@@ -12,10 +12,10 @@ else
     exit 1
 fi
 
-if [ -x "$KODR" ]; then
-    pass "kodr binary exists"
+if [ -x "$ORHON" ]; then
+    pass "orhon binary exists"
 else
-    fail "kodr binary exists"
+    fail "orhon binary exists"
 fi
 
 report_results

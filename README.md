@@ -1,8 +1,8 @@
-# Kodr
+# Orhon
 
 **A simple yet powerful language that is safe.**
 
-Kodr is a compiled, memory-safe programming language that transpiles to Zig. It draws the best from Rust, Go, Swift, Zig, and Python — and discards the complexity.
+Orhon is a compiled, memory-safe programming language that transpiles to Zig. It draws the best from Rust, Go, Swift, Zig, and Python — and discards the complexity.
 
 You get ownership and borrow checking without lifetime annotations. Explicit error handling without exceptions. Compile-time generics without a type-level language. Zero-cost abstractions without a garbage collector.
 
@@ -13,11 +13,11 @@ The compiler catches memory bugs, null dereference, and use-after-move at compil
 ## Getting Started
 
 ```bash
-kodr init myproject    # create a new project
+orhon init myproject    # create a new project
 cd myproject
-kodr build             # compile
-kodr run               # build and run
-kodr test              # run all test blocks
+orhon build             # compile
+orhon run               # build and run
+orhon test              # run all test blocks
 ```
 
 Every new project includes an example module that covers the entire language. Read it, modify it, break it — that's the tutorial.

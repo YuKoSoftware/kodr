@@ -8,7 +8,7 @@ const JsonError = struct { message: []const u8 };
 fn JsonResult(comptime T: type) type {
     return union(enum) { ok: T, err: JsonError };
 }
-fn KodrNullable(comptime T: type) type {
+fn OrhonNullable(comptime T: type) type {
     return union(enum) { some: T, none: void };
 }
 
@@ -34,7 +34,7 @@ pub fn stringify(text: []const u8) []const u8 {
     return buf.toOwnedSlice(alloc) catch text;
 }
 
-pub fn get(json_text: []const u8, key: []const u8) KodrNullable([]const u8) {
+pub fn get(json_text: []const u8, key: []const u8) OrhonNullable([]const u8) {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, json_text, .{}) catch
         return .{ .none = {} };
     defer parsed.deinit();

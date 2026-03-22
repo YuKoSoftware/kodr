@@ -1,10 +1,10 @@
-// builtins.zig — Kodr builtin types and their Zig code generation equivalents
-// The compiler knows about these types natively — no import needed in Kodr code.
+// builtins.zig — Orhon builtin types and their Zig code generation equivalents
+// The compiler knows about these types natively — no import needed in Orhon code.
 // Also serves as the lookup table for stdlib symbol → Zig translation.
 
 const std = @import("std");
 
-/// All builtin type names known to the Kodr compiler
+/// All builtin type names known to the Orhon compiler
 pub const BUILTIN_TYPES = [_][]const u8{
     "Thread",
     "Async",
@@ -90,7 +90,7 @@ pub fn isBuiltinValue(name: []const u8) bool {
 }
 
 /// Zig code generation for builtin types
-/// Returns the Zig source representation for a given Kodr builtin
+/// Returns the Zig source representation for a given Orhon builtin
 pub const ZigMapping = struct {
     /// Generate Zig code for Thread(T) block
     pub fn threadBlock(T: []const u8, name: []const u8, body: []const u8, writer: anytype) !void {
@@ -121,8 +121,8 @@ pub const ZigMapping = struct {
         try writer.print("*volatile {s}", .{T});
     }
 
-    /// Map Kodr primitive to Zig primitive
-    pub fn primitiveToZig(kodr_type: []const u8) []const u8 {
+    /// Map Orhon primitive to Zig primitive
+    pub fn primitiveToZig(orhon_type: []const u8) []const u8 {
         // Most primitives map 1:1 with Zig
         const mappings = [_][2][]const u8{
             .{ "String", "[]const u8" },
@@ -148,9 +148,9 @@ pub const ZigMapping = struct {
         };
 
         for (mappings) |m| {
-            if (std.mem.eql(u8, kodr_type, m[0])) return m[1];
+            if (std.mem.eql(u8, orhon_type, m[0])) return m[1];
         }
-        return kodr_type; // user defined type — use as-is
+        return orhon_type; // user defined type — use as-is
     }
 };
 

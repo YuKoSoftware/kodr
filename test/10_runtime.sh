@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 10_runtime.sh — Runtime correctness (tester binary output)
 source "$(dirname "$0")/helpers.sh"
-require_kodr
+require_orhon
 setup_tmpdir
 trap cleanup_tmpdir EXIT
 
@@ -9,11 +9,11 @@ section "Runtime correctness"
 
 cd "$TESTDIR"
 mkdir -p comptest/src
-cp "$FIXTURES/tester_main.kodr" comptest/src/main.kodr
-cp "$FIXTURES/tester.kodr" comptest/src/tester.kodr
+cp "$FIXTURES/tester_main.orh" comptest/src/main.orh
+cp "$FIXTURES/tester.orh" comptest/src/tester.orh
 cd "$TESTDIR/comptest"
 
-"$KODR" build >/dev/null 2>&1
+"$ORHON" build >/dev/null 2>&1
 BINOUT=$(./bin/comptest 2>&1)
 
 if echo "$BINOUT" | grep -q "TESTER:DONE"; then pass "tester ran to completion"

@@ -82,7 +82,7 @@ Moving individual fields out of a struct is a compile time error.
 
 ## Pointers
 
-Traditional `*T` pointer syntax does not exist in Kodr. Instead there are three distinct pointer types, each with a clear purpose. All follow the same `Type(T, value)` instantiation pattern used everywhere in Kodr.
+Traditional `*T` pointer syntax does not exist in Orhon. Instead there are three distinct pointer types, each with a clear purpose. All follow the same `Type(T, value)` instantiation pattern used everywhere in Orhon.
 
 ### `Ptr(T)` — Safe Pointer, General Use
 Compiler tracked. Always `const` — the pointer cannot be reassigned. Points to a single value only — no pointer arithmetic, no `[]` indexing. Must be initialized from a variable address (`&x`) — raw integer addresses are not allowed. The ownership pass ensures you cannot use a `Ptr(T)` after the pointee has moved — this is a hard compile-time error. No warnings emitted.
@@ -179,7 +179,7 @@ a.free(result)
 
 Returning a heap-allocated value without also returning or passing the allocator is a compiler warning — the caller needs to know which allocator to free with.
 
-Custom allocator *implementation* belongs in Zig via `extern func` — Kodr code uses allocators but does not build them.
+Custom allocator *implementation* belongs in Zig via `extern func` — Orhon code uses allocators but does not build them.
 
 ### Built-in Allocators
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# 04_init.sh — Project scaffolding (kodr init, embedded std)
+# 04_init.sh — Project scaffolding (orhon init, embedded std)
 source "$(dirname "$0")/helpers.sh"
-require_kodr
+require_orhon
 setup_tmpdir
 trap cleanup_tmpdir EXIT
 
-section "kodr init"
+section "orhon init"
 
 cd "$TESTDIR"
-OUTPUT=$("$KODR" init testproj 2>&1)
+OUTPUT=$("$ORHON" init testproj 2>&1)
 
 if echo "$OUTPUT" | grep -q "Created project 'testproj'"; then
     pass "prints success message"
@@ -19,34 +19,34 @@ fi
 if [ -d testproj/src ]; then pass "creates src/ directory"
 else fail "creates src/ directory"; fi
 
-if [ -f testproj/src/main.kodr ]; then pass "creates main.kodr"
-else fail "creates main.kodr"; fi
+if [ -f testproj/src/main.orh ]; then pass "creates main.orh"
+else fail "creates main.orh"; fi
 
-if [ -f testproj/src/example.kodr ]; then pass "creates example.kodr"
-else fail "creates example.kodr"; fi
+if [ -f testproj/src/example.orh ]; then pass "creates example.orh"
+else fail "creates example.orh"; fi
 
-if [ -f testproj/src/control_flow.kodr ]; then pass "creates control_flow.kodr"
-else fail "creates control_flow.kodr"; fi
+if [ -f testproj/src/control_flow.orh ]; then pass "creates control_flow.orh"
+else fail "creates control_flow.orh"; fi
 
-if head -1 testproj/src/main.kodr | grep -q "^module main$"; then
-    pass "main.kodr has 'module main'"
+if head -1 testproj/src/main.orh | grep -q "^module main$"; then
+    pass "main.orh has 'module main'"
 else
-    fail "main.kodr has 'module main'"
+    fail "main.orh has 'module main'"
 fi
 
-if grep -q '#name    = "testproj"' testproj/src/main.kodr; then
-    pass "main.kodr has project name"
+if grep -q '#name    = "testproj"' testproj/src/main.orh; then
+    pass "main.orh has project name"
 else
-    fail "main.kodr has project name"
+    fail "main.orh has project name"
 fi
 
-if head -1 testproj/src/example.kodr | grep -q "^module example$"; then
-    pass "example.kodr has 'module example'"
+if head -1 testproj/src/example.orh | grep -q "^module example$"; then
+    pass "example.orh has 'module example'"
 else
-    fail "example.kodr has 'module example'"
+    fail "example.orh has 'module example'"
 fi
 
-if "$KODR" init testproj 2>&1 | grep -q "Created project"; then
+if "$ORHON" init testproj 2>&1 | grep -q "Created project"; then
     pass "init on existing dir succeeds"
 else
     fail "init on existing dir succeeds"
@@ -55,15 +55,15 @@ fi
 section "embedded std (auto-extracted on build)"
 
 cd "$TESTDIR/testproj"
-"$KODR" build >/dev/null 2>&1 || true
+"$ORHON" build >/dev/null 2>&1 || true
 
-if [ -f .kodr-cache/std/console.kodr ]; then pass "build extracts std/console.kodr"
-else fail "build extracts std/console.kodr"; fi
+if [ -f .orh-cache/std/console.orh ]; then pass "build extracts std/console.orh"
+else fail "build extracts std/console.orh"; fi
 
-if [ -f .kodr-cache/std/console.zig ]; then pass "build extracts std/console.zig"
+if [ -f .orh-cache/std/console.zig ]; then pass "build extracts std/console.zig"
 else fail "build extracts std/console.zig"; fi
 
-if grep -q "pub fn print" .kodr-cache/std/console.zig; then
+if grep -q "pub fn print" .orh-cache/std/console.zig; then
     pass "console.zig contains print function"
 else
     fail "console.zig contains print function"

@@ -1,4 +1,4 @@
-# Kodr — Known Bugs
+# Orhon — Known Bugs
 
 Bugs discovered during testing. Fix before v1.
 

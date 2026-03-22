@@ -1,6 +1,6 @@
 module str
 
-// str — string utilities for Kodr programs
+// str — string utilities for Orhon programs
 // Import with: import std::str
 // Allocating functions accept an optional allocator as last argument.
 // Default: smp allocator.

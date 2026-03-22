@@ -1,7 +1,7 @@
 // zig_runner.zig — Zig Compiler Runner pass (pass 12)
 // Invokes the Zig compiler on generated .zig files.
 // Captures stdout/stderr — never shown to user unless -zig flag is set.
-// Finds Zig binary in: 1) same dir as kodr binary, 2) PATH
+// Finds Zig binary in: 1) same dir as orhon binary, 2) PATH
 
 const std = @import("std");
 const errors = @import("errors.zig");
@@ -321,7 +321,7 @@ pub const ZigRunner = struct {
         try out.flush();
     }
 
-    /// Parse Zig compiler errors and reformat as Kodr errors
+    /// Parse Zig compiler errors and reformat as Orhon errors
     /// This should ideally never trigger in a correct compiler implementation
     fn reformatZigErrors(self: *ZigRunner, stderr: []const u8) !void {
         // Zig errors look like: path/to/file.zig:line:col: error: message
@@ -494,7 +494,7 @@ pub fn buildZigContent(
         try buf.appendSlice(allocator, lib_chunk);
     }
 
-    // Always include test step so `kodr test` works
+    // Always include test step so `orhon test` works
     const test_chunk = try std.fmt.allocPrint(allocator,
         \\    const unit_tests = b.addTest(.{{
         \\        .root_module = b.createModule(.{{
@@ -657,10 +657,10 @@ pub fn buildZigContentMulti(
 }
 
 /// Find the Zig binary
-/// 1. Check same directory as kodr binary
+/// 1. Check same directory as orhon binary
 /// 2. Check PATH
 pub fn findZig(allocator: std.mem.Allocator) ![]const u8 {
-    // Get path to kodr binary
+    // Get path to orhon binary
     var exe_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const exe_path = std.fs.selfExePath(&exe_path_buf) catch null;
 
@@ -683,7 +683,7 @@ pub fn findZig(allocator: std.mem.Allocator) ![]const u8 {
 fn findZigInPath(allocator: std.mem.Allocator) ![]const u8 {
     // Search PATH for zig binary
     const path_env = std.process.getEnvVarOwned(allocator, "PATH") catch {
-        return errors.fatal("zig compiler not found\n  place zig binary ({s}) next to kodr, or install zig globally\n  download zig at: https://ziglang.org/download", .{zigBinaryName()});
+        return errors.fatal("zig compiler not found\n  place zig binary ({s}) next to orhon, or install zig globally\n  download zig at: https://ziglang.org/download", .{zigBinaryName()});
     };
     defer allocator.free(path_env);
 
@@ -697,7 +697,7 @@ fn findZigInPath(allocator: std.mem.Allocator) ![]const u8 {
         return zig_path;
     }
 
-    return errors.fatal("zig compiler not found\n  place zig binary ({s}) next to kodr, or install zig globally\n  download zig at: https://ziglang.org/download", .{zigBinaryName()});
+    return errors.fatal("zig compiler not found\n  place zig binary ({s}) next to orhon, or install zig globally\n  download zig at: https://ziglang.org/download", .{zigBinaryName()});
 }
 
 fn zigBinaryName() []const u8 {

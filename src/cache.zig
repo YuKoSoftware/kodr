@@ -1,14 +1,14 @@
-// cache.zig — Kodr incremental compilation cache
-// Manages .kodr-cache/timestamps and .kodr-cache/deps.graph
+// cache.zig — Orhon incremental compilation cache
+// Manages .orh-cache/timestamps and .orh-cache/deps.graph
 // Determines which modules need recompilation.
 
 const std = @import("std");
 
-pub const CACHE_DIR = ".kodr-cache";
-pub const GENERATED_DIR = ".kodr-cache/generated";
-pub const TIMESTAMPS_FILE = ".kodr-cache/timestamps";
-pub const DEPS_FILE = ".kodr-cache/deps.graph";
-pub const WARNINGS_FILE = ".kodr-cache/warnings";
+pub const CACHE_DIR = ".orh-cache";
+pub const GENERATED_DIR = ".orh-cache/generated";
+pub const TIMESTAMPS_FILE = ".orh-cache/timestamps";
+pub const DEPS_FILE = ".orh-cache/deps.graph";
+pub const WARNINGS_FILE = ".orh-cache/warnings";
 
 /// A module entry in the cache
 pub const ModuleEntry = struct {
@@ -48,7 +48,7 @@ pub const Cache = struct {
         self.deps.deinit();
     }
 
-    /// Load timestamps from .kodr-cache/timestamps
+    /// Load timestamps from .orh-cache/timestamps
     pub fn loadTimestamps(self: *Cache) !void {
         const file = std.fs.cwd().openFile(TIMESTAMPS_FILE, .{}) catch |err| {
             if (err == error.FileNotFound) return; // fresh build
@@ -72,7 +72,7 @@ pub const Cache = struct {
         }
     }
 
-    /// Save timestamps to .kodr-cache/timestamps
+    /// Save timestamps to .orh-cache/timestamps
     pub fn saveTimestamps(self: *Cache) !void {
         try ensureGeneratedDir();
         const file = try std.fs.cwd().createFile(TIMESTAMPS_FILE, .{});
@@ -89,7 +89,7 @@ pub const Cache = struct {
         try writer.flush();
     }
 
-    /// Load dependency graph from .kodr-cache/deps.graph
+    /// Load dependency graph from .orh-cache/deps.graph
     pub fn loadDeps(self: *Cache) !void {
         const file = std.fs.cwd().openFile(DEPS_FILE, .{}) catch |err| {
             if (err == error.FileNotFound) return;
@@ -124,7 +124,7 @@ pub const Cache = struct {
         }
     }
 
-    /// Save dependency graph to .kodr-cache/deps.graph
+    /// Save dependency graph to .orh-cache/deps.graph
     pub fn saveDeps(self: *Cache) !void {
         try ensureGeneratedDir();
         const file = try std.fs.cwd().createFile(DEPS_FILE, .{});
@@ -194,7 +194,7 @@ pub const CachedWarning = struct {
     message: []const u8,
 };
 
-/// Load cached warnings from .kodr-cache/warnings
+/// Load cached warnings from .orh-cache/warnings
 pub fn loadWarnings(allocator: std.mem.Allocator) !std.ArrayListUnmanaged(CachedWarning) {
     var list: std.ArrayListUnmanaged(CachedWarning) = .{};
     const file = std.fs.cwd().openFile(WARNINGS_FILE, .{}) catch |err| {
@@ -226,7 +226,7 @@ pub fn loadWarnings(allocator: std.mem.Allocator) !std.ArrayListUnmanaged(Cached
     return list;
 }
 
-/// Save warnings to .kodr-cache/warnings
+/// Save warnings to .orh-cache/warnings
 pub fn saveWarnings(warnings: []const CachedWarning) !void {
     try ensureGeneratedDir();
     const file = try std.fs.cwd().createFile(WARNINGS_FILE, .{});
@@ -276,6 +276,6 @@ test "cache init and deinit" {
 test "cache has changed - nonexistent file" {
     var cache = Cache.init(std.testing.allocator);
     defer cache.deinit();
-    const changed = try cache.hasChanged("nonexistent_file_xyz.kodr");
+    const changed = try cache.hasChanged("nonexistent_file_xyz.orh");
     try std.testing.expect(changed);
 }

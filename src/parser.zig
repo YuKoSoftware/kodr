@@ -1,4 +1,4 @@
-// parser.zig — Kodr recursive descent parser + AST type definitions
+// parser.zig — Orhon recursive descent parser + AST type definitions
 // AST uses arena allocation — entire tree freed in one call when done.
 // Each PEG rule maps directly to a parse_X() function.
 
@@ -2193,7 +2193,7 @@ pub const Parser = struct {
 
     fn isPrimitiveKeyword(kind: TokenKind) bool {
         _ = kind;
-        return false; // Primitive types are identifiers in Kodr
+        return false; // Primitive types are identifiers in Orhon
     }
 };
 

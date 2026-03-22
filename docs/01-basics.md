@@ -3,7 +3,7 @@
 ## Philosophy & Goals
 
 ### Inspiration
-Kodr draws from five languages, taking the best of each and discarding what doesn't fit:
+Orhon draws from five languages, taking the best of each and discarding what doesn't fit:
 
 | Language | Borrow | Reject |
 |----------|--------|--------|
@@ -36,7 +36,7 @@ Developers who value simplicity and explicitness — people who appreciate what 
 
 ## Keywords
 
-Every keyword in Kodr earns its place. No keyword exists for convenience alone.
+Every keyword in Orhon earns its place. No keyword exists for convenience alone.
 
 ```
 func, var, const, if, else, for, while, return, import, pub,

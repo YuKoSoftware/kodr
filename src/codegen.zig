@@ -1,6 +1,6 @@
 // codegen.zig — Zig Code Generation pass (pass 11)
 // Translates MIR and AST to readable Zig source files.
-// One .zig file per Kodr module. Uses std.fmt for output.
+// One .zig file per Orhon module. Uses std.fmt for output.
 
 const std = @import("std");
 const parser = @import("parser.zig");
@@ -232,33 +232,33 @@ pub const CodeGen = struct {
         try self.writeFmt("// generated from module {s} — do not edit\n", .{module_name});
         try self.write("const std = @import(\"std\");\n");
 
-        // Kodr runtime types — only emit if the module uses Error or null unions
+        // Orhon runtime types — only emit if the module uses Error or null unions
         if (self.moduleUsesErrorUnion(ast)) {
-            try self.write("const KodrError = struct { message: []const u8 };\n");
-            try self.write("fn KodrResult(comptime T: type) type { return union(enum) { ok: T, err: KodrError }; }\n");
+            try self.write("const OrhonError = struct { message: []const u8 };\n");
+            try self.write("fn OrhonResult(comptime T: type) type { return union(enum) { ok: T, err: OrhonError }; }\n");
         }
-        // Always emit KodrNullable — used by null unions and string indexOf/lastIndexOf
-        try self.write("fn KodrNullable(comptime T: type) type { return union(enum) { some: T, none: void }; }\n");
-        try self.write("fn kodrTypeId(comptime T: type) usize { return @intFromPtr(@typeName(T).ptr); }\n");
+        // Always emit OrhonNullable — used by null unions and string indexOf/lastIndexOf
+        try self.write("fn OrhonNullable(comptime T: type) type { return union(enum) { some: T, none: void }; }\n");
+        try self.write("fn orhonTypeId(comptime T: type) usize { return @intFromPtr(@typeName(T).ptr); }\n");
 
         // Allocator wrappers — import if module uses Debug/Arena/Stack allocators
         if (moduleUsesAllocWrappers(ast)) {
             self.uses_mem = true;
-            try self.write("const KodrMem = @import(\"mem_rt.zig\");\n");
+            try self.write("const OrhonMem = @import(\"mem_rt.zig\");\n");
         }
 
         // File/Dir runtime — import if module uses these types
         if (moduleUsesFileOrDir(ast)) {
             self.uses_fs = true;
-            try self.write("const KodrFs = @import(\"fs_rt.zig\");\n");
+            try self.write("const OrhonFs = @import(\"fs_rt.zig\");\n");
         }
 
         // String repeat helper
-        try self.write("fn kodrStringRepeat(alloc: std.mem.Allocator, s: []const u8, n: usize) ![]const u8 { const buf = try alloc.alloc(u8, s.len * n); for (0..n) |i| { @memcpy(buf[i * s.len ..][0..s.len], s); } return buf; }\n");
+        try self.write("fn orhonStringRepeat(alloc: std.mem.Allocator, s: []const u8, n: usize) ![]const u8 { const buf = try alloc.alloc(u8, s.len * n); for (0..n) |i| { @memcpy(buf[i * s.len ..][0..s.len], s); } return buf; }\n");
         // Ring buffer — panics when full
-        try self.write("fn KodrRing(comptime T: type, comptime cap: usize) type { return struct { buf: [cap]T = undefined, head: usize = 0, len: usize = 0, const Self = @This(); fn push(self: *Self, val: T) void { if (self.len >= cap) @panic(\"ring buffer full\"); self.buf[(self.head + self.len) % cap] = val; self.len += 1; } fn pop(self: *Self) ?T { if (self.len == 0) return null; const val = self.buf[self.head]; self.head = (self.head + 1) % cap; self.len -= 1; return val; } fn isFull(self: *const Self) bool { return self.len >= cap; } fn isEmpty(self: *const Self) bool { return self.len == 0; } fn count(self: *const Self) usize { return self.len; } }; }\n");
+        try self.write("fn OrhonRing(comptime T: type, comptime cap: usize) type { return struct { buf: [cap]T = undefined, head: usize = 0, len: usize = 0, const Self = @This(); fn push(self: *Self, val: T) void { if (self.len >= cap) @panic(\"ring buffer full\"); self.buf[(self.head + self.len) % cap] = val; self.len += 1; } fn pop(self: *Self) ?T { if (self.len == 0) return null; const val = self.buf[self.head]; self.head = (self.head + 1) % cap; self.len -= 1; return val; } fn isFull(self: *const Self) bool { return self.len >= cap; } fn isEmpty(self: *const Self) bool { return self.len == 0; } fn count(self: *const Self) usize { return self.len; } }; }\n");
         // ORing buffer — overwrites oldest when full
-        try self.write("fn KodrORing(comptime T: type, comptime cap: usize) type { return struct { buf: [cap]T = undefined, head: usize = 0, len: usize = 0, const Self = @This(); fn push(self: *Self, val: T) void { if (self.len >= cap) { self.buf[self.head] = val; self.head = (self.head + 1) % cap; } else { self.buf[(self.head + self.len) % cap] = val; self.len += 1; } } fn pop(self: *Self) ?T { if (self.len == 0) return null; const val = self.buf[self.head]; self.head = (self.head + 1) % cap; self.len -= 1; return val; } fn isFull(self: *const Self) bool { return self.len >= cap; } fn isEmpty(self: *const Self) bool { return self.len == 0; } fn count(self: *const Self) usize { return self.len; } }; }\n");
+        try self.write("fn OrhonORing(comptime T: type, comptime cap: usize) type { return struct { buf: [cap]T = undefined, head: usize = 0, len: usize = 0, const Self = @This(); fn push(self: *Self, val: T) void { if (self.len >= cap) { self.buf[self.head] = val; self.head = (self.head + 1) % cap; } else { self.buf[(self.head + self.len) % cap] = val; self.len += 1; } } fn pop(self: *Self) ?T { if (self.len == 0) return null; const val = self.buf[self.head]; self.head = (self.head + 1) % cap; self.len -= 1; return val; } fn isFull(self: *const Self) bool { return self.len >= cap; } fn isEmpty(self: *const Self) bool { return self.len == 0; } fn count(self: *const Self) usize { return self.len; } }; }\n");
 
         // Generate imports
         for (ast.program.imports) |imp| {
@@ -335,9 +335,9 @@ pub const CodeGen = struct {
         return node.type_union.len >= 2;
     }
 
-    /// Generate a Zig union tag name from a Kodr type name: i32 → _i32
-    fn unionTagName(self: *CodeGen, kodr_name: []const u8) ![]const u8 {
-        return try self.allocTypeStr("_{s}", .{kodr_name});
+    /// Generate a Zig union tag name from an Orhon type name: i32 → _i32
+    fn unionTagName(self: *CodeGen, orhon_name: []const u8) ![]const u8 {
+        return try self.allocTypeStr("_{s}", .{orhon_name});
     }
 
     /// Check if a variable name is a tracked error union variable
@@ -558,7 +558,7 @@ pub const CodeGen = struct {
         return self.ptr_vars.contains(name);
     }
 
-    /// Derive Zig format specifier for a Kodr type name.
+    /// Derive Zig format specifier for an Orhon type name.
     /// Returns "d" for integers, "d" for floats, "s" for String, "any" otherwise.
     fn typeToFmtSpec(name: []const u8) []const u8 {
         if (std.mem.eql(u8, name, K.Type.STRING)) return "s";
@@ -654,7 +654,7 @@ pub const CodeGen = struct {
         if (value.* == .null_literal) {
             try self.write(".{ .none = {} }");
         } else if (self.exprReturnsNullUnion(value)) {
-            // Value already returns KodrNullable — don't double-wrap
+            // Value already returns OrhonNullable — don't double-wrap
             try self.generateExpr(value);
         } else {
             try self.write(".{ .some = ");
@@ -725,10 +725,10 @@ pub const CodeGen = struct {
 
     /// Check if an expression already produces a null union value.
     /// Function calls (positional args) to a function typed as returning a union
-    /// already return KodrNullable — don't double-wrap.
+    /// already return OrhonNullable — don't double-wrap.
     fn exprReturnsNullUnion(self: *const CodeGen, node: *parser.Node) bool {
         return switch (node.*) {
-            // Positional function calls returning a null union already produce KodrNullable
+            // Positional function calls returning a null union already produce OrhonNullable
             .call_expr => |c| c.arg_names.len == 0,
             // A variable already tracked as null union
             .identifier => |name| self.null_vars.contains(name),
@@ -1054,7 +1054,7 @@ pub const CodeGen = struct {
                 .field_decl => |f| {
                     try self.writeIndent();
                     // Zig struct fields are always public — pub is only for decls.
-                    // Kodr tracks field visibility for its own analysis passes.
+                    // Orhon tracks field visibility for its own analysis passes.
                     try self.writeFmt("{s}: {s}", .{ f.name, try self.typeToZig(f.type_annotation) });
                     if (f.default_value) |dv| {
                         try self.write(" = ");
@@ -1175,7 +1175,7 @@ pub const CodeGen = struct {
 
     /// Generate allocator initialization statements for: var a = mem.DebugAllocator() etc.
     /// SMP/Page → global singletons (no wrapper).
-    /// Debug/Arena/Stack → KodrMem wrapper types (methods pass through to Zig).
+    /// Debug/Arena/Stack → OrhonMem wrapper types (methods pass through to Zig).
     /// NOTE: generateBlock already called writeIndent() before this statement, so the
     /// first line must NOT call writeIndent(); subsequent lines must.
     fn generateAllocatorInit(self: *CodeGen, name: []const u8, kind: AllocKind, args: []*parser.Node) anyerror!void {
@@ -1192,12 +1192,12 @@ pub const CodeGen = struct {
             },
             .gpa => {
                 self.uses_mem = true;
-                try self.writeFmt("var {s} = KodrMem.DebugAlloc.init();\n", .{name});
+                try self.writeFmt("var {s} = OrhonMem.DebugAlloc.init();\n", .{name});
                 try self.writeIndent(); try self.writeFmt("defer {s}.deinit();", .{name});
             },
             .arena => {
                 self.uses_mem = true;
-                try self.writeFmt("var {s} = KodrMem.ArenaAlloc.init();\n", .{name});
+                try self.writeFmt("var {s} = OrhonMem.ArenaAlloc.init();\n", .{name});
                 try self.writeIndent(); try self.writeFmt("defer {s}.deinit();", .{name});
             },
             .stack => {
@@ -1209,10 +1209,10 @@ pub const CodeGen = struct {
                 try self.writeFmt("var _{s}_buf: [", .{name});
                 try self.generateExpr(args[0]);
                 try self.write("]u8 = undefined;\n");
-                try self.writeIndent(); try self.writeFmt("var {s} = KodrMem.StackAlloc.init(&_{s}_buf);", .{ name, name });
+                try self.writeIndent(); try self.writeFmt("var {s} = OrhonMem.StackAlloc.init(&_{s}_buf);", .{ name, name });
             },
             .pool => {
-                // Pool uses std.heap.MemoryPool directly — no KodrMem wrapper needed
+                // Pool uses std.heap.MemoryPool directly — no OrhonMem wrapper needed
                 if (args.len < 1) {
                     try self.reporter.report(.{ .message = "mem.Pool requires a type argument" });
                     return error.CompileError;
@@ -1560,27 +1560,27 @@ pub const CodeGen = struct {
                             const si = self.destruct_counter;
                             self.destruct_counter += 1;
                             const kw = if (d.is_const) "const" else "var";
-                            // const _kodr_sp0_delim = <arg>;
-                            try self.writeFmt("const _kodr_sp{d}_delim = ", .{si});
+                            // const _orhon_sp0_delim = <arg>;
+                            try self.writeFmt("const _orhon_sp{d}_delim = ", .{si});
                             if (c.args.len > 0) try self.generateExpr(c.args[0]);
                             try self.write(";\n");
                             try self.writeIndent();
-                            // const _kodr_sp0_pos = std.mem.indexOf(u8, s, delim);
-                            try self.writeFmt("const _kodr_sp{d}_pos = std.mem.indexOf(u8, ", .{si});
+                            // const _orhon_sp0_pos = std.mem.indexOf(u8, s, delim);
+                            try self.writeFmt("const _orhon_sp{d}_pos = std.mem.indexOf(u8, ", .{si});
                             try self.generateExpr(fe.object);
-                            try self.writeFmt(", _kodr_sp{d}_delim);\n", .{si});
+                            try self.writeFmt(", _orhon_sp{d}_delim);\n", .{si});
                             try self.writeIndent();
                             // const before = if (pos) |_idx| s[0.._idx] else s;
-                            try self.writeFmt("{s} {s} = if (_kodr_sp{d}_pos) |_idx| ", .{ kw, d.names[0], si });
+                            try self.writeFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ kw, d.names[0], si });
                             try self.generateExpr(fe.object);
                             try self.write("[0.._idx] else ");
                             try self.generateExpr(fe.object);
                             try self.write(";\n");
                             try self.writeIndent();
                             // const after = if (pos) |_idx| s[_idx + delim.len..] else "";
-                            try self.writeFmt("{s} {s} = if (_kodr_sp{d}_pos) |_idx| ", .{ kw, d.names[1], si });
+                            try self.writeFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ kw, d.names[1], si });
                             try self.generateExpr(fe.object);
-                            try self.writeFmt("[_idx + _kodr_sp{d}_delim.len..] else \"\";", .{si});
+                            try self.writeFmt("[_idx + _orhon_sp{d}_delim.len..] else \"\";", .{si});
                             // Track result vars as strings
                             try self.string_vars.put(self.allocator, d.names[0], {});
                             try self.string_vars.put(self.allocator, d.names[1], {});
@@ -1599,11 +1599,11 @@ pub const CodeGen = struct {
                             const si = self.destruct_counter;
                             self.destruct_counter += 1;
                             // Force runtime index so Zig returns a slice, not a pointer-to-array
-                            try self.writeFmt("var _kodr_s{d}: usize = @intCast(", .{si});
+                            try self.writeFmt("var _orhon_s{d}: usize = @intCast(", .{si});
                             try self.generateExpr(c.args[0]);
                             try self.write(");\n");
                             try self.writeIndent();
-                            try self.writeFmt("_ = &_kodr_s{d};\n", .{si});
+                            try self.writeFmt("_ = &_orhon_s{d};\n", .{si});
                             try self.writeIndent();
                             try self.writeFmt("{s} {s} = ", .{ kw, d.names[0] });
                             if (fe.object.* == .identifier and self.isListVar(fe.object.identifier)) {
@@ -1612,7 +1612,7 @@ pub const CodeGen = struct {
                             } else {
                                 try self.generateExpr(fe.object);
                             }
-                            try self.writeFmt("[0.._kodr_s{d}];\n", .{si});
+                            try self.writeFmt("[0.._orhon_s{d}];\n", .{si});
                             try self.writeIndent();
                             try self.writeFmt("{s} {s} = ", .{ kw, d.names[1] });
                             if (fe.object.* == .identifier and self.isListVar(fe.object.identifier)) {
@@ -1621,23 +1621,23 @@ pub const CodeGen = struct {
                             } else {
                                 try self.generateExpr(fe.object);
                             }
-                            try self.writeFmt("[_kodr_s{d}..];", .{si});
+                            try self.writeFmt("[_orhon_s{d}..];", .{si});
                             return;
                         }
                     }
                 }
                 // Normal tuple destructuring:
-                // var (a, b) = expr  →  const _kodr_dN = expr; var/const a = _kodr_dN.a; ...
+                // var (a, b) = expr  →  const _orhon_dN = expr; var/const a = _orhon_dN.a; ...
                 const idx = self.destruct_counter;
                 self.destruct_counter += 1;
-                try self.writeFmt("const _kodr_d{d} = ", .{idx});
+                try self.writeFmt("const _orhon_d{d} = ", .{idx});
                 try self.generateExpr(d.value);
                 try self.write(";");
                 const kw = if (d.is_const) "const" else "var";
                 for (d.names) |name| {
                     try self.write("\n");
                     try self.writeIndent();
-                    try self.writeFmt("{s} {s} = _kodr_d{d}.{s};", .{ kw, name, idx, name });
+                    try self.writeFmt("{s} {s} = _orhon_d{d}.{s};", .{ kw, name, idx, name });
                 }
             },
             .compt_decl => |v| {
@@ -1650,9 +1650,9 @@ pub const CodeGen = struct {
             },
             .return_stmt => |r| {
                 if (self.in_thread_block) {
-                    // Thread body: return expr → _kodr_rp.* = expr; return;
+                    // Thread body: return expr → _orhon_rp.* = expr; return;
                     if (r.value) |v| {
-                        try self.write("_kodr_rp.* = ");
+                        try self.write("_orhon_rp.* = ");
                         try self.generateExpr(v);
                         try self.write("; return;");
                     } else {
@@ -1786,24 +1786,24 @@ pub const CodeGen = struct {
                     try self.write(") |");
                     if (is_range) {
                         // Range produces usize — rename and cast to i32
-                        try self.writeFmt("_kodr_{s}", .{f.captures[0]});
+                        try self.writeFmt("_orhon_{s}", .{f.captures[0]});
                     } else {
                         try self.write(f.captures[0]);
                     }
                     if (f.index_var) |idx| {
                         // Index from 0.. is usize — rename and cast to i32
-                        try self.writeFmt(", _kodr_{s}", .{idx});
+                        try self.writeFmt(", _orhon_{s}", .{idx});
                     }
                     if (needs_cast) {
                         try self.write("| {\n");
                         self.indent += 1;
                         if (is_range) {
                             try self.writeIndent();
-                            try self.writeFmt("const {s}: i32 = @intCast(_kodr_{s});\n", .{ f.captures[0], f.captures[0] });
+                            try self.writeFmt("const {s}: i32 = @intCast(_orhon_{s});\n", .{ f.captures[0], f.captures[0] });
                         }
                         if (f.index_var) |idx| {
                             try self.writeIndent();
-                            try self.writeFmt("const {s}: i32 = @intCast(_kodr_{s});\n", .{ idx, idx });
+                            try self.writeFmt("const {s}: i32 = @intCast(_orhon_{s});\n", .{ idx, idx });
                         }
                         for (f.body.block.statements) |stmt| {
                             try self.writeIndent();
@@ -1887,7 +1887,7 @@ pub const CodeGen = struct {
                             has_wildcard = true;
                             try self.write("else");
                         } else if (arm.match_arm.pattern.* == .range_expr) {
-                            // Range pattern: 4..8 in Kodr → 4...8 in Zig switch (inclusive)
+                            // Range pattern: 4..8 in Orhon → 4...8 in Zig switch (inclusive)
                             const r = arm.match_arm.pattern.range_expr;
                             try self.generateExpr(r.left);
                             try self.write("...");
@@ -1999,7 +1999,7 @@ pub const CodeGen = struct {
                     try self.writeFmt(".{{ .err = .{{ .message = {s} }} }}", .{msg});
                 } else {
                     // Standalone Error value (const, assignment)
-                    try self.writeFmt("KodrError{{ .message = {s} }}", .{msg});
+                    try self.writeFmt("OrhonError{{ .message = {s} }}", .{msg});
                 }
             },
             .identifier => |name| {
@@ -2083,7 +2083,7 @@ pub const CodeGen = struct {
                             return;
                         }
                         // General type check: `val is i32` → `@TypeOf(val) == i32`
-                        // Map Kodr type names to Zig (e.g. String → []const u8)
+                        // Map Orhon type names to Zig (e.g. String → []const u8)
                         const zig_rhs = builtins.ZigMapping.primitiveToZig(rhs);
                         try self.write("(@TypeOf(");
                         try self.generateExpr(val_node);
@@ -2302,12 +2302,12 @@ pub const CodeGen = struct {
                     try self.write("{}");
                     return;
                 }
-                // File/Dir constructor: File("path") → KodrFs.File{ .path = "path", .alloc = smp }
+                // File/Dir constructor: File("path") → OrhonFs.File{ .path = "path", .alloc = smp }
                 if (c.callee.* == .identifier and
                     (std.mem.eql(u8, c.callee.identifier, K.Type.FILE) or std.mem.eql(u8, c.callee.identifier, K.Type.DIR)))
                 {
                     self.uses_fs = true;
-                    const zig_type = if (std.mem.eql(u8, c.callee.identifier, K.Type.FILE)) "KodrFs.File" else "KodrFs.Dir";
+                    const zig_type = if (std.mem.eql(u8, c.callee.identifier, K.Type.FILE)) "OrhonFs.File" else "OrhonFs.Dir";
                     try self.writeFmt("{s}{{ .path = ", .{zig_type});
                     if (c.args.len > 0) try self.generateExpr(c.args[0]);
                     try self.write(", .alloc = ");
@@ -2466,10 +2466,10 @@ pub const CodeGen = struct {
                     const tname = f.object.identifier;
                     if (std.mem.eql(u8, f.field, "value")) {
                         // worker.value → join + unwrap result (generates a block expression)
-                        try self.writeFmt("blk: {{ _kodr_{s}_handle.join(); break :blk _kodr_{s}_result.?; }}", .{ tname, tname });
+                        try self.writeFmt("blk: {{ _orhon_{s}_handle.join(); break :blk _orhon_{s}_result.?; }}", .{ tname, tname });
                     } else if (std.mem.eql(u8, f.field, "finished")) {
                         // worker.finished → result != null
-                        try self.writeFmt("(_kodr_{s}_result != null)", .{tname});
+                        try self.writeFmt("(_orhon_{s}_result != null)", .{tname});
                     } else {
                         try self.generateExpr(f.object);
                         try self.writeFmt(".{s}", .{f.field});
@@ -2600,31 +2600,31 @@ pub const CodeGen = struct {
     /// Map: for(m) |(key, value)| → var _it = m.iterator(); while (_it.next()) |entry| { const key = entry.key_ptr.*; ... }
     /// Set: for(s) |key| → var _it = s.iterator(); while (_it.next()) |entry| { const key = entry.key_ptr.*; ... }
     fn generateMapSetFor(self: *CodeGen, f: parser.ForStmt, name: []const u8, is_map: bool) anyerror!void {
-        // var _kodr_it = name.iterator();
+        // var _orhon_it = name.iterator();
         try self.write("{\n");
         self.indent += 1;
         try self.writeIndent();
-        try self.writeFmt("var _kodr_it = {s}.iterator();\n", .{name});
+        try self.writeFmt("var _orhon_it = {s}.iterator();\n", .{name});
         // Optional index counter
         if (f.index_var) |_| {
             try self.writeIndent();
-            try self.write("var _kodr_idx: usize = 0;\n");
+            try self.write("var _orhon_idx: usize = 0;\n");
         }
         try self.writeIndent();
-        try self.write("while (_kodr_it.next()) |_kodr_entry| {\n");
+        try self.write("while (_orhon_it.next()) |_orhon_entry| {\n");
         self.indent += 1;
         // Extract key
         try self.writeIndent();
-        try self.writeFmt("const {s} = _kodr_entry.key_ptr.*;\n", .{f.captures[0]});
+        try self.writeFmt("const {s} = _orhon_entry.key_ptr.*;\n", .{f.captures[0]});
         // Extract value for Map
         if (is_map and f.captures.len > 1) {
             try self.writeIndent();
-            try self.writeFmt("const {s} = _kodr_entry.value_ptr.*;\n", .{f.captures[1]});
+            try self.writeFmt("const {s} = _orhon_entry.value_ptr.*;\n", .{f.captures[1]});
         }
         // Extract index
         if (f.index_var) |idx| {
             try self.writeIndent();
-            try self.writeFmt("const {s}: i32 = @intCast(_kodr_idx);\n", .{idx});
+            try self.writeFmt("const {s}: i32 = @intCast(_orhon_idx);\n", .{idx});
         }
         // Body statements
         for (f.body.block.statements) |stmt| {
@@ -2635,7 +2635,7 @@ pub const CodeGen = struct {
         // Increment index counter
         if (f.index_var) |_| {
             try self.writeIndent();
-            try self.write("_kodr_idx += 1;\n");
+            try self.write("_orhon_idx += 1;\n");
         }
         self.indent -= 1;
         try self.writeIndent();
@@ -2678,30 +2678,30 @@ pub const CodeGen = struct {
             }
         }.cmp);
 
-        // var _kodr_<name>_result: ?<T> = null;
-        try self.writeFmt("var _kodr_{s}_result: ?{s} = null;\n", .{ name, result_type });
+        // var _orhon_<name>_result: ?<T> = null;
+        try self.writeFmt("var _orhon_{s}_result: ?{s} = null;\n", .{ name, result_type });
         try self.writeIndent();
 
-        // var _kodr_<name>_cancel = std.atomic.Value(bool).init(false);
-        try self.writeFmt("var _kodr_{s}_cancel = std.atomic.Value(bool).init(false);\n", .{name});
+        // var _orhon_<name>_cancel = std.atomic.Value(bool).init(false);
+        try self.writeFmt("var _orhon_{s}_cancel = std.atomic.Value(bool).init(false);\n", .{name});
         try self.writeIndent();
 
-        // const _kodr_<name>_handle = std.Thread.spawn(.{}, struct { fn run(...) void { ... } }.run, .{...}) catch unreachable;
-        try self.writeFmt("const _kodr_{s}_handle = std.Thread.spawn(.{{}}, struct {{\n", .{name});
+        // const _orhon_<name>_handle = std.Thread.spawn(.{}, struct { fn run(...) void { ... } }.run, .{...}) catch unreachable;
+        try self.writeFmt("const _orhon_{s}_handle = std.Thread.spawn(.{{}}, struct {{\n", .{name});
         self.indent += 1;
         try self.writeIndent();
 
         // fn run(result_ptr: *?T, _cancel: *std.atomic.Value(bool), _cap_x: @TypeOf(x), ...) void {
-        try self.writeFmt("fn run(_kodr_rp: *?{s}, _kodr_cancel: *std.atomic.Value(bool)", .{result_type});
+        try self.writeFmt("fn run(_orhon_rp: *?{s}, _orhon_cancel: *std.atomic.Value(bool)", .{result_type});
         for (cap_names.items) |cap| {
             try self.writeFmt(", _cap_{s}: @TypeOf({s})", .{ cap, cap });
         }
         try self.write(") void {\n");
         self.indent += 1;
 
-        // _ = _kodr_cancel; (suppress unused warning — available for cooperative cancellation)
+        // _ = _orhon_cancel; (suppress unused warning — available for cooperative cancellation)
         try self.writeIndent();
-        try self.write("_ = _kodr_cancel;\n");
+        try self.write("_ = _orhon_cancel;\n");
 
         // Generate body statements — transform return into result assignment
         // Set up capture renames so identifiers emit as _cap_name
@@ -2737,7 +2737,7 @@ pub const CodeGen = struct {
         try self.writeIndent();
 
         // }.run, .{ &result, &cancel, cap1, cap2, ... }) catch unreachable;
-        try self.writeFmt("}}.run, .{{ &_kodr_{s}_result, &_kodr_{s}_cancel", .{ name, name });
+        try self.writeFmt("}}.run, .{{ &_orhon_{s}_result, &_orhon_{s}_cancel", .{ name, name });
         for (cap_names.items) |cap| {
             try self.writeFmt(", {s}", .{cap});
         }
@@ -2747,9 +2747,9 @@ pub const CodeGen = struct {
     /// Generate Zig code for thread method calls: worker.wait(), worker.cancel()
     fn generateThreadMethod(self: *CodeGen, name: []const u8, method: []const u8) anyerror!void {
         if (std.mem.eql(u8, method, "wait")) {
-            try self.writeFmt("_kodr_{s}_handle.join()", .{name});
+            try self.writeFmt("_orhon_{s}_handle.join()", .{name});
         } else if (std.mem.eql(u8, method, "cancel")) {
-            try self.writeFmt("_kodr_{s}_cancel.store(true, .seq_cst)", .{name});
+            try self.writeFmt("_orhon_{s}_cancel.store(true, .seq_cst)", .{name});
         }
     }
 
@@ -2986,8 +2986,8 @@ pub const CodeGen = struct {
                 else null;
             if (builtin_name) |builtin| {
                 // overflow(a + b) → (blk: { const _ov = @addWithOverflow(a, b);
-                //   if (_ov[1] != 0) break :blk KodrResult(@TypeOf(a)){ .err = .{ .message = "overflow" } }
-                //   else break :blk KodrResult(@TypeOf(a)){ .ok = _ov[0] }; })
+                //   if (_ov[1] != 0) break :blk OrhonResult(@TypeOf(a)){ .err = .{ .message = "overflow" } }
+                //   else break :blk OrhonResult(@TypeOf(a)){ .ok = _ov[0] }; })
                 // When operands are literals, @TypeOf gives comptime_int which Zig rejects.
                 // Use the concrete type from the enclosing decl's type_ctx if available.
                 const left_is_literal = b.left.* == .int_literal or b.left.* == .float_literal;
@@ -3010,15 +3010,15 @@ pub const CodeGen = struct {
                 try self.write(", ");
                 try self.generateExpr(b.right);
                 if (type_str) |ts| {
-                    try self.write("); if (_ov[1] != 0) break :blk KodrResult(");
+                    try self.write("); if (_ov[1] != 0) break :blk OrhonResult(");
                     try self.write(ts);
-                    try self.write("){ .err = .{ .message = \"overflow\" } } else break :blk KodrResult(");
+                    try self.write("){ .err = .{ .message = \"overflow\" } } else break :blk OrhonResult(");
                     try self.write(ts);
                     try self.write("){ .ok = _ov[0] }; })");
                 } else {
-                    try self.write("); if (_ov[1] != 0) break :blk KodrResult(@TypeOf(");
+                    try self.write("); if (_ov[1] != 0) break :blk OrhonResult(@TypeOf(");
                     try self.generateExpr(b.left);
-                    try self.write(")){ .err = .{ .message = \"overflow\" } } else break :blk KodrResult(@TypeOf(");
+                    try self.write(")){ .err = .{ .message = \"overflow\" } } else break :blk OrhonResult(@TypeOf(");
                     try self.generateExpr(b.left);
                     try self.write(")){ .ok = _ov[0] }; })");
                 }
@@ -3029,15 +3029,15 @@ pub const CodeGen = struct {
     }
 
     fn generateCompilerFunc(self: *CodeGen, cf: parser.CompilerFunc) anyerror!void {
-        // Map Kodr compiler functions to Zig equivalents
+        // Map Orhon compiler functions to Zig equivalents
         if (std.mem.eql(u8, cf.name, "typename")) {
             // typename(x) → @typeName(@TypeOf(x))
             try self.write("@typeName(@TypeOf(");
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write("))");
         } else if (std.mem.eql(u8, cf.name, "typeid")) {
-            // typeid(x) → kodrTypeId(@TypeOf(x))
-            try self.write("kodrTypeId(@TypeOf(");
+            // typeid(x) → orhonTypeId(@TypeOf(x))
+            try self.write("orhonTypeId(@TypeOf(");
             if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
             try self.write("))");
         } else if (std.mem.eql(u8, cf.name, "cast")) {
@@ -3384,18 +3384,18 @@ pub const CodeGen = struct {
             try self.generateExpr(obj);
             try self.write(", \" \\t\\n\\r\")");
         } else if (std.mem.eql(u8, method, "indexOf")) {
-            // s.indexOf(substr) → KodrNullable(usize) wrapping
+            // s.indexOf(substr) → OrhonNullable(usize) wrapping
             try self.write("if (std.mem.indexOf(u8, ");
             try self.generateExpr(obj);
             try self.write(", ");
             if (args.len > 0) try self.generateExpr(args[0]);
-            try self.write(")) |_v| KodrNullable(usize){ .some = _v } else KodrNullable(usize){ .none = {} }");
+            try self.write(")) |_v| OrhonNullable(usize){ .some = _v } else OrhonNullable(usize){ .none = {} }");
         } else if (std.mem.eql(u8, method, "lastIndexOf")) {
             try self.write("if (std.mem.lastIndexOf(u8, ");
             try self.generateExpr(obj);
             try self.write(", ");
             if (args.len > 0) try self.generateExpr(args[0]);
-            try self.write(")) |_v| KodrNullable(usize){ .some = _v } else KodrNullable(usize){ .none = {} }");
+            try self.write(")) |_v| OrhonNullable(usize){ .some = _v } else OrhonNullable(usize){ .none = {} }");
         } else if (std.mem.eql(u8, method, "count")) {
             try self.write("std.mem.count(u8, ");
             try self.generateExpr(obj);
@@ -3431,8 +3431,8 @@ pub const CodeGen = struct {
             if (args.len > 1) try self.generateExpr(args[1]);
             try self.write(") catch \"\")");
         } else if (std.mem.eql(u8, method, "repeat")) {
-            // s.repeat(n) → kodrStringRepeat(alloc, s, n) catch ""
-            try self.write("(kodrStringRepeat(");
+            // s.repeat(n) → orhonStringRepeat(alloc, s, n) catch ""
+            try self.write("(orhonStringRepeat(");
             try self.writeStringAllocArg(args);
             try self.write(", ");
             try self.generateExpr(obj);
@@ -3519,7 +3519,7 @@ pub const CodeGen = struct {
     fn generateOwnedCollDecl(self: *CodeGen, decl_kind: []const u8, name: []const u8, type_ann: ?*parser.Node, c: parser.CollExpr) anyerror!void {
         // Ring/ORing — fixed-size, no allocator
         if (std.mem.eql(u8, c.kind, "Ring") or std.mem.eql(u8, c.kind, "ORing")) {
-            const zig_type = if (std.mem.eql(u8, c.kind, "Ring")) "KodrRing" else "KodrORing";
+            const zig_type = if (std.mem.eql(u8, c.kind, "Ring")) "OrhonRing" else "OrhonORing";
             try self.writeFmt("{s} {s}", .{ decl_kind, name });
             if (type_ann) |t| {
                 try self.writeFmt(": {s}", .{try self.typeToZig(t)});
@@ -3604,10 +3604,10 @@ pub const CodeGen = struct {
     fn typeToZig(self: *CodeGen, node: *parser.Node) ![]const u8 {
         return switch (node.*) {
             .type_named => |name| {
-                if (std.mem.eql(u8, name, K.Type.ERROR)) return "KodrError";
+                if (std.mem.eql(u8, name, K.Type.ERROR)) return "OrhonError";
                 if (std.mem.eql(u8, name, "mem.Allocator")) return "std.mem.Allocator";
-                if (std.mem.eql(u8, name, K.Type.FILE)) return "KodrFs.File";
-                if (std.mem.eql(u8, name, K.Type.DIR)) return "KodrFs.Dir";
+                if (std.mem.eql(u8, name, K.Type.FILE)) return "OrhonFs.File";
+                if (std.mem.eql(u8, name, K.Type.DIR)) return "OrhonFs.Dir";
                 return builtins.ZigMapping.primitiveToZig(name);
             },
             .type_slice => |elem| blk: {
@@ -3634,8 +3634,8 @@ pub const CodeGen = struct {
                             !std.mem.eql(u8, t.type_named, K.Type.NULL))
                         {
                             const inner = try self.typeToZig(t);
-                            if (has_error) break :blk try self.allocTypeStr("KodrResult({s})", .{inner});
-                            if (has_null) break :blk try self.allocTypeStr("KodrNullable({s})", .{inner});
+                            if (has_error) break :blk try self.allocTypeStr("OrhonResult({s})", .{inner});
+                            if (has_null) break :blk try self.allocTypeStr("OrhonNullable({s})", .{inner});
                         }
                     }
                 }
@@ -3724,13 +3724,13 @@ pub const CodeGen = struct {
                     if (g.args.len >= 2) {
                         const inner = try self.typeToZig(g.args[0]);
                         const size_str = if (g.args[1].* == .int_literal) g.args[1].int_literal else "0";
-                        break :blk try self.allocTypeStr("KodrRing({s}, {s})", .{ inner, size_str });
+                        break :blk try self.allocTypeStr("OrhonRing({s}, {s})", .{ inner, size_str });
                     }
                 } else if (std.mem.eql(u8, g.name, "ORing")) {
                     if (g.args.len >= 2) {
                         const inner = try self.typeToZig(g.args[0]);
                         const size_str = if (g.args[1].* == .int_literal) g.args[1].int_literal else "0";
-                        break :blk try self.allocTypeStr("KodrORing({s}, {s})", .{ inner, size_str });
+                        break :blk try self.allocTypeStr("OrhonORing({s}, {s})", .{ inner, size_str });
                     }
                 }
                 break :blk g.name;
@@ -4021,7 +4021,7 @@ test "codegen - simple program" {
     try std.testing.expect(std.mem.indexOf(u8, output, "pub fn main()") != null);
 }
 
-test "codegen - kodrTypeId always in preamble" {
+test "codegen - orhonTypeId always in preamble" {
     const alloc = std.testing.allocator;
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -4062,7 +4062,7 @@ test "codegen - kodrTypeId always in preamble" {
     try gen.generate(prog, "main");
     try std.testing.expect(!reporter.hasErrors());
     const output = gen.getOutput();
-    try std.testing.expect(std.mem.indexOf(u8, output, "fn kodrTypeId(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "fn orhonTypeId(") != null);
 }
 
 test "codegen - type to zig" {
@@ -4254,12 +4254,12 @@ test "codegen - overflow helpers wrap/sat/overflow" {
     const sat_out = gen.getOutput();
     try std.testing.expect(std.mem.indexOf(u8, sat_out, "+|") != null);
 
-    // Verify overflow codegen uses @addWithOverflow and KodrResult
+    // Verify overflow codegen uses @addWithOverflow and OrhonResult
     gen.output.clearRetainingCapacity();
     try gen.generateExpr(ov_call);
     const ov_out = gen.getOutput();
     try std.testing.expect(std.mem.indexOf(u8, ov_out, "@addWithOverflow") != null);
-    try std.testing.expect(std.mem.indexOf(u8, ov_out, "KodrResult") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ov_out, "OrhonResult") != null);
 }
 
 test "codegen - string methods" {
@@ -4322,7 +4322,7 @@ test "codegen - string methods" {
     const sw_out = gen.getOutput();
     try std.testing.expect(std.mem.indexOf(u8, sw_out, "std.mem.startsWith(u8, s, \"he\")") != null);
 
-    // Test indexOf — should emit KodrNullable wrapping
+    // Test indexOf — should emit OrhonNullable wrapping
     gen.output.clearRetainingCapacity();
     const field_io = try a.create(parser.Node);
     field_io.* = .{ .field_expr = .{ .object = obj, .field = "indexOf" } };
@@ -4336,7 +4336,7 @@ test "codegen - string methods" {
     try gen.generateExpr(call_io);
     const io_out = gen.getOutput();
     try std.testing.expect(std.mem.indexOf(u8, io_out, "std.mem.indexOf(u8, s, \"x\")") != null);
-    try std.testing.expect(std.mem.indexOf(u8, io_out, "KodrNullable(usize)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, io_out, "OrhonNullable(usize)") != null);
 
     // Test count
     gen.output.clearRetainingCapacity();
