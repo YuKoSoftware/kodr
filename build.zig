@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const version = std.SemanticVersion{ .major = 0, .minor = 3, .patch = 9 };
+pub const version = std.SemanticVersion{ .major = 0, .minor = 3, .patch = 10 };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -58,6 +58,7 @@ pub fn build(b: *std.Build) void {
         "src/builtins.zig",
         "src/cache.zig",
         "src/formatter.zig",
+        "src/lsp.zig",
     };
 
     const test_step = b.step("test", "Run all compiler tests");

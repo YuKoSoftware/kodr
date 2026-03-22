@@ -33,6 +33,7 @@ const Command = enum {
     debug,
     version,
     fmt,
+    lsp,
     help,
 };
 
@@ -148,6 +149,8 @@ fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         cli.command = .addtopath;
     } else if (std.mem.eql(u8, cmd_str, "version") or std.mem.eql(u8, cmd_str, "--version")) {
         cli.command = .version;
+    } else if (std.mem.eql(u8, cmd_str, "lsp")) {
+        cli.command = .lsp;
     } else if (std.mem.eql(u8, cmd_str, "help") or std.mem.eql(u8, cmd_str, "--help")) {
         cli.command = .help;
     } else {
@@ -192,7 +195,7 @@ fn printUsage() void {
     const usage =
         \\kodr — The Kodr compiler  (kodr help for more info)
         \\
-        \\  build   run   test   fmt   init   addtopath   debug   version
+        \\  build   run   test   fmt   init   lsp   addtopath   debug   version
         \\
     ;
     std.debug.print("{s}", .{usage});
@@ -208,6 +211,7 @@ fn printHelp() void {
         \\  test                Run all test { } blocks in the project
         \\  init [name]         Create a new project (in ./<name>/ or current dir if no name)
         \\  fmt                 Format all .kodr files in the project
+        \\  lsp                 Start the language server (for editor integration)
         \\  addtopath           Add kodr to your shell PATH
         \\  debug               Show project info — modules, files, source directory
         \\  version             Print the compiler version
@@ -530,6 +534,12 @@ pub fn main() !void {
     if (cli.command == .fmt) {
         const formatter = @import("formatter.zig");
         try formatter.formatProject(allocator, cli.source_dir);
+        return;
+    }
+
+    if (cli.command == .lsp) {
+        const lsp = @import("lsp.zig");
+        try lsp.serve(allocator);
         return;
     }
 

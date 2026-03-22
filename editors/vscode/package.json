@@ -1,0 +1,73 @@
+{
+  "name": "kodr",
+  "displayName": "Kodr",
+  "description": "Language support for Kodr — syntax highlighting, diagnostics, and LSP integration",
+  "version": "0.1.0",
+  "publisher": "YuKoSoftware",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "kodr",
+    "programming language",
+    "compiled",
+    "memory-safe",
+    "zig"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YuKoSoftware/kodr"
+  },
+  "icon": "icon.png",
+  "activationEvents": [
+    "onLanguage:kodr"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "kodr",
+        "aliases": [
+          "Kodr",
+          "kodr"
+        ],
+        "extensions": [
+          ".kodr"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kodr",
+        "scopeName": "source.kodr",
+        "path": "./syntaxes/kodr.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Kodr",
+      "properties": {
+        "kodr.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Kodr language server for diagnostics"
+        },
+        "kodr.lsp.path": {
+          "type": "string",
+          "default": "kodr",
+          "description": "Path to the kodr binary"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.0.0"
+  }
+}
