@@ -2,4 +2,44 @@ module str
 
 // str — string utilities for Orhon programs
 // Import with: import std::str
-// TODO: reimplement with clean bridge pattern
+// Methods are called on String values: s.contains("hello")
+// Codegen rewrites these to: str.contains(s, "hello")
+
+// Search
+
+extern func contains(s: String, needle: String) bool
+extern func startsWith(s: String, prefix: String) bool
+extern func endsWith(s: String, suffix: String) bool
+extern func indexOf(s: String, needle: String) (null | i32)
+extern func lastIndexOf(s: String, needle: String) (null | i32)
+
+// Case
+
+extern func toUpper(s: String) String
+extern func toLower(s: String) String
+
+// Transform
+
+extern func replace(s: String, old: String, new: String) String
+extern func repeat(s: String, count: i32) String
+extern func trim(s: String) String
+extern func trimLeft(s: String) String
+extern func trimRight(s: String) String
+
+// Join (called on []String)
+
+extern func join(parts: any, separator: String) String
+
+// Parse
+
+extern func parseInt(s: String) i32
+extern func parseFloat(s: String) f64
+
+// Convert
+
+extern func toString(value: any) String
+
+// Length
+
+extern func len(s: String) i32
+extern func charAt(s: String, index: i32) String

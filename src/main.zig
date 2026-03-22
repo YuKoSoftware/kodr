@@ -689,12 +689,17 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
     // Ensure embedded std files exist in .orh-cache/std/
     try ensureStdFiles(allocator);
 
-    // Copy runtime bridge to generated dir — always available for all modules
+    // Copy internal bridges to generated dir — always available for all modules
     try cache.ensureGeneratedDir();
     {
         const file = try std.fs.cwd().createFile(cache.GENERATED_DIR ++ "/_orhon_rt.zig", .{});
         defer file.close();
         try file.writeAll(RT_ZIG);
+    }
+    {
+        const file = try std.fs.cwd().createFile(cache.GENERATED_DIR ++ "/_orhon_str.zig", .{});
+        defer file.close();
+        try file.writeAll(STR_ZIG);
     }
 
     // ── Pass 3: Module Resolution ──────────────────────────────

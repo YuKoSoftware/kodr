@@ -155,6 +155,7 @@ pub const CodeGen = struct {
         try self.writeFmt("// generated from module {s} — do not edit\n", .{module_name});
         try self.write("const std = @import(\"std\");\n");
         try self.write("const _rt = @import(\"_orhon_rt\");\n");
+        try self.write("const _str = @import(\"_orhon_str\");\n");
 
         // Generate imports
         for (ast.program.imports) |imp| {
@@ -1587,6 +1588,27 @@ pub const CodeGen = struct {
                         return;
                     } else if (std.mem.eql(u8, callee_name, "overflow")) {
                         try self.generateOverflowExpr(c.args[0]);
+                        return;
+                    }
+                }
+                // ── String method rewriting ──
+                // s.method(args) → _str.method(s, args) when s is a String
+                // x.toString()   → _str.toString(x) for any type
+                // arr.join(sep)  → _str.join(arr, sep) for array/slice join
+                if (c.callee.* == .field_expr) {
+                    const method = c.callee.field_expr.field;
+                    const obj = c.callee.field_expr.object;
+                    if (self.isStringExpr(obj) or
+                        std.mem.eql(u8, method, "toString") or
+                        std.mem.eql(u8, method, "join"))
+                    {
+                        try self.writeFmt("_str.{s}(", .{method});
+                        try self.generateExpr(obj);
+                        for (c.args) |arg| {
+                            try self.write(", ");
+                            try self.generateExpr(arg);
+                        }
+                        try self.write(")");
                         return;
                     }
                 }

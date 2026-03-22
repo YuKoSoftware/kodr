@@ -28,6 +28,7 @@ All stdlib modules use the bridge pattern (module + `.zig` sidecar). The codegen
 ```
 std.allocator     // memory allocators — SMP, Arena, Page
 std.console       // terminal I/O — print, println, get
+std.str           // string utilities — contains, replace, toUpper, parseInt, toString, etc.
 std.ziglib        // bridge testbed — exercises all interop patterns
 ```
 
@@ -38,7 +39,6 @@ std.json          // JSON parsing and serialization
 std.math          // mathematical functions
 std.random        // random number generation
 std.sort          // sorting and ordering
-std.str           // string utilities
 std.system        // OS interaction
 std.time          // time and duration
 ```
