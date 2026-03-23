@@ -123,67 +123,16 @@ pub const ThreadSafetyChecker = struct {
 
     fn checkStatement(self: *ThreadSafetyChecker, node: *parser.Node) anyerror!void {
         switch (node.*) {
-            .thread_block => |t| {
-                // Register this thread
-                try self.declared_threads.put(t.name, {});
+            .thread_block => {}, // deprecated — threads use func_decl with is_thread now
 
-                // Collect all identifiers used in thread body
-                // then remove locally declared ones — those aren't captures
-                var used_vars: std.StringHashMap(void) = std.StringHashMap(void).init(self.allocator);
-                defer used_vars.deinit();
-                try self.collectUsedVars(t.body, &used_vars);
-                var local_decls: std.StringHashMap(void) = std.StringHashMap(void).init(self.allocator);
-                defer local_decls.deinit();
-                try collectLocalDecls(t.body, &local_decls);
-                var dl = local_decls.iterator();
-                while (dl.next()) |le| _ = used_vars.remove(le.key_ptr.*);
-
-                // Check for borrows in thread body — only moves allowed
-                var borrows: std.StringHashMap(void) = std.StringHashMap(void).init(self.allocator);
-                defer borrows.deinit();
-                try collectBorrowedVars(t.body, &borrows);
-                var bi = borrows.iterator();
-                while (bi.next()) |be| {
-                    const borrow_name = be.key_ptr.*;
-                    // Only flag if the borrow refers to an outer variable (not a local)
-                    if (!local_decls.contains(borrow_name) and used_vars.contains(borrow_name)) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "cannot borrow '{s}' into thread '{s}' — only moves allowed",
-                            .{ borrow_name, t.name });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
-                    }
+            .var_decl, .const_decl => |v| {
+                // Register Handle variables as thread handles
+                if (isHandleType(v.type_annotation)) {
+                    try self.declared_threads.put(v.name, {});
                 }
-
-                // Mark them as moved into this thread
-                var it = used_vars.iterator();
-                while (it.next()) |entry| {
-                    const var_name = entry.key_ptr.*;
-
-                    // Check if already moved into another thread
-                    if (self.moved_to_thread.get(var_name)) |thread_name| {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "value '{s}' already moved into thread '{s}'",
-                            .{ var_name, thread_name });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
-                        continue;
-                    }
-
-                    try self.moved_to_thread.put(var_name, t.name);
-                }
-            },
-
-            .var_decl => |v| {
                 // Check if using a value that was moved into a thread
                 try self.checkExprForThreadMoves(v.value);
-                // Check for .value join via: var x = thread_name.value
-                try self.checkJoinExpr(v.value);
-            },
-
-            .const_decl => |v| {
-                try self.checkExprForThreadMoves(v.value);
-                // Check for .value join via: const x = thread_name.value
+                // Check for .value join via: const x = handle.value
                 try self.checkJoinExpr(v.value);
             },
 
@@ -194,16 +143,19 @@ pub const ThreadSafetyChecker = struct {
             },
 
             .call_expr => |c| {
-                // Check for thread_name.wait() call
+                // Check for handle.wait() / handle.join() calls
                 if (c.callee.* == .field_expr) {
                     const fe = c.callee.field_expr;
-                    if (fe.object.* == .identifier and std.mem.eql(u8, fe.field, "wait")) {
-                        if (self.declared_threads.contains(fe.object.identifier)) {
+                    if (fe.object.* == .identifier) {
+                        const method = fe.field;
+                        if ((std.mem.eql(u8, method, "wait") or std.mem.eql(u8, method, "join")) and
+                            self.declared_threads.contains(fe.object.identifier))
+                        {
                             try self.joined_threads.put(fe.object.identifier, {});
+                            if (std.mem.eql(u8, method, "join")) {
+                                try self.consumed_threads.put(fe.object.identifier, {});
+                            }
                         }
-                    }
-                    if (fe.object.* == .identifier and std.mem.eql(u8, fe.field, "cancel")) {
-                        // cancel doesn't count as join — thread still needs .wait() or .value
                     }
                 }
                 try self.checkExprForThreadMoves(node);
@@ -430,6 +382,12 @@ pub const ThreadSafetyChecker = struct {
         }
     }
 };
+
+/// Check if a type annotation node is Handle(T)
+fn isHandleType(type_ann: ?*parser.Node) bool {
+    const t = type_ann orelse return false;
+    return t.* == .type_generic and std.mem.eql(u8, t.type_generic.name, "Handle");
+}
 
 /// Collect variables that are borrowed (&x) in a node tree
 fn collectBorrowedVars(node: *parser.Node, vars: *std.StringHashMap(void)) anyerror!void {

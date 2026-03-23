@@ -543,6 +543,48 @@ func main() void {
         console.println("FAIL string_eq_param")
     }
 
+    if(tester.test_thread() == 42) {
+        console.println("PASS thread")
+    } else {
+        console.println("FAIL thread")
+    }
+
+    if(tester.test_thread_multi() == 50) {
+        console.println("PASS thread_multi")
+    } else {
+        console.println("FAIL thread_multi")
+    }
+
+    if(tester.test_thread_params() == 42) {
+        console.println("PASS thread_params")
+    } else {
+        console.println("FAIL thread_params")
+    }
+
+    if(tester.test_thread_void() == 1) {
+        console.println("PASS thread_void")
+    } else {
+        console.println("FAIL thread_void")
+    }
+
+    if(tester.test_thread_done() == 10) {
+        console.println("PASS thread_done")
+    } else {
+        console.println("FAIL thread_done")
+    }
+
+    if(tester.test_thread_join() == 1) {
+        console.println("PASS thread_join")
+    } else {
+        console.println("FAIL thread_join")
+    }
+
+    if(tester.test_map_get() == 77) {
+        console.println("PASS map_get")
+    } else {
+        console.println("FAIL map_get")
+    }
+
     if(tester.test_bitfield_constructor() == 1) {
         console.println("PASS bitfield_constructor")
     } else {

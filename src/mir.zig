@@ -24,6 +24,7 @@ pub const TypeClass = enum {
     string,
     raw_ptr,
     safe_ptr,
+    thread_handle,
 };
 
 /// Classify a resolved type into a codegen category.
@@ -38,6 +39,8 @@ pub fn classifyType(t: RT) TypeClass {
                 return .raw_ptr;
             if (std.mem.eql(u8, g.name, "Ptr"))
                 return .safe_ptr;
+            if (std.mem.eql(u8, g.name, "Handle"))
+                return .thread_handle;
             return .plain;
         },
         .ptr => .safe_ptr,
@@ -334,6 +337,8 @@ pub const MirAnnotator = struct {
                 try self.annotateExpr(node);
                 try self.annotateNode(c.callee);
                 for (c.args) |arg| try self.annotateNode(arg);
+                // Coercion pass: compare arg types with param types
+                try self.annotateCallCoercions(c);
             },
             .field_expr => |f| {
                 try self.annotateExpr(node);
@@ -409,6 +414,41 @@ pub const MirAnnotator = struct {
     fn annotateExpr(self: *MirAnnotator, node: *parser.Node) !void {
         const t = self.lookupType(node) orelse RT.unknown;
         try self.recordNode(node, t);
+    }
+
+    /// Detect array-to-slice coercions in function call arguments.
+    /// When an arg is typed as [N]T but the param expects []T, mark the arg
+    /// with coercion = .array_to_slice so codegen can emit `&`.
+    fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
+        // Resolve the callee's function signature
+        const sig = self.resolveCallSig(c) orelse return;
+
+        // Compare each arg type with the corresponding param type
+        const param_count = @min(c.args.len, sig.params.len);
+        for (c.args[0..param_count], sig.params[0..param_count]) |arg, param| {
+            const arg_type = self.lookupType(arg) orelse continue;
+            if (arg_type == .array and param.type_ == .slice) {
+                // Mark the arg node with array_to_slice coercion
+                try self.node_map.put(self.allocator, arg, .{
+                    .resolved_type = arg_type,
+                    .type_class = classifyType(arg_type),
+                    .coercion = .array_to_slice,
+                });
+            }
+        }
+    }
+
+    /// Look up a FuncSig for a call expression's callee.
+    fn resolveCallSig(self: *const MirAnnotator, c: parser.CallExpr) ?declarations.FuncSig {
+        // Direct call: func_name(args)
+        if (c.callee.* == .identifier) {
+            return self.decls.funcs.get(c.callee.identifier);
+        }
+        // Module call: module.func_name(args)
+        if (c.callee.* == .field_expr) {
+            return self.decls.funcs.get(c.callee.field_expr.field);
+        }
+        return null;
     }
 
     fn lookupType(self: *const MirAnnotator, node: *parser.Node) ?RT {

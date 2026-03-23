@@ -3,6 +3,7 @@
 // Structs self-initialize with .{} and default to page_allocator.
 
 const std = @import("std");
+const _rt = @import("_orhon_rt");
 
 const default_alloc = std.heap.page_allocator;
 
@@ -69,8 +70,9 @@ pub fn Map(comptime K: type, comptime V: type) type {
             self.inner.put(self.alloc, key, value) catch {};
         }
 
-        pub fn get(self: *const Self, key: K) ?V {
-            return self.inner.get(key);
+        pub fn get(self: *const Self, key: K) _rt.OrhonNullable(V) {
+            if (self.inner.get(key)) |v| return .{ .some = v };
+            return .{ .none = {} };
         }
 
         pub fn has(self: *const Self, key: K) bool {
@@ -186,7 +188,7 @@ test "Map basic" {
     map.put("b", 2);
     try std.testing.expectEqual(@as(i32, 2), map.len());
     try std.testing.expect(map.has("a"));
-    try std.testing.expectEqual(@as(i32, 1), map.get("a").?);
+    try std.testing.expectEqual(@as(i32, 1), map.get("a").some);
     map.remove("a");
     try std.testing.expect(!map.has("a"));
 }

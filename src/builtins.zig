@@ -9,6 +9,7 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "Ptr",
     "RawPtr",
     "VolatilePtr",
+    "Handle",
     "Error",
     "Version",
     "VersionRule",

@@ -139,6 +139,12 @@ Keep the project structure clean and organized. Remove unnecessary files, stale
 logs, and unused artifacts. No orphan files lingering in the root. If something
 is no longer used, delete it — don't leave it around "just in case."
 
+### Code quality
+- Write clean, structured code — no hacky code or workarounds
+- No messy code — if a solution feels fragile or unclear, rethink it
+- Keep comments up to date — when code changes, update or remove nearby comments
+  so they always reflect what the code actually does
+
 ### Documentation rule
 Each doc file has one specific purpose — no overlap between files. If information
 belongs in an existing file, update it there instead of writing it somewhere else.

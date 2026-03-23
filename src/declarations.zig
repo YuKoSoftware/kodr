@@ -17,6 +17,7 @@ pub const FuncSig = struct {
     return_type_node: *parser.Node, // original AST node (used by codegen)
     is_compt: bool,
     is_pub: bool,
+    is_thread: bool,
 };
 
 pub const ParamSig = struct {
@@ -205,6 +206,7 @@ pub const DeclCollector = struct {
             .return_type_node = f.return_type,
             .is_compt = f.is_compt,
             .is_pub = f.is_pub,
+            .is_thread = f.is_thread,
         };
 
         if (self.table.funcs.contains(f.name)) {
@@ -367,6 +369,7 @@ test "declaration collector - func" {
         .is_compt = false,
         .is_pub = true,
         .is_extern = false,
+        .is_thread = false,
     }};
 
     const top_level = try a.alloc(*parser.Node, 1);
@@ -455,12 +458,12 @@ test "declaration collector - duplicate func error" {
     const func1 = try a.create(parser.Node);
     func1.* = .{ .func_decl = .{ .name = "foo", .params = &.{},
         .return_type = ret_type, .body = empty_block,
-        .is_compt = false, .is_pub = false, .is_extern = false } };
+        .is_compt = false, .is_pub = false, .is_extern = false, .is_thread = false } };
 
     const func2 = try a.create(parser.Node);
     func2.* = .{ .func_decl = .{ .name = "foo", .params = &.{},
         .return_type = ret_type, .body = empty_block,
-        .is_compt = false, .is_pub = false, .is_extern = false } };
+        .is_compt = false, .is_pub = false, .is_extern = false, .is_thread = false } };
 
     const top_level = try a.alloc(*parser.Node, 2);
     top_level[0] = func1;
@@ -540,6 +543,7 @@ test "declaration collector - extern func is registered" {
         .is_compt = false,
         .is_pub = true,
         .is_extern = true,
+        .is_thread = false,
     }};
 
     const top_level = try a.alloc(*parser.Node, 1);

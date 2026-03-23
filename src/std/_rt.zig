@@ -33,6 +33,46 @@ pub fn OrhonResult(comptime T: type) type {
     return union(enum) { ok: T, err: OrhonError };
 }
 
+// ── Thread handle ──
+
+pub fn OrhonHandle(comptime T: type) type {
+    return struct {
+        thread: std.Thread,
+        state: *SharedState,
+
+        pub const SharedState = struct {
+            result: T = undefined,
+            completed: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        };
+
+        const Self = @This();
+
+        /// Block until thread finishes, return the result (move).
+        pub fn getValue(self: *Self) T {
+            self.thread.join();
+            const result = self.state.result;
+            alloc.destroy(self.state);
+            return result;
+        }
+
+        /// Block until thread finishes, don't move the result.
+        pub fn wait(self: *Self) void {
+            self.thread.join();
+        }
+
+        /// Non-blocking check: is the thread done?
+        pub fn done(self: *const Self) bool {
+            return self.state.completed.load(.acquire);
+        }
+
+        /// Block until done, discard result, clean up.
+        pub fn join(self: *Self) void {
+            self.thread.join();
+            alloc.destroy(self.state);
+        }
+    };
+}
+
 // ── Tests ──
 
 test "alloc works" {

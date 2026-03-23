@@ -506,6 +506,9 @@ pub const CodeGen = struct {
     }
 
     fn generateFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void {
+        // Thread function — generate body + spawn wrapper
+        if (f.is_thread) return self.generateThreadFunc(node, f);
+
         // extern func — re-export from paired sidecar file
         if (f.is_extern) return self.generateExternReExport(f.name);
 
@@ -595,6 +598,112 @@ pub const CodeGen = struct {
         // Body
         try self.generateBlock(f.body);
         try self.write("\n");
+    }
+
+    /// Generate a thread function: body function + spawn wrapper.
+    /// `thread worker(n: i32) Handle(i32) { return n * 2 }` generates:
+    ///   fn _worker_body(n: i32) i32 { return (n * 2); }
+    ///   fn worker(n: i32) _rt.OrhonHandle(i32) { ... spawn ... }
+    fn generateThreadFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void {
+        // Extract inner type T from Handle(T) return type
+        const inner_type = if (f.return_type.* == .type_generic and
+            std.mem.eql(u8, f.return_type.type_generic.name, "Handle") and
+            f.return_type.type_generic.args.len > 0)
+            f.return_type.type_generic.args[0]
+        else
+            f.return_type;
+
+        const inner_zig = try self.typeToZig(inner_type);
+        const handle_zig = try self.typeToZig(f.return_type);
+
+        // ── Body function: fn _name_body(params) T { ... } ──
+        {
+            const prev_func_node = self.current_func_node;
+            self.current_func_node = node;
+            const prev_assigned = self.assigned_vars;
+            const prev_narrowed = self.narrowed_vars;
+            self.assigned_vars = .{};
+            self.narrowed_vars = .{};
+            try collectAssigned(f.body, &self.assigned_vars, self.allocator);
+            defer {
+                self.current_func_node = prev_func_node;
+                self.assigned_vars.deinit(self.allocator);
+                self.assigned_vars = prev_assigned;
+                self.narrowed_vars.deinit(self.allocator);
+                self.narrowed_vars = prev_narrowed;
+            }
+
+            try self.writeFmt("fn _{s}_body(", .{f.name});
+            for (f.params, 0..) |param, i| {
+                if (i > 0) try self.write(", ");
+                if (param.* == .param) {
+                    try self.writeFmt("{s}: {s}", .{
+                        param.param.name,
+                        try self.typeToZig(param.param.type_annotation),
+                    });
+                }
+            }
+            try self.writeFmt(") {s} ", .{inner_zig});
+            try self.generateBlock(f.body);
+            try self.write("\n\n");
+        }
+
+        // ── Spawn wrapper: fn name(params) _rt.OrhonHandle(T) { ... } ──
+        if (f.is_pub) try self.write("pub ");
+        try self.writeFmt("fn {s}(", .{f.name});
+        for (f.params, 0..) |param, i| {
+            if (i > 0) try self.write(", ");
+            if (param.* == .param) {
+                try self.writeFmt("{s}: {s}", .{
+                    param.param.name,
+                    try self.typeToZig(param.param.type_annotation),
+                });
+            }
+        }
+        try self.writeFmt(") {s} ", .{handle_zig});
+        try self.write("{\n");
+        self.indent += 1;
+
+        // Allocate shared state
+        try self.writeIndent();
+        try self.writeFmt("const _state = _rt.alloc.create({s}.SharedState) catch unreachable;\n", .{handle_zig});
+        try self.writeIndent();
+        try self.write("_state.* = .{};\n");
+
+        // Spawn thread with body function
+        try self.writeIndent();
+        try self.writeFmt("return .{{ .thread = std.Thread.spawn(.{{}}, struct {{ fn run(_s: *{s}.SharedState", .{handle_zig});
+        for (f.params) |param| {
+            if (param.* == .param) {
+                try self.writeFmt(", _{s}: {s}", .{
+                    param.param.name,
+                    try self.typeToZig(param.param.type_annotation),
+                });
+            }
+        }
+        try self.write(") void { ");
+
+        // Call body function with unwrapped params
+        const is_void = std.mem.eql(u8, inner_zig, "void");
+        if (!is_void) try self.write("_s.result = ");
+        try self.writeFmt("_{s}_body(", .{f.name});
+        for (f.params, 0..) |param, i| {
+            if (i > 0) try self.write(", ");
+            if (param.* == .param) {
+                try self.writeFmt("_{s}", .{param.param.name});
+            }
+        }
+        try self.write("); _s.completed.store(true, .release); } }.run, .{ _state");
+        for (f.params) |param| {
+            if (param.* == .param) {
+                try self.writeFmt(", {s}", .{param.param.name});
+            }
+        }
+        try self.write(" }) catch unreachable, .state = _state };\n");
+
+        self.indent -= 1;
+        try self.writeIndent();
+        try self.write("}\n");
     }
 
     // ============================================================
@@ -848,7 +957,12 @@ pub const CodeGen = struct {
         switch (node.*) {
             .var_decl => |v| {
                 // var → const promotion: warn if never reassigned
-                const is_mutated = self.assigned_vars.contains(v.name);
+                // Handle(T) variables are always var — methods mutate via *Self
+                const is_handle = if (v.type_annotation) |ta|
+                    ta.* == .type_generic and std.mem.eql(u8, ta.type_generic.name, "Handle")
+                else
+                    false;
+                const is_mutated = is_handle or self.assigned_vars.contains(v.name);
                 const kw: []const u8 = if (is_mutated) "var" else "const";
                 if (!is_mutated) {
                     const msg = try std.fmt.allocPrint(self.allocator,
@@ -1231,11 +1345,7 @@ pub const CodeGen = struct {
                     try self.write(";");
                 }
             },
-            .thread_block => {
-                const tmsg = try std.fmt.allocPrint(self.allocator, "Thread blocks use bridge modules now — old codegen removed", .{});
-                defer self.allocator.free(tmsg);
-                try self.reporter.report(.{ .message = tmsg });
-            },
+            .thread_block => {}, // deprecated — threads are now func_decl with is_thread
             .async_block => {
                 const msg = try std.fmt.allocPrint(self.allocator, "Async is not yet implemented", .{});
                 defer self.allocator.free(msg);
@@ -1410,6 +1520,11 @@ pub const CodeGen = struct {
                     });
                     return;
                 }
+                // Handle(value) → just emit the value (wrapping done by spawn wrapper)
+                if (c.callee.* == .identifier and std.mem.eql(u8, c.callee.identifier, "Handle") and c.args.len == 1) {
+                    try self.generateExpr(c.args[0]);
+                    return;
+                }
                 // Bitfield constructor: Permissions(Read, Write) → Permissions{ .value = Permissions.Read | Permissions.Write }
                 if (c.callee.* == .identifier) {
                     if (self.decls) |d| {
@@ -1472,9 +1587,10 @@ pub const CodeGen = struct {
                 if (c.callee.* == .field_expr) {
                     const method = c.callee.field_expr.field;
                     const obj = c.callee.field_expr.object;
-                    if (self.isStringExpr(obj) or
+                    const is_handle = self.getTypeClass(obj) == .thread_handle;
+                    if (!is_handle and (self.isStringExpr(obj) or
                         std.mem.eql(u8, method, "toString") or
-                        std.mem.eql(u8, method, "join"))
+                        std.mem.eql(u8, method, "join")))
                     {
                         try self.writeFmt("_str.{s}(", .{method});
                         try self.generateExpr(obj);
@@ -1505,6 +1621,12 @@ pub const CodeGen = struct {
                     try self.write("(");
                     for (c.args, 0..) |arg, i| {
                         if (i > 0) try self.write(", ");
+                        // Array-to-slice coercion: emit & prefix
+                        const needs_coerce = if (self.getNodeInfo(arg)) |info|
+                            info.coercion == .array_to_slice
+                        else
+                            false;
+                        if (needs_coerce) try self.write("&");
                         try self.generateExpr(arg);
                     }
                     // Fill in default args if caller passed fewer than the function expects
@@ -1513,8 +1635,20 @@ pub const CodeGen = struct {
                 }
             },
             .field_expr => |f| {
-                // ptr.value → ptr.* (safe Ptr(T) dereference)
+                // handle.value → handle.getValue() (thread Handle(T) — blocks + moves result)
                 if (std.mem.eql(u8, f.field, "value") and
+                    self.getTypeClass(f.object) == .thread_handle)
+                {
+                    try self.generateExpr(f.object);
+                    try self.write(".getValue()");
+                // handle.done → handle.done() (thread Handle(T) — non-blocking check)
+                } else if (std.mem.eql(u8, f.field, "done") and
+                    self.getTypeClass(f.object) == .thread_handle)
+                {
+                    try self.generateExpr(f.object);
+                    try self.write(".done()");
+                // ptr.value → ptr.* (safe Ptr(T) dereference)
+                } else if (std.mem.eql(u8, f.field, "value") and
                     self.getTypeClass(f.object) == .safe_ptr)
                 {
                     try self.generateExpr(f.object);
@@ -2226,6 +2360,12 @@ pub const CodeGen = struct {
                     break :blk "std.Thread"; // Thread handle type
                 } else if (std.mem.eql(u8, g.name, "Async")) {
                     break :blk "void"; // Async not yet implemented
+                } else if (std.mem.eql(u8, g.name, "Handle")) {
+                    // Handle(T) → _rt.OrhonHandle(zigT)
+                    if (g.args.len > 0) {
+                        const inner = try self.typeToZig(g.args[0]);
+                        break :blk try self.allocTypeStr("_rt.OrhonHandle({s})", .{inner});
+                    }
                 } else if (std.mem.eql(u8, g.name, "Ptr")) {
                     // Ptr(T) → *const T
                     if (g.args.len > 0) {
@@ -2367,6 +2507,7 @@ test "codegen - simple program" {
         .is_compt = false,
         .is_pub = false,
         .is_extern = false,
+        .is_thread = false,
     }};
 
     const top_level = try a.alloc(*parser.Node, 1);
@@ -2416,6 +2557,7 @@ test "codegen - runtime import in preamble" {
         .is_compt = false,
         .is_pub = false,
         .is_extern = false,
+        .is_thread = false,
     }};
     const top_level = try a.alloc(*parser.Node, 1);
     top_level[0] = func;
@@ -2488,6 +2630,7 @@ test "codegen - extern func emits re-export" {
         .is_compt = false,
         .is_pub = true,
         .is_extern = true,
+        .is_thread = false,
     }};
 
     const top_level = try a.alloc(*parser.Node, 1);

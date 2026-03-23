@@ -1090,6 +1090,7 @@ test "resolver - bitsize resolves numeric literals" {
         .is_pub = false,
         .is_extern = false,
         .is_compt = false,
+        .is_thread = false,
     } };
 
     const module_node = try a.create(parser.Node);
@@ -1153,6 +1154,7 @@ test "resolver - no bitsize errors on untyped literal" {
         .is_pub = false,
         .is_extern = false,
         .is_compt = false,
+        .is_thread = false,
     } };
 
     const module_node = try a.create(parser.Node);
@@ -1202,6 +1204,7 @@ test "resolver - function return type resolves" {
         .return_type_node = ret_node,
         .is_compt = false,
         .is_pub = false,
+        .is_thread = false,
     });
 
     var reporter = errors.Reporter.init(alloc, .debug);

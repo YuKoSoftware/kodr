@@ -5,24 +5,14 @@ module main
 #build   = exe
 #bitsize = 32
 
-// unjoined thread
+// thread function — unjoined handle
 
-func unjoined() void {
-    const x: i32 = 42
-    thread(i32) worker {
-        return x
-    }
+thread worker(x: i32) Handle(i32) {
+    return Handle(x * 2)
 }
 
-// use after move into thread
-
-func use_after_thread() void {
-    const x: i32 = 21
-    thread(i32) worker {
-        return x * 2
-    }
-    const y: i32 = x + 1
-    const z: i32 = worker.value
+func unjoined() void {
+    const h: Handle(i32) = worker(42)
 }
 
 func main() void { }

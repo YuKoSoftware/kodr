@@ -446,6 +446,7 @@ pub fn buildZigContent(
         \\        .root_source_file = b.path("_orhon_collections.zig"),
         \\        .target = target,
         \\        .optimize = optimize,
+        \\        .imports = &.{.{ .name = "_orhon_rt", .module = rt_mod }},
         \\    });
         \\
     );
@@ -589,6 +590,7 @@ pub fn buildZigContentMulti(
         \\        .root_source_file = b.path("_orhon_collections.zig"),
         \\        .target = target,
         \\        .optimize = optimize,
+        \\        .imports = &.{.{ .name = "_orhon_rt", .module = rt_mod }},
         \\    });
         \\
     );

@@ -586,6 +586,7 @@ test "propagation - call expr resolved via decl table" {
         .return_type_node = ret_node,
         .is_compt = false,
         .is_pub = false,
+        .is_thread = false,
     });
 
     var checker = PropChecker.init(alloc, &reporter, &decl_table);
@@ -718,6 +719,7 @@ test "propagation - reassignment resets handled status" {
         .return_type_node = ret_node,
         .is_compt = false,
         .is_pub = false,
+        .is_thread = false,
     });
 
     var checker = PropChecker.init(alloc, &reporter, &decl_table);

@@ -175,7 +175,8 @@ pub const FuncDecl = struct {
     body: *Node,
     is_compt: bool,
     is_pub: bool,
-    is_extern: bool,  // no body — implementation in paired .zig file
+    is_extern: bool, // no body — implementation in paired .zig file
+    is_thread: bool, // thread declaration — generates spawn wrapper + body
 };
 
 pub const StructDecl = struct {
@@ -667,6 +668,7 @@ pub const Parser = struct {
 
         return switch (tok.kind) {
             .kw_func => try self.parseFuncDecl(false, false),
+            .kw_thread => try self.parseThreadDecl(false),
             .kw_compt => try self.parseComptDecl(),
             .kw_struct => try self.parseStructDecl(false),
             .kw_enum => try self.parseEnumDecl(false),
@@ -701,6 +703,7 @@ pub const Parser = struct {
         const tok = self.peek();
         return switch (tok.kind) {
             .kw_func      => try self.parseFuncDecl(true, false),
+            .kw_thread    => try self.parseThreadDecl(true),
             .kw_extern    => {
                 const ext_tok = self.peek();
                 try self.reporter.report(.{
@@ -847,7 +850,15 @@ pub const Parser = struct {
     // ============================================================
 
     fn parseFuncDecl(self: *Parser, is_pub: bool, is_extern: bool) anyerror!*Node {
-        _ = try self.expect(.kw_func);
+        return self.parseFuncOrThread(is_pub, is_extern, false);
+    }
+
+    fn parseThreadDecl(self: *Parser, is_pub: bool) anyerror!*Node {
+        return self.parseFuncOrThread(is_pub, false, true);
+    }
+
+    fn parseFuncOrThread(self: *Parser, is_pub: bool, is_extern: bool, is_thread: bool) anyerror!*Node {
+        _ = self.advance(); // consume 'func' or 'thread'
         // Function name can be a regular identifier or the keyword 'main'
         const name_tok = blk: {
             const tok = self.peek();
@@ -912,6 +923,7 @@ pub const Parser = struct {
             .is_compt = false,
             .is_pub = is_pub,
             .is_extern = is_extern,
+            .is_thread = is_thread,
         }});
     }
 
@@ -1273,7 +1285,6 @@ pub const Parser = struct {
             .kw_match => try self.parseMatch(),
             .kw_break => try self.parseBreak(),
             .kw_continue => try self.parseContinue(),
-            .kw_thread => try self.parseThreadBlock(),
             else => try self.parseExprOrAssignment(),
         };
     }

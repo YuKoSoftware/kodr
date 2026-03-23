@@ -149,10 +149,13 @@ module main
 #version = Version(1, 0, 0)
 #build   = exe
 #bitsize = 32
+
+thread worker(x: i32) Handle(i32) {
+    return Handle(x * 2)
+}
+
 func main() void {
-    thread(i32) worker {
-        return 42
-    }
+    const h: Handle(i32) = worker(42)
 }
 ORHON
 cd neg_thread

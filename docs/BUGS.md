@@ -26,15 +26,17 @@ are qualified as `p.has(Perms.Read)` via MIR type lookup.
 Was a documentation issue — docs referenced `mem.*` but the module is `std::allocator`.
 Stale `mem.orh`/`mem.zig` deleted, docs updated. `import std::allocator` works correctly.
 
-## Codegen — array literal to slice coercion
+## ~~Codegen — array literal to slice coercion~~ (FIXED v0.5.0)
 
-`system.run("echo", ["hello"])` and `parts.join(", ")` generate array literals
-where Zig expects slices. Need `&` address-of operator for coercion.
+Fixed by MIR Phase 3 coercion pass. The MIR annotator compares call argument types
+with parameter types — when an array is passed where a slice is expected, the arg
+node is marked with `coercion = .array_to_slice`. Codegen emits `&` prefix.
 
-## Codegen — Map.get returns optional
+## ~~Codegen — Map.get returns optional~~ (FIXED v0.5.0)
 
-`Map(K,V).get()` returns `?V` in Zig but codegen treats it as `V`. Need null
-union wrapping or `.?` unwrap at the call site.
+Fixed by changing `Map.get()` bridge to return `OrhonNullable(V)` instead of `?V`.
+Matches the existing pattern used by `str.indexOf()`. Codegen's null union handling
+works correctly — `result.value` extracts the inner value after an `is not null` check.
 
 ## ~~Codegen — Set/Map iteration~~ (RESOLVED)
 
@@ -42,8 +44,8 @@ union wrapping or `.?` unwrap at the call site.
 `for(map.keys()) |key|`, `for(set.items()) |item|`. This is by design — collections
 expose slices through bridge methods, matching the Orhon bridge pattern.
 
-## Codegen — thread blocks
+## ~~Codegen — thread blocks~~ (FIXED v0.5.0)
 
-`thread(T) name { }` syntax is parsed but codegen was removed. Threading has been
-redesigned as a language-level feature (see FUTURE.md). Old thread block syntax
-will be replaced by the new `thread` keyword + `Handle(T)` model.
+Threading implemented as language-level feature. `thread name(params) Handle(T) { body }`
+declares a thread function. Calling it spawns an OS thread and returns `Handle(T)`.
+Handle methods: `.value` (block + move result), `.wait()`, `.done()`, `.join()`.

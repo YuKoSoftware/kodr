@@ -1,30 +1,37 @@
-# Orhon — Future Ideas
-
-Ideas and language decisions that are not yet committed.
+# Orhon — Roadmap
 
 ---
 
-## Decided Against
+## Priority 1 — Architecture
 
-- **Closures** — function pointers cover the use case. Captures create ownership complexity. Pass variables as arguments instead.
-- **Traits / interfaces** — `any` + `compt` covers generic type dispatch. Traits add complexity (hierarchies, orphan rules, associated types) without proportional value.
-- **Coroutines / async** — threads + move semantics cover parallelism. Coroutines need a runtime, colored functions, and an executor.
-- **REPL** — compiled language. `orhon run` is fast enough. A REPL needs an interpreter or incremental compiler.
-- **Top-level `println`** — keep in `std::console`. One import, all I/O. No special-case global functions.
-- **Collection method chaining** — `.filter().map().take()` allocates intermediate collections. For loops are explicit, zero-alloc, and already work.
-- **Untagged unions** — all unions carry a tag. Safety requires knowing which type is active. Use `extern struct` with Zig sidecar for unsafe C interop.
-- **Goroutines** — need a runtime, GC, scheduler. OS threads + move semantics are deterministic with no runtime overhead.
-- **`Array(T, N)` / `Slice(T)` syntax** — `[N]T` and `[]T` are shorter, universal, and match array literals.
-- **`else` on `for`/`while`** — confusing semantics. Use `if(items.len == 0)` instead.
-- **Enum associated values** — arbitrary unions + `is` already cover this cleanly.
+These unblock open bugs and enable major features.
+
+### MIR Phase 3 — Coercion Pass (started)
+
+MIR annotator now compares call arg types with param types and marks coercion
+fields on AST nodes. Codegen reads coercion annotations to emit transformations.
+
+**Done:**
+- Array-to-slice coercion: `coercion = .array_to_slice` → `&` prefix in call args
+- Map.get() optional: bridge returns `OrhonNullable(V)` instead of `?V`
+
+**Remaining:**
+- Full MirNode tree lowering (replace all AST access in codegen)
+- Additional coercions: null_wrap, error_wrap, arb_union_wrap, optional_unwrap
+
+### ~~Threading — `thread` keyword + `Handle(T)`~~ (implemented v0.5.0)
+
+Thread functions compile to OS threads via `std.Thread`. `Handle(T)` is a compiler-generated
+type with `.value`, `.wait()`, `.done()`, `.join()` methods. Thread safety checker ensures
+handles are consumed before scope exit. See [Threading Model](#threading-model) for design.
 
 ---
 
-## Standard Library Roadmap
+## Priority 2 — Standard Library
 
 All stdlib modules use the bridge pattern (module + `.zig` sidecar). The codegen has no knowledge of stdlib types — everything goes through `extern` declarations. Users can build their own bridge modules the same way.
 
-### Implemented (bridge modules)
+### Implemented
 ```
 std.allocator     // memory allocators — SMP, Arena, Page
 std.console       // terminal I/O — print, println, get
@@ -40,20 +47,24 @@ std.collections   // List(T), Map(K,V), Set(T) — generic collections via bridg
 std.ziglib        // bridge testbed — exercises all interop patterns
 ```
 
-### Not started
+### Next up
 ```
-std.net           // raw sockets — TCP, UDP
-std.encoding      // base64, hex, UTF-8, UTF-16
-std.unicode       // full unicode support, normalization
 std.process       // spawn processes, pipes, child processes
-std.reflect       // type introspection
+std.encoding      // base64, hex, UTF-8, UTF-16
+std.io            // raw streams, buffers, readers, writers
+std.net           // raw sockets — TCP, UDP
 std.crypto        // primitives only — hashing, symmetric, asymmetric encryption
+```
+
+### Remaining
+```
+std.unicode       // full unicode support, normalization
+std.reflect       // type introspection
 std.compress      // algorithms only — lz4, zstd, deflate
 std.regex         // pattern matching
 std.xml           // parse and emit XML
 std.csv           // parse and emit CSV
 std.hash          // fast general purpose hashing — FNV, xxHash, SipHash
-std.io            // raw streams, buffers, readers, writers
 std.bytes         // raw byte manipulation, endianness, bit operations
 std.math.linear   // Vec2(T), Vec3(T), Vec4(T), Mat4(T), Quat(T)
 ```
@@ -66,21 +77,50 @@ std.window        // window creation, input events, platform abstraction only
 std.gpu           // GPU access, compute, backend agnostic (Vulkan, OpenGL, WebGPU)
 ```
 
-### Deliberately excluded
-- `std.http` — too opinionated, third party
-- `std.db` — too opinionated, third party
-- `std.log` — too opinionated, third party
-- GUI frameworks — too opinionated, third party
-
 ---
 
-## Missing Tooling
+## Priority 3 — Polish & Tooling
+
+### Example Module Updates
+
+Add coverage for features not yet in the example module:
+- String interpolation `@{variable}`
+- Bitfield enums (`enum @bitfield`)
+- Stdlib import/usage examples
 
 ### Documentation Generator (`orhon doc`)
+
 Generate HTML/Markdown docs from `pub` declarations and doc comments.
 
 ### Fuzz Testing
+
 Use Zig's built-in `std.testing.fuzz` to fuzz the lexer and parser.
+
+---
+
+## Priority 4 — Future Architecture
+
+### MIR Phase 4 — SSA + Optimization
+
+Flatten the MirNode tree to basic blocks with SSA form. Add optimization passes: dead code elimination, constant folding, inlining decisions. Codegen reads the SSA IR.
+
+---
+
+## MIR Roadmap
+
+### Phase 1 — Typed Annotation Pass (implemented)
+The MIR annotator (pass 10) walks the AST + resolver type_map to produce a NodeMap — an annotation table keyed by AST node pointer. Each entry carries `ResolvedType`, `TypeClass`, and optional coercion/narrowing info. Codegen can query this instead of re-discovering types via ad-hoc hashmaps. Includes a `UnionRegistry` for canonical union type deduplication.
+
+### Phase 2 — Single Source of Truth (implemented)
+MIR is the single source of truth for type information in codegen. Eliminated all AST type inspection functions (`isErrorUnionType`, `isNullUnionType`, `isArbitraryUnion`), the `arb_union_vars` hashmap, and 4 function return type tracking fields. Added `var_types` registry, `current_func_node` tracking, and `funcReturnTypeClass()`/`funcReturnMembers()` helpers. Codegen queries MIR for all type decisions. Only `narrowed_vars` remains (legitimate runtime scope state from `is` checks).
+
+### Phase 3 — Coercion Pass + Typed Tree (in progress)
+Coercion annotation pass added: MIR detects type mismatches at call sites and marks
+nodes with coercion instructions. Next: lower the full NodeMap into a proper `MirNode`
+tree with its own node types. Codegen reads the MirNode tree instead of the AST.
+
+### Phase 4 — SSA + Optimization
+Flatten the MirNode tree to basic blocks with SSA form. Add optimization passes: dead code elimination, constant folding, inlining decisions. Codegen reads the SSA IR.
 
 ---
 
@@ -171,16 +211,16 @@ h.return()
 
 ---
 
-## MIR Roadmap
+## Decided Against
 
-### Phase 1 — Typed Annotation Pass (implemented)
-The MIR annotator (pass 10) walks the AST + resolver type_map to produce a NodeMap — an annotation table keyed by AST node pointer. Each entry carries `ResolvedType`, `TypeClass`, and optional coercion/narrowing info. Codegen can query this instead of re-discovering types via ad-hoc hashmaps. Includes a `UnionRegistry` for canonical union type deduplication.
-
-### Phase 2 — Single Source of Truth (implemented)
-MIR is the single source of truth for type information in codegen. Eliminated all AST type inspection functions (`isErrorUnionType`, `isNullUnionType`, `isArbitraryUnion`), the `arb_union_vars` hashmap, and 4 function return type tracking fields. Added `var_types` registry, `current_func_node` tracking, and `funcReturnTypeClass()`/`funcReturnMembers()` helpers. Codegen queries MIR for all type decisions. Only `narrowed_vars` remains (legitimate runtime scope state from `is` checks).
-
-### Phase 3 — Typed Tree
-Lower the NodeMap into a proper `MirNode` tree with its own node types. Codegen reads the MirNode tree instead of the AST. This enables desugaring and tree transformations before code emission.
-
-### Phase 4 — SSA + Optimization
-Flatten the MirNode tree to basic blocks with SSA form. Add optimization passes: dead code elimination, constant folding, inlining decisions. Codegen reads the SSA IR.
+- **Closures** — function pointers cover the use case. Captures create ownership complexity. Pass variables as arguments instead.
+- **Traits / interfaces** — `any` + `compt` covers generic type dispatch. Traits add complexity (hierarchies, orphan rules, associated types) without proportional value.
+- **Coroutines / async** — threads + move semantics cover parallelism. Coroutines need a runtime, colored functions, and an executor.
+- **REPL** — compiled language. `orhon run` is fast enough. A REPL needs an interpreter or incremental compiler.
+- **Top-level `println`** — keep in `std::console`. One import, all I/O. No special-case global functions.
+- **Collection method chaining** — `.filter().map().take()` allocates intermediate collections. For loops are explicit, zero-alloc, and already work.
+- **Untagged unions** — all unions carry a tag. Safety requires knowing which type is active. Use `extern struct` with Zig sidecar for unsafe C interop.
+- **Goroutines** — need a runtime, GC, scheduler. OS threads + move semantics are deterministic with no runtime overhead.
+- **`Array(T, N)` / `Slice(T)` syntax** — `[N]T` and `[]T` are shorter, universal, and match array literals.
+- **`else` on `for`/`while`** — confusing semantics. Use `if(items.len == 0)` instead.
+- **Enum associated values** — arbitrary unions + `is` already cover this cleanly.
