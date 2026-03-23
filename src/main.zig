@@ -388,6 +388,10 @@ const HTTP_ORH     = @embedFile("std/http.orh");
 const HTTP_ZIG     = @embedFile("std/http.zig");
 const REGEX_ORH    = @embedFile("std/regex.orh");
 const REGEX_ZIG    = @embedFile("std/regex.zig");
+const INI_ORH      = @embedFile("std/ini.orh");
+const INI_ZIG      = @embedFile("std/ini.zig");
+const TOML_ORH     = @embedFile("std/toml.orh");
+const TOML_ZIG     = @embedFile("std/toml.zig");
 
 /// Write an embedded file to .orh-cache/std/ if it doesn't already exist
 fn writeStdFile(dir: []const u8, name: []const u8, content: []const u8, allocator: std.mem.Allocator) !void {
@@ -452,6 +456,10 @@ fn ensureStdFiles(allocator: std.mem.Allocator) !void {
         .{ .name = "http.zig",        .content = HTTP_ZIG },
         .{ .name = "regex.orh",       .content = REGEX_ORH },
         .{ .name = "regex.zig",       .content = REGEX_ZIG },
+        .{ .name = "ini.orh",         .content = INI_ORH },
+        .{ .name = "ini.zig",         .content = INI_ZIG },
+        .{ .name = "toml.orh",        .content = TOML_ORH },
+        .{ .name = "toml.zig",        .content = TOML_ZIG },
     };
 
     for (files) |f| {
