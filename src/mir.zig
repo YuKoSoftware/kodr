@@ -159,6 +159,8 @@ pub const MirAnnotator = struct {
     union_registry: UnionRegistry,
     /// Variable name → NodeInfo lookup (fallback when node pointer isn't in type_map).
     var_types: std.StringHashMapUnmanaged(NodeInfo),
+    /// Current function name — for looking up return type during annotation.
+    current_func_name: ?[]const u8 = null,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -205,6 +207,10 @@ pub const MirAnnotator = struct {
                         try self.recordNode(param, t);
                     }
                 }
+                // Track current function for return coercions
+                const prev_func = self.current_func_name;
+                self.current_func_name = f.name;
+                defer self.current_func_name = prev_func;
                 // Annotate body
                 try self.annotateNode(f.body);
             },
@@ -264,6 +270,8 @@ pub const MirAnnotator = struct {
 
                 // Annotate the value expression
                 try self.annotateNode(v.value);
+                // Coercion pass: detect wrapping needed for declarations
+                try self.annotateDeclCoercions(v.value, t);
             },
 
             .compt_decl => |v| {
@@ -275,6 +283,8 @@ pub const MirAnnotator = struct {
             .return_stmt => |r| {
                 if (r.value) |val| {
                     try self.annotateNode(val);
+                    // Coercion pass: detect wrapping needed for return values
+                    try self.annotateReturnCoercions(val);
                 }
             },
 
@@ -415,27 +425,86 @@ pub const MirAnnotator = struct {
         try self.recordNode(node, t);
     }
 
-    /// Detect array-to-slice coercions in function call arguments.
-    /// When an arg is typed as [N]T but the param expects []T, mark the arg
-    /// with coercion = .array_to_slice so codegen can emit `&`.
+    /// Detect coercions in function call arguments.
+    /// Compares arg types with param types and marks coercion annotations.
     fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
-        // Resolve the callee's function signature
         const sig = self.resolveCallSig(c) orelse return;
-
-        // Compare each arg type with the corresponding param type
         const param_count = @min(c.args.len, sig.params.len);
         for (c.args[0..param_count], sig.params[0..param_count]) |arg, param| {
             const arg_type = self.lookupType(arg) orelse continue;
-            if (arg_type == .array and param.type_ == .slice) {
-                // Mark the arg node with array_to_slice coercion
+            const coercion = detectCoercion(arg_type, param.type_);
+            if (coercion.kind) |kind| {
                 try self.node_map.put(self.allocator, arg, .{
                     .resolved_type = arg_type,
                     .type_class = classifyType(arg_type),
-                    .coercion = .array_to_slice,
+                    .coercion = kind,
+                    .coerce_tag = coercion.tag,
                 });
             }
         }
     }
+
+    /// Detect coercions for variable/const declarations.
+    /// When the declared type differs from the value type, mark the value node.
+    fn annotateDeclCoercions(self: *MirAnnotator, value: *parser.Node, decl_type: RT) !void {
+        const val_type = self.lookupType(value) orelse return;
+        const coercion = detectCoercion(val_type, decl_type);
+        if (coercion.kind) |kind| {
+            try self.node_map.put(self.allocator, value, .{
+                .resolved_type = val_type,
+                .type_class = classifyType(val_type),
+                .coercion = kind,
+                .coerce_tag = coercion.tag,
+            });
+        }
+    }
+
+    /// Detect coercions for return statements.
+    /// When the return value type differs from the function's return type, mark the value node.
+    fn annotateReturnCoercions(self: *MirAnnotator, value: *parser.Node) !void {
+        const func_name = self.current_func_name orelse return;
+        const sig = self.decls.funcs.get(func_name) orelse return;
+        const val_type = self.lookupType(value) orelse return;
+        const coercion = detectCoercion(val_type, sig.return_type);
+        if (coercion.kind) |kind| {
+            try self.node_map.put(self.allocator, value, .{
+                .resolved_type = val_type,
+                .type_class = classifyType(val_type),
+                .coercion = kind,
+                .coerce_tag = coercion.tag,
+            });
+        }
+    }
+
+    /// Core coercion detection: given a source type and a target type,
+    /// determine if a coercion is needed and which kind.
+    fn detectCoercion(src: RT, dst: RT) CoercionResult {
+        // Can't determine coercion without concrete types
+        if (src == .unknown or src == .inferred or dst == .unknown or dst == .inferred)
+            return .{ .kind = null };
+        // Array → slice
+        if (src == .array and dst == .slice)
+            return .{ .kind = .array_to_slice };
+        // Plain → null union
+        if (dst == .null_union and src != .null_union and src != .null_type)
+            return .{ .kind = .null_wrap };
+        // Plain → error union
+        if (dst == .error_union and src != .error_union and src != .err)
+            return .{ .kind = .error_wrap };
+        // Plain → arbitrary union
+        if (dst == .union_type and src != .union_type) {
+            return .{ .kind = .arbitrary_union_wrap, .tag = src.name() };
+        }
+        // Null union → plain (optional unwrap)
+        if (src == .null_union and dst != .null_union)
+            return .{ .kind = .optional_unwrap };
+        return .{ .kind = null };
+    }
+
+    const CoercionResult = struct {
+        kind: ?Coercion = null,
+        tag: ?[]const u8 = null,
+    };
 
     /// Look up a FuncSig for a call expression's callee.
     fn resolveCallSig(self: *const MirAnnotator, c: parser.CallExpr) ?declarations.FuncSig {
@@ -461,6 +530,531 @@ pub const MirAnnotator = struct {
         });
     }
 };
+
+// ── MIR Node Tree ──────────────────────────────────────────
+
+/// MIR node — carries type info inline, replaces AST + NodeMap pair.
+/// Back-pointer to AST for string data (names, operators, literal values).
+pub const MirNode = struct {
+    /// Original AST node — for names, operators, literal values, source locations.
+    ast: *parser.Node,
+    /// Resolved type of this node.
+    resolved_type: RT,
+    /// How codegen should treat this node.
+    type_class: TypeClass,
+    /// Explicit coercion to emit.
+    coercion: ?Coercion = null,
+    coerce_tag: ?[]const u8 = null,
+    /// For type narrowing after `is` checks.
+    narrowed_to: ?[]const u8 = null,
+    /// Node kind (grouped from 52 AST kinds to ~32 MIR kinds).
+    kind: MirKind,
+    /// Child nodes (ordered: statements in block, args in call, etc.).
+    children: []*MirNode,
+    /// For injected nodes (temp_var, injected_defer) that have no AST name.
+    injected_name: ?[]const u8 = null,
+    /// Pre-computed type narrowing for if_stmt with `is` checks.
+    narrowing: ?IfNarrowing = null,
+};
+
+/// MIR node kinds — grouped from 52 AST kinds.
+pub const MirKind = enum {
+    // Declarations
+    func,
+    struct_def,
+    enum_def,
+    bitfield_def,
+    var_decl, // var_decl, const_decl, compt_decl
+    test_def,
+    destruct,
+    import,
+    // Statements
+    block,
+    return_stmt,
+    if_stmt,
+    while_stmt,
+    for_stmt,
+    defer_stmt,
+    match_stmt,
+    match_arm,
+    assignment,
+    break_stmt,
+    continue_stmt,
+    // Expressions
+    literal, // int, float, string, bool, null, error
+    identifier,
+    binary, // binary_expr, range_expr
+    unary,
+    call,
+    field_access,
+    index,
+    slice,
+    borrow,
+    interpolation,
+    collection,
+    ptr_expr,
+    compiler_fn,
+    array_lit,
+    tuple_lit,
+    // Types — passthrough (codegen reads ast.* via typeToZig)
+    type_expr,
+    // Injected nodes (no AST counterpart)
+    temp_var,
+    injected_defer,
+    // Passthrough for unhandled/structural nodes
+    passthrough,
+};
+
+/// Pre-computed type narrowing for if_stmt with `is` checks.
+pub const IfNarrowing = struct {
+    var_name: []const u8,
+    then_type: ?[]const u8 = null,
+    else_type: ?[]const u8 = null,
+    post_type: ?[]const u8 = null, // after if, if then-block has early exit
+};
+
+// ── MIR Lowerer ────────────────────────────────────────────
+
+/// Lowers AST + NodeMap into a MirNode tree.
+/// Runs after MirAnnotator.annotate(), before codegen.
+pub const MirLowerer = struct {
+    allocator: std.mem.Allocator, // arena allocator — all nodes freed together
+    arena: std.heap.ArenaAllocator,
+    node_map: *const NodeMap,
+    union_registry: *const UnionRegistry,
+    decls: *const declarations.DeclTable,
+    var_types: *const std.StringHashMapUnmanaged(NodeInfo),
+    interp_counter: u32 = 0,
+
+    pub fn init(
+        backing: std.mem.Allocator,
+        node_map: *const NodeMap,
+        union_registry: *const UnionRegistry,
+        decls: *const declarations.DeclTable,
+        var_types: *const std.StringHashMapUnmanaged(NodeInfo),
+    ) MirLowerer {
+        return .{
+            .allocator = undefined, // set in lower() from arena field
+            .arena = std.heap.ArenaAllocator.init(backing),
+            .node_map = node_map,
+            .union_registry = union_registry,
+            .decls = decls,
+            .var_types = var_types,
+        };
+    }
+
+    pub fn deinit(self: *MirLowerer) void {
+        self.arena.deinit();
+    }
+
+    /// Lower the entire program AST into a MirNode tree.
+    pub fn lower(self: *MirLowerer, ast: *parser.Node) !*MirNode {
+        self.allocator = self.arena.allocator();
+        return self.lowerNode(ast);
+    }
+
+    fn lowerNode(self: *MirLowerer, node: *parser.Node) anyerror!*MirNode {
+        const info = self.node_map.get(node);
+        const resolved = if (info) |i| i.resolved_type else RT.unknown;
+        const tc = if (info) |i| i.type_class else classifyType(resolved);
+        const coercion_val = if (info) |i| i.coercion else null;
+        const coerce_tag_val = if (info) |i| i.coerce_tag else null;
+
+        const kind = astToMirKind(node);
+
+        var mir_node = try self.allocator.create(MirNode);
+        mir_node.* = .{
+            .ast = node,
+            .resolved_type = resolved,
+            .type_class = tc,
+            .coercion = coercion_val,
+            .coerce_tag = coerce_tag_val,
+            .kind = kind,
+            .children = &.{},
+        };
+
+        // Lower children based on AST node kind
+        switch (node.*) {
+            .program => |p| {
+                mir_node.children = try self.lowerSlice(p.top_level);
+            },
+            .func_decl => |f| {
+                // Children: [params..., body]
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                for (f.params) |param| {
+                    try children.append(self.allocator, try self.lowerNode(param));
+                }
+                try children.append(self.allocator, try self.lowerNode(f.body));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .struct_decl => |s| {
+                mir_node.children = try self.lowerSlice(s.members);
+            },
+            .enum_decl => |e| {
+                mir_node.children = try self.lowerSlice(e.members);
+            },
+            .bitfield_decl => {
+                mir_node.children = &.{};
+            },
+            .block => |b| {
+                // Process block statements — hoist interpolation temps
+                mir_node.children = try self.lowerBlock(b.statements);
+            },
+            .var_decl, .const_decl => |v| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(v.value));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .compt_decl => |v| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(v.value));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .return_stmt => |r| {
+                if (r.value) |val| {
+                    var children = std.ArrayListUnmanaged(*MirNode){};
+                    try children.append(self.allocator, try self.lowerNode(val));
+                    mir_node.children = try children.toOwnedSlice(self.allocator);
+                }
+            },
+            .if_stmt => |i| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(i.condition));
+                try children.append(self.allocator, try self.lowerNode(i.then_block));
+                if (i.else_block) |e| try children.append(self.allocator, try self.lowerNode(e));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+                // Pre-compute type narrowing from `is` checks
+                mir_node.narrowing = extractNarrowing(i.condition);
+            },
+            .while_stmt => |w| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(w.condition));
+                try children.append(self.allocator, try self.lowerNode(w.body));
+                if (w.continue_expr) |ce| try children.append(self.allocator, try self.lowerNode(ce));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .for_stmt => |fs| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(fs.iterable));
+                try children.append(self.allocator, try self.lowerNode(fs.body));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .defer_stmt => |d| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(d.body));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .match_stmt => |m| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(m.value));
+                for (m.arms) |arm| try children.append(self.allocator, try self.lowerNode(arm));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .match_arm => |m| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(m.body));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .assignment => |a| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(a.left));
+                try children.append(self.allocator, try self.lowerNode(a.right));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .binary_expr => |b| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(b.left));
+                try children.append(self.allocator, try self.lowerNode(b.right));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .unary_expr => |u| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(u.operand));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .call_expr => |c| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(c.callee));
+                for (c.args) |arg| try children.append(self.allocator, try self.lowerNode(arg));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .field_expr => |f| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(f.object));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .index_expr => |i| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(i.object));
+                try children.append(self.allocator, try self.lowerNode(i.index));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .slice_expr => |s| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(s.object));
+                try children.append(self.allocator, try self.lowerNode(s.low));
+                try children.append(self.allocator, try self.lowerNode(s.high));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .borrow_expr => |b| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(b));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .interpolated_string => |interp| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                for (interp.parts) |part| {
+                    switch (part) {
+                        .expr => |expr_node| try children.append(self.allocator, try self.lowerNode(expr_node)),
+                        .literal => {},
+                    }
+                }
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .range_expr => |r| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(r.left));
+                try children.append(self.allocator, try self.lowerNode(r.right));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .collection_expr => |c| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                for (c.type_args) |arg| try children.append(self.allocator, try self.lowerNode(arg));
+                if (c.alloc_arg) |a| try children.append(self.allocator, try self.lowerNode(a));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .compiler_func => |c| {
+                mir_node.children = try self.lowerSlice(c.args);
+            },
+            .ptr_expr => |p| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(p.type_arg));
+                try children.append(self.allocator, try self.lowerNode(p.addr_arg));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .array_literal => |a| {
+                mir_node.children = try self.lowerSlice(a);
+            },
+            .tuple_literal => |t| {
+                mir_node.children = try self.lowerSlice(t.fields);
+            },
+            .test_decl => |td| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(td.body));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .destruct_decl => |d| {
+                var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(d.value));
+                mir_node.children = try children.toOwnedSlice(self.allocator);
+            },
+            .import_decl => {
+                mir_node.children = &.{};
+            },
+            // Leaf nodes — no children
+            .int_literal,
+            .float_literal,
+            .string_literal,
+            .bool_literal,
+            .null_literal,
+            .error_literal,
+            .identifier,
+            .break_stmt,
+            .continue_stmt,
+            .enum_variant,
+            .field_decl,
+            .param,
+            .module_decl,
+            .metadata,
+            => {},
+            // Type nodes — passthrough
+            .type_primitive,
+            .type_slice,
+            .type_array,
+            .type_ptr,
+            .type_union,
+            .type_tuple_named,
+            .type_tuple_anon,
+            .type_func,
+            .type_generic,
+            .type_named,
+            .struct_type,
+            => {},
+        }
+
+        return mir_node;
+    }
+
+    /// Lower a block's statements, hoisting interpolation temporaries.
+    fn lowerBlock(self: *MirLowerer, statements: []*parser.Node) anyerror![]*MirNode {
+        var result = std.ArrayListUnmanaged(*MirNode){};
+
+        for (statements) |stmt| {
+            // Check if this statement contains an interpolated string that needs hoisting
+            if (self.findInterpolation(stmt)) |interp_node| {
+                // Hoist: create temp var + defer before the statement
+                const name = try std.fmt.allocPrint(self.allocator, "_orhon_interp_{d}", .{self.interp_counter});
+                self.interp_counter += 1;
+
+                // temp_var: const _orhon_interp_N = allocPrint(...)
+                const temp = try self.allocator.create(MirNode);
+                temp.* = .{
+                    .ast = interp_node,
+                    .resolved_type = RT{ .primitive = K.Type.STRING },
+                    .type_class = .string,
+                    .kind = .temp_var,
+                    .children = &.{},
+                    .injected_name = name,
+                };
+
+                // injected_defer: defer _rt.alloc.free(_orhon_interp_N)
+                const defer_node = try self.allocator.create(MirNode);
+                defer_node.* = .{
+                    .ast = interp_node,
+                    .resolved_type = RT.unknown,
+                    .type_class = .plain,
+                    .kind = .injected_defer,
+                    .children = &.{},
+                    .injected_name = name,
+                };
+
+                try result.append(self.allocator, temp);
+                try result.append(self.allocator, defer_node);
+
+                // Mark the interpolation node so codegen emits the temp var name
+                const lowered_stmt = try self.lowerNode(stmt);
+                self.markInterpolationReplacement(lowered_stmt, interp_node, name);
+                try result.append(self.allocator, lowered_stmt);
+            } else {
+                try result.append(self.allocator, try self.lowerNode(stmt));
+            }
+        }
+
+        return result.toOwnedSlice(self.allocator);
+    }
+
+    /// Find the first interpolated_string node in a statement (shallow search).
+    fn findInterpolation(self: *const MirLowerer, node: *parser.Node) ?*parser.Node {
+        _ = self;
+        switch (node.*) {
+            .var_decl, .const_decl => |v| return findInterpolationInExpr(v.value),
+            .call_expr => |c| {
+                for (c.args) |arg| {
+                    if (arg.* == .interpolated_string) return arg;
+                }
+                // Check method call receiver (field_expr callee)
+                if (c.callee.* == .field_expr) {
+                    const obj = c.callee.field_expr.object;
+                    if (obj.* == .interpolated_string) return obj;
+                }
+                return null;
+            },
+            .assignment => |a| return findInterpolationInExpr(a.right),
+            .return_stmt => |r| {
+                if (r.value) |v| return findInterpolationInExpr(v);
+                return null;
+            },
+            else => return null,
+        }
+    }
+
+    fn findInterpolationInExpr(node: *parser.Node) ?*parser.Node {
+        if (node.* == .interpolated_string) return node;
+        if (node.* == .call_expr) {
+            for (node.call_expr.args) |arg| {
+                if (arg.* == .interpolated_string) return arg;
+            }
+        }
+        return null;
+    }
+
+    /// Walk a lowered MirNode tree and mark the interpolation node for replacement.
+    fn markInterpolationReplacement(self: *MirLowerer, mir_node: *MirNode, target_ast: *parser.Node, name: []const u8) void {
+        if (mir_node.ast == target_ast and mir_node.kind == .interpolation) {
+            mir_node.injected_name = name;
+            return;
+        }
+        for (mir_node.children) |child| {
+            self.markInterpolationReplacement(child, target_ast, name);
+        }
+    }
+
+    fn lowerSlice(self: *MirLowerer, nodes: []*parser.Node) anyerror![]*MirNode {
+        var result = try self.allocator.alloc(*MirNode, nodes.len);
+        for (nodes, 0..) |node, i| {
+            result[i] = try self.lowerNode(node);
+        }
+        return result;
+    }
+
+    /// Extract type narrowing info from an if-condition.
+    fn extractNarrowing(condition: *parser.Node) ?IfNarrowing {
+        // Pattern: `x is T` → binary_expr with op "is"
+        if (condition.* == .binary_expr) {
+            const b = condition.binary_expr;
+            if (std.mem.eql(u8, b.op, "is")) {
+                if (b.left.* == .identifier) {
+                    const type_name = switch (b.right.*) {
+                        .type_named => |n| n,
+                        .type_primitive => |n| n,
+                        .identifier => |n| n,
+                        else => return null,
+                    };
+                    return .{
+                        .var_name = b.left.identifier,
+                        .then_type = type_name,
+                    };
+                }
+            }
+        }
+        return null;
+    }
+};
+
+/// Map AST node kind to MIR node kind.
+fn astToMirKind(node: *parser.Node) MirKind {
+    return switch (node.*) {
+        .func_decl => .func,
+        .struct_decl => .struct_def,
+        .enum_decl => .enum_def,
+        .bitfield_decl => .bitfield_def,
+        .var_decl, .const_decl, .compt_decl => .var_decl,
+        .test_decl => .test_def,
+        .destruct_decl => .destruct,
+        .import_decl => .import,
+        .block => .block,
+        .return_stmt => .return_stmt,
+        .if_stmt => .if_stmt,
+        .while_stmt => .while_stmt,
+        .for_stmt => .for_stmt,
+        .defer_stmt => .defer_stmt,
+        .match_stmt => .match_stmt,
+        .match_arm => .match_arm,
+        .assignment => .assignment,
+        .break_stmt => .break_stmt,
+        .continue_stmt => .continue_stmt,
+        .int_literal, .float_literal, .string_literal, .bool_literal, .null_literal, .error_literal => .literal,
+        .identifier => .identifier,
+        .binary_expr, .range_expr => .binary,
+        .unary_expr => .unary,
+        .call_expr => .call,
+        .field_expr => .field_access,
+        .index_expr => .index,
+        .slice_expr => .slice,
+        .borrow_expr => .borrow,
+        .interpolated_string => .interpolation,
+        .collection_expr => .collection,
+        .ptr_expr => .ptr_expr,
+        .compiler_func => .compiler_fn,
+        .array_literal => .array_lit,
+        .tuple_literal => .tuple_lit,
+        .type_primitive, .type_slice, .type_array, .type_ptr, .type_union,
+        .type_tuple_named, .type_tuple_anon, .type_func, .type_generic,
+        .type_named, .struct_type,
+        => .type_expr,
+        else => .passthrough,
+    };
+}
 
 // ── Tests ───────────────────────────────────────────────────
 
@@ -558,4 +1152,89 @@ test "var_types - populated from var_decl" {
     const got = annotator.var_types.get("x").?;
     try std.testing.expectEqual(TypeClass.plain, got.type_class);
     try std.testing.expectEqualStrings("i32", got.resolved_type.name());
+}
+
+test "detectCoercion - null_wrap" {
+    const alloc = std.testing.allocator;
+    const inner = try alloc.create(RT);
+    defer alloc.destroy(inner);
+    inner.* = RT{ .primitive = "i32" };
+
+    // Plain → null union → null_wrap
+    const r1 = MirAnnotator.detectCoercion(RT{ .primitive = "i32" }, RT{ .null_union = inner });
+    try std.testing.expectEqual(Coercion.null_wrap, r1.kind.?);
+
+    // null_union → null_union → no coercion
+    const r2 = MirAnnotator.detectCoercion(RT{ .null_union = inner }, RT{ .null_union = inner });
+    try std.testing.expect(r2.kind == null);
+
+    // null_type → null_union → no coercion (null literal handled separately)
+    const r3 = MirAnnotator.detectCoercion(RT.null_type, RT{ .null_union = inner });
+    try std.testing.expect(r3.kind == null);
+}
+
+test "detectCoercion - error_wrap" {
+    const alloc = std.testing.allocator;
+    const inner = try alloc.create(RT);
+    defer alloc.destroy(inner);
+    inner.* = RT{ .primitive = "i32" };
+
+    // Plain → error union → error_wrap
+    const r1 = MirAnnotator.detectCoercion(RT{ .primitive = "i32" }, RT{ .error_union = inner });
+    try std.testing.expectEqual(Coercion.error_wrap, r1.kind.?);
+
+    // error_union → error_union → no coercion
+    const r2 = MirAnnotator.detectCoercion(RT{ .error_union = inner }, RT{ .error_union = inner });
+    try std.testing.expect(r2.kind == null);
+
+    // err → error_union → no coercion (error literal handled separately)
+    const r3 = MirAnnotator.detectCoercion(RT.err, RT{ .error_union = inner });
+    try std.testing.expect(r3.kind == null);
+}
+
+test "detectCoercion - arbitrary_union_wrap" {
+    const alloc = std.testing.allocator;
+    const inner = try alloc.create(RT);
+    defer alloc.destroy(inner);
+    inner.* = RT{ .primitive = "i32" };
+
+    // Plain → union_type → arbitrary_union_wrap with tag
+    const members = &[_]RT{ RT{ .primitive = "i32" }, RT{ .primitive = "String" } };
+    const r1 = MirAnnotator.detectCoercion(RT{ .primitive = "i32" }, RT{ .union_type = members });
+    try std.testing.expectEqual(Coercion.arbitrary_union_wrap, r1.kind.?);
+    try std.testing.expectEqualStrings("i32", r1.tag.?);
+
+    // union_type → union_type → no coercion
+    const r2 = MirAnnotator.detectCoercion(RT{ .union_type = members }, RT{ .union_type = members });
+    try std.testing.expect(r2.kind == null);
+}
+
+test "detectCoercion - optional_unwrap" {
+    const alloc = std.testing.allocator;
+    const inner = try alloc.create(RT);
+    defer alloc.destroy(inner);
+    inner.* = RT{ .primitive = "i32" };
+
+    // null_union → plain → optional_unwrap
+    const r1 = MirAnnotator.detectCoercion(RT{ .null_union = inner }, RT{ .primitive = "i32" });
+    try std.testing.expectEqual(Coercion.optional_unwrap, r1.kind.?);
+}
+
+test "detectCoercion - unknown types" {
+    const alloc = std.testing.allocator;
+    const inner = try alloc.create(RT);
+    defer alloc.destroy(inner);
+    inner.* = RT{ .primitive = "i32" };
+
+    // Unknown source → no coercion
+    const r1 = MirAnnotator.detectCoercion(RT.unknown, RT{ .null_union = inner });
+    try std.testing.expect(r1.kind == null);
+
+    // Unknown destination → no coercion
+    const r2 = MirAnnotator.detectCoercion(RT{ .primitive = "i32" }, RT.unknown);
+    try std.testing.expect(r2.kind == null);
+
+    // Same type → no coercion
+    const r3 = MirAnnotator.detectCoercion(RT{ .primitive = "i32" }, RT{ .primitive = "i32" });
+    try std.testing.expect(r3.kind == null);
 }

@@ -38,6 +38,8 @@ pub const CodeGen = struct {
     union_registry: ?*const mir.UnionRegistry = null,
     var_types: ?*const std.StringHashMapUnmanaged(mir.NodeInfo) = null,
     current_func_node: ?*parser.Node = null,
+    // MIR tree — Phase 3 lowered tree (available for incremental migration)
+    mir_root: ?*mir.MirNode = null,
 
     /// Query MIR annotation for an AST node.
     pub fn getNodeInfo(self: *const CodeGen, node: *parser.Node) ?mir.NodeInfo {
@@ -307,17 +309,69 @@ pub const CodeGen = struct {
     }
 
 
-    /// Generate a value expression, wrapping it for null union context if needed
+    /// Generate a value expression, wrapping it for null union context if needed.
+    /// Uses MIR coercion annotations when available, falls back to heuristic.
     fn generateNullWrappedExpr(self: *CodeGen, value: *parser.Node) anyerror!void {
         if (value.* == .null_literal) {
             try self.emit(".{ .none = {} }");
-        } else if (self.exprReturnsNullUnion(value)) {
-            // Value already returns OrhonNullable — don't double-wrap
+            return;
+        }
+        // If MIR explicitly says wrap, wrap
+        if (self.getNodeInfo(value)) |info| {
+            if (info.coercion != null and info.coercion.? == .null_wrap) {
+                try self.emit(".{ .some = ");
+                try self.generateExpr(value);
+                try self.emit(" }");
+                return;
+            }
+        }
+        // Heuristic: function calls and values already typed as null union pass through
+        if (self.exprReturnsNullUnion(value)) {
             try self.generateExpr(value);
         } else {
             try self.emit(".{ .some = ");
             try self.generateExpr(value);
             try self.emit(" }");
+        }
+    }
+
+    /// Generate an expression with MIR coercion applied if annotated.
+    /// Used for call arguments where the target type comes from the function signature.
+    fn generateCoercedExpr(self: *CodeGen, value: *parser.Node) anyerror!void {
+        const info = self.getNodeInfo(value) orelse return self.generateExpr(value);
+        const coercion = info.coercion orelse return self.generateExpr(value);
+        switch (coercion) {
+            .array_to_slice => {
+                try self.emit("&");
+                try self.generateExpr(value);
+            },
+            .null_wrap => {
+                if (value.* == .null_literal) {
+                    try self.emit(".{ .none = {} }");
+                } else {
+                    try self.emit(".{ .some = ");
+                    try self.generateExpr(value);
+                    try self.emit(" }");
+                }
+            },
+            .error_wrap => {
+                try self.emit(".{ .ok = ");
+                try self.generateExpr(value);
+                try self.emit(" }");
+            },
+            .arbitrary_union_wrap => {
+                if (info.coerce_tag) |tag| {
+                    try self.emitFmt(".{{ ._{s} = ", .{tag});
+                    try self.generateExpr(value);
+                    try self.emit(" }");
+                } else {
+                    try self.generateExpr(value);
+                }
+            },
+            .optional_unwrap => {
+                try self.generateExpr(value);
+                try self.emit(".some");
+            },
         }
     }
 
@@ -1064,34 +1118,50 @@ pub const CodeGen = struct {
                 try self.emit("return");
                 if (r.value) |v| {
                     try self.emit(" ");
-                    const ret_tc = self.funcReturnTypeClass();
-                    if (ret_tc == .error_union) {
-                        if (v.* == .error_literal) {
-                            // Error("msg") in union context → .{ .err = ... }
-                            try self.generateExpr(v);
-                        } else if (v.* == .identifier and self.isErrorConstant(v.identifier)) {
-                            // ErrDivByZero → .{ .err = ErrDivByZero }
-                            try self.emit(".{ .err = ");
-                            try self.generateExpr(v);
-                            try self.emit(" }");
-                        } else {
-                            // Success value → .{ .ok = value }
-                            try self.emit(".{ .ok = ");
-                            try self.generateExpr(v);
-                            try self.emit(" }");
+                    // Use MIR coercion if available
+                    const coercion = if (self.getNodeInfo(v)) |info| info.coercion else null;
+                    if (coercion) |c| {
+                        switch (c) {
+                            .null_wrap => {
+                                try self.emit(".{ .some = ");
+                                try self.generateExpr(v);
+                                try self.emit(" }");
+                            },
+                            .error_wrap => {
+                                try self.emit(".{ .ok = ");
+                                try self.generateExpr(v);
+                                try self.emit(" }");
+                            },
+                            .arbitrary_union_wrap => {
+                                try self.generateArbitraryUnionWrappedExpr(v, self.funcReturnMembers());
+                            },
+                            .array_to_slice => {
+                                try self.emit("&");
+                                try self.generateExpr(v);
+                            },
+                            .optional_unwrap => {
+                                try self.generateExpr(v);
+                                try self.emit(".some");
+                            },
                         }
-                    } else if (ret_tc == .null_union) {
-                        if (v.* == .null_literal) {
+                    } else {
+                        // No coercion — handle special literals and passthrough
+                        const ret_tc = self.funcReturnTypeClass();
+                        if (ret_tc == .error_union) {
+                            if (v.* == .error_literal) {
+                                try self.generateExpr(v);
+                            } else if (v.* == .identifier and self.isErrorConstant(v.identifier)) {
+                                try self.emit(".{ .err = ");
+                                try self.generateExpr(v);
+                                try self.emit(" }");
+                            } else {
+                                try self.generateExpr(v);
+                            }
+                        } else if (ret_tc == .null_union and v.* == .null_literal) {
                             try self.emit(".{ .none = {} }");
                         } else {
-                            try self.emit(".{ .some = ");
                             try self.generateExpr(v);
-                            try self.emit(" }");
                         }
-                    } else if (ret_tc == .arbitrary_union) {
-                        try self.generateArbitraryUnionWrappedExpr(v, self.funcReturnMembers());
-                    } else {
-                        try self.generateExpr(v);
                     }
                 }
                 try self.emit(";");
@@ -1613,13 +1683,7 @@ pub const CodeGen = struct {
                     try self.emit("(");
                     for (c.args, 0..) |arg, i| {
                         if (i > 0) try self.emit(", ");
-                        // Array-to-slice coercion: emit & prefix
-                        const needs_coerce = if (self.getNodeInfo(arg)) |info|
-                            info.coercion == .array_to_slice
-                        else
-                            false;
-                        if (needs_coerce) try self.emit("&");
-                        try self.generateExpr(arg);
+                        try self.generateCoercedExpr(arg);
                     }
                     // Fill in default args if caller passed fewer than the function expects
                     try self.fillDefaultArgs(c);

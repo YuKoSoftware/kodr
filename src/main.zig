@@ -905,6 +905,17 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         try mir_annotator.annotate(ast);
         if (reporter.hasErrors()) return null;
 
+        // ── Pass 10b: MIR Tree Lowering ───────────────────────
+        var mir_lowerer = mir.MirLowerer.init(
+            allocator,
+            &mir_annotator.node_map,
+            &mir_annotator.union_registry,
+            &decl_collector.table,
+            &mir_annotator.var_types,
+        );
+        defer mir_lowerer.deinit();
+        const mir_root = try mir_lowerer.lower(ast);
+
         // ── Extern Sidecar Validation ──────────────────────────
         // If the module has bridge declarations, a paired .zig sidecar
         // must exist next to the anchor .orh file.
@@ -957,6 +968,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         cg.node_map = &mir_annotator.node_map;
         cg.union_registry = &mir_annotator.union_registry;
         cg.var_types = &mir_annotator.var_types;
+        cg.mir_root = mir_root;
 
         try cg.generate(ast, mod_name);
         if (reporter.hasErrors()) return null;
