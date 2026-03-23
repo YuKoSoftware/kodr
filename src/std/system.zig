@@ -58,6 +58,41 @@ pub fn getEnv(name: []const u8) OrhonResult([]const u8) {
     return .{ .err = .{ .message = "environment variable not found" } };
 }
 
+// ── SetEnv ──
+
+pub fn setEnv(name: []const u8, value: []const u8) OrhonResult(void) {
+    // Convert to null-terminated strings for POSIX setenv
+    const name_z = alloc.dupeZ(u8, name) catch return .{ .err = .{ .message = "out of memory" } };
+    const value_z = alloc.dupeZ(u8, value) catch return .{ .err = .{ .message = "out of memory" } };
+    const result = std.c.setenv(name_z, value_z, 1);
+    if (result != 0) return .{ .err = .{ .message = "could not set environment variable" } };
+    return .{ .ok = {} };
+}
+
+// ── HasEnv ──
+
+pub fn hasEnv(name: []const u8) bool {
+    const env = std.process.getEnvMap(alloc) catch return false;
+    return env.get(name) != null;
+}
+
+// ── AllEnv ──
+
+pub fn allEnv() []const u8 {
+    const env = std.process.getEnvMap(alloc) catch return "";
+    var buf = std.ArrayListUnmanaged(u8){};
+    var iter = env.iterator();
+    var first = true;
+    while (iter.next()) |entry| {
+        if (!first) buf.append(alloc, '\n') catch {};
+        first = false;
+        buf.appendSlice(alloc, entry.key_ptr.*) catch {};
+        buf.append(alloc, '=') catch {};
+        buf.appendSlice(alloc, entry.value_ptr.*) catch {};
+    }
+    return if (buf.items.len > 0) buf.items else "";
+}
+
 // ── Cwd ──
 
 pub fn cwd() []const u8 {
@@ -126,6 +161,25 @@ test "run echo" {
 test "cwd" {
     const c = cwd();
     try std.testing.expect(c.len > 0);
+}
+
+test "setEnv and getEnv" {
+    const r = setEnv("_ORHON_TEST_VAR", "hello");
+    try std.testing.expect(r == .ok);
+    const g = getEnv("_ORHON_TEST_VAR");
+    try std.testing.expect(g == .ok);
+    try std.testing.expect(std.mem.eql(u8, g.ok, "hello"));
+}
+
+test "hasEnv" {
+    _ = setEnv("_ORHON_TEST_HAS", "1");
+    try std.testing.expect(hasEnv("_ORHON_TEST_HAS"));
+    try std.testing.expect(!hasEnv("_ORHON_NONEXISTENT_VAR_12345"));
+}
+
+test "allEnv contains PATH" {
+    const env = allEnv();
+    try std.testing.expect(std.mem.indexOf(u8, env, "PATH=") != null);
 }
 
 test "trap and raise signal" {

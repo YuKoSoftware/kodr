@@ -43,3 +43,29 @@ bridge func toString(value: any) String
 
 bridge func len(s: String) i32
 bridge func charAt(s: String, index: i32) String
+
+// ── Formatting ──
+
+// Pad string on the left to a minimum width
+
+bridge func padLeft(s: String, width: i32, fill: String) String
+
+// Pad string on the right to a minimum width
+
+bridge func padRight(s: String, width: i32, fill: String) String
+
+// Truncate string to maximum length, adding "..." if truncated
+
+bridge func truncate(s: String, maxLen: i32) String
+
+// Reverse a string
+
+bridge func reverse(s: String) String
+
+// Split a string by separator (newline-separated results)
+
+bridge func splitBy(s: String, sep: String) String
+
+// Count occurrences of a substring
+
+bridge func countOccurrences(s: String, sub: String) i32

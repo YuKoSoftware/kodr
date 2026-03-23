@@ -60,9 +60,9 @@ pub fn replace(s: []const u8, old: []const u8, new: []const u8) []const u8 {
     return result;
 }
 
-pub fn repeat(s: []const u8, count: i32) []const u8 {
-    if (count <= 0) return "";
-    const n: usize = @intCast(count);
+pub fn repeat(s: []const u8, times: i32) []const u8 {
+    if (times <= 0) return "";
+    const n: usize = @intCast(times);
     const buf = alloc.alloc(u8, s.len * n) catch return s;
     for (0..n) |i| {
         @memcpy(buf[i * s.len .. (i + 1) * s.len], s);
@@ -116,6 +116,75 @@ pub fn charAt(s: []const u8, index: i32) []const u8 {
     return s[i .. i + 1];
 }
 
+// ── Formatting ──
+
+pub fn padLeft(s: []const u8, width: i32, fill: []const u8) []const u8 {
+    const w: usize = @intCast(@max(0, width));
+    if (s.len >= w) return s;
+    const pad_len = w - s.len;
+    const fill_char = if (fill.len > 0) fill[0] else @as(u8, ' ');
+    const buf = alloc.alloc(u8, w) catch return s;
+    @memset(buf[0..pad_len], fill_char);
+    @memcpy(buf[pad_len..], s);
+    return buf;
+}
+
+pub fn padRight(s: []const u8, width: i32, fill: []const u8) []const u8 {
+    const w: usize = @intCast(@max(0, width));
+    if (s.len >= w) return s;
+    const fill_char = if (fill.len > 0) fill[0] else @as(u8, ' ');
+    const buf = alloc.alloc(u8, w) catch return s;
+    @memcpy(buf[0..s.len], s);
+    @memset(buf[s.len..], fill_char);
+    return buf;
+}
+
+pub fn truncate(s: []const u8, max_len: i32) []const u8 {
+    const m: usize = @intCast(@max(0, max_len));
+    if (s.len <= m) return s;
+    if (m <= 3) return s[0..m];
+    const buf = alloc.alloc(u8, m) catch return s;
+    @memcpy(buf[0 .. m - 3], s[0 .. m - 3]);
+    @memcpy(buf[m - 3 ..], "...");
+    return buf;
+}
+
+pub fn reverse(s: []const u8) []const u8 {
+    if (s.len == 0) return "";
+    const buf = alloc.alloc(u8, s.len) catch return s;
+    for (s, 0..) |c, i| {
+        buf[s.len - 1 - i] = c;
+    }
+    return buf;
+}
+
+pub fn splitBy(s: []const u8, sep: []const u8) []const u8 {
+    var buf = std.ArrayListUnmanaged(u8){};
+    var first = true;
+    var iter = std.mem.splitSequence(u8, s, sep);
+    while (iter.next()) |part| {
+        if (!first) buf.append(alloc, '\n') catch {};
+        first = false;
+        buf.appendSlice(alloc, part) catch {};
+    }
+    return if (buf.items.len > 0) buf.items else "";
+}
+
+pub fn countOccurrences(s: []const u8, sub: []const u8) i32 {
+    if (sub.len == 0) return 0;
+    var n: i32 = 0;
+    var i: usize = 0;
+    while (i + sub.len <= s.len) {
+        if (std.mem.eql(u8, s[i .. i + sub.len], sub)) {
+            n += 1;
+            i += sub.len;
+        } else {
+            i += 1;
+        }
+    }
+    return n;
+}
+
 // ── Tests ──
 
 test "contains" {
@@ -165,4 +234,33 @@ test "parseInt and parseFloat" {
 test "len and charAt" {
     try std.testing.expectEqual(@as(i32, 5), len("hello"));
     try std.testing.expect(std.mem.eql(u8, charAt("hello", 1), "e"));
+}
+
+test "padLeft" {
+    try std.testing.expect(std.mem.eql(u8, padLeft("42", 5, "0"), "00042"));
+    try std.testing.expect(std.mem.eql(u8, padLeft("hello", 3, " "), "hello"));
+}
+
+test "padRight" {
+    try std.testing.expect(std.mem.eql(u8, padRight("hi", 5, "."), "hi..."));
+}
+
+test "truncate" {
+    try std.testing.expect(std.mem.eql(u8, truncate("hello world", 8), "hello..."));
+    try std.testing.expect(std.mem.eql(u8, truncate("hi", 10), "hi"));
+}
+
+test "reverse" {
+    try std.testing.expect(std.mem.eql(u8, reverse("hello"), "olleh"));
+    try std.testing.expect(std.mem.eql(u8, reverse(""), ""));
+}
+
+test "splitBy" {
+    try std.testing.expect(std.mem.eql(u8, splitBy("a,b,c", ","), "a\nb\nc"));
+    try std.testing.expect(std.mem.eql(u8, splitBy("hello", ","), "hello"));
+}
+
+test "countOccurrences" {
+    try std.testing.expectEqual(@as(i32, 3), countOccurrences("abababab", "ab"));
+    try std.testing.expectEqual(@as(i32, 0), countOccurrences("hello", "xyz"));
 }

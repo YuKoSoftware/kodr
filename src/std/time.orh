@@ -26,3 +26,37 @@ bridge func elapsed(start: i64) i64
 // Format milliseconds since epoch as ISO 8601 string
 
 bridge func format(ms: i64) String
+
+// ── Date Operations ──
+
+// Parse an ISO 8601 date string ("2026-03-23") to milliseconds since epoch
+
+bridge func parseDate(date: String) (Error | i64)
+
+// Get year from milliseconds since epoch
+
+bridge func year(ms: i64) i32
+
+// Get month (1-12) from milliseconds since epoch
+
+bridge func month(ms: i64) i32
+
+// Get day of month (1-31) from milliseconds since epoch
+
+bridge func day(ms: i64) i32
+
+// Get day of week (0=Monday, 6=Sunday) from milliseconds since epoch
+
+bridge func weekday(ms: i64) i32
+
+// Add days to a timestamp, return new timestamp
+
+bridge func addDays(ms: i64, days: i32) i64
+
+// Add hours to a timestamp, return new timestamp
+
+bridge func addHours(ms: i64, hours: i32) i64
+
+// Difference in days between two timestamps
+
+bridge func diffDays(a: i64, b: i64) i32

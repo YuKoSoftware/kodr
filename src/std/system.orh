@@ -7,9 +7,23 @@ module system
 
 bridge func run(cmd: String, args: any) any
 
+// ── Environment ──
+
 // Get an environment variable
 
 bridge func getEnv(name: String) (Error | String)
+
+// Set an environment variable
+
+bridge func setEnv(name: String, value: String) (Error | void)
+
+// Check if an environment variable exists
+
+bridge func hasEnv(name: String) bool
+
+// Get all environment variables (newline-separated KEY=VALUE pairs)
+
+bridge func allEnv() String
 
 // Get current working directory
 
