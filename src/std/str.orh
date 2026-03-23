@@ -39,9 +39,16 @@ bridge func parseFloat(s: String) f64
 
 bridge func toString(value: any) String
 
-// Length
+// Length (codepoint count, not byte count)
 
 bridge func len(s: String) i32
+
+// Byte length (raw byte count)
+
+bridge func byteLen(s: String) i32
+
+// Get the nth codepoint as a string (0-based)
+
 bridge func charAt(s: String, index: i32) String
 
 // ── Formatting ──

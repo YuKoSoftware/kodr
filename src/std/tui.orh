@@ -1,0 +1,216 @@
+module tui
+
+// tui — terminal UI toolkit for Orhon programs
+// Import with: import std::tui
+
+// ── Terminal Control ──
+
+// Enable raw mode — keypresses arrive immediately, no echo
+
+bridge func enableRawMode() (Error | void)
+
+// Disable raw mode — restore original terminal state
+
+bridge func disableRawMode() void
+
+// Switch to alternate screen buffer (clean slate)
+
+bridge func enterAltScreen() void
+
+// Return to main screen buffer
+
+bridge func exitAltScreen() void
+
+// ── Terminal Size ──
+
+bridge struct Size {
+
+    // Number of rows
+
+    bridge func rows(self: &Size) i32
+
+    // Number of columns
+
+    bridge func cols(self: &Size) i32
+}
+
+// Get current terminal dimensions
+
+bridge func terminalSize() Size
+
+// ── Cursor ──
+
+// Move cursor to absolute position (1-based)
+
+bridge func moveTo(row: i32, col: i32) void
+
+// Move cursor relative to current position
+
+bridge func moveUp(n: i32) void
+bridge func moveDown(n: i32) void
+bridge func moveLeft(n: i32) void
+bridge func moveRight(n: i32) void
+
+// Hide the cursor
+
+bridge func hideCursor() void
+
+// Show the cursor
+
+bridge func showCursor() void
+
+// Save cursor position
+
+bridge func saveCursor() void
+
+// Restore saved cursor position
+
+bridge func restoreCursor() void
+
+// ── Screen ──
+
+// Clear entire screen
+
+bridge func clearScreen() void
+
+// Clear current line
+
+bridge func clearLine() void
+
+// Clear from cursor to end of line
+
+bridge func clearToEnd() void
+
+// ── Style ──
+
+// Build a styled string with foreground, background, and bold
+// Use NO_COLOR (-1) to skip fg or bg
+
+bridge func style(fg: i32, bg: i32, bold: bool, text: String) String
+
+// Foreground color constants
+
+bridge const FG_BLACK: i32
+bridge const FG_RED: i32
+bridge const FG_GREEN: i32
+bridge const FG_YELLOW: i32
+bridge const FG_BLUE: i32
+bridge const FG_MAGENTA: i32
+bridge const FG_CYAN: i32
+bridge const FG_WHITE: i32
+
+// Background color constants
+
+bridge const BG_BLACK: i32
+bridge const BG_RED: i32
+bridge const BG_GREEN: i32
+bridge const BG_YELLOW: i32
+bridge const BG_BLUE: i32
+bridge const BG_MAGENTA: i32
+bridge const BG_CYAN: i32
+bridge const BG_WHITE: i32
+
+// Skip color (pass as fg or bg to leave unchanged)
+
+bridge const NO_COLOR: i32
+
+// ── Key Input ──
+
+bridge struct Key {
+
+    // Key kind — compare against KEY_* constants
+
+    bridge func kind(self: &Key) i32
+
+    // Character value (meaningful when kind == KEY_CHAR)
+
+    bridge func char(self: &Key) String
+
+    // Whether ctrl was held
+
+    bridge func ctrl(self: &Key) bool
+}
+
+// Read a single keypress (blocks until input arrives, requires raw mode)
+
+bridge func readKey() (Error | Key)
+
+// Key kind constants
+
+bridge const KEY_CHAR: i32
+bridge const KEY_ENTER: i32
+bridge const KEY_ESCAPE: i32
+bridge const KEY_BACKSPACE: i32
+bridge const KEY_TAB: i32
+bridge const KEY_ARROW_UP: i32
+bridge const KEY_ARROW_DOWN: i32
+bridge const KEY_ARROW_LEFT: i32
+bridge const KEY_ARROW_RIGHT: i32
+bridge const KEY_HOME: i32
+bridge const KEY_END: i32
+bridge const KEY_PAGE_UP: i32
+bridge const KEY_PAGE_DOWN: i32
+bridge const KEY_DELETE: i32
+bridge const KEY_F1: i32
+bridge const KEY_F2: i32
+bridge const KEY_F3: i32
+bridge const KEY_F4: i32
+bridge const KEY_F5: i32
+bridge const KEY_F6: i32
+bridge const KEY_F7: i32
+bridge const KEY_F8: i32
+bridge const KEY_F9: i32
+bridge const KEY_F10: i32
+bridge const KEY_F11: i32
+bridge const KEY_F12: i32
+
+// ── Screen Buffer ──
+
+bridge struct Screen {
+
+    // Create a screen buffer with given dimensions
+
+    bridge func create(rows: i32, cols: i32) Screen
+
+    // Set a character at a position
+
+    bridge func set(self: &Screen, row: i32, col: i32, ch: String) void
+
+    // Set a styled character at a position
+
+    bridge func setStyled(self: &Screen, row: i32, col: i32, ch: String, fg: i32, bg: i32, bold: bool) void
+
+    // Flush changes to terminal (only redraws dirty cells)
+
+    bridge func render(self: &Screen) void
+
+    // Reset all cells to empty
+
+    bridge func clear(self: &Screen) void
+
+    // Resize the buffer
+
+    bridge func resize(self: &Screen, rows: i32, cols: i32) void
+
+    // Free buffer memory
+
+    bridge func destroy(self: &Screen) void
+}
+
+// ── Drawing Helpers ──
+
+// Draw a box using Unicode box-drawing characters
+
+bridge func drawBox(row: i32, col: i32, width: i32, height: i32) void
+
+// Draw a horizontal line
+
+bridge func drawHLine(row: i32, col: i32, length: i32) void
+
+// Draw a vertical line
+
+bridge func drawVLine(row: i32, col: i32, length: i32) void
+
+// Draw text at a position
+
+bridge func drawText(row: i32, col: i32, text: String) void

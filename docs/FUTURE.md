@@ -52,6 +52,7 @@ std.time          // time — now, sleepMs, elapsed, format
 std.collections   // List(T), Map(K,V), Set(T) — generic collections via bridge
 std.ziglib        // bridge testbed — exercises all interop patterns
 std.simd          // SIMD vector intrinsics — reduce, splat, reverse
+std.tui           // terminal UI — raw mode, cursor, key input, screen buffer, drawing
 ```
 
 ### Next up

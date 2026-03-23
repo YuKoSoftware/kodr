@@ -398,6 +398,8 @@ const TOML_ORH     = @embedFile("std/toml.orh");
 const TOML_ZIG     = @embedFile("std/toml.zig");
 const SIMD_ORH     = @embedFile("std/simd.orh");
 const SIMD_ZIG     = @embedFile("std/simd.zig");
+const TUI_ORH      = @embedFile("std/tui.orh");
+const TUI_ZIG      = @embedFile("std/tui.zig");
 
 /// Write an embedded file to .orh-cache/std/ if it doesn't already exist
 fn writeStdFile(dir: []const u8, name: []const u8, content: []const u8, allocator: std.mem.Allocator) !void {
@@ -468,6 +470,8 @@ fn ensureStdFiles(allocator: std.mem.Allocator) !void {
         .{ .name = "toml.zig",        .content = TOML_ZIG },
         .{ .name = "simd.orh",        .content = SIMD_ORH },
         .{ .name = "simd.zig",        .content = SIMD_ZIG },
+        .{ .name = "tui.orh",         .content = TUI_ORH },
+        .{ .name = "tui.zig",         .content = TUI_ZIG },
     };
 
     for (files) |f| {

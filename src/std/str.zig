@@ -106,24 +106,40 @@ pub fn toString(value: anytype) []const u8 {
 
 // ── Length ──
 
+// Returns codepoint count (not byte count)
 pub fn len(s: []const u8) i32 {
+    const count = std.unicode.utf8CountCodepoints(s) catch return @intCast(s.len);
+    return @intCast(count);
+}
+
+// Returns byte count
+pub fn byteLen(s: []const u8) i32 {
     return @intCast(s.len);
 }
 
+// Returns the nth codepoint as a string slice (0-based)
 pub fn charAt(s: []const u8, index: i32) []const u8 {
-    const i: usize = @intCast(index);
-    if (i >= s.len) return "";
-    return s[i .. i + 1];
+    if (index < 0) return "";
+    const target: usize = @intCast(index);
+    var view = std.unicode.Utf8View.initUnchecked(s);
+    var iter = view.iterator();
+    var i: usize = 0;
+    while (iter.nextCodepointSlice()) |slice| {
+        if (i == target) return slice;
+        i += 1;
+    }
+    return "";
 }
 
 // ── Formatting ──
 
 pub fn padLeft(s: []const u8, width: i32, fill: []const u8) []const u8 {
     const w: usize = @intCast(@max(0, width));
-    if (s.len >= w) return s;
-    const pad_len = w - s.len;
+    const cp_count = std.unicode.utf8CountCodepoints(s) catch return s;
+    if (cp_count >= w) return s;
+    const pad_len = w - cp_count;
     const fill_char = if (fill.len > 0) fill[0] else @as(u8, ' ');
-    const buf = alloc.alloc(u8, w) catch return s;
+    const buf = alloc.alloc(u8, pad_len + s.len) catch return s;
     @memset(buf[0..pad_len], fill_char);
     @memcpy(buf[pad_len..], s);
     return buf;
@@ -131,29 +147,52 @@ pub fn padLeft(s: []const u8, width: i32, fill: []const u8) []const u8 {
 
 pub fn padRight(s: []const u8, width: i32, fill: []const u8) []const u8 {
     const w: usize = @intCast(@max(0, width));
-    if (s.len >= w) return s;
+    const cp_count = std.unicode.utf8CountCodepoints(s) catch return s;
+    if (cp_count >= w) return s;
+    const pad_len = w - cp_count;
     const fill_char = if (fill.len > 0) fill[0] else @as(u8, ' ');
-    const buf = alloc.alloc(u8, w) catch return s;
+    const buf = alloc.alloc(u8, s.len + pad_len) catch return s;
     @memcpy(buf[0..s.len], s);
     @memset(buf[s.len..], fill_char);
     return buf;
 }
 
+// Truncate to max codepoints, snapping to codepoint boundary, adding "..." if truncated
 pub fn truncate(s: []const u8, max_len: i32) []const u8 {
-    const m: usize = @intCast(@max(0, max_len));
-    if (s.len <= m) return s;
-    if (m <= 3) return s[0..m];
-    const buf = alloc.alloc(u8, m) catch return s;
-    @memcpy(buf[0 .. m - 3], s[0 .. m - 3]);
-    @memcpy(buf[m - 3 ..], "...");
+    if (max_len <= 0) return "";
+    const m: usize = @intCast(max_len);
+    const cp_count = std.unicode.utf8CountCodepoints(s) catch return s;
+    if (cp_count <= m) return s;
+    if (m <= 3) {
+        // Just return first m codepoints
+        return cpSlice(s, m);
+    }
+    // Return first (m-3) codepoints + "..."
+    const prefix = cpSlice(s, m - 3);
+    const buf = alloc.alloc(u8, prefix.len + 3) catch return s;
+    @memcpy(buf[0..prefix.len], prefix);
+    @memcpy(buf[prefix.len..], "...");
     return buf;
 }
 
+// Reverse by codepoints (not bytes) — preserves multi-byte characters
 pub fn reverse(s: []const u8) []const u8 {
     if (s.len == 0) return "";
+    // Collect codepoint slices
+    var view = std.unicode.Utf8View.initUnchecked(s);
+    var iter = view.iterator();
+    var slices = std.ArrayListUnmanaged([]const u8){};
+    while (iter.nextCodepointSlice()) |slice| {
+        slices.append(alloc, slice) catch return s;
+    }
+    // Write in reverse order
     const buf = alloc.alloc(u8, s.len) catch return s;
-    for (s, 0..) |c, i| {
-        buf[s.len - 1 - i] = c;
+    var pos: usize = 0;
+    var i = slices.items.len;
+    while (i > 0) {
+        i -= 1;
+        @memcpy(buf[pos .. pos + slices.items[i].len], slices.items[i]);
+        pos += slices.items[i].len;
     }
     return buf;
 }
@@ -183,6 +222,22 @@ pub fn countOccurrences(s: []const u8, sub: []const u8) i32 {
         }
     }
     return n;
+}
+
+// ── Internal Helpers ──
+
+// Return the first n codepoints of a UTF-8 string as a byte slice
+fn cpSlice(s: []const u8, n: usize) []const u8 {
+    var view = std.unicode.Utf8View.initUnchecked(s);
+    var iter = view.iterator();
+    var count: usize = 0;
+    var byte_end: usize = 0;
+    while (iter.nextCodepointSlice()) |slice| {
+        if (count >= n) break;
+        byte_end += slice.len;
+        count += 1;
+    }
+    return s[0..byte_end];
 }
 
 // ── Tests ──
@@ -234,6 +289,36 @@ test "parseInt and parseFloat" {
 test "len and charAt" {
     try std.testing.expectEqual(@as(i32, 5), len("hello"));
     try std.testing.expect(std.mem.eql(u8, charAt("hello", 1), "e"));
+}
+
+test "len counts codepoints not bytes" {
+    // "café" = c(1) + a(1) + f(1) + é(2) = 5 bytes, 4 codepoints
+    try std.testing.expectEqual(@as(i32, 4), len("caf\xc3\xa9"));
+    try std.testing.expectEqual(@as(i32, 5), byteLen("caf\xc3\xa9"));
+}
+
+test "charAt on multi-byte" {
+    // "café" — charAt(3) should return "é" (2 bytes), not a broken byte
+    const ch = charAt("caf\xc3\xa9", 3);
+    try std.testing.expect(std.mem.eql(u8, ch, "\xc3\xa9"));
+}
+
+test "reverse preserves multi-byte" {
+    // reverse("café") should be "éfac" not broken bytes
+    const result = reverse("caf\xc3\xa9");
+    try std.testing.expect(std.mem.eql(u8, result, "\xc3\xa9" ++ "fac"));
+}
+
+test "truncate on multi-byte" {
+    // truncate "cafébar" (7 codepoints) to 5 should be "ca..."
+    const result = truncate("caf\xc3\xa9bar", 5);
+    try std.testing.expect(std.mem.eql(u8, result, "ca..."));
+}
+
+test "padLeft with multi-byte" {
+    // "café" is 4 codepoints, pad to 6 should add 2 fill chars
+    const result = padLeft("caf\xc3\xa9", 6, ".");
+    try std.testing.expect(std.mem.eql(u8, result, "..caf\xc3\xa9"));
 }
 
 test "padLeft" {
