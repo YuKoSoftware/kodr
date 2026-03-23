@@ -178,14 +178,14 @@ pub const TypeResolver = struct {
                 var func_scope = Scope.init(self.allocator, scope);
                 defer func_scope.deinit();
 
-                // Bridge safety: extern funcs cannot accept mutable refs (&T)
-                // Exception: self param on extern struct methods (Zig mutates its own data)
-                if (f.is_extern) {
+                // Bridge safety: bridge funcs cannot accept mutable refs (&T)
+                // Exception: self param on bridge struct methods (Zig mutates its own data)
+                if (f.is_bridge) {
                     for (f.params) |param| {
                         if (param.* == .param) {
                             const ta = param.param.type_annotation;
                             if (ta.* == .type_ptr and std.mem.eql(u8, ta.type_ptr.kind, K.Ptr.VAR_REF)) {
-                                // Allow self: &StructName on extern struct methods
+                                // Allow self: &StructName on bridge struct methods
                                 if (std.mem.eql(u8, param.param.name, "self")) continue;
                                 const msg = try std.fmt.allocPrint(self.allocator,
                                     "mutable reference '&{s}' not allowed across bridge — use 'const &{s}' or pass by value",
@@ -195,7 +195,7 @@ pub const TypeResolver = struct {
                             }
                         }
                     }
-                    // Bridge safety: extern funcs cannot return mutable refs
+                    // Bridge safety: bridge funcs cannot return mutable refs
                     if (f.return_type.* == .type_ptr and
                         std.mem.eql(u8, f.return_type.type_ptr.kind, K.Ptr.VAR_REF))
                     {
@@ -308,25 +308,34 @@ pub const TypeResolver = struct {
                     defer self.allocator.free(msg);
                     try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                 }
-                const val_type = try self.resolveExpr(v.value, scope);
-                const resolved = if (v.type_annotation) |t|
-                    try types.resolveTypeNode(self.decls.typeAllocator(), t)
-                else
-                    val_type;
-                if (v.type_annotation == null) {
-                    if (val_type == .primitive and
-                        (std.mem.eql(u8, val_type.primitive, "numeric_literal") or
-                        std.mem.eql(u8, val_type.primitive, "float_literal")))
-                    {
-                        try self.reporter.report(.{
-                            .message = "numeric literal requires explicit type or #bitsize",
-                            .loc = self.nodeLoc(node),
-                        });
-                    }
+                // bridge consts have no value — skip value type checking
+                if (v.is_bridge) {
+                    const resolved = if (v.type_annotation) |t|
+                        try types.resolveTypeNode(self.decls.typeAllocator(), t)
+                    else
+                        RT.inferred;
+                    try scope.define(v.name, resolved);
                 } else {
-                    try self.checkAssignCompat(resolved, val_type, node);
+                    const val_type = try self.resolveExpr(v.value, scope);
+                    const resolved = if (v.type_annotation) |t|
+                        try types.resolveTypeNode(self.decls.typeAllocator(), t)
+                    else
+                        val_type;
+                    if (v.type_annotation == null) {
+                        if (val_type == .primitive and
+                            (std.mem.eql(u8, val_type.primitive, "numeric_literal") or
+                            std.mem.eql(u8, val_type.primitive, "float_literal")))
+                        {
+                            try self.reporter.report(.{
+                                .message = "numeric literal requires explicit type or #bitsize",
+                                .loc = self.nodeLoc(node),
+                            });
+                        }
+                    } else {
+                        try self.checkAssignCompat(resolved, val_type, node);
+                    }
+                    try scope.define(v.name, resolved);
                 }
-                try scope.define(v.name, resolved);
             },
             .compt_decl => |v| {
                 if (v.type_annotation) |t| {
@@ -432,12 +441,6 @@ pub const TypeResolver = struct {
                 _ = try self.resolveExpr(a.right, scope);
             },
             .defer_stmt => |d| try self.resolveNode(d.body, scope),
-            .thread_block => |t| {
-                const prev_return = self.current_return_type;
-                self.current_return_type = types.resolveTypeNode(self.decls.typeAllocator(), t.result_type) catch null;
-                defer self.current_return_type = prev_return;
-                try self.resolveNode(t.body, scope);
-            },
             .destruct_decl => |d| {
                 _ = try self.resolveExpr(d.value, scope);
                 for (d.names) |name| try scope.define(name, RT.inferred);
@@ -670,7 +673,7 @@ pub const TypeResolver = struct {
                 return RT{ .named = p.kind };
             },
 
-            .coll_expr => |c| {
+            .collection_expr => |c| {
                 for (c.type_args) |arg| _ = try self.resolveExpr(arg, scope);
                 if (c.alloc_arg) |a| _ = try self.resolveExpr(a, scope);
                 return RT{ .named = c.kind };
@@ -1088,7 +1091,7 @@ test "resolver - bitsize resolves numeric literals" {
         .return_type = ret_type,
         .body = body,
         .is_pub = false,
-        .is_extern = false,
+        .is_bridge = false,
         .is_compt = false,
         .is_thread = false,
     } };
@@ -1152,7 +1155,7 @@ test "resolver - no bitsize errors on untyped literal" {
         .return_type = ret_type,
         .body = body,
         .is_pub = false,
-        .is_extern = false,
+        .is_bridge = false,
         .is_compt = false,
         .is_thread = false,
     } };

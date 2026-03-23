@@ -355,7 +355,7 @@ name            <- !keyword [a-zA-Z_] [a-zA-Z0-9_]*
 
 keyword         <- ("func" / "var" / "const" / "if" / "else" / "for"
                  / "while" / "return" / "import" / "pub" / "match"
-                 / "struct" / "enum" / "bitfield" / "extern" / "defer"
+                 / "struct" / "enum" / "bitfield" / "bridge" / "defer"
                  / "null" / "void" / "compt" / "any" / "module" / "test"
                  / "and" / "or" / "not" / "is" / "main" / "as" / "type"
                  / "break" / "continue" / "true" / "false"

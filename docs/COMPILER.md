@@ -61,13 +61,13 @@ The codegen is a **pure 1:1 translator** — it maps Orhon syntax to Zig syntax 
 
 ## Bridge System
 
-Orhon interacts with Zig through the extern bridge. A module declares its interface using `extern`, and a paired `.zig` sidecar provides the implementation. The codegen re-exports from the sidecar — no special cases.
+Orhon interacts with Zig through the bridge bridge. A module declares its interface using `bridge`, and a paired `.zig` sidecar provides the implementation. The codegen re-exports from the sidecar — no special cases.
 
 ### Bridge safety rules
 - `T` (by value) — moves across the bridge
 - `const &T` — read-only borrow, both directions
-- `&T` (mutable ref) — **not allowed** across the bridge (except `self` on extern struct methods)
-- Default arguments on extern funcs are filled at the call site by the codegen
+- `&T` (mutable ref) — **not allowed** across the bridge (except `self` on bridge struct methods)
+- Default arguments on bridge funcs are filled at the call site by the codegen
 
 See [14-zig-bridge.md](14-zig-bridge.md) for full documentation.
 

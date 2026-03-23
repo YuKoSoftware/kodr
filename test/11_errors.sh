@@ -57,44 +57,24 @@ else
     fail "rejects missing anchor file" "$NEG_OUT"
 fi
 
-# pub extern func must error (redundant)
+# missing bridge sidecar
 cd "$TESTDIR"
-mkdir -p neg_extern_pub/src
-cat > neg_extern_pub/src/main.orh <<'ORHON'
+mkdir -p neg_bridge/src
+cat > neg_bridge/src/main.orh <<'ORHON'
 module main
-#name    = "neg_extern_pub"
+#name    = "neg_bridge"
 #version = Version(1, 0, 0)
 #build   = exe
-pub extern func do_thing() void
+bridge func do_thing() void
 func main() void {
 }
 ORHON
-cd neg_extern_pub
+cd neg_bridge
 NEG_OUT=$("$ORHON" build 2>&1 || true)
-if echo "$NEG_OUT" | grep -qi "redundant\|pub extern"; then
-    pass "rejects pub extern func (redundant)"
+if echo "$NEG_OUT" | grep -qi "sidecar\|bridge"; then
+    pass "rejects missing bridge sidecar"
 else
-    fail "rejects pub extern func (redundant)" "$NEG_OUT"
-fi
-
-# missing extern sidecar
-cd "$TESTDIR"
-mkdir -p neg_extern/src
-cat > neg_extern/src/main.orh <<'ORHON'
-module main
-#name    = "neg_extern"
-#version = Version(1, 0, 0)
-#build   = exe
-extern func do_thing() void
-func main() void {
-}
-ORHON
-cd neg_extern
-NEG_OUT=$("$ORHON" build 2>&1 || true)
-if echo "$NEG_OUT" | grep -qi "sidecar\|extern"; then
-    pass "rejects missing extern sidecar"
-else
-    fail "rejects missing extern sidecar" "$NEG_OUT"
+    fail "rejects missing bridge sidecar" "$NEG_OUT"
 fi
 
 # missing import error
@@ -396,7 +376,7 @@ module main
 #name    = "neg_bridge"
 #version = Version(1, 0, 0)
 #build   = exe
-extern func modify(data: &i32) void
+bridge func modify(data: &i32) void
 func main() void { }
 ORHON
 cat > neg_bridge_ref/src/main.zig <<'ZIG'

@@ -123,8 +123,6 @@ pub const ThreadSafetyChecker = struct {
 
     fn checkStatement(self: *ThreadSafetyChecker, node: *parser.Node) anyerror!void {
         switch (node.*) {
-            .thread_block => {}, // deprecated — threads use func_decl with is_thread now
-
             .var_decl, .const_decl => |v| {
                 // Register Handle variables as thread handles
                 if (isHandleType(v.type_annotation)) {

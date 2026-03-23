@@ -35,6 +35,24 @@ const GetResult = union(enum) { ok: []const u8, err: GetError };
 
 var get_buf: [4096]u8 = undefined;
 
+pub fn supportsColor() bool {
+    return std.posix.isatty(std.posix.STDOUT_FILENO);
+}
+
+// ANSI color constants
+pub const RESET = "\x1b[0m";
+pub const BOLD = "\x1b[1m";
+pub const DIM = "\x1b[2m";
+pub const UNDERLINE = "\x1b[4m";
+
+pub const RED = "\x1b[31m";
+pub const GREEN = "\x1b[32m";
+pub const YELLOW = "\x1b[33m";
+pub const BLUE = "\x1b[34m";
+pub const MAGENTA = "\x1b[35m";
+pub const CYAN = "\x1b[36m";
+pub const WHITE = "\x1b[37m";
+
 pub fn get() GetResult {
     const stdin = std.fs.File{ .handle = std.posix.STDIN_FILENO };
     const line = stdin.reader().readUntilDelimiterOrEof(&get_buf, '\n') catch {

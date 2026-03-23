@@ -161,7 +161,7 @@ fn buildInitializeResult(allocator: std.mem.Allocator, id: std.json.Value) ![]u8
     try buf.appendSlice(allocator, "{\"jsonrpc\":\"2.0\",\"id\":");
     try writeJsonValue(&buf, allocator, id);
     try buf.appendSlice(allocator,
-        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]},"referencesProvider":true,"renameProvider":{"prepareProvider":false},"signatureHelpProvider":{"triggerCharacters":["(", ","]},"documentFormattingProvider":true,"workspaceSymbolProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true,"inlayHintProvider":true,"codeActionProvider":true},"serverInfo":{"name":"orhon-lsp","version":"0.5.0"}}}
+        \\,"result":{"capabilities":{"textDocumentSync":{"openClose":true,"change":1,"save":{"includeText":false}},"hoverProvider":true,"definitionProvider":true,"documentSymbolProvider":true,"completionProvider":{"triggerCharacters":["."]},"referencesProvider":true,"renameProvider":{"prepareProvider":false},"signatureHelpProvider":{"triggerCharacters":["(", ","]},"documentFormattingProvider":true,"workspaceSymbolProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true,"inlayHintProvider":true,"codeActionProvider":true},"serverInfo":{"name":"orhon-lsp","version":"0.5.1"}}}
     );
 
     return allocator.dupe(u8, buf.items);
@@ -444,12 +444,12 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
 
     const saved_cwd = std.fs.cwd();
     var proj_dir = std.fs.cwd().openDir(project_root, .{}) catch {
-        log("analysis: failed to open project dir '{s}'", .{project_root});
+        lspLog("analysis: failed to open project dir '{s}'", .{project_root});
         return empty;
     };
     defer proj_dir.close();
     proj_dir.setAsCwd() catch {
-        log("analysis: failed to setAsCwd", .{});
+        lspLog("analysis: failed to setAsCwd", .{});
         return empty;
     };
     defer saved_cwd.setAsCwd() catch {};
@@ -464,30 +464,30 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
     defer mod_resolver.deinit();
 
     std.fs.cwd().access("src", .{}) catch {
-        log("analysis: no 'src' directory in '{s}'", .{project_root});
+        lspLog("analysis: no 'src' directory in '{s}'", .{project_root});
         return empty;
     };
     mod_resolver.scanDirectory("src") catch {
-        log("analysis: scanDirectory failed", .{});
+        lspLog("analysis: scanDirectory failed", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     };
     if (reporter.hasErrors()) {
-        log("analysis: errors after scan", .{});
+        lspLog("analysis: errors after scan", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     }
 
     mod_resolver.checkCircularImports() catch {};
     if (reporter.hasErrors()) {
-        log("analysis: circular import errors", .{});
+        lspLog("analysis: circular import errors", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     }
 
     mod_resolver.parseModules(allocator) catch {};
     if (reporter.hasErrors()) {
-        log("analysis: parse errors (continuing with partial symbols)", .{});
+        lspLog("analysis: parse errors (continuing with partial symbols)", .{});
     }
 
     // Second parse pass for std imports
@@ -506,7 +506,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
     mod_resolver.validateImports(&reporter) catch {};
 
     const order = mod_resolver.topologicalOrder(allocator) catch {
-        log("analysis: topological order failed", .{});
+        lspLog("analysis: topological order failed", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     };
@@ -514,7 +514,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
 
     // Collect symbols from all modules
     var all_symbols: std.ArrayListUnmanaged(SymbolInfo) = .{};
-    log("analysis: processing {d} modules", .{order.len});
+    lspLog("analysis: processing {d} modules", .{order.len});
 
     // Passes 4–9 per module — continue to next module on errors so we
     // still get symbols from modules that compiled successfully.
@@ -575,10 +575,10 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         if (reporter.errors.items.len > errors_before) continue;
 
         // Pass 9: Error Propagation
-        var pc = propagation.PropChecker.init(allocator, &reporter, &dc.table);
-        pc.locs = locs_ptr;
-        pc.source_file = source_file;
-        pc.check(ast) catch {};
+        var prop_checker = propagation.PropagationChecker.init(allocator, &reporter, &dc.table);
+        prop_checker.locs = locs_ptr;
+        prop_checker.source_file = source_file;
+        prop_checker.check(ast) catch {};
     }
 
     const diags = toDiagnostics(allocator, &reporter, project_root) catch
@@ -1196,7 +1196,7 @@ fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8 {
         .{ "thread", "(keyword) spawn a thread" },
         .{ "compt", "(keyword) compile-time evaluation" },
         .{ "test", "(keyword) test block" },
-        .{ "extern", "(keyword) external linkage" },
+        .{ "bridge", "(keyword) Zig bridge declaration" },
         .{ "any", "(keyword) any type" },
         .{ "void", "(keyword) no return value" },
         .{ "assert", "(builtin) runtime assertion" },
@@ -1217,7 +1217,7 @@ fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8 {
 // LSP SERVER
 // ============================================================
 
-fn log(comptime fmt: []const u8, args: anytype) void {
+fn lspLog(comptime fmt: []const u8, args: anytype) void {
     var buf: [4096]u8 = undefined;
     var w = std.fs.File.stderr().writer(&buf);
     const stderr = &w.interface;
@@ -1246,7 +1246,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
     const stdin: *Io.Reader = &stdin_r.interface;
     const stdout: *Io.Writer = &stdout_w.interface;
 
-    log("server starting", .{});
+    lspLog("server starting", .{});
 
     var initialized = false;
     var project_root: ?[]const u8 = null;
@@ -1284,14 +1284,14 @@ pub fn serve(allocator: std.mem.Allocator) !void {
 
     while (true) {
         const body = readMessage(stdin, allocator) catch |err| {
-            if (err == error.EndOfStream) { log("client disconnected", .{}); return; }
-            log("read error: {}", .{err});
+            if (err == error.EndOfStream) { lspLog("client disconnected", .{}); return; }
+            lspLog("read error: {}", .{err});
             continue;
         };
         defer allocator.free(body);
 
         var parsed = std.json.parseFromSlice(std.json.Value, allocator, body, .{}) catch {
-            log("invalid JSON", .{});
+            lspLog("invalid JSON", .{});
             continue;
         };
         defer parsed.deinit();
@@ -1301,19 +1301,19 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         const id = jsonId(root);
 
         if (std.mem.eql(u8, method, "initialize")) {
-            log("initialize", .{});
+            lspLog("initialize", .{});
             if (jsonObj(root, "params")) |params| {
                 if (jsonStr(params, "rootUri")) |root_uri| {
                     if (uriToPath(root_uri)) |path| {
                         project_root = try allocator.dupe(u8, path);
-                        log("project root: {s}", .{path});
+                        lspLog("project root: {s}", .{path});
                     }
                 }
                 // Read client settings from initializationOptions
                 if (jsonObj(params, "initializationOptions")) |opts| {
                     enable_inlay_hints = jsonBool(opts, "inlayHints");
                     enable_snippets = jsonBool(opts, "completionSnippets");
-                    log("settings: inlayHints={}, snippets={}", .{ enable_inlay_hints, enable_snippets });
+                    lspLog("settings: inlayHints={}, snippets={}", .{ enable_inlay_hints, enable_snippets });
                 }
             }
             const resp = try buildInitializeResult(allocator, id);
@@ -1322,7 +1322,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
 
         } else if (std.mem.eql(u8, method, "initialized")) {
             initialized = true;
-            log("initialized", .{});
+            lspLog("initialized", .{});
             if (project_root) |r| {
                 const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
                 cached_symbols = result.symbols;
@@ -1331,13 +1331,13 @@ pub fn serve(allocator: std.mem.Allocator) !void {
             }
 
         } else if (std.mem.eql(u8, method, "shutdown")) {
-            log("shutdown", .{});
+            lspLog("shutdown", .{});
             const resp = try buildEmptyResponse(allocator, id);
             defer allocator.free(resp);
             try writeMessage(stdout, resp);
 
         } else if (std.mem.eql(u8, method, "exit")) {
-            log("exit", .{});
+            lspLog("exit", .{});
             return;
 
         } else if (std.mem.eql(u8, method, "textDocument/didOpen")) {
@@ -1345,7 +1345,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
             if (jsonObj(root, "params")) |params| {
                 if (jsonObj(params, "textDocument")) |td| {
                     if (jsonStr(td, "uri")) |uri| {
-                        log("didOpen: {s}", .{uri});
+                        lspLog("didOpen: {s}", .{uri});
                         if (!open_docs.contains(uri))
                             try open_docs.put(try allocator.dupe(u8, uri), {});
                         // Store document content
@@ -1362,7 +1362,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                             if (uriToPath(uri)) |path| {
                                 if (findProjectRoot(path)) |r| {
                                     project_root = try allocator.dupe(u8, r);
-                                    log("detected root: {s}", .{r});
+                                    lspLog("detected root: {s}", .{r});
                                 }
                             }
                         }
@@ -1378,7 +1378,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
 
         } else if (std.mem.eql(u8, method, "textDocument/didSave")) {
             if (!initialized) continue;
-            log("didSave", .{});
+            lspLog("didSave", .{});
             if (project_root) |r| {
                 const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
                 cached_symbols = result.symbols;
@@ -1416,7 +1416,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
             if (jsonObj(root, "params")) |params| {
                 if (jsonObj(params, "textDocument")) |td| {
                     if (jsonStr(td, "uri")) |uri| {
-                        log("didClose: {s}", .{uri});
+                        lspLog("didClose: {s}", .{uri});
                         const clear = buildDiagnosticsMsg(allocator, uri, &.{}) catch continue;
                         defer allocator.free(clear);
                         writeMessage(stdout, clear) catch {};
@@ -1432,7 +1432,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/hover")) {
             if (!initialized) continue;
             const resp = handleHover(allocator, root, id, cached_symbols, &doc_store) catch |err| {
-                log("hover error: {}", .{err});
+                lspLog("hover error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1442,7 +1442,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/definition")) {
             if (!initialized) continue;
             const resp = handleDefinition(allocator, root, id, cached_symbols, &doc_store) catch |err| {
-                log("definition error: {}", .{err});
+                lspLog("definition error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1452,7 +1452,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/documentSymbol")) {
             if (!initialized) continue;
             const resp = handleDocumentSymbols(allocator, root, id, cached_symbols) catch |err| {
-                log("documentSymbol error: {}", .{err});
+                lspLog("documentSymbol error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1462,7 +1462,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/completion")) {
             if (!initialized) continue;
             const resp = handleCompletion(allocator, root, id, cached_symbols, enable_snippets, &doc_store) catch |err| {
-                log("completion error: {}", .{err});
+                lspLog("completion error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1472,7 +1472,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/references")) {
             if (!initialized) continue;
             const resp = handleReferences(allocator, root, id, cached_symbols) catch |err| {
-                log("references error: {}", .{err});
+                lspLog("references error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1482,7 +1482,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/rename")) {
             if (!initialized) continue;
             const resp = handleRename(allocator, root, id, cached_symbols, project_root) catch |err| {
-                log("rename error: {}", .{err});
+                lspLog("rename error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1492,7 +1492,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/signatureHelp")) {
             if (!initialized) continue;
             const resp = handleSignatureHelp(allocator, root, id, cached_symbols, &doc_store) catch |err| {
-                log("signatureHelp error: {}", .{err});
+                lspLog("signatureHelp error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1502,7 +1502,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/formatting")) {
             if (!initialized) continue;
             const resp = handleFormatting(allocator, root, id) catch |err| {
-                log("formatting error: {}", .{err});
+                lspLog("formatting error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1512,7 +1512,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "workspace/symbol")) {
             if (!initialized) continue;
             const resp = handleWorkspaceSymbol(allocator, root, id, cached_symbols) catch |err| {
-                log("workspaceSymbol error: {}", .{err});
+                lspLog("workspaceSymbol error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1522,7 +1522,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/codeAction")) {
             if (!initialized) continue;
             const resp = handleCodeAction(allocator, root, id, cached_diags) catch |err| {
-                log("codeAction error: {}", .{err});
+                lspLog("codeAction error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyArrayResponse(allocator, id));
                 continue;
             };
@@ -1539,7 +1539,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                 continue;
             }
             const resp = handleInlayHint(allocator, root, id, cached_symbols, &doc_store) catch |err| {
-                log("inlayHint error: {}", .{err});
+                lspLog("inlayHint error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1549,7 +1549,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/documentHighlight")) {
             if (!initialized) continue;
             const resp = handleDocumentHighlight(allocator, root, id, &doc_store) catch |err| {
-                log("documentHighlight error: {}", .{err});
+                lspLog("documentHighlight error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1559,7 +1559,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/foldingRange")) {
             if (!initialized) continue;
             const resp = handleFoldingRange(allocator, root, id, &doc_store) catch |err| {
-                log("foldingRange error: {}", .{err});
+                lspLog("foldingRange error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1569,7 +1569,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         } else if (std.mem.eql(u8, method, "textDocument/semanticTokens/full")) {
             if (!initialized) continue;
             const resp = handleSemanticTokens(allocator, root, id) catch |err| {
-                log("semanticTokens error: {}", .{err});
+                lspLog("semanticTokens error: {}", .{err});
                 try writeMessage(stdout, try buildEmptyResponse(allocator, id));
                 continue;
             };
@@ -1631,7 +1631,7 @@ fn runAndPublishWithDiags(
         }
     }
 
-    log("cached {d} symbols", .{result.symbols.len});
+    lspLog("cached {d} symbols", .{result.symbols.len});
     return .{ .symbols = result.symbols, .diags = result.diagnostics };
 }
 
@@ -1649,21 +1649,21 @@ fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.
 
     // Read source (in-memory if available, otherwise from disk)
     const source = getDocSource(allocator, uri, doc_store) catch |err| {
-        log("hover: failed to read source: {}", .{err});
+        lspLog("hover: failed to read source: {}", .{err});
         return buildEmptyResponse(allocator, id);
     };
     defer allocator.free(source);
 
     const word = getWordAtPosition(source, line_0, col_0) orelse {
-        log("hover: no word at {d}:{d}", .{ line_0, col_0 });
+        lspLog("hover: no word at {d}:{d}", .{ line_0, col_0 });
         return buildEmptyResponse(allocator, id);
     };
     // Check for dot context (e.g. hovering over "println" in "console.println")
-    const dot_ctx = getDotContext(source, line_0, col_0);
-    if (dot_ctx) |ctx| {
-        log("hover: '{s}.{s}' at {d}:{d} ({d} symbols cached)", .{ ctx, word, line_0, col_0, symbols.len });
+    const dot_context = getDotContext(source, line_0, col_0);
+    if (dot_context) |ctx| {
+        lspLog("hover: '{s}.{s}' at {d}:{d} ({d} symbols cached)", .{ ctx, word, line_0, col_0, symbols.len });
     } else {
-        log("hover: '{s}' at {d}:{d} ({d} symbols cached)", .{ word, line_0, col_0, symbols.len });
+        lspLog("hover: '{s}' at {d}:{d} ({d} symbols cached)", .{ word, line_0, col_0, symbols.len });
     }
 
     // Determine which modules are visible in this file
@@ -1679,7 +1679,7 @@ fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.
     }
 
     // 1. Context-aware lookup (module.func or struct.field)
-    if (dot_ctx) |ctx| {
+    if (dot_context) |ctx| {
         if (findSymbolInContext(symbols, word, ctx)) |sym| {
             if (isVisibleModule(sym.module, current_module, imports))
                 return buildHoverResponse(allocator, id, sym.detail);
@@ -1704,7 +1704,7 @@ fn handleHover(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.
         return buildHoverResponse(allocator, id, detail);
     }
 
-    log("hover: no match for '{s}'", .{word});
+    lspLog("hover: no match for '{s}'", .{word});
     return buildEmptyResponse(allocator, id);
 }
 
@@ -1721,8 +1721,8 @@ fn handleDefinition(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     defer allocator.free(source);
 
     const word = getWordAtPosition(source, line_0, col_0) orelse return buildEmptyResponse(allocator, id);
-    const dot_ctx = getDotContext(source, line_0, col_0);
-    log("definition: '{s}' ({d} symbols)", .{ word, symbols.len });
+    const dot_context = getDotContext(source, line_0, col_0);
+    lspLog("definition: '{s}' ({d} symbols)", .{ word, symbols.len });
 
     // Determine which modules are visible in this file
     const current_module = getModuleName(source);
@@ -1730,7 +1730,7 @@ fn handleDefinition(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     defer if (imports) |imps| allocator.free(imps);
 
     // Context-aware lookup first
-    if (dot_ctx) |ctx| {
+    if (dot_context) |ctx| {
         if (findSymbolInContext(symbols, word, ctx)) |sym| {
             if (isVisibleModule(sym.module, current_module, imports))
                 return buildDefinitionResponse(allocator, id, sym.uri, sym.line, sym.col);
@@ -1755,7 +1755,7 @@ fn handleDocumentSymbols(allocator: std.mem.Allocator, root: std.json.Value, id:
     const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
     const td = jsonObj(params, "textDocument") orelse return buildEmptyResponse(allocator, id);
     const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
-    log("documentSymbol: {s}", .{uri});
+    lspLog("documentSymbol: {s}", .{uri});
 
     return buildDocumentSymbolsResponse(allocator, id, symbols, uri);
 }
@@ -1792,7 +1792,7 @@ fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.
 
     // Get the text before cursor on this line to determine context
     const prefix = getLinePrefix(source, line_0, col_0);
-    log("completion: prefix='{s}'", .{prefix});
+    lspLog("completion: prefix='{s}'", .{prefix});
 
     // Determine which modules are visible in this file
     const current_module = getModuleName(source);
@@ -1801,7 +1801,7 @@ fn handleCompletion(allocator: std.mem.Allocator, root: std.json.Value, id: std.
 
     // Check if we're after a dot — offer struct fields or module functions
     if (getDotPrefix(prefix)) |obj_name| {
-        log("completion: dot context, object='{s}'", .{obj_name});
+        lspLog("completion: dot context, object='{s}'", .{obj_name});
         return buildDotCompletionResponse(allocator, id, symbols, obj_name, use_snippets);
     }
 
@@ -1969,7 +1969,7 @@ fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Val
         "import", "pub", "match", "struct", "enum", "bitfield", "defer",
         "thread", "null", "void", "compt", "any", "module", "test",
         "and", "or", "not", "as", "break", "continue", "true", "false",
-        "extern", "is",
+        "bridge", "is",
     };
     for (keywords) |kw| {
         if (!first) try buf.append(allocator, ',');
@@ -2097,7 +2097,7 @@ fn handleReferences(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     defer allocator.free(source);
 
     const word = getWordAtPosition(source, line_0, col_0) orelse return buildEmptyResponse(allocator, id);
-    log("references: '{s}'", .{word});
+    lspLog("references: '{s}'", .{word});
 
     // Collect all .orh files in the project by scanning symbol URIs
     var file_uris = std.StringHashMap(void).init(allocator);
@@ -2184,7 +2184,7 @@ fn handleRename(allocator: std.mem.Allocator, root: std.json.Value, id: std.json
     defer allocator.free(source);
 
     const word = getWordAtPosition(source, line_0, col_0) orelse return buildEmptyResponse(allocator, id);
-    log("rename: '{s}' -> '{s}'", .{ word, new_name });
+    lspLog("rename: '{s}' -> '{s}'", .{ word, new_name });
 
     // Only rename if symbol is known (not a keyword/builtin)
     const current_module = getModuleName(source);
@@ -2320,7 +2320,7 @@ fn handleSignatureHelp(allocator: std.mem.Allocator, root: std.json.Value, id: s
     // Find the function name by scanning backwards from cursor to find `funcname(`
     const prefix = getLinePrefix(source, line_0, col_0);
     const call_info = findCallContext(prefix) orelse return buildEmptyResponse(allocator, id);
-    log("signatureHelp: func='{s}' activeParam={d}", .{ call_info.func_name, call_info.active_param });
+    lspLog("signatureHelp: func='{s}' activeParam={d}", .{ call_info.func_name, call_info.active_param });
 
     // Look up the function symbol — check dot context (module.func or struct.method)
     const sym = if (call_info.obj_name) |obj|
@@ -2428,7 +2428,7 @@ fn handleFormatting(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     const uri = jsonStr(td, "uri") orelse return buildEmptyResponse(allocator, id);
 
     const path = uriToPath(uri) orelse return buildEmptyResponse(allocator, id);
-    log("formatting: {s}", .{path});
+    lspLog("formatting: {s}", .{path});
 
     // Read original content
     const original = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
@@ -2486,7 +2486,7 @@ fn handleFormatting(allocator: std.mem.Allocator, root: std.json.Value, id: std.
 fn handleWorkspaceSymbol(allocator: std.mem.Allocator, root: std.json.Value, id: std.json.Value, symbols: []const SymbolInfo) ![]u8 {
     const params = jsonObj(root, "params") orelse return buildEmptyResponse(allocator, id);
     const query = jsonStr(params, "query") orelse "";
-    log("workspaceSymbol: query='{s}'", .{query});
+    lspLog("workspaceSymbol: query='{s}'", .{query});
 
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
@@ -2564,7 +2564,7 @@ fn handleInlayHint(allocator: std.mem.Allocator, root: std.json.Value, id: std.j
     const source = getDocSource(allocator, uri, doc_store) catch
         return buildEmptyResponse(allocator, id);
     defer allocator.free(source);
-    log("inlayHint: {s}", .{uri});
+    lspLog("inlayHint: {s}", .{uri});
 
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
@@ -2658,7 +2658,7 @@ fn handleCodeAction(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     const start = jsonObj(range, "start") orelse return buildEmptyArrayResponse(allocator, id);
     const start_line: usize = @intCast(jsonInt(start, "line") orelse return buildEmptyArrayResponse(allocator, id));
 
-    log("codeAction: {s} line {d}", .{ uri, start_line });
+    lspLog("codeAction: {s} line {d}", .{ uri, start_line });
 
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
@@ -2820,7 +2820,7 @@ fn handleDocumentHighlight(allocator: std.mem.Allocator, root: std.json.Value, i
     defer allocator.free(source);
 
     const word = getWordAtPosition(source, line_0, col_0) orelse return buildEmptyResponse(allocator, id);
-    log("documentHighlight: '{s}'", .{word});
+    lspLog("documentHighlight: '{s}'", .{word});
 
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
@@ -2880,7 +2880,7 @@ fn handleFoldingRange(allocator: std.mem.Allocator, root: std.json.Value, id: st
     const source = getDocSource(allocator, uri, doc_store) catch
         return buildEmptyResponse(allocator, id);
     defer allocator.free(source);
-    log("foldingRange: {s}", .{uri});
+    lspLog("foldingRange: {s}", .{uri});
 
     var buf: std.ArrayListUnmanaged(u8) = .{};
     defer buf.deinit(allocator);
@@ -3013,7 +3013,7 @@ fn handleSemanticTokens(allocator: std.mem.Allocator, root: std.json.Value, id: 
     const source = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch
         return buildEmptyResponse(allocator, id);
     defer allocator.free(source);
-    log("semanticTokens: {s}", .{path});
+    lspLog("semanticTokens: {s}", .{path});
 
     // Lex the source to get tokens
     var lex = lexer.Lexer.init(source);
@@ -3085,7 +3085,7 @@ fn classifyToken(kind: lexer.TokenKind) TokenClassification {
     return switch (kind) {
         // Keywords
         .kw_func, .kw_var, .kw_const, .kw_struct, .kw_enum, .kw_bitfield,
-        .kw_module, .kw_import, .kw_pub, .kw_extern, .kw_compt, .kw_test,
+        .kw_module, .kw_import, .kw_pub, .kw_bridge, .kw_compt, .kw_test,
         .kw_if, .kw_else, .kw_for, .kw_while, .kw_return, .kw_match,
         .kw_break, .kw_continue, .kw_defer, .kw_thread, .kw_any,
         .kw_and, .kw_or, .kw_not, .kw_as, .kw_is, .kw_cast,

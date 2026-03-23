@@ -46,7 +46,7 @@ pub const TokenKind = enum {
     kw_continue,
     kw_true,
     kw_false,
-    kw_extern,
+    kw_bridge,
     kw_is,
     kw_cast,
     kw_copy,
@@ -148,7 +148,7 @@ const KEYWORDS = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "continue", .kw_continue },
     .{ "true",     .kw_true },
     .{ "false",    .kw_false },
-    .{ "extern",   .kw_extern },
+    .{ "bridge",   .kw_bridge },
     .{ "is",       .kw_is },
     .{ "cast",     .kw_cast },
     .{ "copy",     .kw_copy },
@@ -668,9 +668,9 @@ test "lexer - scope operator ::" {
     try std.testing.expectEqual(TokenKind.identifier, kinds.items[2]);
 }
 
-test "lexer - extern keyword" {
+test "lexer - bridge keyword" {
     const alloc = std.testing.allocator;
-    var lex = Lexer.init("extern func");
+    var lex = Lexer.init("bridge func");
     var tokens = try lex.tokenize(alloc);
     defer tokens.deinit(alloc);
 
@@ -682,7 +682,7 @@ test "lexer - extern keyword" {
         }
     }
     try std.testing.expectEqual(@as(usize, 2), kinds.items.len);
-    try std.testing.expectEqual(TokenKind.kw_extern, kinds.items[0]);
+    try std.testing.expectEqual(TokenKind.kw_bridge, kinds.items[0]);
     try std.testing.expectEqual(TokenKind.kw_func,   kinds.items[1]);
 }
 

@@ -368,7 +368,7 @@ test "declaration collector - func" {
         .body = undefined,
         .is_compt = false,
         .is_pub = true,
-        .is_extern = false,
+        .is_bridge = false,
         .is_thread = false,
     }};
 
@@ -458,12 +458,12 @@ test "declaration collector - duplicate func error" {
     const func1 = try a.create(parser.Node);
     func1.* = .{ .func_decl = .{ .name = "foo", .params = &.{},
         .return_type = ret_type, .body = empty_block,
-        .is_compt = false, .is_pub = false, .is_extern = false, .is_thread = false } };
+        .is_compt = false, .is_pub = false, .is_bridge = false, .is_thread = false } };
 
     const func2 = try a.create(parser.Node);
     func2.* = .{ .func_decl = .{ .name = "foo", .params = &.{},
         .return_type = ret_type, .body = empty_block,
-        .is_compt = false, .is_pub = false, .is_extern = false, .is_thread = false } };
+        .is_compt = false, .is_pub = false, .is_bridge = false, .is_thread = false } };
 
     const top_level = try a.alloc(*parser.Node, 2);
     top_level[0] = func1;
@@ -522,7 +522,7 @@ test "declaration collector - enum" {
     try std.testing.expect(collector.table.enums.contains("Color"));
 }
 
-test "declaration collector - extern func is registered" {
+test "declaration collector - bridge func is registered" {
     const alloc = std.testing.allocator;
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -542,7 +542,7 @@ test "declaration collector - extern func is registered" {
         .body = undefined,
         .is_compt = false,
         .is_pub = true,
-        .is_extern = true,
+        .is_bridge = true,
         .is_thread = false,
     }};
 

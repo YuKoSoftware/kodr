@@ -494,10 +494,6 @@ pub const OwnershipChecker = struct {
                 }
             },
 
-            .thread_block => |t| {
-                // Values move into threads
-                try self.checkNode(t.body, scope);
-            },
 
             else => {},
         }

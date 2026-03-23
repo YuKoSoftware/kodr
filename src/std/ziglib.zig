@@ -1,5 +1,5 @@
 // ziglib.zig — bridge testbed sidecar
-// Implements the extern declarations from ziglib.orh.
+// Implements the bridge declarations from ziglib.orh.
 // Plain Zig — no Orhon awareness.
 
 const std = @import("std");

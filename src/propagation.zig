@@ -19,13 +19,13 @@ pub const UnionVar = struct {
 };
 
 /// Scope frame for propagation tracking
-pub const PropScope = struct {
+pub const PropagationScope = struct {
     vars: std.StringHashMap(UnionVar),
-    parent: ?*PropScope,
+    parent: ?*PropagationScope,
     allocator: std.mem.Allocator,
     func_returns_error: bool, // can this function propagate?
 
-    pub fn init(allocator: std.mem.Allocator, parent: ?*PropScope, func_returns_error: bool) PropScope {
+    pub fn init(allocator: std.mem.Allocator, parent: ?*PropagationScope, func_returns_error: bool) PropagationScope {
         return .{
             .vars = std.StringHashMap(UnionVar).init(allocator),
             .parent = parent,
@@ -34,11 +34,11 @@ pub const PropScope = struct {
         };
     }
 
-    pub fn deinit(self: *PropScope) void {
+    pub fn deinit(self: *PropagationScope) void {
         self.vars.deinit();
     }
 
-    pub fn define(self: *PropScope, name: []const u8, is_error: bool, line: usize, col: usize) !void {
+    pub fn define(self: *PropagationScope, name: []const u8, is_error: bool, line: usize, col: usize) !void {
         try self.vars.put(name, .{
             .name = name,
             .handled = false,
@@ -48,7 +48,7 @@ pub const PropScope = struct {
         });
     }
 
-    pub fn markHandled(self: *PropScope, name: []const u8) void {
+    pub fn markHandled(self: *PropagationScope, name: []const u8) void {
         if (self.vars.getPtr(name)) |v| {
             v.handled = true;
             return;
@@ -57,14 +57,14 @@ pub const PropScope = struct {
     }
 
     /// Check if a variable is tracked as a union in this scope or any parent
-    pub fn isTracked(self: *const PropScope, name: []const u8) ?UnionVar {
+    pub fn isTracked(self: *const PropagationScope, name: []const u8) ?UnionVar {
         if (self.vars.get(name)) |v| return v;
         if (self.parent) |p| return p.isTracked(name);
         return null;
     }
 
     /// Reset a variable to unhandled (e.g. after reassignment to a new union value)
-    pub fn resetHandled(self: *PropScope, name: []const u8, is_error: bool) void {
+    pub fn resetHandled(self: *PropagationScope, name: []const u8, is_error: bool) void {
         if (self.vars.getPtr(name)) |v| {
             v.handled = false;
             v.is_error_union = is_error;
@@ -75,14 +75,14 @@ pub const PropScope = struct {
 };
 
 /// The propagation checker
-pub const PropChecker = struct {
+pub const PropagationChecker = struct {
     reporter: *errors.Reporter,
     allocator: std.mem.Allocator,
     decls: ?*declarations.DeclTable,
     locs: ?*const parser.LocMap,
     source_file: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, decls: ?*declarations.DeclTable) PropChecker {
+    pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, decls: ?*declarations.DeclTable) PropagationChecker {
         return .{
             .reporter = reporter,
             .allocator = allocator,
@@ -92,7 +92,7 @@ pub const PropChecker = struct {
         };
     }
 
-    fn nodeLoc(self: *const PropChecker, node: *parser.Node) ?errors.SourceLoc {
+    fn nodeLoc(self: *const PropagationChecker, node: *parser.Node) ?errors.SourceLoc {
         if (self.locs) |l| {
             if (l.get(node)) |loc| {
                 return .{ .file = self.source_file, .line = loc.line, .col = loc.col };
@@ -101,20 +101,20 @@ pub const PropChecker = struct {
         return null;
     }
 
-    pub fn check(self: *PropChecker, ast: *parser.Node) !void {
+    pub fn check(self: *PropagationChecker, ast: *parser.Node) !void {
         if (ast.* != .program) return;
         for (ast.program.top_level) |node| {
             try self.checkTopLevel(node);
         }
     }
 
-    fn checkTopLevel(self: *PropChecker, node: *parser.Node) anyerror!void {
+    fn checkTopLevel(self: *PropagationChecker, node: *parser.Node) anyerror!void {
         switch (node.*) {
             .func_decl => |f| {
                 // Determine if function can propagate errors
                 const returns_error = typeCanPropagate(f.return_type);
 
-                var scope = PropScope.init(self.allocator, null, returns_error);
+                var scope = PropagationScope.init(self.allocator, null, returns_error);
                 defer scope.deinit();
 
                 try self.checkNode(f.body, &scope);
@@ -131,7 +131,7 @@ pub const PropChecker = struct {
                 }
             },
             .test_decl => |t| {
-                var scope = PropScope.init(self.allocator, null, false);
+                var scope = PropagationScope.init(self.allocator, null, false);
                 defer scope.deinit();
                 try self.checkNode(t.body, &scope);
                 try self.checkScopeExit(&scope);
@@ -141,10 +141,10 @@ pub const PropChecker = struct {
         }
     }
 
-    fn checkNode(self: *PropChecker, node: *parser.Node, scope: *PropScope) anyerror!void {
+    fn checkNode(self: *PropagationChecker, node: *parser.Node, scope: *PropagationScope) anyerror!void {
         switch (node.*) {
             .block => |b| {
-                var block_scope = PropScope.init(self.allocator, scope, scope.func_returns_error);
+                var block_scope = PropagationScope.init(self.allocator, scope, scope.func_returns_error);
                 defer block_scope.deinit();
 
                 for (b.statements) |stmt| {
@@ -158,7 +158,7 @@ pub const PropChecker = struct {
         }
     }
 
-    fn checkStatement(self: *PropChecker, node: *parser.Node, scope: *PropScope) anyerror!void {
+    fn checkStatement(self: *PropagationChecker, node: *parser.Node, scope: *PropagationScope) anyerror!void {
         switch (node.*) {
             .var_decl, .const_decl => |v| {
                 // Check for unsafe unwrap in the value expression
@@ -279,20 +279,13 @@ pub const PropChecker = struct {
 
             .block => try self.checkNode(node, scope),
 
-            .thread_block => |t| {
-                // Check thread body for unhandled unions
-                var thread_scope = PropScope.init(self.allocator, scope, false);
-                defer thread_scope.deinit();
-                try self.checkNode(t.body, &thread_scope);
-                try self.checkScopeExit(&thread_scope);
-            },
 
             else => {},
         }
     }
 
     /// Check if an expression contains unsafe unwrap of an unhandled union (e.g. result.i32)
-    fn checkExprForUnsafeUnwrap(self: *PropChecker, node: *parser.Node, scope: *PropScope) anyerror!void {
+    fn checkExprForUnsafeUnwrap(self: *PropagationChecker, node: *parser.Node, scope: *PropagationScope) anyerror!void {
         switch (node.*) {
             .field_expr => |f| {
                 // result.i32 / result.String — unwrap of union field
@@ -335,7 +328,7 @@ pub const PropChecker = struct {
 
     /// Walk a condition expression and extract all type checks, marking variables as handled.
     /// Handles simple conditions, AND/OR compound conditions, and nested type checks.
-    fn extractTypeChecks(self: *const PropChecker, node: *parser.Node, scope: *PropScope) void {
+    fn extractTypeChecks(self: *const PropagationChecker, node: *parser.Node, scope: *PropagationScope) void {
         switch (node.*) {
             .binary_expr => |be| {
                 // Compound conditions: walk both sides of `and` / `or`
@@ -362,7 +355,7 @@ pub const PropChecker = struct {
 
     /// Check if expression returns a union type
     /// Returns true = Error union, false = null union, null = not a union
-    fn exprReturnsUnion(self: *PropChecker, node: *parser.Node) anyerror!?bool {
+    fn exprReturnsUnion(self: *PropagationChecker, node: *parser.Node) anyerror!?bool {
         switch (node.*) {
             .call_expr => |c| {
                 if (self.decls) |decls| {
@@ -389,7 +382,7 @@ pub const PropChecker = struct {
     }
 
     /// Check scope exit — unhandled unions either propagate or error
-    fn checkScopeExit(self: *PropChecker, scope: *PropScope) anyerror!void {
+    fn checkScopeExit(self: *PropagationChecker, scope: *PropagationScope) anyerror!void {
         var it = scope.vars.iterator();
         while (it.next()) |entry| {
             const uvar = entry.value_ptr.*;
@@ -471,9 +464,9 @@ test "propagation - handled error union" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
 
-    var checker = PropChecker.init(alloc, &reporter, null);
+    var checker = PropagationChecker.init(alloc, &reporter, null);
 
-    var scope = PropScope.init(alloc, null, true);
+    var scope = PropagationScope.init(alloc, null, true);
     defer scope.deinit();
 
     // Define a union var and mark it handled
@@ -489,10 +482,10 @@ test "propagation - unhandled in non-propagating function" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
 
-    var checker = PropChecker.init(alloc, &reporter, null);
+    var checker = PropagationChecker.init(alloc, &reporter, null);
 
     // Function that returns void — cannot propagate
-    var scope = PropScope.init(alloc, null, false);
+    var scope = PropagationScope.init(alloc, null, false);
     defer scope.deinit();
 
     try scope.define("result", true, 1, 1);
@@ -589,7 +582,7 @@ test "propagation - call expr resolved via decl table" {
         .is_thread = false,
     });
 
-    var checker = PropChecker.init(alloc, &reporter, &decl_table);
+    var checker = PropagationChecker.init(alloc, &reporter, &decl_table);
 
     // Build a call_expr node: divide()
     var callee = parser.Node{ .identifier = "divide" };
@@ -610,10 +603,10 @@ test "propagation - is not check marks union as handled" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
 
-    var checker = PropChecker.init(alloc, &reporter, null);
+    var checker = PropagationChecker.init(alloc, &reporter, null);
 
     // Function that returns void — cannot propagate
-    var scope = PropScope.init(alloc, null, false);
+    var scope = PropagationScope.init(alloc, null, false);
     defer scope.deinit();
 
     // Define a null union variable
@@ -646,9 +639,9 @@ test "propagation - return marks union as handled" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
 
-    var checker = PropChecker.init(alloc, &reporter, null);
+    var checker = PropagationChecker.init(alloc, &reporter, null);
 
-    var scope = PropScope.init(alloc, null, true);
+    var scope = PropagationScope.init(alloc, null, true);
     defer scope.deinit();
 
     // Define a union var
@@ -668,9 +661,9 @@ test "propagation - assignment propagation tracks union" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
 
-    var checker = PropChecker.init(alloc, &reporter, null);
+    var checker = PropagationChecker.init(alloc, &reporter, null);
 
-    var scope = PropScope.init(alloc, null, false);
+    var scope = PropagationScope.init(alloc, null, false);
     defer scope.deinit();
 
     // Define x as an error union
@@ -722,9 +715,9 @@ test "propagation - reassignment resets handled status" {
         .is_thread = false,
     });
 
-    var checker = PropChecker.init(alloc, &reporter, &decl_table);
+    var checker = PropagationChecker.init(alloc, &reporter, &decl_table);
 
-    var scope = PropScope.init(alloc, null, false);
+    var scope = PropagationScope.init(alloc, null, false);
     defer scope.deinit();
 
     // Define result, mark as handled
@@ -751,9 +744,9 @@ test "propagation - compound condition handles multiple unions" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
 
-    var checker = PropChecker.init(alloc, &reporter, null);
+    var checker = PropagationChecker.init(alloc, &reporter, null);
 
-    var scope = PropScope.init(alloc, null, false);
+    var scope = PropagationScope.init(alloc, null, false);
     defer scope.deinit();
 
     // Define two union variables
@@ -793,12 +786,12 @@ test "propagation - compound condition handles multiple unions" {
 test "propagation - scope isTracked walks parents" {
     const alloc = std.testing.allocator;
 
-    var parent = PropScope.init(alloc, null, true);
+    var parent = PropagationScope.init(alloc, null, true);
     defer parent.deinit();
 
     try parent.define("x", true, 1, 1);
 
-    var child = PropScope.init(alloc, &parent, true);
+    var child = PropagationScope.init(alloc, &parent, true);
     defer child.deinit();
 
     // x should be visible from child scope

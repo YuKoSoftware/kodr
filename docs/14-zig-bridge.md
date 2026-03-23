@@ -1,4 +1,4 @@
-# Zig Bridge — `extern` Declarations and Paired `.zig` Files
+# Zig Bridge — `bridge` Declarations and Paired `.zig` Files
 
 Orhon handles all external interop through Zig. Orhon never talks to C, system APIs,
 or external libraries directly — that complexity always lives in a paired `.zig` file.
@@ -13,15 +13,15 @@ Reading the stdlib source is the best way to learn the bridge pattern.
 ## How It Works
 
 A module can be paired with a hand-written `.zig` sidecar. The `.orh` file declares
-the interface using `extern`. The `.zig` file provides the implementation in plain Zig.
+the interface using `bridge`. The `.zig` file provides the implementation in plain Zig.
 The codegen re-exports from the sidecar — pure 1:1 translation, no special cases.
 
 ```
 // console.orh — Orhon interface
 module console
 
-extern func print(msg: String) void
-extern func println(msg: String) void
+bridge func print(msg: String) void
+bridge func println(msg: String) void
 ```
 
 ```zig
@@ -51,7 +51,7 @@ safety guarantees are maintained at the boundary.
 | Orhon → Zig | Move | Borrow (read) | **Not allowed** |
 | Zig → Orhon | Owned | Borrow (read) | **Not allowed** |
 
-**Exception:** `self: &ExternStruct` on extern struct methods is allowed — Zig
+**Exception:** `self: &BridgeStruct` on bridge struct methods is allowed — Zig
 mutates its own data, not Orhon-owned data.
 
 Violating this rule produces a compile error:
@@ -61,48 +61,48 @@ mutable reference '&data' not allowed across bridge — use 'const &data' or pas
 
 ---
 
-## `extern` Declaration Types
+## `bridge` Declaration Types
 
-All `extern` declarations are implicitly public. `pub extern` is a compiler error (redundant).
+Use `pub bridge` to make declarations visible outside the module. Without `pub`, bridge declarations are module-private — useful for internal implementation details wrapped by Orhon functions.
 A paired `.zig` sidecar file must exist alongside the `.orh` file — hard error if missing.
 
-### `extern func` — bridge a function
+### `bridge func` — bridge a function
 ```
-extern func print(msg: String) void
-extern func sqrt(x: any) any
+bridge func print(msg: String) void
+bridge func sqrt(x: any) any
 ```
 No body. The Zig sidecar must have a matching `pub fn`.
 
-### `extern func` with default arguments
+### `bridge func` with default arguments
 Default arguments provide ergonomics — users can omit parameters with sensible defaults.
 The compiler fills defaults at the call site.
 ```
-extern func greet(name: String, prefix: String = "Hello") String
+bridge func greet(name: String, prefix: String = "Hello") String
 ```
 Calling `greet("world")` generates `greet("world", "Hello")` in Zig.
 
-### `extern const` — expose a Zig constant
+### `bridge const` — expose a Zig constant
 ```
-extern const PI: f64
+bridge const PI: f64
 ```
 The Zig sidecar must have a matching `pub const`.
 
-### `extern struct` — bridge a Zig type with methods
+### `bridge struct` — bridge a Zig type with methods
 ```
-extern struct Counter {
-    extern func create(start: i32) Counter
-    extern func get(self: const &Counter) i32
-    extern func increment(self: &Counter) void
+bridge struct Counter {
+    bridge func create(start: i32) Counter
+    bridge func get(self: const &Counter) i32
+    bridge func increment(self: &Counter) void
 }
 ```
 The sidecar must have a matching struct with `pub fn` methods.
 
-### `extern struct` with type parameters — generic bridge types
+### `bridge struct` with type parameters — generic bridge types
 ```
-extern struct Box(T: type) {
-    extern func create(val: T) Box
-    extern func get(self: const &Box) T
-    extern func set(self: &Box, val: T) void
+bridge struct Box(T: type) {
+    bridge func create(val: T) Box
+    bridge func get(self: const &Box) T
+    bridge func set(self: &Box, val: T) void
 }
 ```
 The sidecar implements this as a comptime function returning a type:
@@ -122,18 +122,18 @@ pub fn Box(comptime T: type) type {
 
 ## Orhon Wrappers Over Extern Types
 
-The bridge `.orh` file can contain both extern declarations and regular Orhon code.
-This enables ergonomic wrappers — the extern provides the raw Zig interface, and
+The bridge `.orh` file can contain both bridge declarations and regular Orhon code.
+This enables ergonomic wrappers — the bridge provides the raw Zig interface, and
 Orhon code wraps it with defaults, validation, or convenience methods.
 
 ```
 module mylib
 
-// Raw bridge — thin extern declarations
-extern struct RawList(T: type) {
-    extern func init(alloc: any) RawList
-    extern func append(self: &RawList, item: T) void
-    extern func deinit(self: &RawList) void
+// Raw bridge — thin bridge declarations
+bridge struct RawList(T: type) {
+    bridge func init(alloc: any) RawList
+    bridge func append(self: &RawList, item: T) void
+    bridge func deinit(self: &RawList) void
 }
 
 // Orhon API — ergonomic wrapper
@@ -158,7 +158,7 @@ pub struct List(T: type) {
 
 ## Error Union Return Types
 
-When an `extern func` returns `(Error | T)`, the Zig sidecar must return a union with
+When an `bridge func` returns `(Error | T)`, the Zig sidecar must return a union with
 `.ok: T` and `.err: struct { message: []const u8 }` tags.
 
 ```zig
@@ -192,7 +192,7 @@ pub fn windowNew() *c.GtkWidget {
 // gtk.orh — clean Orhon interface, no C visible
 module gtk
 
-extern func windowNew() Ptr(u8)
+bridge func windowNew() Ptr(u8)
 ```
 
 ---
@@ -204,7 +204,7 @@ the same module name). The sidecar file name matches the module name.
 
 ```
 src/
-  math.orh          // module math — extern declarations
+  math.orh          // module math — bridge declarations
   math_utils.orh    // module math — more Orhon code, same module
   math.zig          // sidecar — all Zig implementations for module math
 ```

@@ -866,24 +866,24 @@ test "match range" {
     assert(classify_age(30) == "adult")
 }
 
-// ─── Extern Declarations ────────────────────────────────────────────────────
+// ─── Bridge Declarations ────────────────────────────────────────────────────
 
-// extern bridges Orhon to hand-written Zig via paired .zig sidecar files.
-// All extern declarations are implicitly public.
+// bridge connects Orhon to hand-written Zig via paired .zig sidecar files.
+// Use pub bridge to make declarations visible outside the module.
 //
 // Syntax:
-//   extern func name(params) ReturnType    — bridge a Zig function
-//   extern const NAME: Type                — expose a Zig constant
-//   extern struct Name                     — import an opaque Zig type
+//   bridge func name(params) ReturnType    — bridge a Zig function
+//   bridge const NAME: Type                — expose a Zig constant
+//   bridge struct Name                     — import an opaque Zig type
 //
 // Example (in a module with a paired .zig file):
-//   extern func sqrt(x: any) any
-//   extern const PI: f64
-//   extern struct Socket
+//   bridge func sqrt(x: any) any
+//   bridge const PI: f64
+//   bridge struct Socket
 //
 // The std:: modules use this mechanism:
 //   import std::console    — console.orh + console.zig
-//   import std::math       — math.orh + math.zig (PI and E are extern const)
+//   import std::math       — math.orh + math.zig (PI and E are bridge const)
 
 // type-returning compt func — generates a new struct type at compile time
 
@@ -947,5 +947,20 @@ func time_demo() bool {
 
 test "time.now" {
     assert(time_demo())
+}
+
+// ─── Terminal Colors ────────────────────────────────────────────────────────
+
+// console provides ANSI color constants and a supportsColor check
+
+func color_demo() bool {
+    if (console.supportsColor()) {
+        console.printColoredLn(console.GREEN, "ok")
+    }
+    return true
+}
+
+test "console.supportsColor" {
+    assert(color_demo())
 }
 

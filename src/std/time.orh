@@ -5,24 +5,24 @@ module time
 
 // Current time in milliseconds since epoch
 
-extern func now() i64
+bridge func now() i64
 
 // Current time in nanoseconds since epoch
 
-extern func nowNano() i64
+bridge func nowNano() i64
 
 // Sleep for a number of milliseconds
 
-extern func sleepMs(ms: i32) void
+bridge func sleepMs(ms: i32) void
 
 // Sleep for a number of seconds
 
-extern func sleepSec(sec: i32) void
+bridge func sleepSec(sec: i32) void
 
 // Measure elapsed time — returns nanoseconds since a previous nowNano() call
 
-extern func elapsed(start: i64) i64
+bridge func elapsed(start: i64) i64
 
 // Format milliseconds since epoch as ISO 8601 string
 
-extern func format(ms: i64) String
+bridge func format(ms: i64) String

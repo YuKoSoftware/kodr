@@ -40,8 +40,6 @@ pub const NodeKind = enum {
     break_stmt,
     continue_stmt,
     assignment,
-    thread_block,
-    async_block,
     // Expressions
     binary_expr,
     unary_expr,
@@ -52,7 +50,7 @@ pub const NodeKind = enum {
     borrow_expr,
     compiler_func,
     ptr_expr,
-    coll_expr,
+    collection_expr,
     identifier,
     int_literal,
     float_literal,
@@ -108,8 +106,6 @@ pub const Node = union(NodeKind) {
     break_stmt,
     continue_stmt,
     assignment: BinaryOp,
-    thread_block: ConcurrencyBlock,
-    async_block: ConcurrencyBlock,
     binary_expr: BinaryOp,
     unary_expr: UnaryOp,
     call_expr: CallExpr,
@@ -119,7 +115,7 @@ pub const Node = union(NodeKind) {
     borrow_expr: *Node,
     compiler_func: CompilerFunc,
     ptr_expr: PtrExpr,
-    coll_expr: CollExpr,
+    collection_expr: CollectionExpr,
     identifier: []const u8,
     int_literal: []const u8,
     float_literal: []const u8,
@@ -175,7 +171,7 @@ pub const FuncDecl = struct {
     body: *Node,
     is_compt: bool,
     is_pub: bool,
-    is_extern: bool, // no body — implementation in paired .zig file
+    is_bridge: bool, // no body — implementation in paired .zig file
     is_thread: bool, // thread declaration — generates spawn wrapper + body
 };
 
@@ -184,7 +180,7 @@ pub const StructDecl = struct {
     type_params: []*Node, // generic params: (T: type, U: type)
     members: []*Node,
     is_pub: bool,
-    is_extern: bool = false,
+    is_bridge: bool = false,
 };
 
 pub const EnumDecl = struct {
@@ -206,7 +202,7 @@ pub const VarDecl = struct {
     type_annotation: ?*Node,
     value: *Node,
     is_pub: bool,
-    is_extern: bool = false,
+    is_bridge: bool = false,
 };
 
 pub const TestDecl = struct {
@@ -334,17 +330,11 @@ pub const PtrExpr = struct {
     addr_arg: *Node,
 };
 
-pub const CollExpr = struct {
+pub const CollectionExpr = struct {
     kind: []const u8, // "List", "Map", "Set", "Ring", "ORing"
     type_args: []*Node, // [T] for List/Set/Ring/ORing, [K, V] for Map
     size_arg: ?*Node = null, // capacity for Ring/ORing
     alloc_arg: ?*Node, // null = use default owned allocator
-};
-
-pub const ConcurrencyBlock = struct {
-    result_type: *Node,
-    name: []const u8,
-    body: *Node,
 };
 
 pub const TupleLiteral = struct {
@@ -682,7 +672,7 @@ pub const Parser = struct {
                 return error.ParseError;
             },
             .kw_pub => try self.parsePubDecl(),
-            .kw_extern => try self.parseExternDecl(),
+            .kw_bridge => try self.parseBridgeDecl(false),
             .kw_test => try self.parseTestDecl(),
             .eof => null,
             else => {
@@ -704,14 +694,7 @@ pub const Parser = struct {
         return switch (tok.kind) {
             .kw_func      => try self.parseFuncDecl(true, false),
             .kw_thread    => try self.parseThreadDecl(true),
-            .kw_extern    => {
-                const ext_tok = self.peek();
-                try self.reporter.report(.{
-                    .message = "'pub extern' is redundant — extern declarations are always public, use 'extern'",
-                    .loc = .{ .file = "", .line = ext_tok.line, .col = ext_tok.col },
-                });
-                return error.ParseError;
-            },
+            .kw_bridge    => try self.parseBridgeDecl(true),
             .kw_struct    => try self.parseStructDecl(true),
             .kw_enum      => try self.parseEnumDecl(true),
             .kw_bitfield  => try self.parseBitfieldDecl(true),
@@ -738,64 +721,64 @@ pub const Parser = struct {
         };
     }
 
-    fn parseExternDecl(self: *Parser) anyerror!*Node {
-        const ext_tok = self.advance(); // consume 'extern'
+    fn parseBridgeDecl(self: *Parser, is_pub: bool) anyerror!*Node {
+        const bridge_tok = self.advance(); // consume 'bridge'
         const tok = self.peek();
         return switch (tok.kind) {
-            .kw_func => self.parseFuncDecl(true, true),
-            .kw_const => self.parseExternConstOrVar(true),
+            .kw_func => self.parseFuncDecl(is_pub, true),
+            .kw_const => self.parseBridgeConstOrVar(is_pub, true),
             .kw_var => {
                 try self.reporter.report(.{
-                    .message = "'extern var' is not allowed — use 'extern const' or wrap in 'extern func'",
+                    .message = "'bridge var' is not allowed — use 'bridge const' or wrap in 'bridge func'",
                     .loc = .{ .file = "", .line = tok.line, .col = tok.col },
                 });
                 return error.ParseError;
             },
-            .kw_struct => self.parseExternStructDecl(),
+            .kw_struct => self.parseBridgeStructDecl(is_pub),
             else => {
                 try self.reporter.report(.{
-                    .message = "expected 'func', 'const', or 'struct' after 'extern'",
-                    .loc = .{ .file = "", .line = ext_tok.line, .col = ext_tok.col },
+                    .message = "expected 'func', 'const', or 'struct' after 'bridge'",
+                    .loc = .{ .file = "", .line = bridge_tok.line, .col = bridge_tok.col },
                 });
                 return error.ParseError;
             },
         };
     }
 
-    /// Parse `extern const NAME: TYPE` or `extern var NAME: TYPE` — no value, just a declaration.
-    fn parseExternConstOrVar(self: *Parser, is_const: bool) anyerror!*Node {
+    /// Parse `bridge const NAME: TYPE` — no value, implementation in paired .zig sidecar.
+    fn parseBridgeConstOrVar(self: *Parser, is_pub: bool, is_const: bool) anyerror!*Node {
         _ = self.advance(); // consume 'const' or 'var'
         const name_tok = try self.expect(.identifier);
         _ = try self.expect(.colon);
         const type_ann = try self.parseType();
         try self.expectNewlineOrEof();
-        // Create a dummy value node — extern decls have no value
+        // Create a dummy value node — bridge decls have no value
         const dummy = try self.newNode(.{ .int_literal = "0" });
         if (is_const) {
             return self.newNode(.{ .const_decl = .{
                 .name = name_tok.text,
                 .type_annotation = type_ann,
                 .value = dummy,
-                .is_pub = true,
-                .is_extern = true,
+                .is_pub = is_pub,
+                .is_bridge = true,
             }});
         } else {
             return self.newNode(.{ .var_decl = .{
                 .name = name_tok.text,
                 .type_annotation = type_ann,
                 .value = dummy,
-                .is_pub = true,
-                .is_extern = true,
+                .is_pub = is_pub,
+                .is_bridge = true,
             }});
         }
     }
 
-    /// Parse `extern struct NAME` — opaque type from sidecar .zig file.
-    fn parseExternStructDecl(self: *Parser) anyerror!*Node {
+    /// Parse `bridge struct NAME` — opaque type from sidecar .zig file.
+    fn parseBridgeStructDecl(self: *Parser, is_pub: bool) anyerror!*Node {
         _ = self.advance(); // consume 'struct'
         const name_tok = try self.expect(.identifier);
 
-        // Optional generic type params: extern struct Foo(T: type)
+        // Optional generic type params: bridge struct Foo(T: type)
         var type_params: std.ArrayListUnmanaged(*Node) = .{};
         if (self.check(.lparen)) {
             _ = self.advance();
@@ -812,26 +795,26 @@ pub const Parser = struct {
             _ = try self.expect(.rparen);
         }
 
-        // No body — opaque extern struct
+        // No body — opaque bridge struct
         if (!self.check(.lbrace)) {
             try self.expectNewlineOrEof();
             return self.newNode(.{ .struct_decl = .{
                 .name = name_tok.text,
                 .type_params = try type_params.toOwnedSlice(self.alloc()),
                 .members = &.{},
-                .is_pub = true,
-                .is_extern = true,
+                .is_pub = is_pub,
+                .is_bridge = true,
             }});
         }
 
-        // Body with extern method declarations
+        // Body with bridge method declarations
         _ = self.advance(); // consume {
         self.skipNewlines();
         var members: std.ArrayListUnmanaged(*Node) = .{};
         while (!self.check(.rbrace) and !self.check(.eof)) {
             self.skipNewlines();
             if (self.check(.rbrace)) break;
-            try members.append(self.alloc(), try self.parseExternDecl());
+            try members.append(self.alloc(), try self.parseBridgeDecl(false));
             self.skipNewlines();
         }
         _ = try self.expect(.rbrace);
@@ -840,8 +823,8 @@ pub const Parser = struct {
             .name = name_tok.text,
             .type_params = try type_params.toOwnedSlice(self.alloc()),
             .members = try members.toOwnedSlice(self.alloc()),
-            .is_pub = true,
-            .is_extern = true,
+            .is_pub = is_pub,
+            .is_bridge = true,
         }});
     }
 
@@ -849,15 +832,15 @@ pub const Parser = struct {
     // FUNCTION DECLARATIONS
     // ============================================================
 
-    fn parseFuncDecl(self: *Parser, is_pub: bool, is_extern: bool) anyerror!*Node {
-        return self.parseFuncOrThread(is_pub, is_extern, false);
+    fn parseFuncDecl(self: *Parser, is_pub: bool, is_bridge: bool) anyerror!*Node {
+        return self.parseFuncOrThread(is_pub, is_bridge, false);
     }
 
     fn parseThreadDecl(self: *Parser, is_pub: bool) anyerror!*Node {
         return self.parseFuncOrThread(is_pub, false, true);
     }
 
-    fn parseFuncOrThread(self: *Parser, is_pub: bool, is_extern: bool, is_thread: bool) anyerror!*Node {
+    fn parseFuncOrThread(self: *Parser, is_pub: bool, is_bridge: bool, is_thread: bool) anyerror!*Node {
         _ = self.advance(); // consume 'func' or 'thread'
         // Function name can be a regular identifier or the keyword 'main'
         const name_tok = blk: {
@@ -908,8 +891,8 @@ pub const Parser = struct {
 
         const ret_type = try self.parseType();
 
-        // extern func or body-less declaration (interface files) — no body
-        const body = if (is_extern or !self.check(.lbrace)) blk: {
+        // bridge func or body-less declaration (interface files) — no body
+        const body = if (is_bridge or !self.check(.lbrace)) blk: {
             try self.expectNewlineOrEof();
             const empty_block = try self.newNode(.{ .block = .{ .statements = &.{} } });
             break :blk empty_block;
@@ -922,7 +905,7 @@ pub const Parser = struct {
             .body = body,
             .is_compt = false,
             .is_pub = is_pub,
-            .is_extern = is_extern,
+            .is_bridge = is_bridge,
             .is_thread = is_thread,
         }});
     }
@@ -1498,20 +1481,6 @@ pub const Parser = struct {
         return self.newNode(.{ .continue_stmt = {} });
     }
 
-    fn parseThreadBlock(self: *Parser) anyerror!*Node {
-        _ = try self.expect(.kw_thread);
-        _ = try self.expect(.lparen);
-        const result_type = try self.parseType();
-        _ = try self.expect(.rparen);
-        const name_tok = try self.expect(.identifier);
-        const body = try self.parseBlock();
-        return self.newNode(.{ .thread_block = .{
-            .result_type = result_type,
-            .name = name_tok.text,
-            .body = body,
-        }});
-    }
-
     // Like parseExprOrAssignment but no trailing newline required.
     // Used for while continue expressions: while(cond) : (i += 1)
     fn parseAssignExpr(self: *Parser) anyerror!*Node {
@@ -2049,7 +2018,7 @@ pub const Parser = struct {
                         _ = try self.expect(.rparen);
                         break :blk arg;
                     };
-                    return self.newNode(.{ .coll_expr = .{
+                    return self.newNode(.{ .collection_expr = .{
                         .kind = tok.text,
                         .type_args = try type_args.toOwnedSlice(self.alloc()),
                         .size_arg = size_arg,
@@ -2452,11 +2421,12 @@ test "parser - var declaration inside function" {
     try std.testing.expect(prog.program.top_level[0].* == .func_decl);
 }
 
-test "parser - extern func" {
+test "parser - bridge func" {
     const alloc = std.testing.allocator;
     var lex = lexer.Lexer.init((
         \\module console
-        \\extern func print(msg: String) void
+        \\pub bridge func print(msg: String) void
+        \\bridge func internal(x: i32) void
         \\
     ));
     var tokens = try lex.tokenize(alloc);
@@ -2470,12 +2440,19 @@ test "parser - extern func" {
 
     const prog = try p.parseProgram();
     try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expectEqual(@as(usize, 1), prog.program.top_level.len);
+    try std.testing.expectEqual(@as(usize, 2), prog.program.top_level.len);
+    // pub bridge func — is_pub = true
     const f = prog.program.top_level[0];
     try std.testing.expect(f.* == .func_decl);
-    try std.testing.expect(f.func_decl.is_extern);
+    try std.testing.expect(f.func_decl.is_bridge);
     try std.testing.expect(f.func_decl.is_pub);
     try std.testing.expectEqualStrings("print", f.func_decl.name);
+    // bridge func (no pub) — is_pub = false
+    const g = prog.program.top_level[1];
+    try std.testing.expect(g.* == .func_decl);
+    try std.testing.expect(g.func_decl.is_bridge);
+    try std.testing.expect(!g.func_decl.is_pub);
+    try std.testing.expectEqualStrings("internal", g.func_decl.name);
 }
 
 test "parser - scoped import" {

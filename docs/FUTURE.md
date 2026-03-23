@@ -29,7 +29,7 @@ handles are consumed before scope exit. See [Threading Model](#threading-model) 
 
 ## Priority 2 — Standard Library
 
-All stdlib modules use the bridge pattern (module + `.zig` sidecar). The codegen has no knowledge of stdlib types — everything goes through `extern` declarations. Users can build their own bridge modules the same way.
+All stdlib modules use the bridge pattern (module + `.zig` sidecar). The codegen has no knowledge of stdlib types — everything goes through `bridge` declarations. Users can build their own bridge modules the same way.
 
 ### Implemented
 ```
@@ -219,7 +219,7 @@ h.return()
 - **REPL** — compiled language. `orhon run` is fast enough. A REPL needs an interpreter or incremental compiler.
 - **Top-level `println`** — keep in `std::console`. One import, all I/O. No special-case global functions.
 - **Collection method chaining** — `.filter().map().take()` allocates intermediate collections. For loops are explicit, zero-alloc, and already work.
-- **Untagged unions** — all unions carry a tag. Safety requires knowing which type is active. Use `extern struct` with Zig sidecar for unsafe C interop.
+- **Untagged unions** — all unions carry a tag. Safety requires knowing which type is active. Use `bridge struct` with Zig sidecar for unsafe C interop.
 - **Goroutines** — need a runtime, GC, scheduler. OS threads + move semantics are deterministic with no runtime overhead.
 - **`Array(T, N)` / `Slice(T)` syntax** — `[N]T` and `[]T` are shorter, universal, and match array literals.
 - **`else` on `for`/`while`** — confusing semantics. Use `if(items.len == 0)` instead.

@@ -20,7 +20,7 @@ pub const TypeClass = enum {
     plain,
     error_union,
     null_union,
-    arb_union,
+    arbitrary_union,
     string,
     raw_ptr,
     safe_ptr,
@@ -32,7 +32,7 @@ pub fn classifyType(t: RT) TypeClass {
     return switch (t) {
         .error_union => .error_union,
         .null_union => .null_union,
-        .union_type => .arb_union,
+        .union_type => .arbitrary_union,
         .primitive => |n| if (std.mem.eql(u8, n, K.Type.STRING)) .string else .plain,
         .generic => |g| {
             if (std.mem.eql(u8, g.name, "RawPtr") or std.mem.eql(u8, g.name, "VolatilePtr"))
@@ -55,7 +55,7 @@ pub const Coercion = enum {
     array_to_slice,
     null_wrap,
     error_wrap,
-    arb_union_wrap,
+    arbitrary_union_wrap,
     optional_unwrap,
 };
 
@@ -321,7 +321,6 @@ pub const MirAnnotator = struct {
                 try self.annotateNode(d.value);
             },
 
-            .thread_block, .async_block => {},
 
             // Expressions
             .binary_expr => |b| {
@@ -376,7 +375,7 @@ pub const MirAnnotator = struct {
                 try self.annotateNode(p.type_arg);
                 try self.annotateNode(p.addr_arg);
             },
-            .coll_expr => |c| {
+            .collection_expr => |c| {
                 try self.annotateExpr(node);
                 for (c.type_args) |arg| try self.annotateNode(arg);
                 if (c.alloc_arg) |a| try self.annotateNode(a);

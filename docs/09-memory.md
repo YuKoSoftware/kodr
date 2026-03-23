@@ -165,7 +165,7 @@ a.free(data)    // free slice
 
 `a.free(x)` is an ownership move — `x` becomes invalid after the call. Using `x` after freeing is a compile-time error. Heap-allocated values that go out of scope without an explicit free are a memory leak — always call `a.free(x)` explicitly.
 
-Custom allocator *implementation* belongs in Zig via `extern func` — Orhon code uses allocators but does not build them.
+Custom allocator *implementation* belongs in Zig via `bridge func` — Orhon code uses allocators but does not build them.
 
 ### Built-in Allocators
 

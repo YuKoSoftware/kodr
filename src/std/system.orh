@@ -5,35 +5,35 @@ module system
 
 // Run a command with arguments — returns struct with code, stdout, stderr
 
-extern func run(cmd: String, args: any) any
+bridge func run(cmd: String, args: any) any
 
 // Get an environment variable
 
-extern func getEnv(name: String) (Error | String)
+bridge func getEnv(name: String) (Error | String)
 
 // Get current working directory
 
-extern func cwd() String
+bridge func cwd() String
 
 // Exit the process with a status code
 
-extern func exit(code: i32) void
+bridge func exit(code: i32) void
 
 // Register to trap a signal (sets an internal flag on delivery)
 
-extern func trapSignal(sig: i32) void
+bridge func trapSignal(sig: i32) void
 
 // Check whether a trapped signal has been received
 
-extern func checkSignal(sig: i32) bool
+bridge func checkSignal(sig: i32) bool
 
 // Clear a previously received signal flag
 
-extern func clearSignal(sig: i32) void
+bridge func clearSignal(sig: i32) void
 
 // Send a signal to the current process
 
-extern func raise(sig: i32) void
+bridge func raise(sig: i32) void
 
 // Signal constants
 

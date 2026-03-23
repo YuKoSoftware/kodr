@@ -160,3 +160,18 @@ test "struct methods" {
     p = Player.create("revived")
     assert(p.is_alive())
 }
+
+// ─── Terminal Colors ────────────────────────────────────────────────────────
+
+// console provides ANSI color constants and a supportsColor check
+
+func color_demo() bool {
+    if (console.supportsColor()) {
+        console.printColoredLn(console.GREEN, "ok")
+    }
+    return true
+}
+
+test "console.supportsColor" {
+    assert(color_demo())
+}

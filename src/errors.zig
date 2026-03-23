@@ -101,17 +101,17 @@ pub const Reporter = struct {
         }
 
         // Summary line
-        const wc = self.warnings.items.len;
-        const ec = self.errors.items.len;
-        if (wc > 0 or ec > 0) {
+        const warning_count = self.warnings.items.len;
+        const error_count = self.errors.items.len;
+        if (warning_count > 0 or error_count > 0) {
             try stderr.print("\n", .{});
         }
-        if (wc > 0 and ec > 0) {
-            try stderr.print("{s}{d} warning(s){s}, {s}{d} error(s){s}\n", .{ YELLOW, wc, RESET, RED, ec, RESET });
-        } else if (wc > 0) {
-            try stderr.print("{s}{d} warning(s){s}\n", .{ YELLOW, wc, RESET });
-        } else if (ec > 0) {
-            try stderr.print("{s}{d} error(s){s}\n", .{ RED, ec, RESET });
+        if (warning_count > 0 and error_count > 0) {
+            try stderr.print("{s}{d} warning(s){s}, {s}{d} error(s){s}\n", .{ YELLOW, warning_count, RESET, RED, error_count, RESET });
+        } else if (warning_count > 0) {
+            try stderr.print("{s}{d} warning(s){s}\n", .{ YELLOW, warning_count, RESET });
+        } else if (error_count > 0) {
+            try stderr.print("{s}{d} error(s){s}\n", .{ RED, error_count, RESET });
         }
 
         try stderr.flush();

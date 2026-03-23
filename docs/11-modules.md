@@ -170,8 +170,8 @@ a precompiled library without its full source.
 - `module main` not in `main.orh`
 - `func main()` missing when `#build = exe`
 - Unknown import scope (only `std` is supported)
-- `extern func` with a body — extern functions must have no body
-- `extern func` without a paired `.zig` file
+- `bridge func` with a body — bridge functions must have no body
+- `bridge func` without a paired `.zig` file
 - `func main()` present when `#build = static` or `#build = dynamic`
 
 ---

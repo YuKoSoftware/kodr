@@ -892,7 +892,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         if (reporter.hasErrors()) return null;
 
         // ── Pass 9: Error Propagation ──────────────────────────
-        var prop_checker = propagation.PropChecker.init(allocator, reporter, &decl_collector.table);
+        var prop_checker = propagation.PropagationChecker.init(allocator, reporter, &decl_collector.table);
         prop_checker.locs = locs_ptr;
         prop_checker.source_file = source_file;
         try prop_checker.check(ast);
@@ -906,14 +906,14 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         if (reporter.hasErrors()) return null;
 
         // ── Extern Sidecar Validation ──────────────────────────
-        // If the module has extern func declarations, a paired .zig sidecar
+        // If the module has bridge declarations, a paired .zig sidecar
         // must exist next to the anchor .orh file.
-        if (collectExternFuncNames(ast, allocator)) |extern_names| {
+        if (collectBridgeNames(ast, allocator)) |bridge_names| {
             defer {
-                for (extern_names) |n| allocator.free(n);
-                allocator.free(extern_names);
+                for (bridge_names) |n| allocator.free(n);
+                allocator.free(bridge_names);
             }
-            if (extern_names.len > 0) {
+            if (bridge_names.len > 0) {
                 // Find the anchor file — the one whose stem matches the module name
                 var anchor_dir: ?[]const u8 = null;
                 for (mod_ptr.files) |file| {
@@ -927,17 +927,17 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
                 const sidecar_src = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ dir, mod_name });
                 defer allocator.free(sidecar_src);
                 std.fs.cwd().access(sidecar_src, .{}) catch {
-                    const first_name = extern_names[0];
+                    const first_name = bridge_names[0];
                     const msg = try std.fmt.allocPrint(allocator,
-                        "extern func '{s}': missing sidecar file '{s}'",
+                        "bridge '{s}': missing sidecar file '{s}'",
                         .{ first_name, sidecar_src });
                     defer allocator.free(msg);
                     try reporter.report(.{ .message = msg });
                 };
                 if (!reporter.hasErrors()) {
-                    // Sidecar exists — copy as <mod>_extern.zig so generated <mod>.zig can @import it
+                    // Sidecar exists — copy as <mod>_bridge.zig so generated <mod>.zig can @import it
                     try cache.ensureGeneratedDir();
-                    const sidecar_dst = try std.fmt.allocPrint(allocator, "{s}/{s}_extern.zig", .{ cache.GENERATED_DIR, mod_name });
+                    const sidecar_dst = try std.fmt.allocPrint(allocator, "{s}/{s}_bridge.zig", .{ cache.GENERATED_DIR, mod_name });
                     defer allocator.free(sidecar_dst);
                     try std.fs.cwd().copyFile(sidecar_src, std.fs.cwd(), sidecar_dst, .{});
                 }
@@ -1227,10 +1227,10 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
     return exe_binary_name orelse try allocator.dupe(u8, "");
 }
 
-/// Collect the names of all extern func declarations in an AST.
+/// Collect the names of all bridge declarations in an AST.
 /// Returns an allocated slice of duped name strings, or an error.
 /// Caller must free each name and the slice itself.
-fn collectExternFuncNames(ast: *parser.Node, allocator: std.mem.Allocator) ![][]const u8 {
+fn collectBridgeNames(ast: *parser.Node, allocator: std.mem.Allocator) ![][]const u8 {
     var names: std.ArrayListUnmanaged([]const u8) = .{};
     errdefer {
         for (names.items) |n| allocator.free(n);
@@ -1240,20 +1240,20 @@ fn collectExternFuncNames(ast: *parser.Node, allocator: std.mem.Allocator) ![][]
     for (ast.program.top_level) |node| {
         switch (node.*) {
             .func_decl => |f| {
-                if (f.is_extern) try names.append(allocator, try allocator.dupe(u8, f.name));
+                if (f.is_bridge) try names.append(allocator, try allocator.dupe(u8, f.name));
             },
             .const_decl => |v| {
-                if (v.is_extern) try names.append(allocator, try allocator.dupe(u8, v.name));
+                if (v.is_bridge) try names.append(allocator, try allocator.dupe(u8, v.name));
             },
             .var_decl => |v| {
-                if (v.is_extern) try names.append(allocator, try allocator.dupe(u8, v.name));
+                if (v.is_bridge) try names.append(allocator, try allocator.dupe(u8, v.name));
             },
             .struct_decl => |s| {
-                if (s.is_extern) {
+                if (s.is_bridge) {
                     try names.append(allocator, try allocator.dupe(u8, s.name));
                 } else {
                     for (s.members) |m| {
-                        if (m.* == .func_decl and m.func_decl.is_extern)
+                        if (m.* == .func_decl and m.func_decl.is_bridge)
                             try names.append(allocator, try allocator.dupe(u8, m.func_decl.name));
                     }
                 }
@@ -1664,7 +1664,7 @@ test "full pipeline - hello world" {
     try std.testing.expect(!reporter.hasErrors());
 
     // Propagation
-    var prop_checker = propagation.PropChecker.init(alloc, &reporter, null);
+    var prop_checker = propagation.PropagationChecker.init(alloc, &reporter, null);
     try prop_checker.check(ast);
     try std.testing.expect(!reporter.hasErrors());
 

@@ -45,6 +45,6 @@ Hard compiler error if split index is out of range.
 
 ## Collection Types (stdlib)
 
-`List(T)`, `Map(K, V)`, and `Set(T)` are planned as stdlib bridge modules in `std::collections`. They are **not** builtin types — they will be implemented through the extern bridge pattern and imported like any other module.
+`List(T)`, `Map(K, V)`, and `Set(T)` are planned as stdlib bridge modules in `std::collections`. They are **not** builtin types — they will be implemented through the bridge bridge pattern and imported like any other module.
 
 See [FUTURE.md](FUTURE.md) for the stdlib roadmap.

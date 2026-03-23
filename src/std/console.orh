@@ -6,21 +6,52 @@ module console
 
 // Print a String — no newline added
 
-extern func print(msg: String) void
+bridge func print(msg: String) void
 
 // Print a String followed by a newline
 
-extern func println(msg: String) void
+bridge func println(msg: String) void
 
 // Flush buffered output — println flushes automatically, use after print
 
-extern func flush() void
+bridge func flush() void
 
 // Print to stderr — for debugging
 
-extern func debugPrint(msg: String) void
+bridge func debugPrint(msg: String) void
 
 // Read one line from stdin — returns Error on EOF or read failure
 
-extern func get() (Error | String)
+bridge func get() (Error | String)
+
+// Check if stdout supports colored output (true for terminals, false for pipes/files)
+
+bridge func supportsColor() bool
+
+// ANSI color constants — use with print/println: console.print(console.RED ++ "error" ++ console.RESET)
+
+bridge const RESET: String
+bridge const BOLD: String
+bridge const DIM: String
+bridge const UNDERLINE: String
+
+bridge const RED: String
+bridge const GREEN: String
+bridge const YELLOW: String
+bridge const BLUE: String
+bridge const MAGENTA: String
+bridge const CYAN: String
+bridge const WHITE: String
+
+// Print a message with a color prefix and automatic reset
+
+pub func printColored(color: String, msg: String) void {
+    print(color ++ msg ++ RESET)
+}
+
+// Print a message with a color prefix, automatic reset, and newline
+
+pub func printColoredLn(color: String, msg: String) void {
+    println(color ++ msg ++ RESET)
+}
 

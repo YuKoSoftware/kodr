@@ -42,7 +42,7 @@ Every keyword in Orhon earns its place. No keyword exists for convenience alone.
 func, var, const, if, else, for, while, return, import, pub,
 match, struct, enum, bitfield, defer, thread, null, void, compt,
 any, module, test, and, or, not, main, as,
-break, continue, true, false, extern, is,
+break, continue, true, false, bridge, is,
 cast, copy, move, swap, assert, size, align, typename, typeid
 ```
 
