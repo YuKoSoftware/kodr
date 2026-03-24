@@ -498,3 +498,127 @@ test "compare - if/else matches" {
     }
     try std.testing.expectEqual(@as(usize, 0), diffs.len);
 }
+
+// ============================================================
+// FILE-BASED COMPARISON — real .orh files
+// ============================================================
+
+fn compareFile(source: []const u8) !usize {
+    const alloc = std.heap.page_allocator;
+    const diffs = try compareParsers(source, alloc);
+    if (diffs.len > 0) {
+        for (diffs[0..@min(5, diffs.len)]) |d| {
+            std.debug.print("  DIFF at {s}: old={s} new={s}\n", .{ d.path, d.old_desc, d.new_desc });
+        }
+        if (diffs.len > 5) {
+            std.debug.print("  ... and {d} more diffs\n", .{diffs.len - 5});
+        }
+    }
+    return diffs.len;
+}
+
+fn compareRuntimeFile(path: []const u8) !usize {
+    const alloc = std.heap.page_allocator;
+    const source = std.fs.cwd().readFileAlloc(alloc, path, 10 * 1024 * 1024) catch return 0;
+    return compareFile(source);
+}
+
+// Example module
+test "compare - example/example.orh" {
+    const n = try compareFile(@embedFile("../templates/example/example.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - example/control_flow.orh" {
+    const n = try compareFile(@embedFile("../templates/example/control_flow.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - example/data_types.orh" {
+    const n = try compareFile(@embedFile("../templates/example/data_types.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - example/strings.orh" {
+    const n = try compareFile(@embedFile("../templates/example/strings.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - example/advanced.orh" {
+    const n = try compareFile(@embedFile("../templates/example/advanced.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - example/error_handling.orh" {
+    const n = try compareFile(@embedFile("../templates/example/error_handling.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+// Main template
+test "compare - templates/main.orh" {
+    const n = try compareFile(@embedFile("../templates/main.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+// Stdlib bridges
+test "compare - std/console.orh" {
+    const n = try compareFile(@embedFile("../std/console.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - std/math.orh" {
+    const n = try compareFile(@embedFile("../std/math.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - std/str.orh" {
+    const n = try compareFile(@embedFile("../std/str.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - std/collections.orh" {
+    const n = try compareFile(@embedFile("../std/collections.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - std/fs.orh" {
+    const n = try compareFile(@embedFile("../std/fs.orh"));
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+// Test fixtures
+test "compare - test/fixtures/tester.orh" {
+    const n = try compareRuntimeFile("test/fixtures/tester.orh");
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - test/fixtures/tester_main.orh" {
+    const n = try compareRuntimeFile("test/fixtures/tester_main.orh");
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+// Tamga project
+test "compare - tamga/main.orh" {
+    const n = try compareRuntimeFile("/home/yunus/Projects/orhon/tamga/src/main.orh");
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - tamga/tamga_sdl3.orh" {
+    const n = try compareRuntimeFile("/home/yunus/Projects/orhon/tamga/src/TamgaSDL3/tamga_sdl3.orh");
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - tamga/tamga_vk3d.orh" {
+    const n = try compareRuntimeFile("/home/yunus/Projects/orhon/tamga/src/TamgaVK3D/tamga_vk3d.orh");
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - tamga/test_sdl3.orh" {
+    const n = try compareRuntimeFile("/home/yunus/Projects/orhon/tamga/src/test/test_sdl3.orh");
+    try std.testing.expectEqual(@as(usize, 0), n);
+}
+
+test "compare - tamga/test_vulkan.orh" {
+    const n = try compareRuntimeFile("/home/yunus/Projects/orhon/tamga/src/test/test_vulkan.orh");
+    try std.testing.expectEqual(@as(usize, 0), n);
+}

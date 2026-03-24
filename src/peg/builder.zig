@@ -101,6 +101,7 @@ fn buildNode(ctx: *BuildContext, cap: *const CaptureNode) anyerror!*Node {
     if (std.mem.eql(u8, rule, "array_literal")) return buildArrayLiteral(ctx, cap);
     if (std.mem.eql(u8, rule, "grouped_expr")) return buildGroupedExpr(ctx, cap);
     if (std.mem.eql(u8, rule, "tuple_literal")) return buildTupleLiteral(ctx, cap);
+    if (std.mem.eql(u8, rule, "struct_expr")) return buildStructExpr(ctx, cap);
 
     // Binary expression tower — all use the same builder
     if (std.mem.eql(u8, rule, "or_expr")) return buildBinaryExpr(ctx, cap, "or");
@@ -127,6 +128,13 @@ fn buildNode(ctx: *BuildContext, cap: *const CaptureNode) anyerror!*Node {
     if (std.mem.eql(u8, rule, "slice_type")) return buildSliceType(ctx, cap);
     if (std.mem.eql(u8, rule, "array_type")) return buildArrayType(ctx, cap);
     if (std.mem.eql(u8, rule, "func_type")) return buildFuncType(ctx, cap);
+
+    // Bridge declarations
+    if (std.mem.eql(u8, rule, "bridge_decl")) return buildBridgeDecl(ctx, cap);
+    if (std.mem.eql(u8, rule, "bridge_func")) return buildBridgeFunc(ctx, cap);
+    if (std.mem.eql(u8, rule, "bridge_const")) return buildBridgeConst(ctx, cap);
+    if (std.mem.eql(u8, rule, "bridge_struct")) return buildBridgeStruct(ctx, cap);
+    if (std.mem.eql(u8, rule, "thread_decl")) return buildThreadDecl(ctx, cap);
 
     // Context-setting rules (set flags on child node)
     if (std.mem.eql(u8, rule, "pub_decl")) return buildPubDecl(ctx, cap);
@@ -185,6 +193,53 @@ fn buildChildrenByRule(ctx: *BuildContext, cap: *const CaptureNode, rule_name: [
         }
     }
     return nodes.toOwnedSlice(ctx.alloc());
+}
+
+/// Recursively collect expr nodes from a capture tree
+fn collectExprsRecursive(ctx: *BuildContext, cap: *const CaptureNode, out: *std.ArrayListUnmanaged(*Node)) anyerror!void {
+    for (cap.children) |*child| {
+        if (child.rule) |r| {
+            if (std.mem.eql(u8, r, "expr")) {
+                try out.append(ctx.alloc(), try buildNode(ctx, child));
+            } else if (std.mem.eql(u8, r, "_") or std.mem.eql(u8, r, "TERM")) {
+                // skip
+            } else {
+                try collectExprsRecursive(ctx, child, out);
+            }
+        }
+    }
+}
+
+/// Collect call arguments with optional names
+fn collectCallArgs(ctx: *BuildContext, cap: *const CaptureNode, args: *std.ArrayListUnmanaged(*Node), names: *std.ArrayListUnmanaged([]const u8), has_names: *bool) anyerror!void {
+    for (cap.children) |*child| {
+        if (child.rule) |r| {
+            if (std.mem.eql(u8, r, "named_or_positional_arg")) {
+                // Check if it's named: IDENTIFIER ':' expr
+                if (child.findChild("expr")) |e| {
+                    // Check for name by looking at the token before ':'
+                    const first_tok = ctx.tokens[child.start_pos];
+                    if (first_tok.kind == .identifier and
+                        child.start_pos + 1 < child.end_pos and
+                        ctx.tokens[child.start_pos + 1].kind == .colon)
+                    {
+                        try names.append(ctx.alloc(), first_tok.text);
+                        has_names.* = true;
+                    } else {
+                        try names.append(ctx.alloc(), "");
+                    }
+                    try args.append(ctx.alloc(), try buildNode(ctx, e));
+                }
+            } else if (std.mem.eql(u8, r, "expr")) {
+                try args.append(ctx.alloc(), try buildNode(ctx, child));
+                try names.append(ctx.alloc(), "");
+            } else if (std.mem.eql(u8, r, "_") or std.mem.eql(u8, r, "TERM")) {
+                // skip
+            } else {
+                try collectCallArgs(ctx, child, args, names, has_names);
+            }
+        }
+    }
 }
 
 /// Recursively collect param nodes from a capture tree
@@ -432,24 +487,29 @@ fn buildStructDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 fn collectStructParts(ctx: *BuildContext, cap: *const CaptureNode, type_params: *std.ArrayListUnmanaged(*Node), members: *std.ArrayListUnmanaged(*Node)) anyerror!void {
     for (cap.children) |*child| {
         if (child.rule) |r| {
+            // Terminal declaration nodes — build and add as members
             if (std.mem.eql(u8, r, "field_decl") or
                 std.mem.eql(u8, r, "func_decl") or
                 std.mem.eql(u8, r, "compt_decl") or
                 std.mem.eql(u8, r, "const_decl") or
-                std.mem.eql(u8, r, "var_decl"))
+                std.mem.eql(u8, r, "var_decl") or
+                std.mem.eql(u8, r, "bridge_decl") or
+                std.mem.eql(u8, r, "bridge_func") or
+                std.mem.eql(u8, r, "bridge_const"))
             {
                 const node = try buildNode(ctx, child);
-                // Check if parent (struct_member) has a pub token before this child
                 if (hasPubBefore(ctx, cap, child.start_pos)) setPub(node, true);
                 try members.append(ctx.alloc(), node);
             } else if (std.mem.eql(u8, r, "pub_decl")) {
                 try members.append(ctx.alloc(), try buildNode(ctx, child));
-            } else if (std.mem.eql(u8, r, "param")) {
-                try type_params.append(ctx.alloc(), try buildNode(ctx, child));
-            } else if (std.mem.eql(u8, r, "_") or std.mem.eql(u8, r, "TERM") or std.mem.eql(u8, r, "doc_block")) {
+            } else if (std.mem.eql(u8, r, "generic_params") or std.mem.eql(u8, r, "param_list")) {
+                // Only collect params from generic_params context (not from functions)
+                try collectParamsRecursive(ctx, child, type_params);
+            } else if (std.mem.eql(u8, r, "_") or std.mem.eql(u8, r, "TERM") or std.mem.eql(u8, r, "doc_block") or std.mem.eql(u8, r, "type")) {
                 // skip
             } else {
-                // Recurse into wrapper rules (struct_body, struct_member, generic_params, etc.)
+                // Recurse into wrapper rules (struct_body, struct_member, bridge_struct_body, etc.)
+                // but NOT into declarations (which have their own params)
                 try collectStructParts(ctx, child, type_params, members);
             }
         }
@@ -472,24 +532,14 @@ fn buildEnumDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     // Name is the identifier after ')'
     var name: []const u8 = "";
     for (cap.start_pos..cap.end_pos) |i| {
-        if (i > 0 and ctx.tokens[i].kind == .identifier and ctx.tokens[i - 1].kind == .rparen) {
+        if (i > 0 and i < ctx.tokens.len and ctx.tokens[i].kind == .identifier and ctx.tokens[i - 1].kind == .rparen) {
             name = ctx.tokens[i].text;
             break;
         }
     }
 
     var members = std.ArrayListUnmanaged(*Node){};
-    for (cap.children) |*child| {
-        if (child.rule) |r| {
-            if (std.mem.eql(u8, r, "enum_member")) {
-                for (child.children) |*mc| {
-                    try members.append(ctx.alloc(), try buildNode(ctx, mc));
-                }
-            } else if (std.mem.eql(u8, r, "enum_variant") or std.mem.eql(u8, r, "func_decl")) {
-                try members.append(ctx.alloc(), try buildNode(ctx, child));
-            }
-        }
-    }
+    try collectEnumMembers(ctx, cap, &members);
 
     return ctx.newNode(.{ .enum_decl = .{
         .name = name,
@@ -497,6 +547,22 @@ fn buildEnumDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
         .members = try members.toOwnedSlice(ctx.alloc()),
         .is_pub = false,
     } });
+}
+
+fn collectEnumMembers(ctx: *BuildContext, cap: *const CaptureNode, members: *std.ArrayListUnmanaged(*Node)) anyerror!void {
+    for (cap.children) |*child| {
+        if (child.rule) |r| {
+            if (std.mem.eql(u8, r, "enum_variant") or std.mem.eql(u8, r, "func_decl") or std.mem.eql(u8, r, "pub_decl")) {
+                const node = try buildNode(ctx, child);
+                if (hasPubBefore(ctx, cap, child.start_pos)) setPub(node, true);
+                try members.append(ctx.alloc(), node);
+            } else if (std.mem.eql(u8, r, "_") or std.mem.eql(u8, r, "TERM") or std.mem.eql(u8, r, "doc_block") or std.mem.eql(u8, r, "type")) {
+                // skip
+            } else {
+                try collectEnumMembers(ctx, child, members);
+            }
+        }
+    }
 }
 
 fn buildFieldDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
@@ -556,6 +622,94 @@ fn buildComptDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
         return node;
     }
     return error.NoComptChild;
+}
+
+fn buildBridgeDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
+    // bridge_decl <- 'bridge' (bridge_func / bridge_const / bridge_struct)
+    for (cap.children) |*child| {
+        if (child.rule) |r| {
+            if (std.mem.eql(u8, r, "bridge_func") or
+                std.mem.eql(u8, r, "bridge_const") or
+                std.mem.eql(u8, r, "bridge_struct"))
+            {
+                return buildNode(ctx, child);
+            }
+        }
+    }
+    return error.NoBridgeChild;
+}
+
+fn buildBridgeFunc(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
+    // bridge_func <- 'func' func_name '(' _ param_list _ ')' type TERM
+    var name: []const u8 = "";
+    if (cap.findChild("func_name")) |fn_cap| {
+        name = tokenText(ctx, fn_cap.start_pos);
+    }
+    var params_list = std.ArrayListUnmanaged(*Node){};
+    try collectParamsRecursive(ctx, cap, &params_list);
+    const ret_type = if (cap.findChild("type")) |t| try buildNode(ctx, t) else try ctx.newNode(.{ .type_named = "void" });
+
+    return ctx.newNode(.{ .func_decl = .{
+        .name = name,
+        .params = try params_list.toOwnedSlice(ctx.alloc()),
+        .return_type = ret_type,
+        .body = try ctx.newNode(.{ .block = .{ .statements = &.{} } }),
+        .is_compt = false,
+        .is_pub = false,
+        .is_bridge = true,
+        .is_thread = false,
+    } });
+}
+
+fn buildBridgeConst(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
+    // bridge_const <- 'const' IDENTIFIER ':' type TERM
+    const name = tokenText(ctx, cap.start_pos + 1);
+    const type_ann = if (cap.findChild("type")) |t| try buildNode(ctx, t) else try ctx.newNode(.{ .type_named = "any" });
+    return ctx.newNode(.{ .const_decl = .{
+        .name = name,
+        .type_annotation = type_ann,
+        .value = try ctx.newNode(.{ .int_literal = "0" }),
+        .is_pub = false,
+        .is_bridge = true,
+    } });
+}
+
+fn buildBridgeStruct(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
+    // bridge_struct <- 'struct' IDENTIFIER generic_params? ('{' _ bridge_struct_body _ '}' / TERM)
+    const name = tokenText(ctx, cap.start_pos + 1);
+    var type_params_list = std.ArrayListUnmanaged(*Node){};
+    var members = std.ArrayListUnmanaged(*Node){};
+    try collectStructParts(ctx, cap, &type_params_list, &members);
+    return ctx.newNode(.{ .struct_decl = .{
+        .name = name,
+        .type_params = try type_params_list.toOwnedSlice(ctx.alloc()),
+        .members = try members.toOwnedSlice(ctx.alloc()),
+        .is_pub = false,
+        .is_bridge = true,
+    } });
+}
+
+fn buildThreadDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
+    // thread_decl <- 'thread' func_name '(' _ param_list _ ')' type block
+    var name: []const u8 = "";
+    if (cap.findChild("func_name")) |fn_cap| {
+        name = tokenText(ctx, fn_cap.start_pos);
+    }
+    var params_list = std.ArrayListUnmanaged(*Node){};
+    try collectParamsRecursive(ctx, cap, &params_list);
+    const ret_type = if (cap.findChild("type")) |t| try buildNode(ctx, t) else try ctx.newNode(.{ .type_named = "void" });
+    const body = if (cap.findChild("block")) |b| try buildNode(ctx, b) else try ctx.newNode(.{ .block = .{ .statements = &.{} } });
+
+    return ctx.newNode(.{ .func_decl = .{
+        .name = name,
+        .params = try params_list.toOwnedSlice(ctx.alloc()),
+        .return_type = ret_type,
+        .body = body,
+        .is_compt = false,
+        .is_pub = false,
+        .is_bridge = false,
+        .is_thread = true,
+    } });
 }
 
 fn setPub(node: *Node, value: bool) void {
@@ -747,8 +901,9 @@ fn buildCompilerFunc(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     if (cap.findChild("compiler_func_name")) |cn| {
         name = tokenText(ctx, cn.start_pos);
     }
-    const args = try buildChildrenByRule(ctx, cap, "expr");
-    return ctx.newNode(.{ .compiler_func = .{ .name = name, .args = args } });
+    var args_list = std.ArrayListUnmanaged(*Node){};
+    try collectExprsRecursive(ctx, cap, &args_list);
+    return ctx.newNode(.{ .compiler_func = .{ .name = name, .args = try args_list.toOwnedSlice(ctx.alloc()) } });
 }
 
 fn buildArrayLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
@@ -789,6 +944,21 @@ fn buildTupleLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     } });
 }
 
+fn buildStructExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
+    // struct_expr <- 'struct' '{' _ (('pub')? field_decl _)* _ '}'
+    var fields = std.ArrayListUnmanaged(*Node){};
+    for (cap.children) |*child| {
+        if (child.rule) |r| {
+            if (std.mem.eql(u8, r, "field_decl")) {
+                const node = try buildNode(ctx, child);
+                if (hasPubBefore(ctx, cap, child.start_pos)) setPub(node, true);
+                try fields.append(ctx.alloc(), node);
+            }
+        }
+    }
+    return ctx.newNode(.{ .struct_type = try fields.toOwnedSlice(ctx.alloc()) });
+}
+
 /// Binary expression builder — handles the left-associative precedence tower.
 /// Grammar: left_operand (OP right_operand)*
 fn buildBinaryExpr(ctx: *BuildContext, cap: *const CaptureNode, _: []const u8) !*Node {
@@ -820,8 +990,50 @@ fn buildBinaryExpr(ctx: *BuildContext, cap: *const CaptureNode, _: []const u8) !
 }
 
 fn buildCompareExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // compare_expr <- bitor_expr compare_op bitor_expr / bitor_expr 'is' ... / bitor_expr
-    // Filter out compare_op to get just the operands
+    // compare_expr <- bitor_expr compare_op bitor_expr / bitor_expr 'is' 'not'? (IDENTIFIER / 'null') / bitor_expr
+
+    // Check for 'is' type check
+    if (findTokenInRange(ctx, cap.start_pos, cap.end_pos, .kw_is)) |is_pos| {
+        // Find the operand (everything before 'is')
+        var operands = std.ArrayListUnmanaged(*const CaptureNode){};
+        for (cap.children) |*child| {
+            if (child.rule) |r| {
+                if (!std.mem.eql(u8, r, "compare_op") and
+                    !std.mem.eql(u8, r, "_") and
+                    !std.mem.eql(u8, r, "TERM"))
+                {
+                    operands.append(ctx.alloc(), child) catch {};
+                }
+            }
+        }
+        if (operands.items.len > 0) {
+            const expr_node = try buildNode(ctx, operands.items[0]);
+            // Build: type(expr) == TypeName / type(expr) != TypeName
+            const args = try ctx.alloc().alloc(*Node, 1);
+            args[0] = expr_node;
+            const type_call = try ctx.newNode(.{ .compiler_func = .{ .name = "type", .args = args } });
+
+            // Check for 'not' after 'is'
+            const negated = is_pos + 1 < cap.end_pos and ctx.tokens[is_pos + 1].kind == .kw_not;
+            const cmp_op: []const u8 = if (negated) "!=" else "==";
+
+            // Find the type name (last identifier or null keyword)
+            var rhs: *Node = try ctx.newNode(.{ .identifier = "unknown" });
+            var j = if (negated) is_pos + 2 else is_pos + 1;
+            while (j < cap.end_pos) : (j += 1) {
+                if (ctx.tokens[j].kind == .identifier) {
+                    rhs = try ctx.newNode(.{ .identifier = ctx.tokens[j].text });
+                    break;
+                } else if (ctx.tokens[j].kind == .kw_null) {
+                    rhs = try ctx.newNode(.{ .null_literal = {} });
+                    break;
+                }
+            }
+            return ctx.newNode(.{ .binary_expr = .{ .op = cmp_op, .left = type_call, .right = rhs } });
+        }
+    }
+
+    // Regular comparison: bitor_expr compare_op bitor_expr
     var operands = std.ArrayListUnmanaged(*const CaptureNode){};
     var op: []const u8 = "==";
     for (cap.children) |*child| {
@@ -891,15 +1103,23 @@ fn buildPostfixExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
             if (std.mem.eql(u8, r, "method_call")) {
                 // method_call <- '.' IDENTIFIER '(' _ arg_list _ ')'
                 const field_name = tokenText(ctx, child.start_pos + 1); // after '.'
-                const args = try buildChildrenByRule(ctx, child, "expr");
+                var args_list = std.ArrayListUnmanaged(*Node){};
+                try collectExprsRecursive(ctx, child, &args_list);
                 const field_access = try ctx.newNode(.{ .field_expr = .{ .object = expr, .field = field_name } });
-                expr = try ctx.newNode(.{ .call_expr = .{ .callee = field_access, .args = args, .arg_names = &.{} } });
+                expr = try ctx.newNode(.{ .call_expr = .{ .callee = field_access, .args = try args_list.toOwnedSlice(ctx.alloc()), .arg_names = &.{} } });
             } else if (std.mem.eql(u8, r, "field_access")) {
                 const field_name = tokenText(ctx, child.start_pos + 1);
                 expr = try ctx.newNode(.{ .field_expr = .{ .object = expr, .field = field_name } });
             } else if (std.mem.eql(u8, r, "call_access")) {
-                const args = try buildChildrenByRule(ctx, child, "expr");
-                expr = try ctx.newNode(.{ .call_expr = .{ .callee = expr, .args = args, .arg_names = &.{} } });
+                var args_list = std.ArrayListUnmanaged(*Node){};
+                var names_list = std.ArrayListUnmanaged([]const u8){};
+                var has_names = false;
+                try collectCallArgs(ctx, child, &args_list, &names_list, &has_names);
+                expr = try ctx.newNode(.{ .call_expr = .{
+                    .callee = expr,
+                    .args = try args_list.toOwnedSlice(ctx.alloc()),
+                    .arg_names = if (has_names) try names_list.toOwnedSlice(ctx.alloc()) else &.{},
+                } });
             } else if (std.mem.eql(u8, r, "index_access")) {
                 if (child.findChild("or_expr")) |ie| {
                     const index = try buildNode(ctx, ie);
@@ -932,8 +1152,25 @@ fn buildKeywordType(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 
 fn buildGenericType(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     const name = tokenText(ctx, cap.start_pos);
-    const args = try buildAllChildren(ctx, cap);
-    return ctx.newNode(.{ .type_generic = .{ .name = name, .args = args } });
+    // Collect type/expr args from generic_arg_list -> type_or_expr -> type/expr
+    var args_list = std.ArrayListUnmanaged(*Node){};
+    try collectGenericArgs(ctx, cap, &args_list);
+    return ctx.newNode(.{ .type_generic = .{ .name = name, .args = try args_list.toOwnedSlice(ctx.alloc()) } });
+}
+
+fn collectGenericArgs(ctx: *BuildContext, cap: *const CaptureNode, out: *std.ArrayListUnmanaged(*Node)) anyerror!void {
+    for (cap.children) |*child| {
+        if (child.rule) |r| {
+            if (std.mem.eql(u8, r, "type") or std.mem.eql(u8, r, "expr")) {
+                try out.append(ctx.alloc(), try buildNode(ctx, child));
+            } else if (std.mem.eql(u8, r, "_") or std.mem.eql(u8, r, "TERM")) {
+                // skip
+            } else {
+                // Recurse into generic_arg_list, type_or_expr wrappers
+                try collectGenericArgs(ctx, child, out);
+            }
+        }
+    }
 }
 
 fn buildBorrowType(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
