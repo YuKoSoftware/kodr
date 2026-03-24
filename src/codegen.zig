@@ -2581,7 +2581,7 @@ pub const CodeGen = struct {
                 },
             }
         }
-        try self.emit("}) catch unreachable");
+        try self.emit("}) catch |err| return err");
     }
 
     /// MIR-path for loop codegen.
@@ -2980,7 +2980,7 @@ pub const CodeGen = struct {
             try self.generateExprMir(child);
             first = false;
         }
-        try self.emit("}) catch unreachable");
+        try self.emit("}) catch |err| return err");
     }
 
     /// MIR-path collection expr — all unmanaged collections zero-initialize.
