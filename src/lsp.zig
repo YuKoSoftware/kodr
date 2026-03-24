@@ -26,6 +26,9 @@ const Io = std.Io;
 // JSON-RPC TRANSPORT
 // ============================================================
 
+const MAX_HEADER_LINE: usize = 4096;
+const MAX_CONTENT_LENGTH: usize = 64 * 1024 * 1024; // 64 MiB
+
 /// Read a single LSP message from stdin.
 /// Format: "Content-Length: N\r\n\r\n<N bytes of JSON>"
 fn readMessage(reader: *Io.Reader, allocator: std.mem.Allocator) ![]u8 {
@@ -33,7 +36,7 @@ fn readMessage(reader: *Io.Reader, allocator: std.mem.Allocator) ![]u8 {
 
     // Read headers line by line
     while (true) {
-        var line_buf: [1024]u8 = undefined;
+        var line_buf: [MAX_HEADER_LINE]u8 = undefined;
         var line_len: usize = 0;
 
         while (line_len < line_buf.len) {
@@ -45,6 +48,7 @@ fn readMessage(reader: *Io.Reader, allocator: std.mem.Allocator) ![]u8 {
             line_buf[line_len] = byte;
             line_len += 1;
         }
+        if (line_len == line_buf.len) return error.HeaderTooLong;
 
         const line = line_buf[0..line_len];
         if (line.len == 0) break;
@@ -56,6 +60,7 @@ fn readMessage(reader: *Io.Reader, allocator: std.mem.Allocator) ![]u8 {
     }
 
     if (content_length == 0) return error.InvalidHeader;
+    if (content_length > MAX_CONTENT_LENGTH) return error.InvalidHeader;
     return reader.readAlloc(allocator, content_length) catch return error.EndOfStream;
 }
 
