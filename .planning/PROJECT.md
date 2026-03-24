@@ -29,10 +29,14 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ Stdlib bridge modules (collections, strings, allocators, I/O, etc.) — existing
 - ✓ LSP language server — existing
 - ✓ Fuzz testing harness — existing
+- ✓ Cross-module const & argument passing in codegen — Phase 1
+- ✓ Qualified generic type validation across modules — Phase 1
+- ✓ Const struct by-value passing without false move errors — Phase 1
+- ✓ Working `orhon test` command with correct output — Phase 1
 
 ### Active
 
-- [ ] Fix all 9 known bugs in docs/TODO.md
+- [ ] Fix all 9 known bugs in docs/TODO.md (4/9 complete after Phase 1)
 - [ ] Clean up 103 `catch {}` silent error suppressions across stdlib
 - [ ] Fix string interpolation memory leaks
 - [ ] Fix `catch unreachable` in generated code (lines 655, 688, 2123 of codegen)
@@ -94,4 +98,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-24 after initialization*
+*Last updated: 2026-03-24 after Phase 1 completion*
