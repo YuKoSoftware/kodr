@@ -105,7 +105,7 @@ for all valid Orhon syntax.
 3. **Codegen** — straightforward translation, zero defensive checks
 
 **Implementation plan:**
-1. Write `docs/orhon.peg` — formal PEG grammar matching current parser exactly
+1. Write `src/orhon.peg` — formal PEG grammar matching current parser exactly
 2. Build a small PEG engine in Zig that reads the grammar and produces the same AST
 3. Run both parsers side by side, verify identical output on all test fixtures
 4. Swap out the old parser, delete the hand-written parsing functions
