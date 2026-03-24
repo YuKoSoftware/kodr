@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: milestone
-status: Ready to plan
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-24T17:05:03.165Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-24T17:13:50.627Z"
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 5
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 ## Current Position
 
 Phase: 2
-Plan: Not started
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -48,6 +48,8 @@ Plan: Not started
 *Updated after each plan completion*
 | Phase 01-compiler-bug-fixes P02 | 25 | 2 tasks | 4 files |
 | Phase 01 P01 | 40 | 2 tasks | 5 files |
+| Phase 02 P03 | 18 | 2 tasks | 4 files |
+| Phase 02-memory-error-safety P02 | 908 | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -65,6 +67,8 @@ Recent decisions affecting current work:
 - [Phase 01]: Auto-inject stdlib imports in codegen — str and collections always auto-imported in generated Zig files for ergonomic string/collection usage
 - [Phase 02-memory-error-safety]: Fixed both interpolation codegen paths proactively even though they are currently dormant — when PEG builder gains interpolation support, OOM will propagate correctly
 - [Phase 02-memory-error-safety]: Codegen regression tests check source patterns directly via grep on src/codegen.zig when code paths are not yet reachable from user programs
+- [Phase 02-memory-error-safety]: Dedicated ptr_cast_expr grammar rule instead of extending method_call — cast is a reserved keyword, specific rule is cleaner
+- [Phase 02-memory-error-safety]: Category A I/O catch sites documented with fire-and-forget comments; Category B data builders fixed with catch continue or catch return safe defaults
 
 ### Pending Todos
 
@@ -76,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T17:05:03.163Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-24T17:13:50.625Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None

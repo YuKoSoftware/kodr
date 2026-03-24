@@ -46,8 +46,8 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Fix interpolation catch unreachable in codegen (MEM-01, MEM-02)
-- [ ] 02-02-PLAN.md — Stdlib catch {} sweep across 15 bridge files (MEM-03)
-- [ ] 02-03-PLAN.md — Add Ptr .cast() constructor and migrate tester/example (MEM-04)
+- [x] 02-02-PLAN.md — Stdlib catch {} sweep across 15 bridge files (MEM-03)
+- [x] 02-03-PLAN.md — Add Ptr .cast() constructor and migrate tester/example (MEM-04)
 
 ### Phase 3: LSP Hardening
 **Goal**: The language server runs without unbounded memory growth and rejects oversized input safely
