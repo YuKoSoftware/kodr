@@ -2,8 +2,8 @@
 phase: 3
 slug: lsp-hardening
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-24
 ---
 
@@ -38,17 +38,29 @@ created: 2026-03-24
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 03-01-01 | 01 | 1 | LSP-01 | unit | `zig build test` | ✅ | ⬜ pending |
-| 03-01-02 | 01 | 1 | LSP-02 | unit | `zig build test` | ✅ | ⬜ pending |
-| 03-01-03 | 01 | 1 | LSP-03 | unit | `zig build test` | ✅ | ⬜ pending |
+| 03-01-01 | 01 | 1 | LSP-02, LSP-03 | unit | `zig build test` | inline | ⬜ pending |
+| 03-01-02 | 01 | 1 | LSP-02, LSP-03 | unit | `zig build test` | inline | ⬜ pending |
+| 03-02-01 | 02 | 1 | LSP-01 | unit | `zig build test` | inline | ⬜ pending |
+| 03-02-02 | 02 | 1 | LSP-01 | unit | `zig build test` | inline | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**Task descriptions:**
+- **03-01-01:** Add readMessage hardening constants and guards (LSP-02, LSP-03)
+- **03-01-02:** Add unit tests for readMessage hardening — oversized content-length rejection and valid content-length acceptance (LSP-02, LSP-03)
+- **03-02-01:** Add per-request ArenaAllocator to runAnalysis (LSP-01)
+- **03-02-02:** Add unit test verifying arena-allocated results survive deinitialization (LSP-01)
 
 ---
 
 ## Wave 0 Requirements
 
-Existing infrastructure covers all phase requirements.
+All three requirements (LSP-01, LSP-02, LSP-03) lack existing tests. Tests are created inline by each plan:
+
+- **Plan 01, Task 2** creates tests for readMessage hardening (LSP-02, LSP-03)
+- **Plan 02, Task 2** creates tests for runAnalysis arena behavior (LSP-01)
+
+No separate Wave 0 plan is needed — each plan includes its own test task.
 
 ---
 
@@ -62,11 +74,11 @@ Existing infrastructure covers all phase requirements.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
