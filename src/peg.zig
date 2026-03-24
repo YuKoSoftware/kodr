@@ -8,10 +8,17 @@ const grammar_mod = @import("peg/grammar.zig");
 const engine_mod = @import("peg/engine.zig");
 const lexer = @import("lexer.zig");
 
+const capture_mod = @import("peg/capture.zig");
+const builder_mod = @import("peg/builder.zig");
+
 pub const Grammar = grammar_mod.Grammar;
 pub const Expr = grammar_mod.Expr;
 pub const Engine = engine_mod.Engine;
 pub const MatchResult = engine_mod.MatchResult;
+pub const CaptureEngine = capture_mod.CaptureEngine;
+pub const CaptureNode = capture_mod.CaptureNode;
+pub const BuildContext = builder_mod.BuildContext;
+pub const buildAST = builder_mod.buildAST;
 pub const parseGrammar = grammar_mod.parseGrammar;
 
 /// The embedded Orhon PEG grammar source
@@ -452,4 +459,6 @@ test {
     _ = @import("peg/grammar.zig");
     _ = @import("peg/engine.zig");
     _ = @import("peg/token_map.zig");
+    _ = @import("peg/capture.zig");
+    _ = @import("peg/builder.zig");
 }
