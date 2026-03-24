@@ -333,6 +333,34 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// MIR-path: wrap a MirNode expression in an arbitrary union tag.
+    fn generateArbitraryUnionWrappedExprMir(self: *CodeGen, m: *mir.MirNode, members_rt: ?[]const RT) anyerror!void {
+        if (m.coercion) |_| {
+            try self.generateCoercedExprMir(m);
+            return;
+        }
+        const tag = inferArbitraryUnionTagMir(m, members_rt);
+        if (tag) |t| {
+            try self.emitFmt(".{{ ._{s} = ", .{t});
+            try self.generateExprMir(m);
+            try self.emit(" }");
+        } else {
+            try self.generateExprMir(m);
+        }
+    }
+
+    /// Infer union tag from MirNode literal_kind.
+    fn inferArbitraryUnionTagMir(m: *const mir.MirNode, members_rt: ?[]const RT) ?[]const u8 {
+        const lk = m.literal_kind orelse return null;
+        return switch (lk) {
+            .int => findMemberByKind(members_rt, .int) orelse "i32",
+            .float => findMemberByKind(members_rt, .float) orelse "f32",
+            .string => findMemberByKind(members_rt, .string) orelse "String",
+            .bool_lit => findMemberByKind(members_rt, .bool_) orelse "bool",
+            else => null,
+        };
+    }
+
     /// Check if an expression already produces a null union value.
     /// Function calls (positional args) to a function typed as returning a union
     /// already return OrhonNullable — don't double-wrap.
@@ -421,20 +449,12 @@ pub const CodeGen = struct {
                 const prev = self.current_func_mir;
                 self.current_func_mir = m;
                 defer self.current_func_mir = prev;
-                try self.generateFunc(m.ast, m.ast.func_decl);
+                try self.generateFuncMir(m);
             },
             .struct_def => try self.generateStructMir(m),
             .enum_def => try self.generateEnumMir(m),
-            .bitfield_def => try self.generateBitfield(m.ast.bitfield_decl),
-            .var_decl => {
-                // var_decl MirKind covers var_decl, const_decl, compt_decl
-                switch (m.ast.*) {
-                    .const_decl => |v| try self.generateConst(m.ast, v),
-                    .var_decl => |v| try self.generateVar(m.ast, v),
-                    .compt_decl => |v| try self.generateCompt(v),
-                    else => {},
-                }
-            },
+            .bitfield_def => try self.generateBitfieldMir(m),
+            .var_decl => try self.generateTopLevelDeclMir(m),
             .test_def => try self.generateTestMir(m),
             .import => {}, // imports handled separately in generate()
             else => {},
@@ -511,6 +531,242 @@ pub const CodeGen = struct {
     fn generateBridgeReExport(self: *CodeGen, name: []const u8, is_pub: bool) anyerror!void {
         const vis = if (is_pub) "pub " else "";
         try self.emitLineFmt("{s}const {s} = @import(\"{s}_bridge.zig\").{s};", .{ vis, name, self.module_name, name });
+    }
+
+    /// MIR-path function codegen — reads all data from MirNode.
+    fn generateFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        const func_name = m.name orelse return;
+
+        // Thread function — generate body + spawn wrapper
+        if (m.is_thread) return self.generateThreadFuncMir(m);
+
+        // bridge func — re-export from paired sidecar file
+        if (m.is_bridge) return self.generateBridgeReExport(func_name, m.is_pub);
+
+        // Body-less declaration — skip codegen.
+        // Never skip main (it can legitimately have an empty body).
+        const body_m = m.body();
+        if (body_m.kind == .block and body_m.children.len == 0 and
+            !m.is_bridge and !std.mem.eql(u8, func_name, "main")) return;
+
+        // Track current function for MIR return type queries
+        const prev_func_node = self.current_func_node;
+        self.current_func_node = m.ast;
+        const prev_reassigned_vars = self.reassigned_vars;
+        self.reassigned_vars = .{};
+        try collectAssignedMir(m.body(), &self.reassigned_vars, self.allocator);
+        defer {
+            self.current_func_node = prev_func_node;
+            self.reassigned_vars.deinit(self.allocator);
+            self.reassigned_vars = prev_reassigned_vars;
+        }
+
+        const ret_type = m.return_type orelse return;
+
+        // pub modifier
+        if (m.is_pub or std.mem.eql(u8, func_name, "main")) try self.emit("pub ");
+
+        const returns_type = ret_type.* == .type_named and
+            std.mem.eql(u8, ret_type.type_named, K.Type.TYPE);
+        const is_type_generic = m.is_compt and returns_type;
+
+        if (m.is_compt and !is_type_generic) {
+            try self.emitFmt("inline fn {s}(", .{func_name});
+        } else {
+            try self.emitFmt("fn {s}(", .{func_name});
+        }
+
+        // Parameters
+        var first_any_param: ?[]const u8 = null;
+        for (m.params(), 0..) |param_m, i| {
+            if (i > 0) try self.emit(", ");
+            const pname = param_m.name orelse continue;
+            const pta = param_m.type_annotation orelse continue;
+            const is_any = pta.* == .type_named and
+                std.mem.eql(u8, pta.type_named, K.Type.ANY);
+            const is_type_param = pta.* == .type_named and
+                std.mem.eql(u8, pta.type_named, K.Type.TYPE);
+            if (is_any and first_any_param == null) first_any_param = pname;
+            if (is_type_param) {
+                try self.emitFmt("comptime {s}: type", .{pname});
+            } else if (is_type_generic and is_any) {
+                try self.emitFmt("comptime {s}: type", .{pname});
+            } else if (is_any) {
+                try self.emitFmt("{s}: anytype", .{pname});
+            } else {
+                try self.emitFmt("{s}: {s}", .{ pname, try self.typeToZig(pta) });
+            }
+        }
+
+        try self.emit(") ");
+
+        // Return type
+        const return_is_any = ret_type.* == .type_named and
+            std.mem.eql(u8, ret_type.type_named, K.Type.ANY);
+        if (return_is_any) {
+            if (first_any_param) |pname| {
+                try self.emitFmt("@TypeOf({s})", .{pname});
+            } else {
+                try self.emit("anyopaque");
+            }
+        } else {
+            try self.emit(try self.typeToZig(ret_type));
+        }
+        try self.emit(" ");
+
+        // Body
+        try self.generateBlockMir(body_m);
+        try self.emit("\n");
+    }
+
+    /// MIR-path thread function codegen.
+    fn generateThreadFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        const func_name = m.name orelse return;
+        const ret_type = m.return_type orelse return;
+
+        // Extract inner type T from Handle(T) return type
+        const inner_type = if (ret_type.* == .type_generic and
+            std.mem.eql(u8, ret_type.type_generic.name, "Handle") and
+            ret_type.type_generic.args.len > 0)
+            ret_type.type_generic.args[0]
+        else
+            ret_type;
+
+        const inner_zig = try self.typeToZig(inner_type);
+        const handle_zig = try self.typeToZig(ret_type);
+
+        // Body function
+        {
+            const prev_func_node = self.current_func_node;
+            self.current_func_node = m.ast;
+            const prev_assigned = self.reassigned_vars;
+            self.reassigned_vars = .{};
+            try collectAssignedMir(m.body(), &self.reassigned_vars, self.allocator);
+            defer {
+                self.current_func_node = prev_func_node;
+                self.reassigned_vars.deinit(self.allocator);
+                self.reassigned_vars = prev_assigned;
+            }
+
+            try self.emitFmt("fn _{s}_body(", .{func_name});
+            for (m.params(), 0..) |param_m, i| {
+                if (i > 0) try self.emit(", ");
+                const pname = param_m.name orelse continue;
+                const pta = param_m.type_annotation orelse continue;
+                try self.emitFmt("{s}: {s}", .{ pname, try self.typeToZig(pta) });
+            }
+            try self.emitFmt(") {s} ", .{inner_zig});
+            try self.generateBlockMir(m.body());
+            try self.emit("\n\n");
+        }
+
+        // Spawn wrapper
+        if (m.is_pub) try self.emit("pub ");
+        try self.emitFmt("fn {s}(", .{func_name});
+        for (m.params(), 0..) |param_m, i| {
+            if (i > 0) try self.emit(", ");
+            const pname = param_m.name orelse continue;
+            const pta = param_m.type_annotation orelse continue;
+            try self.emitFmt("{s}: {s}", .{ pname, try self.typeToZig(pta) });
+        }
+        try self.emitFmt(") {s} ", .{handle_zig});
+        try self.emit("{\n");
+        self.indent += 1;
+
+        try self.emitIndent();
+        try self.emitFmt("const _state = _rt.alloc.create({s}.SharedState) catch unreachable;\n", .{handle_zig});
+        try self.emitIndent();
+        try self.emit("_state.* = .{};\n");
+
+        try self.emitIndent();
+        try self.emitFmt("return .{{ .thread = std.Thread.spawn(.{{}}, struct {{ fn run(_s: *{s}.SharedState", .{handle_zig});
+        for (m.params()) |param_m| {
+            const pname = param_m.name orelse continue;
+            const pta = param_m.type_annotation orelse continue;
+            try self.emitFmt(", _{s}: {s}", .{ pname, try self.typeToZig(pta) });
+        }
+        try self.emit(") void { ");
+
+        const is_void = std.mem.eql(u8, inner_zig, "void");
+        if (!is_void) try self.emit("_s.result = ");
+        try self.emitFmt("_{s}_body(", .{func_name});
+        for (m.params(), 0..) |param_m, i| {
+            if (i > 0) try self.emit(", ");
+            const pname = param_m.name orelse continue;
+            try self.emitFmt("_{s}", .{pname});
+        }
+        try self.emit("); _s.completed.store(true, .release); } }.run, .{ _state");
+        for (m.params()) |param_m| {
+            const pname = param_m.name orelse continue;
+            try self.emitFmt(", {s}", .{pname});
+        }
+        try self.emit(" }) catch unreachable, .state = _state };\n");
+
+        self.indent -= 1;
+        try self.emitIndent();
+        try self.emit("}\n");
+    }
+
+    /// MIR-path collectAssigned — traverses MirNode tree.
+    fn collectAssignedMir(m: *mir.MirNode, set: *std.StringHashMapUnmanaged(void), alloc: std.mem.Allocator) anyerror!void {
+        switch (m.kind) {
+            .assignment => {
+                if (getRootIdentMir(m.lhs())) |name| try set.put(alloc, name, {});
+                try collectAssignedMir(m.rhs(), set, alloc);
+            },
+            .call => {
+                const callee_m = m.getCallee();
+                if (callee_m.kind == .field_access) {
+                    if (callee_m.children.len > 0) {
+                        if (getRootIdentMir(callee_m.children[0])) |name| {
+                            try set.put(alloc, name, {});
+                        }
+                    }
+                }
+                for (m.callArgs()) |arg| try collectAssignedMir(arg, set, alloc);
+            },
+            .block => {
+                for (m.children) |child| try collectAssignedMir(child, set, alloc);
+            },
+            .func => {}, // nested function — own scope
+            .if_stmt => {
+                try collectAssignedMir(m.condition(), set, alloc);
+                if (m.children.len > 1) try collectAssignedMir(m.thenBlock(), set, alloc);
+                if (m.elseBlock()) |e| try collectAssignedMir(e, set, alloc);
+            },
+            .while_stmt => {
+                try collectAssignedMir(m.condition(), set, alloc);
+                try collectAssignedMir(m.children[1], set, alloc);
+                if (m.children.len > 2) try collectAssignedMir(m.children[2], set, alloc);
+            },
+            .for_stmt => try collectAssignedMir(m.body(), set, alloc),
+            .slice => {
+                if (m.children.len > 0 and m.children[0].kind == .identifier) {
+                    if (m.children[0].name) |name| try set.put(alloc, name, {});
+                }
+                if (m.children.len > 1) try collectAssignedMir(m.children[1], set, alloc);
+                if (m.children.len > 2) try collectAssignedMir(m.children[2], set, alloc);
+            },
+            .var_decl => {
+                if (m.children.len > 0) try collectAssignedMir(m.value(), set, alloc);
+            },
+            .match_stmt => {
+                for (m.matchArms()) |arm_mir| {
+                    try collectAssignedMir(arm_mir.body(), set, alloc);
+                }
+            },
+            .defer_stmt => try collectAssignedMir(m.body(), set, alloc),
+            else => {},
+        }
+    }
+
+    fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 {
+        return switch (m.kind) {
+            .identifier => m.name,
+            .field_access => if (m.children.len > 0) getRootIdentMir(m.children[0]) else null,
+            .index => if (m.children.len > 0) getRootIdentMir(m.children[0]) else null,
+            else => null,
+        };
     }
 
     fn generateFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void {
@@ -714,15 +970,16 @@ pub const CodeGen = struct {
 
     /// MIR-path struct codegen — iterates MirNode children instead of AST members.
     fn generateStructMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const s = m.ast.struct_decl;
-        if (s.is_bridge) return self.generateBridgeReExport(s.name, s.is_pub);
+        const struct_name = m.name orelse return;
+        if (m.is_bridge) return self.generateBridgeReExport(struct_name, m.is_pub);
 
-        const is_generic = s.type_params.len > 0;
+        const tp = m.type_params;
+        const is_generic = tp != null and tp.?.len > 0;
 
         if (is_generic) {
-            if (s.is_pub) try self.emit("pub ");
-            try self.emitFmt("fn {s}(", .{s.name});
-            for (s.type_params, 0..) |param, i| {
+            if (m.is_pub) try self.emit("pub ");
+            try self.emitFmt("fn {s}(", .{struct_name});
+            for (tp.?, 0..) |param, i| {
                 if (i > 0) try self.emit(", ");
                 if (param.* == .param) {
                     try self.emitFmt("comptime {s}: type", .{param.param.name});
@@ -733,20 +990,20 @@ pub const CodeGen = struct {
             try self.emitIndent();
             try self.emit("return struct {\n");
             self.indent += 1;
-            self.generic_struct_name = s.name;
+            self.generic_struct_name = struct_name;
         } else {
-            if (s.is_pub) try self.emit("pub ");
-            try self.emitFmt("const {s} = struct {{\n", .{s.name});
+            if (m.is_pub) try self.emit("pub ");
+            try self.emitFmt("const {s} = struct {{\n", .{struct_name});
             self.indent += 1;
         }
 
         for (m.children) |child| {
             switch (child.kind) {
                 .field_def => {
-                    const f = child.ast.field_decl;
+                    const fname = child.name orelse continue;
                     try self.emitIndent();
-                    try self.emitFmt("{s}: {s}", .{ f.name, try self.typeToZig(f.type_annotation) });
-                    if (f.default_value) |dv| {
+                    try self.emitFmt("{s}: {s}", .{ fname, try self.typeToZig(child.type_annotation orelse continue) });
+                    if (child.default_value) |dv| {
                         try self.emit(" = ");
                         try self.generateExpr(dv);
                     }
@@ -756,28 +1013,17 @@ pub const CodeGen = struct {
                     const prev = self.current_func_mir;
                     self.current_func_mir = child;
                     defer self.current_func_mir = prev;
-                    try self.generateFunc(child.ast, child.ast.func_decl);
+                    try self.generateFuncMir(child);
                 },
                 .var_decl => {
-                    switch (child.ast.*) {
-                        .var_decl => |v| {
-                            try self.emitIndent();
-                            try self.emitFmt("var {s}", .{v.name});
-                            if (v.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
-                            try self.emit(" = ");
-                            try self.generateExpr(v.value);
-                            try self.emit(";\n");
-                        },
-                        .const_decl => |v| {
-                            try self.emitIndent();
-                            try self.emitFmt("const {s}", .{v.name});
-                            if (v.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
-                            try self.emit(" = ");
-                            try self.generateExpr(v.value);
-                            try self.emit(";\n");
-                        },
-                        else => {},
-                    }
+                    const decl_kw: []const u8 = if (child.is_const) "const" else "var";
+                    const cname = child.name orelse continue;
+                    try self.emitIndent();
+                    try self.emitFmt("{s} {s}", .{ decl_kw, cname });
+                    if (child.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
+                    try self.emit(" = ");
+                    try self.generateExprMir(child.value());
+                    try self.emit(";\n");
                 },
                 else => {},
             }
@@ -802,26 +1048,26 @@ pub const CodeGen = struct {
 
     /// MIR-path enum codegen — iterates MirNode children instead of AST members.
     fn generateEnumMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const e = m.ast.enum_decl;
-        if (e.is_pub) try self.emit("pub ");
+        const enum_name = m.name orelse return;
+        if (m.is_pub) try self.emit("pub ");
 
-        const backing = try self.typeToZig(e.backing_type);
+        const backing = try self.typeToZig(m.backing_type orelse return);
 
-        try self.emitFmt("const {s} = enum({s}) {{\n", .{ e.name, backing });
+        try self.emitFmt("const {s} = enum({s}) {{\n", .{ enum_name, backing });
         self.indent += 1;
 
         for (m.children) |child| {
             switch (child.kind) {
                 .enum_variant_def => {
-                    const v = child.ast.enum_variant;
+                    const vname = child.name orelse continue;
                     try self.emitIndent();
-                    try self.emitFmt("{s},\n", .{v.name});
+                    try self.emitFmt("{s},\n", .{vname});
                 },
                 .func => {
                     const prev = self.current_func_mir;
                     self.current_func_mir = child;
                     defer self.current_func_mir = prev;
-                    try self.generateFunc(child.ast, child.ast.func_decl);
+                    try self.generateFuncMir(child);
                 },
                 else => {},
             }
@@ -857,6 +1103,37 @@ pub const CodeGen = struct {
         try self.emitFmt("pub fn clear(self: *{s}, flag: {s}) void {{ self.value &= ~flag; }}\n", .{ b.name, backing });
         try self.emitIndent();
         try self.emitFmt("pub fn toggle(self: *{s}, flag: {s}) void {{ self.value ^= flag; }}\n", .{ b.name, backing });
+
+        self.indent -= 1;
+        try self.emit("};\n");
+    }
+
+    /// MIR-path bitfield codegen.
+    fn generateBitfieldMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        const bf_name = m.name orelse return;
+        if (m.is_pub) try self.emit("pub ");
+        const backing = try self.typeToZig(m.backing_type orelse return);
+
+        try self.emitFmt("const {s} = struct {{\n", .{bf_name});
+        self.indent += 1;
+
+        const members = m.bit_members orelse &.{};
+        for (members, 0..) |flag_name, i| {
+            try self.emitIndent();
+            try self.emitFmt("pub const {s}: {s} = {d};\n", .{ flag_name, backing, @as(u64, 1) << @intCast(i) });
+        }
+
+        try self.emitIndent();
+        try self.emitFmt("value: {s} = 0,\n", .{backing});
+
+        try self.emitIndent();
+        try self.emitFmt("pub fn has(self: {s}, flag: {s}) bool {{ return (self.value & flag) != 0; }}\n", .{ bf_name, backing });
+        try self.emitIndent();
+        try self.emitFmt("pub fn set(self: *{s}, flag: {s}) void {{ self.value |= flag; }}\n", .{ bf_name, backing });
+        try self.emitIndent();
+        try self.emitFmt("pub fn clear(self: *{s}, flag: {s}) void {{ self.value &= ~flag; }}\n", .{ bf_name, backing });
+        try self.emitIndent();
+        try self.emitFmt("pub fn toggle(self: *{s}, flag: {s}) void {{ self.value ^= flag; }}\n", .{ bf_name, backing });
 
         self.indent -= 1;
         try self.emit("};\n");
@@ -930,17 +1207,52 @@ pub const CodeGen = struct {
         try self.emit(";\n");
     }
 
+    /// MIR-path top-level var/const/compt declaration.
+    fn generateTopLevelDeclMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        const name = m.name orelse return;
+        if (m.is_bridge) return self.generateBridgeReExport(name, m.is_pub);
+
+        if (m.is_compt) {
+            // Top-level const is already comptime in Zig, so just emit const.
+            if (m.is_pub) try self.emit("pub ");
+            try self.emitFmt("const {s}: {s} = ", .{
+                name,
+                try self.typeToZig(m.type_annotation orelse return),
+            });
+            try self.generateExprMir(m.value());
+            try self.emit(";\n");
+            return;
+        }
+
+        const decl_keyword: []const u8 = if (m.is_const) "const" else "var";
+        if (m.is_pub) try self.emit("pub ");
+        try self.emitFmt("{s} {s}", .{ decl_keyword, name });
+        if (m.type_annotation) |t| {
+            try self.emitFmt(": {s}", .{try self.typeToZig(t)});
+        }
+        try self.emit(" = ");
+        if (m.type_class == .error_union) {
+            try self.generateExprMir(m.value());
+        } else if (m.type_class == .null_union) {
+            try self.generateCoercedExprMir(m.value());
+        } else if (m.type_class == .arbitrary_union) {
+            try self.generateCoercedExprMir(m.value());
+        } else {
+            try self.generateExprMir(m.value());
+        }
+        try self.emit(";\n");
+    }
+
     // ============================================================
     // TESTS
     // ============================================================
 
     fn generateTestMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const t = m.ast.test_decl;
-        const description = m.name orelse t.description;
+        const description = m.name orelse return;
         try self.emitFmt("test {s} ", .{description});
         const prev_reassigned_vars = self.reassigned_vars;
         self.reassigned_vars = .{};
-        try collectAssigned(t.body, &self.reassigned_vars, self.allocator);
+        try collectAssignedMir(m.body(), &self.reassigned_vars, self.allocator);
         self.in_test_block = true;
         try self.generateBlockMir(m.body());
         self.in_test_block = false;
@@ -975,32 +1287,30 @@ pub const CodeGen = struct {
     fn generateStatementMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
         switch (m.kind) {
             .var_decl => {
-                switch (m.ast.*) {
-                    .var_decl => |v| {
-                        const is_handle = if (v.type_annotation) |ta|
-                            ta.* == .type_generic and std.mem.eql(u8, ta.type_generic.name, "Handle")
-                        else
-                            false;
-                        const is_mutated = is_handle or self.reassigned_vars.contains(v.name);
-                        const decl_keyword: []const u8 = if (is_mutated) "var" else "const";
-                        if (!is_mutated) {
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "'{s}' is declared as var but never reassigned — use const", .{v.name});
-                            defer self.allocator.free(msg);
-                            try self.reporter.warn(.{ .message = msg, .loc = self.nodeLoc(m.ast) });
-                        }
-                        try self.generateStmtDeclMir(m, v, decl_keyword);
-                    },
-                    .const_decl => |v| try self.generateStmtDeclMir(m, v, "const"),
-                    .compt_decl => |v| {
-                        try self.emitFmt("const {s}: {s} = ", .{
-                            v.name,
-                            try self.typeToZig(v.type_annotation orelse return),
-                        });
-                        try self.generateExpr(v.value);
-                        try self.emit(";");
-                    },
-                    else => {},
+                const var_name = m.name orelse return;
+                if (m.is_compt) {
+                    try self.emitFmt("const {s}: {s} = ", .{
+                        var_name,
+                        try self.typeToZig(m.type_annotation orelse return),
+                    });
+                    try self.generateExprMir(m.value());
+                    try self.emit(";");
+                } else if (m.is_const) {
+                    try self.generateStmtDeclMir(m, "const");
+                } else {
+                    const is_handle = if (m.type_annotation) |ta|
+                        ta.* == .type_generic and std.mem.eql(u8, ta.type_generic.name, "Handle")
+                    else
+                        false;
+                    const is_mutated = is_handle or self.reassigned_vars.contains(var_name);
+                    const decl_keyword: []const u8 = if (is_mutated) "var" else "const";
+                    if (!is_mutated) {
+                        const msg = try std.fmt.allocPrint(self.allocator,
+                            "'{s}' is declared as var but never reassigned — use const", .{var_name});
+                        defer self.allocator.free(msg);
+                        try self.reporter.warn(.{ .message = msg, .loc = self.nodeLoc(m.ast) });
+                    }
+                    try self.generateStmtDeclMir(m, decl_keyword);
                 }
             },
             .return_stmt => {
@@ -1022,7 +1332,7 @@ pub const CodeGen = struct {
                                 try self.emit(" }");
                             },
                             .arbitrary_union_wrap => {
-                                try self.generateArbitraryUnionWrappedExpr(val_m.ast, self.funcReturnMembers());
+                                try self.generateArbitraryUnionWrappedExprMir(val_m, self.funcReturnMembers());
                             },
                             .array_to_slice => {
                                 try self.emit("&");
@@ -1036,16 +1346,16 @@ pub const CodeGen = struct {
                     } else {
                         const ret_tc = self.funcReturnTypeClass();
                         if (ret_tc == .error_union) {
-                            if (val_m.ast.* == .error_literal) {
+                            if (val_m.literal_kind == .error_lit) {
                                 try self.generateExprMir(val_m);
-                            } else if (val_m.ast.* == .identifier and self.isErrorConstant(val_m.ast.identifier)) {
+                            } else if (val_m.kind == .identifier and self.isErrorConstant(val_m.name orelse "")) {
                                 try self.emit(".{ .err = ");
                                 try self.generateExprMir(val_m);
                                 try self.emit(" }");
                             } else {
                                 try self.generateExprMir(val_m);
                             }
-                        } else if (ret_tc == .null_union and val_m.ast.* == .null_literal) {
+                        } else if (ret_tc == .null_union and val_m.literal_kind == .null_lit) {
                             try self.emit(".{ .none = {} }");
                         } else {
                             try self.generateExprMir(val_m);
@@ -1066,51 +1376,51 @@ pub const CodeGen = struct {
                 }
             },
             .assignment => {
-                const a = m.ast.assignment;
-                if (std.mem.eql(u8, a.op, "/=")) {
+                const assign_op = m.op orelse "=";
+                if (std.mem.eql(u8, assign_op, "/=")) {
                     try self.generateExprMir(m.lhs());
                     try self.emit(" = @divTrunc(");
                     try self.generateExprMir(m.lhs());
                     try self.emit(", ");
                     try self.generateExprMir(m.rhs());
                     try self.emit(");");
-                } else if (std.mem.eql(u8, a.op, "=") and
+                } else if (std.mem.eql(u8, assign_op, "=") and
                     m.lhs().type_class == .null_union)
                 {
                     try self.generateExprMir(m.lhs());
                     try self.emit(" = ");
-                    try self.generateNullWrappedExpr(a.right);
+                    try self.generateCoercedExprMir(m.rhs());
                     try self.emit(";");
-                } else if (std.mem.eql(u8, a.op, "=") and
+                } else if (std.mem.eql(u8, assign_op, "=") and
                     m.lhs().type_class == .arbitrary_union)
                 {
                     const members_rt = if (m.lhs().resolved_type == .union_type)
                         m.lhs().resolved_type.union_type
-                    else if (a.left.* == .identifier) self.getVarUnionMembers(a.left.identifier) else null;
+                    else if (m.lhs().kind == .identifier) self.getVarUnionMembers(m.lhs().name orelse "") else null;
                     try self.generateExprMir(m.lhs());
                     try self.emit(" = ");
-                    try self.generateArbitraryUnionWrappedExpr(a.right, members_rt);
+                    try self.generateArbitraryUnionWrappedExprMir(m.rhs(), members_rt);
                     try self.emit(";");
                 } else {
                     try self.generateExprMir(m.lhs());
-                    try self.emitFmt(" {s} ", .{a.op});
+                    try self.emitFmt(" {s} ", .{assign_op});
                     try self.generateExprMir(m.rhs());
                     try self.emit(";");
                 }
             },
             .destruct => try self.generateDestructMir(m),
             .while_stmt => {
-                const w = m.ast.while_stmt;
                 try self.emit("while (");
                 try self.generateExprMir(m.condition());
                 try self.emit(")");
-                if (w.continue_expr) |c| {
+                if (m.children.len > 2) {
+                    const cont_m = m.children[2];
                     try self.emit(" : (");
-                    try self.generateContinueExpr(c);
+                    try self.generateContinueExprMir(cont_m);
                     try self.emit(")");
                 }
                 try self.emit(" ");
-                // Body is children[1] (not last — continue_expr may follow)
+                // Body is children[1]
                 try self.generateBlockMir(m.children[1]);
             },
             .for_stmt => try self.generateForMir(m),
@@ -1126,7 +1436,9 @@ pub const CodeGen = struct {
             .temp_var => {
                 if (m.injected_name) |name| {
                     try self.emitFmt("const {s} = ", .{name});
-                    try self.generateInterpolatedString(m.ast.interpolated_string);
+                    if (m.interp_parts) |parts| {
+                        try self.generateInterpolatedStringMir(parts, m.children);
+                    }
                     try self.emit(";");
                 }
             },
@@ -1145,25 +1457,25 @@ pub const CodeGen = struct {
     }
 
     /// MIR-path statement var/const declaration — uses m.type_class directly.
-    fn generateStmtDeclMir(self: *CodeGen, m: *mir.MirNode, v: parser.VarDecl, decl_keyword: []const u8) anyerror!void {
+    fn generateStmtDeclMir(self: *CodeGen, m: *mir.MirNode, decl_keyword: []const u8) anyerror!void {
+        const var_name = m.name orelse return;
         const val_m = m.value(); // children[0] = value expression
-        try self.emitFmt("{s} {s}", .{ decl_keyword, v.name });
-        if (v.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
+        try self.emitFmt("{s} {s}", .{ decl_keyword, var_name });
+        if (m.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
         try self.emit(" = ");
         if (m.type_class == .error_union) {
             try self.generateExprMir(val_m);
         } else if (m.type_class == .null_union) {
-            try self.generateNullWrappedExpr(v.value);
+            try self.generateCoercedExprMir(val_m);
         } else if (m.type_class == .arbitrary_union) {
-            const members_rt = if (m.resolved_type == .union_type) m.resolved_type.union_type else null;
-            try self.generateArbitraryUnionWrappedExpr(v.value, members_rt);
+            try self.generateCoercedExprMir(val_m);
         } else {
             const prev_ctx = self.type_ctx;
-            self.type_ctx = v.type_annotation;
+            self.type_ctx = m.type_annotation;
             try self.generateExprMir(val_m);
             self.type_ctx = prev_ctx;
         }
-        try self.emitFmt("; _ = &{s};", .{v.name});
+        try self.emitFmt("; _ = &{s};", .{var_name});
     }
 
     // ============================================================
@@ -1617,39 +1929,41 @@ pub const CodeGen = struct {
     fn generateExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
         switch (m.kind) {
             .binary => {
-                const b = m.ast.binary_expr;
-                const is_eq = std.mem.eql(u8, b.op, "==");
-                const is_ne = std.mem.eql(u8, b.op, "!=");
+                const bin_op = m.op orelse "==";
+                const is_eq = std.mem.eql(u8, bin_op, "==");
+                const is_ne = std.mem.eql(u8, bin_op, "!=");
                 // `x is T` desugared form: @type(x) == T
+                const lhs_mir = m.lhs();
                 if ((is_eq or is_ne) and
-                    b.left.* == .compiler_func and
-                    std.mem.eql(u8, b.left.compiler_func.name, K.Type.TYPE) and
-                    b.left.compiler_func.args.len > 0)
+                    lhs_mir.kind == .compiler_fn and
+                    std.mem.eql(u8, lhs_mir.name orelse "", K.Type.TYPE) and
+                    lhs_mir.children.len > 0)
                 {
                     // val_mir is the MirNode for the variable being type-checked
-                    const val_mir = m.lhs().children[0];
+                    const val_mir = lhs_mir.children[0];
                     const cmp = if (is_eq) "==" else "!=";
-                    if (b.right.* == .null_literal) {
+                    const rhs_mir = m.rhs();
+                    if (rhs_mir.literal_kind == .null_lit) {
                         // Record narrowing for `.value` resolution
-                        if (val_mir.ast.* == .identifier)
-                            try self.null_narrowed.put(self.allocator, val_mir.ast.identifier, {});
+                        if (val_mir.kind == .identifier)
+                            try self.null_narrowed.put(self.allocator, val_mir.name orelse "", {});
                         try self.emit("(");
                         try self.generateExprMir(val_mir);
                         try self.emitFmt(" {s} .none)", .{cmp});
                         return;
                     }
-                    if (b.right.* == .identifier) {
-                        const rhs = b.right.identifier;
+                    if (rhs_mir.kind == .identifier) {
+                        const rhs = rhs_mir.name orelse "";
                         if (std.mem.eql(u8, rhs, K.Type.ERROR)) {
                             // Record narrowing for `.value` resolution
-                            if (val_mir.ast.* == .identifier)
-                                try self.error_narrowed.put(self.allocator, val_mir.ast.identifier, {});
+                            if (val_mir.kind == .identifier)
+                                try self.error_narrowed.put(self.allocator, val_mir.name orelse "", {});
                             try self.emit("(");
                             try self.generateExprMir(val_mir);
                             try self.emitFmt(" {s} .err)", .{cmp});
                             return;
                         }
-                        if (m.lhs().type_class == .arbitrary_union or
+                        if (lhs_mir.type_class == .arbitrary_union or
                             val_mir.type_class == .arbitrary_union)
                         {
                             try self.emit("(");
@@ -1670,13 +1984,13 @@ pub const CodeGen = struct {
                 const any_vec = lhs_is_vec or rhs_is_vec;
 
                 // Division → @divTrunc (skip for vectors — Zig @Vector supports native / and %)
-                if (!any_vec and std.mem.eql(u8, b.op, "/")) {
+                if (!any_vec and std.mem.eql(u8, bin_op, "/")) {
                     try self.emit("@divTrunc(");
                     try self.generateExprMir(m.lhs());
                     try self.emit(", ");
                     try self.generateExprMir(m.rhs());
                     try self.emit(")");
-                } else if (!any_vec and std.mem.eql(u8, b.op, "%")) {
+                } else if (!any_vec and std.mem.eql(u8, bin_op, "%")) {
                     try self.emit("@mod(");
                     try self.generateExprMir(m.lhs());
                     try self.emit(", ");
@@ -1692,7 +2006,7 @@ pub const CodeGen = struct {
                     try self.emit(")");
                 } else if (any_vec and lhs_is_vec != rhs_is_vec) {
                     // Vector-scalar broadcast: wrap scalar side with @splat
-                    const op = opToZig(b.op);
+                    const op = opToZig(bin_op);
                     try self.emit("(");
                     if (lhs_is_vec) {
                         try self.generateExprMir(m.lhs());
@@ -1713,7 +2027,7 @@ pub const CodeGen = struct {
                     }
                     try self.emit(")");
                 } else {
-                    const op = opToZig(b.op);
+                    const op = opToZig(bin_op);
                     try self.emit("(");
                     try self.generateExprMir(m.lhs());
                     try self.emitFmt(" {s} ", .{op});
@@ -1722,9 +2036,13 @@ pub const CodeGen = struct {
                 }
             },
             .call => {
-                const c = m.ast.call_expr;
+                const callee_mir = m.getCallee();
+                const callee_is_ident = callee_mir.kind == .identifier;
+                const callee_is_field = callee_mir.kind == .field_access;
+                const callee_name = callee_mir.name orelse "";
+                const call_args = m.callArgs();
                 // Version() rejection
-                if (c.callee.* == .identifier and std.mem.eql(u8, c.callee.identifier, "Version")) {
+                if (callee_is_ident and std.mem.eql(u8, callee_name, "Version")) {
                     try self.reporter.report(.{
                         .message = "Version() can only be used in #version metadata",
                         .loc = self.nodeLoc(m.ast),
@@ -1732,23 +2050,22 @@ pub const CodeGen = struct {
                     return;
                 }
                 // Handle(value) → just emit the value
-                if (c.callee.* == .identifier and std.mem.eql(u8, c.callee.identifier, "Handle") and c.args.len == 1) {
-                    try self.generateExprMir(m.callArgs()[0]);
+                if (callee_is_ident and std.mem.eql(u8, callee_name, "Handle") and call_args.len == 1) {
+                    try self.generateExprMir(call_args[0]);
                     return;
                 }
                 // Bitfield constructor
-                if (c.callee.* == .identifier) {
+                if (callee_is_ident) {
                     if (self.decls) |d| {
-                        if (d.bitfields.get(c.callee.identifier)) |_| {
-                            const bf_name = c.callee.identifier;
-                            try self.emitFmt("{s}{{ .value = ", .{bf_name});
-                            if (c.args.len == 0) {
+                        if (d.bitfields.get(callee_name)) |_| {
+                            try self.emitFmt("{s}{{ .value = ", .{callee_name});
+                            if (call_args.len == 0) {
                                 try self.emit("0");
                             } else {
-                                for (m.callArgs(), 0..) |arg, i| {
+                                for (call_args, 0..) |arg, i| {
                                     if (i > 0) try self.emit(" | ");
-                                    if (arg.ast.* == .identifier) {
-                                        try self.emitFmt("{s}.{s}", .{ bf_name, arg.ast.identifier });
+                                    if (arg.kind == .identifier) {
+                                        try self.emitFmt("{s}.{s}", .{ callee_name, arg.name orelse "" });
                                     } else {
                                         try self.generateExprMir(arg);
                                     }
@@ -1760,15 +2077,15 @@ pub const CodeGen = struct {
                     }
                 }
                 // Bitfield method: p.has(Read) → p.has(Permissions.Read)
-                if (c.callee.* == .field_expr) {
-                    const obj_mir = m.getCallee().children[0]; // field_access.children[0] = object
+                if (callee_is_field) {
+                    const obj_mir = callee_mir.children[0]; // field_access.children[0] = object
                     if (mirGetBitfieldName(obj_mir, self.decls)) |bf_name| {
-                        try self.generateExprMir(m.getCallee());
+                        try self.generateExprMir(callee_mir);
                         try self.emit("(");
-                        for (m.callArgs(), 0..) |arg, i| {
+                        for (call_args, 0..) |arg, i| {
                             if (i > 0) try self.emit(", ");
-                            if (arg.ast.* == .identifier) {
-                                try self.emitFmt("{s}.{s}", .{ bf_name, arg.ast.identifier });
+                            if (arg.kind == .identifier) {
+                                try self.emitFmt("{s}.{s}", .{ bf_name, arg.name orelse "" });
                             } else {
                                 try self.generateExprMir(arg);
                             }
@@ -1778,23 +2095,23 @@ pub const CodeGen = struct {
                     }
                 }
                 // overflow/wrap/sat builtins
-                if (c.callee.* == .identifier and c.args.len == 1) {
-                    const callee_name = c.callee.identifier;
+                if (callee_is_ident and call_args.len == 1) {
+                    const arg_m = call_args[0];
                     if (std.mem.eql(u8, callee_name, "wrap")) {
-                        try self.generateWrappingExpr(c.args[0]);
+                        try self.generateWrappingExprMir(arg_m);
                         return;
                     } else if (std.mem.eql(u8, callee_name, "sat")) {
-                        try self.generateSaturatingExpr(c.args[0]);
+                        try self.generateSaturatingExprMir(arg_m);
                         return;
                     } else if (std.mem.eql(u8, callee_name, "overflow")) {
-                        try self.generateOverflowExpr(c.args[0]);
+                        try self.generateOverflowExprMir(arg_m);
                         return;
                     }
                 }
                 // String method rewriting: s.method(args) → _str.method(s, args)
-                if (c.callee.* == .field_expr) {
-                    const method = c.callee.field_expr.field;
-                    const obj_mir = m.getCallee().children[0]; // field_access.children[0] = object
+                if (callee_is_field) {
+                    const method = callee_mir.name orelse "";
+                    const obj_mir = callee_mir.children[0]; // field_access.children[0] = object
                     const is_handle = obj_mir.type_class == .thread_handle;
                     if (!is_handle and (mirIsString(obj_mir) or
                         std.mem.eql(u8, method, "toString") or
@@ -1802,7 +2119,7 @@ pub const CodeGen = struct {
                     {
                         try self.emitFmt("_str.{s}(", .{method});
                         try self.generateExprMir(obj_mir);
-                        for (m.callArgs()) |arg| {
+                        for (call_args) |arg| {
                             try self.emit(", ");
                             try self.generateExprMir(arg);
                         }
@@ -1811,13 +2128,15 @@ pub const CodeGen = struct {
                     }
                 }
                 // Clean call generation
-                if (c.arg_names.len > 0) {
-                    try self.generateExprMir(m.getCallee());
+                const call_arg_names = m.arg_names;
+                if (call_arg_names != null and call_arg_names.?.len > 0) {
+                    const an = call_arg_names.?;
+                    try self.generateExprMir(callee_mir);
                     try self.emit("{ ");
-                    for (m.callArgs(), 0..) |arg, i| {
+                    for (call_args, 0..) |arg, i| {
                         if (i > 0) try self.emit(", ");
-                        if (i < c.arg_names.len and c.arg_names[i].len > 0) {
-                            try self.emitFmt(".{s} = ", .{c.arg_names[i]});
+                        if (i < an.len and an[i].len > 0) {
+                            try self.emitFmt(".{s} = ", .{an[i]});
                         }
                         try self.generateExprMir(arg);
                     }
@@ -1825,56 +2144,57 @@ pub const CodeGen = struct {
                 } else {
                     // Inside a generic struct, Name(T) self-instantiation → just @This()
                     const is_self_generic_mir = if (self.generic_struct_name) |gsn|
-                        c.callee.* == .identifier and std.mem.eql(u8, c.callee.identifier, gsn)
+                        callee_is_ident and std.mem.eql(u8, callee_name, gsn)
                     else
                         false;
 
                     if (is_self_generic_mir) {
                         try self.emit("@This()");
                     } else {
-                        try self.generateExprMir(m.getCallee());
+                        try self.generateExprMir(callee_mir);
                         try self.emit("(");
-                        for (m.callArgs(), 0..) |arg, i| {
+                        for (call_args, 0..) |arg, i| {
                             if (i > 0) try self.emit(", ");
                             try self.generateCoercedExprMir(arg);
                         }
-                        try self.fillDefaultArgs(c);
+                        try self.fillDefaultArgsMir(callee_mir, call_args.len);
                         try self.emit(")");
                     }
                 }
             },
             .field_access => {
-                const f = m.ast.field_expr;
+                const field = m.name orelse "";
                 const obj_mir = m.children[0];
                 const obj_tc = obj_mir.type_class;
                 // handle.value → handle.getValue()
-                if (std.mem.eql(u8, f.field, "value") and obj_tc == .thread_handle) {
+                if (std.mem.eql(u8, field, "value") and obj_tc == .thread_handle) {
                     try self.generateExprMir(obj_mir);
                     try self.emit(".getValue()");
-                } else if (std.mem.eql(u8, f.field, "done") and obj_tc == .thread_handle) {
+                } else if (std.mem.eql(u8, field, "done") and obj_tc == .thread_handle) {
                     try self.generateExprMir(obj_mir);
                     try self.emit(".done()");
-                } else if (std.mem.eql(u8, f.field, "value") and obj_tc == .safe_ptr) {
+                } else if (std.mem.eql(u8, field, "value") and obj_tc == .safe_ptr) {
                     try self.generateExprMir(obj_mir);
                     try self.emit(".*");
-                } else if (std.mem.eql(u8, f.field, "value") and obj_tc == .raw_ptr) {
+                } else if (std.mem.eql(u8, field, "value") and obj_tc == .raw_ptr) {
                     try self.generateExprMir(obj_mir);
                     try self.emit("[0]");
-                } else if (std.mem.eql(u8, f.field, K.Type.ERROR)) {
+                } else if (std.mem.eql(u8, field, K.Type.ERROR)) {
                     // result.Error → result.err.message (extract error message string)
                     try self.generateExprMir(obj_mir);
                     try self.emit(".err.message");
-                } else if (std.mem.eql(u8, f.field, "value") and
+                } else if (std.mem.eql(u8, field, "value") and
                     (obj_tc == .arbitrary_union or obj_tc == .null_union or obj_tc == .error_union))
                 {
                     try self.generateExprMir(obj_mir);
                     if (obj_tc == .arbitrary_union) {
-                        if (f.object.* == .identifier) {
+                        if (obj_mir.kind == .identifier) {
                             if (obj_mir.narrowed_to) |narrowed| {
                                 try self.emitFmt("._{s}", .{narrowed});
                             } else {
+                                const obj_name = obj_mir.name orelse "";
                                 const members_rt = if (obj_mir.resolved_type == .union_type) obj_mir.resolved_type.union_type else
-                                    if (self.getVarUnionMembers(f.object.identifier)) |m2| m2 else null;
+                                    if (self.getVarUnionMembers(obj_name)) |m2| m2 else null;
                                 if (members_rt) |members| {
                                     for (members) |mem| {
                                         const n = mem.name();
@@ -1891,10 +2211,10 @@ pub const CodeGen = struct {
                     } else if (obj_tc == .error_union) {
                         try self.emit(".ok");
                     }
-                } else if (obj_tc == .arbitrary_union and isResultValueField(f.field, self.decls)) {
+                } else if (obj_tc == .arbitrary_union and isResultValueField(field, self.decls)) {
                     try self.generateExprMir(obj_mir);
-                    try self.emitFmt("._{s}", .{f.field});
-                } else if (isResultValueField(f.field, self.decls)) {
+                    try self.emitFmt("._{s}", .{field});
+                } else if (isResultValueField(field, self.decls)) {
                     if (obj_tc == .null_union) {
                         try self.generateExprMir(obj_mir);
                         try self.emit(".some");
@@ -1902,12 +2222,13 @@ pub const CodeGen = struct {
                         try self.generateExprMir(obj_mir);
                         try self.emit(".ok");
                     }
-                } else if (std.mem.eql(u8, f.field, "value") and f.object.* == .identifier) {
+                } else if (std.mem.eql(u8, field, "value") and obj_mir.kind == .identifier) {
                     // Fallback `.value` unwrap using narrowing info from `is Error` / `is null` checks.
-                    if (self.error_narrowed.contains(f.object.identifier)) {
+                    const obj_name = obj_mir.name orelse "";
+                    if (self.error_narrowed.contains(obj_name)) {
                         try self.generateExprMir(obj_mir);
                         try self.emit(".ok");
-                    } else if (self.null_narrowed.contains(f.object.identifier)) {
+                    } else if (self.null_narrowed.contains(obj_name)) {
                         try self.generateExprMir(obj_mir);
                         try self.emit(".some");
                     } else {
@@ -1916,28 +2237,27 @@ pub const CodeGen = struct {
                     }
                 } else {
                     try self.generateExprMir(obj_mir);
-                    try self.emitFmt(".{s}", .{f.field});
+                    try self.emitFmt(".{s}", .{field});
                 }
             },
             .literal => {
-                switch (m.ast.*) {
-                    .int_literal => |text| try self.emit(text),
-                    .float_literal => |text| try self.emit(text),
-                    .string_literal => |text| try self.emit(text),
-                    .bool_literal => |b| try self.emit(if (b) "true" else "false"),
-                    .null_literal => try self.emit("null"),
-                    .error_literal => |msg| {
+                const lk = m.literal_kind orelse return;
+                switch (lk) {
+                    .int, .float, .string => try self.emit(m.literal orelse return),
+                    .bool_lit => try self.emit(if (m.bool_val) "true" else "false"),
+                    .null_lit => try self.emit("null"),
+                    .error_lit => {
+                        const msg = m.literal orelse return;
                         if (self.funcReturnTypeClass() == .error_union) {
                             try self.emitFmt(".{{ .err = .{{ .message = {s} }} }}", .{msg});
                         } else {
                             try self.emitFmt("_rt.OrhonError{{ .message = {s} }}", .{msg});
                         }
                     },
-                    else => {},
                 }
             },
             .identifier => {
-                const name = m.name orelse m.ast.identifier;
+                const name = m.name orelse return;
                 if (self.isEnumVariant(name)) {
                     try self.emitFmt(".{s}", .{name});
                 } else if (self.generic_struct_name) |gsn| {
@@ -1951,7 +2271,7 @@ pub const CodeGen = struct {
                 }
             },
             .unary => {
-                const op = opToZig(m.op orelse m.ast.unary_expr.op);
+                const op = opToZig(m.op orelse return);
                 try self.emitFmt("{s}(", .{op});
                 try self.generateExprMir(m.children[0]);
                 try self.emit(")");
@@ -1959,7 +2279,7 @@ pub const CodeGen = struct {
             .index => {
                 try self.generateExprMir(m.children[0]);
                 try self.emit("[");
-                const index_is_literal = m.ast.index_expr.index.* == .int_literal;
+                const index_is_literal = m.children[1].literal_kind == .int;
                 if (!index_is_literal) {
                     try self.emit("@intCast(");
                     try self.generateExprMir(m.children[1]);
@@ -1970,10 +2290,9 @@ pub const CodeGen = struct {
                 try self.emit("]");
             },
             .slice => {
-                const s = m.ast.slice_expr;
                 try self.generateExprMir(m.children[0]);
                 try self.emit("[");
-                if (s.low.* != .int_literal) {
+                if (m.children[1].literal_kind != .int) {
                     try self.emit("@intCast(");
                     try self.generateExprMir(m.children[1]);
                     try self.emit(")");
@@ -1981,7 +2300,7 @@ pub const CodeGen = struct {
                     try self.generateExprMir(m.children[1]);
                 }
                 try self.emit("..");
-                if (s.high.* != .int_literal) {
+                if (m.children[2].literal_kind != .int) {
                     try self.emit("@intCast(");
                     try self.generateExprMir(m.children[2]);
                     try self.emit(")");
@@ -1994,10 +2313,14 @@ pub const CodeGen = struct {
                 try self.emit("&");
                 try self.generateExprMir(m.children[0]);
             },
-            .interpolation => try self.generateInterpolatedString(m.ast.interpolated_string),
-            .collection => try self.generateCollectionExpr(m.ast.collection_expr),
-            .ptr_expr => try self.generatePtrExpr(m.ast.ptr_expr),
-            .compiler_fn => try self.generateCompilerFunc(m.ast.compiler_func),
+            .interpolation => {
+                if (m.interp_parts) |parts| {
+                    try self.generateInterpolatedStringMir(parts, m.children);
+                }
+            },
+            .collection => try self.generateCollectionExprMir(m),
+            .ptr_expr => try self.generatePtrExprMir(m),
+            .compiler_fn => try self.generateCompilerFuncMir(m),
             .array_lit => {
                 try self.emit(".{");
                 for (m.children, 0..) |child, i| {
@@ -2007,12 +2330,12 @@ pub const CodeGen = struct {
                 try self.emit("}");
             },
             .tuple_lit => {
-                const t = m.ast.tuple_literal;
                 try self.emit(".{");
-                if (t.is_named) {
+                if (m.is_named_tuple) {
+                    const fnames = m.field_names orelse &.{};
                     for (m.children, 0..) |child, i| {
                         if (i > 0) try self.emit(", ");
-                        try self.emitFmt(".{s} = ", .{t.field_names[i]});
+                        if (i < fnames.len) try self.emitFmt(".{s} = ", .{fnames[i]});
                         try self.generateExprMir(child);
                     }
                 } else {
@@ -2038,7 +2361,7 @@ pub const CodeGen = struct {
                 try self.generateExprMir(m);
             },
             .null_wrap => {
-                if (m.ast.* == .null_literal) {
+                if (m.literal_kind == .null_lit) {
                     try self.emit(".{ .none = {} }");
                 } else {
                     try self.emit(".{ .some = ");
@@ -2067,9 +2390,9 @@ pub const CodeGen = struct {
         }
     }
 
-    /// Check if a MirNode represents a string expression (via type_class or AST kind).
+    /// Check if a MirNode represents a string expression (via type_class or literal_kind).
     fn mirIsString(m: *const mir.MirNode) bool {
-        return m.type_class == .string or m.ast.* == .string_literal or m.ast.* == .interpolated_string;
+        return m.type_class == .string or m.literal_kind == .string or m.kind == .interpolation;
     }
 
     /// Check if a MirNode represents a SIMD Vector type.
@@ -2090,6 +2413,27 @@ pub const CodeGen = struct {
     }
 
     // Generate a while continue expression — same as assignment but no trailing semicolon.
+    /// MIR-path continue expression for while loops.
+    fn generateContinueExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        if (m.kind == .assignment) {
+            const assign_op = m.op orelse "=";
+            if (std.mem.eql(u8, assign_op, "/=")) {
+                try self.generateExprMir(m.lhs());
+                try self.emit(" = @divTrunc(");
+                try self.generateExprMir(m.lhs());
+                try self.emit(", ");
+                try self.generateExprMir(m.rhs());
+                try self.emit(")");
+            } else {
+                try self.generateExprMir(m.lhs());
+                try self.emitFmt(" {s} ", .{assign_op});
+                try self.generateExprMir(m.rhs());
+            }
+        } else {
+            try self.generateExprMir(m);
+        }
+    }
+
     fn generateContinueExpr(self: *CodeGen, node: *parser.Node) anyerror!void {
         if (node.* == .assignment) {
             const a = node.assignment;
@@ -2107,6 +2451,27 @@ pub const CodeGen = struct {
             }
         } else {
             try self.generateExpr(node);
+        }
+    }
+
+    /// MIR-path range expression for for-loops.
+    fn writeRangeExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        const left_is_literal = m.lhs().literal_kind == .int;
+        if (left_is_literal) {
+            try self.generateExprMir(m.lhs());
+        } else {
+            try self.emit("@intCast(");
+            try self.generateExprMir(m.lhs());
+            try self.emit(")");
+        }
+        try self.emit("..");
+        const right_is_literal = m.rhs().literal_kind == .int;
+        if (right_is_literal) {
+            try self.generateExprMir(m.rhs());
+        } else {
+            try self.emit("@intCast(");
+            try self.generateExprMir(m.rhs());
+            try self.emit(")");
         }
     }
 
@@ -2180,34 +2545,38 @@ pub const CodeGen = struct {
 
     /// MIR-path for loop codegen.
     fn generateForMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const f = m.ast.for_stmt;
-        const is_range = f.iterable.* == .range_expr;
-        const needs_cast = is_range or f.index_var != null;
-        if (f.is_compt) try self.emit("inline ");
+        const caps = m.captures orelse &.{};
+        const idx_var = m.index_var;
+        const iter_m = m.iterable();
+        const is_range = iter_m.kind == .binary and std.mem.eql(u8, iter_m.op orelse "", "..");
+        const needs_cast = is_range or idx_var != null;
+        if (m.is_compt) try self.emit("inline ");
         try self.emit("for (");
         if (is_range) {
-            try self.writeRangeExpr(f.iterable.range_expr);
+            try self.writeRangeExprMir(iter_m);
         } else {
-            try self.generateExprMir(m.iterable());
+            try self.generateExprMir(iter_m);
         }
-        if (f.index_var != null) try self.emit(", 0..");
+        if (idx_var != null) try self.emit(", 0..");
         try self.emit(") |");
-        if (is_range) {
-            try self.emitFmt("_orhon_{s}", .{f.captures[0]});
-        } else {
-            try self.emit(f.captures[0]);
+        if (caps.len > 0) {
+            if (is_range) {
+                try self.emitFmt("_orhon_{s}", .{caps[0]});
+            } else {
+                try self.emit(caps[0]);
+            }
         }
-        if (f.index_var) |idx| {
+        if (idx_var) |idx| {
             try self.emitFmt(", _orhon_{s}", .{idx});
         }
         if (needs_cast) {
             try self.emit("| {\n");
             self.indent += 1;
-            if (is_range) {
+            if (is_range and caps.len > 0) {
                 try self.emitIndent();
-                try self.emitFmt("const {s}: i32 = @intCast(_orhon_{s});\n", .{ f.captures[0], f.captures[0] });
+                try self.emitFmt("const {s}: i32 = @intCast(_orhon_{s});\n", .{ caps[0], caps[0] });
             }
-            if (f.index_var) |idx| {
+            if (idx_var) |idx| {
                 try self.emitIndent();
                 try self.emitFmt("const {s}: i32 = @intCast(_orhon_{s});\n", .{ idx, idx });
             }
@@ -2227,58 +2596,52 @@ pub const CodeGen = struct {
 
     /// MIR-path destructuring codegen.
     fn generateDestructMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const d = m.ast.destruct_decl;
+        const d_names = m.names orelse &.{};
+        const decl_keyword: []const u8 = if (m.is_const) "const" else "var";
+        const val_m = m.value();
         // String split destructuring
-        if (d.names.len == 2 and d.value.* == .call_expr) {
-            const c = d.value.call_expr;
-            if (c.callee.* == .field_expr) {
-                const fe = c.callee.field_expr;
-                if (std.mem.eql(u8, fe.field, "split")) {
+        if (d_names.len == 2 and val_m.kind == .call) {
+            const callee_m = val_m.getCallee();
+            if (callee_m.kind == .field_access) {
+                const method = callee_m.name orelse "";
+                if (std.mem.eql(u8, method, "split")) {
+                    const call_args = val_m.callArgs();
                     const destruct_idx = self.destruct_counter;
                     self.destruct_counter += 1;
-                    const decl_keyword = if (d.is_const) "const" else "var";
                     try self.emitFmt("const _orhon_sp{d}_delim = ", .{destruct_idx});
-                    if (c.args.len > 0) try self.generateExprMir(m.value().callArgs()[0]);
+                    if (call_args.len > 0) try self.generateExprMir(call_args[0]);
                     try self.emit(";\n");
                     try self.emitIndent();
                     try self.emitFmt("const _orhon_sp{d}_pos = std.mem.indexOf(u8, ", .{destruct_idx});
-                    try self.generateExprMir(m.value().getCallee().children[0]);
+                    try self.generateExprMir(callee_m.children[0]);
                     try self.emitFmt(", _orhon_sp{d}_delim);\n", .{destruct_idx});
                     try self.emitIndent();
-                    try self.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d.names[0], destruct_idx });
-                    try self.generateExprMir(m.value().getCallee().children[0]);
+                    try self.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d_names[0], destruct_idx });
+                    try self.generateExprMir(callee_m.children[0]);
                     try self.emit("[0.._idx] else ");
-                    try self.generateExprMir(m.value().getCallee().children[0]);
+                    try self.generateExprMir(callee_m.children[0]);
                     try self.emit(";\n");
                     try self.emitIndent();
-                    try self.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d.names[1], destruct_idx });
-                    try self.generateExprMir(m.value().getCallee().children[0]);
+                    try self.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d_names[1], destruct_idx });
+                    try self.generateExprMir(callee_m.children[0]);
                     try self.emitFmt("[_idx + _orhon_sp{d}_delim.len..] else \"\";", .{destruct_idx});
                     return;
                 }
-            }
-        }
-        // splitAt destructuring
-        if (d.names.len == 2 and d.value.* == .call_expr) {
-            const c = d.value.call_expr;
-            if (c.callee.* == .field_expr) {
-                const fe = c.callee.field_expr;
-                if (std.mem.eql(u8, fe.field, "splitAt") and c.args.len == 1) {
-                    const decl_keyword = if (d.is_const) "const" else "var";
+                if (std.mem.eql(u8, method, "splitAt") and val_m.callArgs().len == 1) {
                     const destruct_idx = self.destruct_counter;
                     self.destruct_counter += 1;
                     try self.emitFmt("var _orhon_s{d}: usize = @intCast(", .{destruct_idx});
-                    try self.generateExprMir(m.value().callArgs()[0]);
+                    try self.generateExprMir(val_m.callArgs()[0]);
                     try self.emit(");\n");
                     try self.emitIndent();
                     try self.emitFmt("_ = &_orhon_s{d};\n", .{destruct_idx});
                     try self.emitIndent();
-                    try self.emitFmt("{s} {s} = ", .{ decl_keyword, d.names[0] });
-                    try self.generateExprMir(m.value().getCallee().children[0]);
+                    try self.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[0] });
+                    try self.generateExprMir(callee_m.children[0]);
                     try self.emitFmt("[0.._orhon_s{d}];\n", .{destruct_idx});
                     try self.emitIndent();
-                    try self.emitFmt("{s} {s} = ", .{ decl_keyword, d.names[1] });
-                    try self.generateExprMir(m.value().getCallee().children[0]);
+                    try self.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[1] });
+                    try self.generateExprMir(callee_m.children[0]);
                     try self.emitFmt("[_orhon_s{d}..];", .{destruct_idx});
                     return;
                 }
@@ -2288,10 +2651,9 @@ pub const CodeGen = struct {
         const idx = self.destruct_counter;
         self.destruct_counter += 1;
         try self.emitFmt("const _orhon_d{d} = ", .{idx});
-        try self.generateExprMir(m.value());
+        try self.generateExprMir(val_m);
         try self.emit(";");
-        const decl_keyword = if (d.is_const) "const" else "var";
-        for (d.names) |name| {
+        for (d_names) |name| {
             try self.emit("\n");
             try self.emitIndent();
             try self.emitFmt("{s} {s} = _orhon_d{d}.{s};", .{ decl_keyword, name, idx, name });
@@ -2300,35 +2662,29 @@ pub const CodeGen = struct {
 
     /// MIR-path match codegen — dispatches to string, type, or regular switch.
     fn generateMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const ms = m.ast.match_stmt;
-
         // String match — Zig has no string switch, desugar to if/else chain
         const is_string_match = blk: {
-            for (ms.arms) |arm| {
-                if (arm.* == .match_arm and arm.match_arm.pattern.* == .string_literal)
-                    break :blk true;
+            for (m.matchArms()) |arm_mir| {
+                if (arm_mir.pattern().literal_kind == .string) break :blk true;
             }
             break :blk false;
         };
 
         // Type match — any arm is `Error`, `null`, or value is an arbitrary union
         const is_type_match = blk: {
-            if (m.value().type_class == .arbitrary_union)
-                break :blk true;
-            for (ms.arms) |arm| {
-                if (arm.* != .match_arm) continue;
-                const pat = arm.match_arm.pattern;
-                if (pat.* == .null_literal) break :blk true;
-                if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, K.Type.ERROR))
+            if (m.value().type_class == .arbitrary_union) break :blk true;
+            for (m.matchArms()) |arm_mir| {
+                const pat_m = arm_mir.pattern();
+                if (pat_m.literal_kind == .null_lit) break :blk true;
+                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR))
                     break :blk true;
             }
             break :blk false;
         };
 
         const is_null_union = blk: {
-            for (ms.arms) |arm| {
-                if (arm.* == .match_arm and arm.match_arm.pattern.* == .null_literal)
-                    break :blk true;
+            for (m.matchArms()) |arm_mir| {
+                if (arm_mir.pattern().literal_kind == .null_lit) break :blk true;
             }
             break :blk false;
         };
@@ -2340,27 +2696,27 @@ pub const CodeGen = struct {
         } else {
             // Regular switch
             try self.emit("switch (");
-            if (ms.value.* == .identifier and std.mem.eql(u8, ms.value.identifier, "self")) {
+            const val_m = m.value();
+            if (val_m.kind == .identifier and std.mem.eql(u8, val_m.name orelse "", "self")) {
                 try self.emit("self.*");
             } else {
-                try self.generateExprMir(m.value());
+                try self.generateExprMir(val_m);
             }
             try self.emit(") {\n");
             self.indent += 1;
             var has_wildcard = false;
             for (m.matchArms()) |arm_mir| {
-                const pat = arm_mir.ast.match_arm.pattern;
+                const pat_m = arm_mir.pattern();
                 try self.emitIndent();
-                if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "else")) {
+                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", "else")) {
                     has_wildcard = true;
                     try self.emit("else");
-                } else if (pat.* == .range_expr) {
-                    const r = pat.range_expr;
-                    try self.generateExpr(r.left);
+                } else if (pat_m.kind == .binary and std.mem.eql(u8, pat_m.op orelse "", "..")) {
+                    try self.generateExprMir(pat_m.lhs());
                     try self.emit("...");
-                    try self.generateExpr(r.right);
+                    try self.generateExprMir(pat_m.rhs());
                 } else {
-                    try self.generateExpr(pat);
+                    try self.generateExprMir(pat_m);
                 }
                 try self.emit(" => ");
                 try self.generateBlockMir(arm_mir.body());
@@ -2369,9 +2725,9 @@ pub const CodeGen = struct {
             if (!has_wildcard) {
                 var is_enum_switch = false;
                 for (m.matchArms()) |arm_mir| {
-                    const pat = arm_mir.ast.match_arm.pattern;
-                    if (pat.* == .identifier) {
-                        if (self.isEnumVariant(pat.identifier)) {
+                    const pat_m = arm_mir.pattern();
+                    if (pat_m.kind == .identifier) {
+                        if (self.isEnumVariant(pat_m.name orelse "")) {
                             is_enum_switch = true;
                             break;
                         }
@@ -2390,13 +2746,11 @@ pub const CodeGen = struct {
 
     /// MIR-path type match (arbitrary/error/null union switch).
     fn generateTypeMatchMir(self: *CodeGen, m: *mir.MirNode, is_null_union: bool) anyerror!void {
-        const ms = m.ast.match_stmt;
         const is_arbitrary = blk: {
-            for (ms.arms) |arm| {
-                if (arm.* != .match_arm) continue;
-                const pat = arm.match_arm.pattern;
-                if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, K.Type.ERROR)) break :blk false;
-                if (pat.* == .null_literal) break :blk false;
+            for (m.matchArms()) |arm_mir| {
+                const pat_m = arm_mir.pattern();
+                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR)) break :blk false;
+                if (pat_m.literal_kind == .null_lit) break :blk false;
             }
             break :blk true;
         };
@@ -2407,17 +2761,18 @@ pub const CodeGen = struct {
         self.indent += 1;
 
         for (m.matchArms()) |arm_mir| {
-            const pat = arm_mir.ast.match_arm.pattern;
+            const pat_m = arm_mir.pattern();
+            const pat_name = pat_m.name orelse "";
             try self.emitIndent();
 
-            if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, K.Type.ERROR)) {
+            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, K.Type.ERROR)) {
                 try self.emit(".err");
-            } else if (pat.* == .null_literal) {
+            } else if (pat_m.literal_kind == .null_lit) {
                 try self.emit(".none");
-            } else if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "else")) {
+            } else if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
                 try self.emit("else");
-            } else if (is_arbitrary and pat.* == .identifier) {
-                try self.emitFmt("._{s}", .{pat.identifier});
+            } else if (is_arbitrary and pat_m.kind == .identifier) {
+                try self.emitFmt("._{s}", .{pat_name});
             } else {
                 if (is_null_union) {
                     try self.emit(".some");
@@ -2427,7 +2782,6 @@ pub const CodeGen = struct {
             }
 
             try self.emit(" => ");
-            // Narrowing is pre-stamped on arm body MirNodes — no map needed
             try self.generateBlockMir(arm_mir.body());
             try self.emit(",\n");
         }
@@ -2439,14 +2793,13 @@ pub const CodeGen = struct {
 
     /// MIR-path string match — desugars to if/else chain.
     fn generateStringMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const ms = m.ast.match_stmt;
         var first = true;
         var wildcard_arm: ?*mir.MirNode = null;
 
         for (m.matchArms()) |arm_mir| {
-            const pat = arm_mir.ast.match_arm.pattern;
+            const pat_m = arm_mir.pattern();
 
-            if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "else")) {
+            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", "else")) {
                 wildcard_arm = arm_mir;
                 continue;
             }
@@ -2458,13 +2811,14 @@ pub const CodeGen = struct {
                 try self.emit(" else if (std.mem.eql(u8, ");
             }
 
-            if (ms.value.* == .identifier and std.mem.eql(u8, ms.value.identifier, "self")) {
+            const val_m = m.value();
+            if (val_m.kind == .identifier and std.mem.eql(u8, val_m.name orelse "", "self")) {
                 try self.emit("self.*");
             } else {
-                try self.generateExprMir(m.value());
+                try self.generateExprMir(val_m);
             }
             try self.emit(", ");
-            try self.generateExpr(pat);
+            try self.generateExprMir(pat_m);
             try self.emit(")) ");
             try self.generateBlockMir(arm_mir.body());
         }
@@ -2478,6 +2832,163 @@ pub const CodeGen = struct {
             }
         } else if (!first) {
             try self.emit(" else {}");
+        }
+    }
+
+    /// MIR-path interpolated string — uses interp_parts for literals, children for exprs.
+    fn generateInterpolatedStringMir(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void {
+        try self.emit("std.fmt.allocPrint(_rt.alloc, \"");
+        var expr_idx: usize = 0;
+        // Build format string
+        for (parts) |part| {
+            switch (part) {
+                .literal => |text| {
+                    for (text) |ch| {
+                        switch (ch) {
+                            '{' => try self.emit("{{"),
+                            '}' => try self.emit("}}"),
+                            '\\' => try self.emit("\\"),
+                            else => {
+                                const buf: [1]u8 = .{ch};
+                                try self.emit(&buf);
+                            },
+                        }
+                    }
+                },
+                .expr => {
+                    if (expr_idx < expr_children.len and mirIsString(expr_children[expr_idx])) {
+                        try self.emit("{s}");
+                    } else {
+                        try self.emit("{}");
+                    }
+                    expr_idx += 1;
+                },
+            }
+        }
+        try self.emit("\", .{");
+        // Build args tuple
+        var first = true;
+        for (expr_children) |child| {
+            if (!first) try self.emit(", ");
+            try self.generateExprMir(child);
+            first = false;
+        }
+        try self.emit("}) catch unreachable");
+    }
+
+    /// MIR-path collection expr — all unmanaged collections zero-initialize.
+    fn generateCollectionExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        _ = m;
+        try self.emit(".{}");
+    }
+
+    /// MIR-path ptr expr.
+    fn generatePtrExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        const kind = m.name orelse return;
+        // children = [type_arg, addr_arg]
+        const type_arg = m.children[0];
+        const addr_arg = m.children[1];
+        if (std.mem.eql(u8, kind, "Ptr")) {
+            try self.generateExprMir(addr_arg);
+        } else if (std.mem.eql(u8, kind, "RawPtr")) {
+            if (!self.warned_rawptr) {
+                std.debug.print("WARNING: RawPtr used — unsafe, no bounds checking\n", .{});
+                self.warned_rawptr = true;
+            }
+            const zig_type = try self.typeToZig(type_arg.ast);
+            if (addr_arg.kind == .borrow) {
+                try self.emitFmt("@as([*]{s}, @ptrCast(", .{zig_type});
+                try self.generateExprMir(addr_arg);
+                try self.emit("))");
+            } else {
+                try self.emitFmt("@as([*]{s}, @ptrFromInt(", .{zig_type});
+                try self.generateExprMir(addr_arg);
+                try self.emit("))");
+            }
+        } else if (std.mem.eql(u8, kind, "VolatilePtr")) {
+            if (!self.warned_rawptr) {
+                std.debug.print("WARNING: VolatilePtr used — unsafe, hardware access only\n", .{});
+                self.warned_rawptr = true;
+            }
+            const zig_type = try self.typeToZig(type_arg.ast);
+            if (addr_arg.kind == .borrow) {
+                try self.emitFmt("@as(*volatile {s}, @ptrCast(", .{zig_type});
+                try self.generateExprMir(addr_arg);
+                try self.emit("))");
+            } else {
+                try self.emitFmt("@as(*volatile {s}, @ptrFromInt(", .{zig_type});
+                try self.generateExprMir(addr_arg);
+                try self.emit("))");
+            }
+        }
+    }
+
+    /// MIR-path compiler function (@typename, @cast, @size, etc.).
+    fn generateCompilerFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        const cf_name = m.name orelse return;
+        const args = m.children;
+        if (std.mem.eql(u8, cf_name, "typename")) {
+            try self.emit("@typeName(@TypeOf(");
+            if (args.len > 0) try self.generateExprMir(args[0]);
+            try self.emit("))");
+        } else if (std.mem.eql(u8, cf_name, "typeid")) {
+            try self.emit("_rt.orhonTypeId(@TypeOf(");
+            if (args.len > 0) try self.generateExprMir(args[0]);
+            try self.emit("))");
+        } else if (std.mem.eql(u8, cf_name, "cast")) {
+            if (args.len >= 2) {
+                const target_type = try self.typeToZig(args[0].ast);
+                const target_is_float = target_type.len > 0 and target_type[0] == 'f';
+                const source_is_float_literal = args[1].literal_kind == .float;
+                try self.emitFmt("@as({s}, ", .{target_type});
+                if (target_is_float and source_is_float_literal) {
+                    try self.emit("@floatCast(");
+                } else if (target_is_float) {
+                    try self.emit("@floatFromInt(");
+                } else if (source_is_float_literal) {
+                    try self.emit("@intFromFloat(");
+                } else {
+                    try self.emit("@intCast(");
+                }
+                try self.generateExprMir(args[1]);
+                try self.emit("))");
+            } else if (args.len == 1) {
+                try self.emit("@intCast(");
+                try self.generateExprMir(args[0]);
+                try self.emit(")");
+            }
+        } else if (std.mem.eql(u8, cf_name, "size")) {
+            try self.emit("@sizeOf(");
+            if (args.len > 0) try self.generateExprMir(args[0]);
+            try self.emit(")");
+        } else if (std.mem.eql(u8, cf_name, "align")) {
+            try self.emit("@alignOf(");
+            if (args.len > 0) try self.generateExprMir(args[0]);
+            try self.emit(")");
+        } else if (std.mem.eql(u8, cf_name, "copy")) {
+            if (args.len > 0) try self.generateExprMir(args[0]);
+        } else if (std.mem.eql(u8, cf_name, "move")) {
+            if (args.len > 0) try self.generateExprMir(args[0]);
+        } else if (std.mem.eql(u8, cf_name, "assert")) {
+            if (self.in_test_block) {
+                try self.emit("try std.testing.expect(");
+            } else {
+                try self.emit("std.debug.assert(");
+            }
+            if (args.len > 0) try self.generateExprMir(args[0]);
+            try self.emit(")");
+        } else if (std.mem.eql(u8, cf_name, "swap")) {
+            if (args.len == 2) {
+                try self.emit("std.mem.swap(@TypeOf(");
+                try self.generateExprMir(args[0]);
+                try self.emit("), &");
+                try self.generateExprMir(args[0]);
+                try self.emit(", &");
+                try self.generateExprMir(args[1]);
+                try self.emit(")");
+            }
+        } else {
+            try self.emitFmt("/* unknown @{s} */", .{cf_name});
         }
     }
 
@@ -2567,6 +3078,139 @@ pub const CodeGen = struct {
             }
         }
         try self.generateExpr(arg);
+    }
+
+    /// MIR-path wrapping arithmetic.
+    fn generateWrappingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        if (m.kind == .binary) {
+            const bin_op = m.op orelse "";
+            const wrap_op: ?[]const u8 =
+                if (std.mem.eql(u8, bin_op, "+")) "+%"
+                else if (std.mem.eql(u8, bin_op, "-")) "-%"
+                else if (std.mem.eql(u8, bin_op, "*")) "*%"
+                else null;
+            if (wrap_op) |op| {
+                try self.generateExprMir(m.lhs());
+                try self.emitFmt(" {s} ", .{op});
+                try self.generateExprMir(m.rhs());
+                return;
+            }
+        }
+        try self.generateExprMir(m);
+    }
+
+    /// MIR-path saturating arithmetic.
+    fn generateSaturatingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        if (m.kind == .binary) {
+            const bin_op = m.op orelse "";
+            const sat_op: ?[]const u8 =
+                if (std.mem.eql(u8, bin_op, "+")) "+|"
+                else if (std.mem.eql(u8, bin_op, "-")) "-|"
+                else if (std.mem.eql(u8, bin_op, "*")) "*|"
+                else null;
+            if (sat_op) |op| {
+                try self.generateExprMir(m.lhs());
+                try self.emitFmt(" {s} ", .{op});
+                try self.generateExprMir(m.rhs());
+                return;
+            }
+        }
+        try self.generateExprMir(m);
+    }
+
+    /// MIR-path overflow arithmetic.
+    fn generateOverflowExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        if (m.kind == .binary) {
+            const bin_op = m.op orelse "";
+            const builtin_name: ?[]const u8 =
+                if (std.mem.eql(u8, bin_op, "+")) "@addWithOverflow"
+                else if (std.mem.eql(u8, bin_op, "-")) "@subWithOverflow"
+                else if (std.mem.eql(u8, bin_op, "*")) "@mulWithOverflow"
+                else null;
+            if (builtin_name) |builtin| {
+                const left_is_literal = m.lhs().literal_kind == .int or m.lhs().literal_kind == .float;
+                const type_str: ?[]const u8 = if (left_is_literal) blk: {
+                    if (self.type_ctx) |ctx| {
+                        if (extractValueType(ctx)) |vt| break :blk try self.typeToZig(vt);
+                    }
+                    break :blk null;
+                } else null;
+
+                try self.emit("(blk: { const _ov = ");
+                try self.emitFmt("{s}(", .{builtin});
+                if (type_str) |ts| {
+                    try self.emitFmt("@as({s}, ", .{ts});
+                    try self.generateExprMir(m.lhs());
+                    try self.emit(")");
+                } else {
+                    try self.generateExprMir(m.lhs());
+                }
+                try self.emit(", ");
+                try self.generateExprMir(m.rhs());
+                if (type_str) |ts| {
+                    try self.emit("); if (_ov[1] != 0) break :blk _rt.OrhonResult(");
+                    try self.emit(ts);
+                    try self.emit("){ .err = .{ .message = \"overflow\" } } else break :blk _rt.OrhonResult(");
+                    try self.emit(ts);
+                    try self.emit("){ .ok = _ov[0] }; })");
+                } else {
+                    try self.emit("); if (_ov[1] != 0) break :blk _rt.OrhonResult(@TypeOf(");
+                    try self.generateExprMir(m.lhs());
+                    try self.emit(")){ .err = .{ .message = \"overflow\" } } else break :blk _rt.OrhonResult(@TypeOf(");
+                    try self.generateExprMir(m.lhs());
+                    try self.emit(")){ .ok = _ov[0] }; })");
+                }
+                return;
+            }
+        }
+        try self.generateExprMir(m);
+    }
+
+    /// MIR-path fill default arguments.
+    fn fillDefaultArgsMir(self: *CodeGen, callee_mir: *const mir.MirNode, actual_arg_count: usize) anyerror!void {
+        // Resolve function name from callee MirNode
+        const func_name: []const u8 = if (callee_mir.kind == .identifier)
+            callee_mir.name orelse return
+        else if (callee_mir.kind == .field_access)
+            callee_mir.name orelse return
+        else
+            return;
+
+        var fsig: ?declarations.FuncSig = null;
+        if (self.decls) |d| {
+            fsig = d.funcs.get(func_name);
+        }
+        if (fsig == null) {
+            if (callee_mir.kind == .field_access) {
+                const obj = callee_mir.children[0];
+                const module_name = if (obj.kind == .identifier)
+                    obj.name
+                else if (obj.kind == .field_access and obj.children.len > 0 and obj.children[0].kind == .identifier)
+                    obj.children[0].name
+                else
+                    null;
+                if (module_name) |mn| {
+                    if (self.all_decls) |ad| {
+                        if (ad.get(mn)) |mod_decls| {
+                            fsig = mod_decls.funcs.get(func_name);
+                        }
+                    }
+                }
+            }
+        }
+
+        const sig = fsig orelse return;
+        if (actual_arg_count >= sig.param_nodes.len) return;
+        var wrote_any = actual_arg_count > 0;
+        for (sig.param_nodes[actual_arg_count..]) |p| {
+            if (p.* == .param) {
+                if (p.param.default_value) |dv| {
+                    if (wrote_any) try self.emit(", ");
+                    try self.generateExpr(dv);
+                    wrote_any = true;
+                }
+            }
+        }
     }
 
     fn generateCompilerFunc(self: *CodeGen, cf: parser.CompilerFunc) anyerror!void {

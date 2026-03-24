@@ -533,12 +533,12 @@ pub const MirAnnotator = struct {
 
 // ── MIR Node Tree ──────────────────────────────────────────
 
-/// MIR node — carries type info inline, replaces AST + NodeMap pair.
-/// Back-pointer to AST for string data (names, operators, literal values).
+/// MIR node — self-contained representation for codegen.
+/// All semantic data is on MirNode fields. The `ast` back-pointer is retained
+/// only for: source location queries, current_func_node tracking, and
+/// type_expr/passthrough nodes where type trees are structural.
 pub const MirNode = struct {
-    /// Original AST node — transitional back-pointer for incremental migration.
-    /// Codegen should prefer self-contained fields below; ast will be removed
-    /// once all accesses are migrated.
+    /// Original AST node — used for source locations and type_expr/passthrough only.
     ast: *parser.Node,
     /// Resolved type of this node.
     resolved_type: RT,
@@ -578,6 +578,36 @@ pub const MirNode = struct {
     is_thread: bool = false,
     /// Compile-time declaration flag.
     is_compt: bool = false,
+    /// Literal sub-kind (int, float, string, bool, null, error).
+    literal_kind: ?LiteralKind = null,
+    /// Const declaration flag (true for const_decl, false for var_decl).
+    is_const: bool = false,
+    /// Type annotation AST node (borrowed pointer — lives as long as AST arena).
+    type_annotation: ?*parser.Node = null,
+    /// Generic type parameters (for struct/func generics).
+    type_params: ?[]*parser.Node = null,
+    /// Return type AST node (for func_decl).
+    return_type: ?*parser.Node = null,
+    /// Backing type AST node (for enum/bitfield).
+    backing_type: ?*parser.Node = null,
+    /// Default value AST node (for field_decl).
+    default_value: ?*parser.Node = null,
+    /// Bitfield member names.
+    bit_members: ?[][]const u8 = null,
+    /// Named call argument names.
+    arg_names: ?[][]const u8 = null,
+    /// Named tuple flag.
+    is_named_tuple: bool = false,
+    /// Tuple field names.
+    field_names: ?[][]const u8 = null,
+    /// For-loop capture variable names.
+    captures: ?[][]const u8 = null,
+    /// For-loop index variable name.
+    index_var: ?[]const u8 = null,
+    /// Destructuring binding names.
+    names: ?[][]const u8 = null,
+    /// Interpolated string parts (literal + expr interleaved).
+    interp_parts: ?[]parser.InterpolatedPart = null,
 
     // ── Child accessors ─────────────────────────────────────
     // Named access into children[] so codegen doesn't use raw indices.
@@ -644,6 +674,21 @@ pub const MirNode = struct {
     pub fn matchArms(self: *const MirNode) []*MirNode {
         return self.children[1..];
     }
+
+    /// children[0] — pattern for match_arm.
+    pub fn pattern(self: *const MirNode) *MirNode {
+        return self.children[0];
+    }
+};
+
+/// Disambiguates the 6 literal types collapsed into MirKind.literal.
+pub const LiteralKind = enum {
+    int,
+    float,
+    string,
+    bool_lit,
+    null_lit,
+    error_lit,
 };
 
 /// MIR node kinds — grouped from 52 AST kinds.
@@ -853,12 +898,13 @@ pub const MirLowerer = struct {
                 mir_node.children = try children.toOwnedSlice(self.allocator);
                 // Stamp narrowing for arbitrary union match arms
                 if (mir_node.value().type_class == .arbitrary_union) {
-                    const match_var = if (m.value.* == .identifier) m.value.identifier else null;
+                    const match_val = mir_node.value();
+                    const match_var = if (match_val.kind == .identifier) match_val.name else null;
                     if (match_var) |vname| {
                         for (mir_node.matchArms()) |arm_mir| {
-                            const pat = arm_mir.ast.match_arm.pattern;
-                            if (pat.* == .identifier and !std.mem.eql(u8, pat.identifier, "else")) {
-                                stampNarrowing(arm_mir.body(), vname, pat.identifier);
+                            const pat_m = arm_mir.pattern();
+                            if (pat_m.kind == .identifier and !std.mem.eql(u8, pat_m.name orelse "", "else")) {
+                                stampNarrowing(arm_mir.body(), vname, pat_m.name orelse "");
                             }
                         }
                     }
@@ -866,6 +912,7 @@ pub const MirLowerer = struct {
             },
             .match_arm => |m| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
+                try children.append(self.allocator, try self.lowerNode(m.pattern));
                 try children.append(self.allocator, try self.lowerNode(m.body));
                 mir_node.children = try children.toOwnedSlice(self.allocator);
             },
@@ -1204,39 +1251,57 @@ fn populateData(m: *MirNode, node: *parser.Node) void {
             m.is_bridge = f.is_bridge;
             m.is_thread = f.is_thread;
             m.is_compt = f.is_compt;
+            m.return_type = f.return_type;
         },
         .struct_decl => |s| {
             m.name = s.name;
             m.is_pub = s.is_pub;
             m.is_bridge = s.is_bridge;
+            m.type_params = if (s.type_params.len > 0) s.type_params else null;
         },
         .enum_decl => |e| {
             m.name = e.name;
             m.is_pub = e.is_pub;
+            m.backing_type = e.backing_type;
         },
         .bitfield_decl => |b| {
             m.name = b.name;
             m.is_pub = b.is_pub;
+            m.backing_type = b.backing_type;
+            m.bit_members = b.members;
         },
-        .var_decl, .const_decl => |v| {
+        .var_decl => |v| {
             m.name = v.name;
             m.is_pub = v.is_pub;
             m.is_bridge = v.is_bridge;
+            m.type_annotation = v.type_annotation;
+        },
+        .const_decl => |v| {
+            m.name = v.name;
+            m.is_pub = v.is_pub;
+            m.is_bridge = v.is_bridge;
+            m.is_const = true;
+            m.type_annotation = v.type_annotation;
         },
         .compt_decl => |v| {
             m.name = v.name;
             m.is_pub = v.is_pub;
             m.is_compt = true;
+            m.is_const = true;
+            m.type_annotation = v.type_annotation;
         },
         .test_decl => |t| {
             m.name = t.description;
         },
         .param => |p| {
             m.name = p.name;
+            m.type_annotation = p.type_annotation;
         },
         .field_decl => |f| {
             m.name = f.name;
             m.is_pub = f.is_pub;
+            m.type_annotation = f.type_annotation;
+            m.default_value = f.default_value;
         },
         .enum_variant => |v| {
             m.name = v.name;
@@ -1258,22 +1323,28 @@ fn populateData(m: *MirNode, node: *parser.Node) void {
         },
         .int_literal => |v| {
             m.literal = v;
+            m.literal_kind = .int;
         },
         .float_literal => |v| {
             m.literal = v;
+            m.literal_kind = .float;
         },
         .string_literal => |v| {
             m.literal = v;
+            m.literal_kind = .string;
         },
         .bool_literal => |v| {
             m.bool_val = v;
             m.literal = if (v) "true" else "false";
+            m.literal_kind = .bool_lit;
         },
         .error_literal => |v| {
             m.literal = v;
+            m.literal_kind = .error_lit;
         },
         .null_literal => {
             m.literal = "null";
+            m.literal_kind = .null_lit;
         },
         .field_expr => |f| {
             m.name = f.field;
@@ -1283,9 +1354,28 @@ fn populateData(m: *MirNode, node: *parser.Node) void {
         },
         .for_stmt => |f| {
             m.is_compt = f.is_compt;
+            m.captures = f.captures;
+            m.index_var = f.index_var;
+        },
+        .call_expr => |c| {
+            m.arg_names = if (c.arg_names.len > 0) c.arg_names else null;
+        },
+        .tuple_literal => |t| {
+            m.is_named_tuple = t.is_named;
+            m.field_names = if (t.field_names.len > 0) t.field_names else null;
+        },
+        .destruct_decl => |d| {
+            m.names = d.names;
+            m.is_const = d.is_const;
+        },
+        .interpolated_string => |interp| {
+            m.interp_parts = interp.parts;
         },
         .compiler_func => |cf| {
             m.name = cf.name;
+        },
+        .ptr_expr => |p| {
+            m.name = p.kind;
         },
         else => {},
     }

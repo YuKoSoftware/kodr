@@ -79,14 +79,18 @@ error recovery via `error_skip` + `top_level_start` rules in `orhon.peg`. On top
 parse failure, skips bad tokens until the next declaration keyword (`func`, `struct`, etc.)
 and continues parsing. Multiple syntax errors collected via `BuildContext.syntax_errors`.
 
-### MIR — Complete Self-Containment Migration
+### MIR — Complete Self-Containment Migration ✓
 
-MirNode now carries self-contained data fields (`name`, `op`, `literal`, `is_pub`, etc.)
-populated during lowering. ~37 `m.ast.*` accesses in `codegen.zig` still read through the
-AST back-pointer. Incrementally migrate each access to use MirNode fields, then remove
-the `ast: *parser.Node` field entirely.
+~~MirNode now carries self-contained data fields populated during lowering. ~37 `m.ast.*`
+accesses in codegen still read through the AST back-pointer.~~ **Done.** All semantic data
+reads from MirNode. Added `LiteralKind` enum, `is_const`, `type_annotation`, `return_type`,
+`backing_type`, `type_params`, `default_value`, `bit_members`, `arg_names`, `field_names`,
+`captures`, `index_var`, `names`, `interp_parts` fields. Match arm children now include
+pattern (`[pattern, body]`). `collectAssignedMir` traverses MirNode tree. 6 residual
+`m.ast` accesses remain for: source location queries, current function node tracking,
+and `type_expr`/`passthrough` (type trees are structural, not duplicated into MIR).
 
-**After migration completes:** split codegen into three layers:
+**Next:** split codegen into three layers:
 - **Zig IR** — small explicit representation of target Zig AST (~15-20 node types)
 - **Lowering** (MIR → Zig IR) — coercions, union wrapping, bridge imports
 - **Zig Printer** (Zig IR → text) — trivial pretty-printer (~500 lines)
