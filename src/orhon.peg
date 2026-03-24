@@ -173,7 +173,7 @@ bridge_struct
     <- 'struct' IDENTIFIER generic_params? ('{' _ bridge_struct_body _ '}' / TERM)
 
 bridge_struct_body
-    <- (doc_block? 'pub'? bridge_decl _)*
+    <- (doc_block? 'pub'? (bridge_decl / field_decl) _)*
 
 
 # ============================================================

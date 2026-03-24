@@ -19,6 +19,7 @@ const zig_runner = @import("zig_runner.zig");
 const errors = @import("errors.zig");
 const cache = @import("cache.zig");
 const builtins = @import("builtins.zig");
+const peg = @import("peg.zig");
 
 // ============================================================
 // CLI
@@ -36,6 +37,7 @@ const Command = enum {
     gendoc,
     lsp,
     which,
+    analysis,
     help,
 };
 
@@ -157,6 +159,8 @@ fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         cli.command = .lsp;
     } else if (std.mem.eql(u8, cmd_str, "which")) {
         cli.command = .which;
+    } else if (std.mem.eql(u8, cmd_str, "analysis")) {
+        cli.command = .analysis;
     } else if (std.mem.eql(u8, cmd_str, "help") or std.mem.eql(u8, cmd_str, "--help")) {
         cli.command = .help;
     } else {
@@ -201,7 +205,7 @@ fn printUsage() void {
     const usage =
         \\orhon — The Orhon compiler  (orhon help for more info)
         \\
-        \\  build   run   test   fmt   gendoc   init   lsp   addtopath   debug   version
+        \\  build   run   test   fmt   gendoc   init   lsp   addtopath   debug   analysis   version
         \\
     ;
     std.debug.print("{s}", .{usage});
@@ -221,6 +225,7 @@ fn printHelp() void {
         \\  lsp                 Start the language server (for editor integration)
         \\  addtopath           Add orhon to your shell PATH
         \\  debug               Show project info — modules, files, source directory
+        \\  analysis <file>     Run PEG grammar validation on a single .orh file
         \\  version             Print the compiler version
         \\
         \\Targets (combinable — e.g. orhon build -linux_x64 -win_x64):
@@ -657,6 +662,11 @@ pub fn main() !void {
         return;
     }
 
+    if (cli.command == .analysis) {
+        try runAnalysis(allocator, &cli);
+        return;
+    }
+
     if (cli.command == .debug) {
         try runDebug(allocator, &cli);
         return;
@@ -707,6 +717,65 @@ pub fn main() !void {
             std.debug.print("error: failed to run bin/{s}: {}\n", .{ binary_name.?, err });
             std.process.exit(1);
         };
+    }
+}
+
+fn runAnalysis(allocator: std.mem.Allocator, cli: *const CliArgs) !void {
+    const file_path = cli.source_dir;
+    if (std.mem.eql(u8, file_path, "src")) {
+        std.debug.print("usage: orhon analysis <file.orh>\n", .{});
+        std.process.exit(1);
+    }
+
+    // Read the source file
+    const source = std.fs.cwd().readFileAlloc(allocator, file_path, 10 * 1024 * 1024) catch |err| {
+        std.debug.print("error: could not read '{s}': {}\n", .{ file_path, err });
+        std.process.exit(1);
+    };
+    defer allocator.free(source);
+
+    // Lex
+    var lex = lexer.Lexer.init(source);
+    var tokens = lex.tokenize(allocator) catch |err| {
+        std.debug.print("error: lexer failed on '{s}': {}\n", .{ file_path, err });
+        std.process.exit(1);
+    };
+    defer tokens.deinit(allocator);
+
+    std.debug.print("=== orhon analysis ===\n", .{});
+    std.debug.print("file: {s}\n", .{file_path});
+    std.debug.print("tokens: {d}\n", .{tokens.items.len});
+
+    // Load PEG grammar
+    var grammar = peg.loadGrammar(allocator) catch |err| {
+        std.debug.print("error: could not load PEG grammar: {}\n", .{err});
+        std.process.exit(1);
+    };
+    defer grammar.deinit();
+
+    // Run PEG validation
+    var engine = peg.Engine.init(&grammar, tokens.items, allocator);
+    defer engine.deinit();
+
+    const result = engine.matchRule("program", 0);
+    if (result) |r| {
+        const consumed_all = r.end_pos >= tokens.items.len or
+            tokens.items[r.end_pos].kind == .eof;
+        if (consumed_all) {
+            std.debug.print("result: PASS — grammar validated successfully\n", .{});
+        } else {
+            const tok = tokens.items[r.end_pos];
+            std.debug.print("result: PARTIAL — matched {d}/{d} tokens\n", .{
+                r.end_pos, tokens.items.len,
+            });
+            std.debug.print("stuck at line {d}:{d} — unexpected '{s}' ({s})\n", .{
+                tok.line, tok.col, tok.text, @tagName(tok.kind),
+            });
+            std.process.exit(1);
+        }
+    } else {
+        std.debug.print("result: FAIL — could not match program structure\n", .{});
+        std.process.exit(1);
     }
 }
 
