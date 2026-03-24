@@ -45,7 +45,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Fix interpolation catch unreachable in codegen (MEM-01, MEM-02)
+- [x] 02-01-PLAN.md — Fix interpolation catch unreachable in codegen (MEM-01, MEM-02)
 - [ ] 02-02-PLAN.md — Stdlib catch {} sweep across 15 bridge files (MEM-03)
 - [ ] 02-03-PLAN.md — Add Ptr .cast() constructor and migrate tester/example (MEM-04)
 
@@ -67,5 +67,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Compiler Bug Fixes | 2/2 | Complete   | 2026-03-24 |
-| 2. Memory & Error Safety | 0/3 | Not started | - |
+| 2. Memory & Error Safety | 1/3 | In Progress|  |
 | 3. LSP Hardening | 0/TBD | Not started | - |

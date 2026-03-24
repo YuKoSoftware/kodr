@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: milestone
 status: Ready to plan
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-24T16:27:41.144Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-24T17:05:03.165Z"
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 5
+  completed_plans: 3
 ---
 
 # Project State
@@ -63,6 +63,8 @@ Recent decisions affecting current work:
 - [Phase 01-compiler-bug-fixes]: Qualified generic validation falls back to trusting when all_decls is null or module not yet processed — avoids false positives in dependency order
 - [Phase 01]: Const values are implicitly copyable — is_const field added to VarState for clean const-vs-var ownership tracking
 - [Phase 01]: Auto-inject stdlib imports in codegen — str and collections always auto-imported in generated Zig files for ergonomic string/collection usage
+- [Phase 02-memory-error-safety]: Fixed both interpolation codegen paths proactively even though they are currently dormant — when PEG builder gains interpolation support, OOM will propagate correctly
+- [Phase 02-memory-error-safety]: Codegen regression tests check source patterns directly via grep on src/codegen.zig when code paths are not yet reachable from user programs
 
 ### Pending Todos
 
@@ -74,6 +76,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T16:17:41.060Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-03-24T17:05:03.163Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None
