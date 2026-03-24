@@ -460,14 +460,18 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
     };
     defer saved_cwd.setAsCwd() catch {};
 
+    // Scratch arena for all analysis pass objects — bulk-freed on function exit.
+    // Results (diagnostics, symbols) are allocated with the long-lived `allocator`
+    // so they survive the arena deinit and can be freed by freeDiagnostics/freeSymbols.
+    var scratch = std.heap.ArenaAllocator.init(allocator);
+    defer scratch.deinit();
+    const a = scratch.allocator();
+
     // Ensure std files exist
     std.fs.cwd().makePath(cache.CACHE_DIR ++ "/std") catch {};
 
-    var reporter = errors.Reporter.init(allocator, .debug);
-    defer reporter.deinit();
-
-    var mod_resolver = module.Resolver.init(allocator, &reporter);
-    defer mod_resolver.deinit();
+    var reporter = errors.Reporter.init(a, .debug);
+    var mod_resolver = module.Resolver.init(a, &reporter);
 
     std.fs.cwd().access("src", .{}) catch {
         lspLog("analysis: no 'src' directory in '{s}'", .{project_root});
@@ -491,7 +495,7 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         return empty;
     }
 
-    mod_resolver.parseModules(allocator) catch {};
+    mod_resolver.parseModules(a) catch {};
     if (reporter.hasErrors()) {
         lspLog("analysis: parse errors (continuing with partial symbols)", .{});
     }
@@ -504,19 +508,19 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
             if (entry.value_ptr.ast == null) { has_unparsed = true; break; }
         }
         if (has_unparsed) {
-            mod_resolver.parseModules(allocator) catch {};
+            mod_resolver.parseModules(a) catch {};
         }
     }
 
-    mod_resolver.scanAndParseDeps(allocator, "src") catch {};
+    mod_resolver.scanAndParseDeps(a, "src") catch {};
     mod_resolver.validateImports(&reporter) catch {};
 
-    const order = mod_resolver.topologicalOrder(allocator) catch {
+    const order = mod_resolver.topologicalOrder(a) catch {
         lspLog("analysis: topological order failed", .{});
         empty.diagnostics = toDiagnostics(allocator, &reporter, project_root) catch &.{};
         return empty;
     };
-    defer allocator.free(order);
+    // order is arena-allocated — freed automatically by scratch.deinit()
 
     // Collect symbols from all modules
     var all_symbols: std.ArrayListUnmanaged(SymbolInfo) = .{};
@@ -532,9 +536,8 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
         const source_file: []const u8 = if (mod_ptr.files.len > 0) mod_ptr.files[0] else "";
         const errors_before = reporter.errors.items.len;
 
-        // Pass 4: Declarations
-        var dc = declarations.DeclCollector.init(allocator, &reporter);
-        defer dc.deinit();
+        // Pass 4: Declarations (uses scratch arena; symbol strings use long-lived allocator)
+        var dc = declarations.DeclCollector.init(a, &reporter);
         dc.locs = locs_ptr;
         dc.file_offsets = file_offsets;
         dc.collect(ast) catch {};
@@ -544,49 +547,49 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
             continue;
         }
 
-        // Pass 5: Type Resolution
-        var tr = resolver.TypeResolver.init(allocator, &dc.table, &reporter);
-        defer tr.deinit();
+        // Pass 5: Type Resolution (uses scratch arena)
+        var tr = resolver.TypeResolver.init(a, &dc.table, &reporter);
         tr.locs = locs_ptr;
         tr.file_offsets = file_offsets;
         tr.resolve(ast) catch {};
 
-        // Extract symbols from DeclTable + AST locations (even if type resolution had errors)
+        // Extract symbols from DeclTable + AST locations (even if type resolution had errors).
+        // Symbol strings are allocated with the long-lived allocator so they outlive the arena.
         extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
 
         if (reporter.errors.items.len > errors_before) continue;
 
-        // Shared context for validation passes
+        // Shared context for validation passes — uses scratch arena allocator
         const sema_ctx = sema.SemanticContext{
-            .allocator = allocator,
+            .allocator = a,
             .reporter = &reporter,
             .decls = &dc.table,
             .locs = locs_ptr,
             .file_offsets = file_offsets,
         };
 
-        // Pass 6: Ownership
-        var oc = ownership.OwnershipChecker.init(allocator, &sema_ctx);
+        // Pass 6: Ownership (uses scratch arena)
+        var oc = ownership.OwnershipChecker.init(a, &sema_ctx);
         oc.check(ast) catch {};
         if (reporter.errors.items.len > errors_before) continue;
 
-        // Pass 7: Borrow Checking
-        var bc = borrow.BorrowChecker.init(allocator, &sema_ctx);
-        defer bc.deinit();
+        // Pass 7: Borrow Checking (uses scratch arena)
+        var bc = borrow.BorrowChecker.init(a, &sema_ctx);
         bc.check(ast) catch {};
         if (reporter.errors.items.len > errors_before) continue;
 
-        // Pass 8: Thread Safety
-        var tc = thread_safety.ThreadSafetyChecker.init(allocator, &sema_ctx);
-        defer tc.deinit();
+        // Pass 8: Thread Safety (uses scratch arena)
+        var tc = thread_safety.ThreadSafetyChecker.init(a, &sema_ctx);
         tc.check(ast) catch {};
         if (reporter.errors.items.len > errors_before) continue;
 
-        // Pass 9: Error Propagation
-        var prop_checker = propagation.PropagationChecker.init(allocator, &sema_ctx);
+        // Pass 9: Error Propagation (uses scratch arena)
+        var prop_checker = propagation.PropagationChecker.init(a, &sema_ctx);
         prop_checker.check(ast) catch {};
     }
 
+    // Diagnostics and symbols are allocated with the long-lived allocator so they
+    // survive the scratch arena deinit and can be freed by freeDiagnostics/freeSymbols.
     const diags = toDiagnostics(allocator, &reporter, project_root) catch
         @as([]Diagnostic, &.{});
     const symbols = if (all_symbols.items.len > 0)
