@@ -269,55 +269,12 @@ pub const ZigRunner = struct {
         try stderr.flush();
     }
 
-    /// Format Zig test output into clean PASS/FAIL lines
+    /// Format Zig test output into clean PASS/FAIL lines, writing to stderr.
     fn formatTestOutput(self: *ZigRunner, stderr: []const u8, all_passed: bool) !void {
         var buf: [4096]u8 = undefined;
         var w = std.fs.File.stderr().writer(&buf);
         const out = &w.interface;
-
-        var lines = std.mem.splitScalar(u8, stderr, '\n');
-        var passed: usize = 0;
-        var failed: usize = 0;
-        var failed_names = std.ArrayListUnmanaged([]const u8){};
-        defer failed_names.deinit(self.allocator);
-
-        // Parse Zig test output lines like:
-        // "test\n+- run test 2/2 passed" or "'module.test.name' failed"
-        while (lines.next()) |line| {
-            // Detect passed tests: "N/M passed"
-            if (std.mem.indexOf(u8, line, " passed") != null) {
-                if (std.mem.indexOf(u8, line, "/")) |slash_pos| {
-                    const before_slash = line[0..slash_pos];
-                    var i = before_slash.len;
-                    while (i > 0 and before_slash[i - 1] >= '0' and before_slash[i - 1] <= '9') i -= 1;
-                    passed = std.fmt.parseInt(usize, before_slash[i..], 10) catch passed;
-                }
-            }
-            // Detect failed test name: "'module.test.NAME' failed"
-            if (std.mem.indexOf(u8, line, "' failed:") != null or
-                std.mem.indexOf(u8, line, "' failed") != null)
-            {
-                if (std.mem.indexOf(u8, line, ".test.")) |test_pos| {
-                    const name_start = test_pos + 6;
-                    const name_end = std.mem.indexOf(u8, line[name_start..], "'") orelse line[name_start..].len;
-                    const name = try self.allocator.dupe(u8, line[name_start .. name_start + name_end]);
-                    try failed_names.append(self.allocator, name);
-                    failed += 1;
-                }
-            }
-        }
-
-        // Print clean results
-        if (all_passed) {
-            try out.print("  PASS  all tests passed\n", .{});
-        } else {
-            for (failed_names.items) |name| {
-                try out.print("  FAIL  {s}\n", .{name});
-                self.allocator.free(name);
-            }
-            const pass_count = if (passed > failed) passed - failed else 0;
-            try out.print("\n{d} passed, {d} failed\n", .{ pass_count, failed });
-        }
+        try writeTestOutput(self.allocator, stderr, all_passed, out);
         try out.flush();
     }
 
@@ -413,6 +370,56 @@ pub const ZigRunner = struct {
         try cache.writeGeneratedZig("build", content, self.allocator);
     }
 };
+
+/// Parse Zig test output and write clean PASS/FAIL lines to the given writer.
+/// Extracted for testability — formatTestOutput calls this with a stderr writer.
+fn writeTestOutput(allocator: std.mem.Allocator, stderr: []const u8, all_passed: bool, out: anytype) !void {
+    var lines = std.mem.splitScalar(u8, stderr, '\n');
+    var passed: usize = 0;
+    var failed: usize = 0;
+    var failed_names = std.ArrayListUnmanaged([]const u8){};
+    defer {
+        for (failed_names.items) |name| allocator.free(name);
+        failed_names.deinit(allocator);
+    }
+
+    // Parse Zig test output lines like:
+    // "test\n+- run test 2/2 passed" or "'module.test.name' failed"
+    while (lines.next()) |line| {
+        // Detect passed tests: "N/M passed"
+        if (std.mem.indexOf(u8, line, " passed") != null) {
+            if (std.mem.indexOf(u8, line, "/")) |slash_pos| {
+                const before_slash = line[0..slash_pos];
+                var i = before_slash.len;
+                while (i > 0 and before_slash[i - 1] >= '0' and before_slash[i - 1] <= '9') i -= 1;
+                passed = std.fmt.parseInt(usize, before_slash[i..], 10) catch passed;
+            }
+        }
+        // Detect failed test name: "'module.test.NAME' failed"
+        if (std.mem.indexOf(u8, line, "' failed:") != null or
+            std.mem.indexOf(u8, line, "' failed") != null)
+        {
+            if (std.mem.indexOf(u8, line, ".test.")) |test_pos| {
+                const name_start = test_pos + 6;
+                const name_end = std.mem.indexOf(u8, line[name_start..], "'") orelse line[name_start..].len;
+                const name = try allocator.dupe(u8, line[name_start .. name_start + name_end]);
+                try failed_names.append(allocator, name);
+                failed += 1;
+            }
+        }
+    }
+
+    // Print clean results
+    if (all_passed) {
+        try out.print("  PASS  all tests passed\n", .{});
+    } else {
+        for (failed_names.items) |name| {
+            try out.print("  FAIL  {s}\n", .{name});
+        }
+        const pass_count = if (passed > failed) passed - failed else 0;
+        try out.print("\n{d} passed, {d} failed\n", .{ pass_count, failed });
+    }
+}
 
 /// Build the content of build.zig for the given build type.
 /// Caller owns the returned slice.
@@ -898,4 +905,34 @@ test "buildZigContentMulti - single exe (no libs)" {
     try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") == null);
     // Runtime module has been removed — must NOT be present
     try std.testing.expect(std.mem.indexOf(u8, content, "addImport(\"_orhon_rt\"") == null);
+}
+
+test "formatTestOutput - all passed prints all tests passed" {
+    const alloc = std.testing.allocator;
+    var out_buf = std.ArrayListUnmanaged(u8){};
+    defer out_buf.deinit(alloc);
+
+    try writeTestOutput(alloc, "", true, out_buf.writer(alloc));
+
+    const output = out_buf.items;
+    try std.testing.expect(std.mem.indexOf(u8, output, "all tests passed") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "FAIL") == null);
+}
+
+test "formatTestOutput - failure reports FAIL and counts" {
+    const alloc = std.testing.allocator;
+    var out_buf = std.ArrayListUnmanaged(u8){};
+    defer out_buf.deinit(alloc);
+
+    const sample_stderr =
+        \\test
+        \\+- run test 1/2 passed, 1 failed
+        \\error: 'main.test.wrong' failed: TestUnexpectedResult
+    ;
+
+    try writeTestOutput(alloc, sample_stderr, false, out_buf.writer(alloc));
+
+    const output = out_buf.items;
+    try std.testing.expect(std.mem.indexOf(u8, output, "FAIL") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "wrong") != null);
 }

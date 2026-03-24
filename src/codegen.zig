@@ -253,6 +253,19 @@ pub const CodeGen = struct {
             }
         }
 
+        // Auto-import str and collections if not explicitly imported.
+        // These modules are always available via build.zig addImport — no
+        // import needed in user code, but the generated Zig file needs them
+        // if string/collection operations are used implicitly (e.g., String methods).
+        if (self.str_import_alias == null and !self.str_is_included) {
+            self.str_import_alias = "str";
+            try self.emit("const str = @import(\"_orhon_str\");\n");
+        }
+        if (self.collections_import_alias == null and !self.collections_is_included) {
+            self.collections_import_alias = "collections";
+            try self.emit("const collections = @import(\"_orhon_collections\");\n");
+        }
+
         try self.emit("\n");
 
         // Emit _OrhonHandle helper for thread handle types (comptime, zero cost if unused)
