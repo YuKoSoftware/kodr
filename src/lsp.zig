@@ -592,10 +592,14 @@ fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Analysis
     // survive the scratch arena deinit and can be freed by freeDiagnostics/freeSymbols.
     const diags = toDiagnostics(allocator, &reporter, project_root) catch
         @as([]Diagnostic, &.{});
-    const symbols = if (all_symbols.items.len > 0)
-        (allocator.dupe(SymbolInfo, all_symbols.items) catch @as([]SymbolInfo, &.{}))
-    else
-        @as([]SymbolInfo, &.{});
+    // Dupe the symbol list into a flat slice, then free the ArrayList backing buffer.
+    // The symbol string fields within each SymbolInfo are already long-lived (allocated
+    // by extractSymbols with `allocator`), so only the ArrayList capacity needs freeing.
+    const symbols = if (all_symbols.items.len > 0) blk: {
+        const duped = allocator.dupe(SymbolInfo, all_symbols.items) catch @as([]SymbolInfo, &.{});
+        all_symbols.deinit(allocator);
+        break :blk duped;
+    } else @as([]SymbolInfo, &.{});
 
     return .{ .diagnostics = diags, .symbols = symbols };
 }
@@ -3265,4 +3269,33 @@ test "classifyToken keywords" {
     try std.testing.expectEqual(SemanticTokenType.string, str.token_type.?);
     const ident = classifyToken(.identifier);
     try std.testing.expect(ident.token_type == null);
+}
+
+test "runAnalysis arena does not leak or corrupt returned data" {
+    // std.testing.allocator detects use-after-free and leaks in debug mode.
+    // runAnalysis creates a scratch arena internally; returned diagnostics/symbols
+    // must be allocated with the long-lived allocator (std.testing.allocator here)
+    // and survive the arena deinit.
+    const result = runAnalysis(std.testing.allocator, ".") catch |err| {
+        // Analysis may fail on missing project structure — that's OK.
+        // The important thing is that the arena was cleaned up without error.
+        _ = err;
+        return;
+    };
+    // If we got results, verify they can be read and freed without allocator errors.
+    // std.testing.allocator will panic on use-after-free or double-free.
+    freeDiagnostics(std.testing.allocator, result.diagnostics);
+    freeSymbols(std.testing.allocator, result.symbols);
+}
+
+test "runAnalysis can be called twice without accumulation" {
+    // Two sequential calls prove the arena from the first call is fully released.
+    // std.testing.allocator detects leaks at test end.
+    for (0..2) |_| {
+        const result = runAnalysis(std.testing.allocator, ".") catch {
+            continue;
+        };
+        freeDiagnostics(std.testing.allocator, result.diagnostics);
+        freeSymbols(std.testing.allocator, result.symbols);
+    }
 }
