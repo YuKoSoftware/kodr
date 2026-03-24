@@ -3160,6 +3160,23 @@ test "readMessage parses LSP header" {
     try std.testing.expectEqualStrings("{\"test\":true}", body);
 }
 
+test "readMessage rejects oversized content-length" {
+    // Content-Length claims 100 MiB — exceeds MAX_CONTENT_LENGTH (64 MiB)
+    const input = "Content-Length: 104857600\r\n\r\n";
+    var reader = Io.Reader.fixed(input);
+    const result = readMessage(&reader, std.testing.allocator);
+    try std.testing.expectError(error.InvalidHeader, result);
+}
+
+test "readMessage accepts valid content-length" {
+    const body_content = "{}";
+    const input = "Content-Length: 2\r\n\r\n{}";
+    var reader = Io.Reader.fixed(input);
+    const body = try readMessage(&reader, std.testing.allocator);
+    defer std.testing.allocator.free(body);
+    try std.testing.expectEqualStrings(body_content, body);
+}
+
 test "getWordAtPosition finds identifier" {
     const source = "func main() void {\n    console.println(x)\n}";
     const word = getWordAtPosition(source, 0, 5);
