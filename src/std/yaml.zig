@@ -56,7 +56,7 @@ fn tokenizeLines(source: []const u8) []const Line {
         // Skip empty lines and comments
         if (content.len == 0) continue;
         if (content[0] == '#') continue;
-        lines.append(alloc, .{ .indent = indent, .content = content }) catch {};
+        lines.append(alloc, .{ .indent = indent, .content = content }) catch continue;
     }
     return lines.items;
 }
@@ -108,17 +108,17 @@ fn parseMapping(lines: []const Line, pos: *usize, base_indent: usize) Value {
         if (after_colon.len > 0) {
             // Inline value: "key: value"
             const value = parseScalar(after_colon);
-            entries.append(alloc, .{ .key = key, .value = value }) catch {};
+            entries.append(alloc, .{ .key = key, .value = value }) catch continue;
             pos.* += 1;
         } else {
             // Block value: children on next lines with deeper indent
             pos.* += 1;
             if (pos.* < lines.len and lines[pos.*].indent > base_indent) {
                 const child = parseBlock(lines, pos, lines[pos.*].indent);
-                entries.append(alloc, .{ .key = key, .value = child }) catch {};
+                entries.append(alloc, .{ .key = key, .value = child }) catch continue;
             } else {
                 // Empty value
-                entries.append(alloc, .{ .key = key, .value = .{ .tag = .null_val } }) catch {};
+                entries.append(alloc, .{ .key = key, .value = .{ .tag = .null_val } }) catch continue;
             }
         }
     }
@@ -139,9 +139,9 @@ fn parseSequence(lines: []const Line, pos: *usize, base_indent: usize) Value {
             pos.* += 1;
             if (pos.* < lines.len and lines[pos.*].indent > base_indent) {
                 const child = parseBlock(lines, pos, lines[pos.*].indent);
-                items.append(alloc, child) catch {};
+                items.append(alloc, child) catch continue;
             } else {
-                items.append(alloc, .{ .tag = .null_val }) catch {};
+                items.append(alloc, .{ .tag = .null_val }) catch continue;
             }
             continue;
         }
@@ -156,15 +156,15 @@ fn parseSequence(lines: []const Line, pos: *usize, base_indent: usize) Value {
             const item_indent = line.indent + 2;
             // Rewrite this line without "- " for the mapping parser
             var nested_lines = std.ArrayListUnmanaged(Line){};
-            nested_lines.append(alloc, .{ .indent = item_indent, .content = after_dash }) catch {};
+            nested_lines.append(alloc, .{ .indent = item_indent, .content = after_dash }) catch continue;
             // Collect continuation lines that belong to this item
             var look: usize = pos.* + 1;
             while (look < lines.len and lines[look].indent > base_indent) : (look += 1) {
-                nested_lines.append(alloc, lines[look]) catch {};
+                nested_lines.append(alloc, lines[look]) catch continue;
             }
             var nested_pos: usize = 0;
             const child = parseMapping(nested_lines.items, &nested_pos, item_indent);
-            items.append(alloc, child) catch {};
+            items.append(alloc, child) catch continue;
             pos.* = pos.* + 1 + nested_pos - 1;
             // Skip consumed continuation lines
             while (pos.* < lines.len and lines[pos.*].indent > base_indent and
@@ -174,7 +174,7 @@ fn parseSequence(lines: []const Line, pos: *usize, base_indent: usize) Value {
             }
         } else {
             // Simple scalar: "- value"
-            items.append(alloc, parseScalar(after_dash)) catch {};
+            items.append(alloc, parseScalar(after_dash)) catch continue;
             pos.* += 1;
         }
     }
@@ -310,8 +310,8 @@ pub fn getArray(source: []const u8, path: []const u8) anyerror![]const u8 {
 
     var buf = std.ArrayListUnmanaged(u8){};
     for (val.sequence_items, 0..) |item, i| {
-        if (i > 0) buf.append(alloc, '\n') catch {};
-        buf.appendSlice(alloc, valueToString(item)) catch {};
+        if (i > 0) buf.append(alloc, '\n') catch continue;
+        buf.appendSlice(alloc, valueToString(item)) catch continue;
     }
     return if (buf.items.len > 0) buf.items else "";
 }
@@ -333,8 +333,8 @@ pub fn getKeys(source: []const u8, mapping: []const u8) anyerror![]const u8 {
 
     var buf = std.ArrayListUnmanaged(u8){};
     for (target.mapping_entries, 0..) |entry, i| {
-        if (i > 0) buf.append(alloc, '\n') catch {};
-        buf.appendSlice(alloc, entry.key) catch {};
+        if (i > 0) buf.append(alloc, '\n') catch continue;
+        buf.appendSlice(alloc, entry.key) catch continue;
     }
     if (target.mapping_entries.len == 0) return error.mapping_not_found;
     return buf.items;

@@ -41,7 +41,7 @@ fn parseIni(source: []const u8) IniMap {
                 sections.append(alloc, .{
                     .name = current_name,
                     .keys = alloc.dupe(Entry, current_entries.items) catch &.{},
-                }) catch {};
+                }) catch continue;
                 current_entries.clearRetainingCapacity();
             }
             const end = std.mem.indexOfScalar(u8, line, ']') orelse line.len;
@@ -56,16 +56,16 @@ fn parseIni(source: []const u8) IniMap {
             current_entries.append(alloc, .{
                 .key = alloc.dupe(u8, key) catch "",
                 .value = alloc.dupe(u8, value) catch "",
-            }) catch {};
+            }) catch continue;
         }
     }
 
-    // Flush last section
+    // Flush last section — best-effort: OOM silently drops the final section
     if (current_name.len > 0 or current_entries.items.len > 0) {
         sections.append(alloc, .{
             .name = current_name,
             .keys = alloc.dupe(Entry, current_entries.items) catch &.{},
-        }) catch {};
+        }) catch return .{ .sections = sections.items };
     }
 
     return .{ .sections = sections.items };
@@ -115,8 +115,8 @@ pub fn getKeys(source: []const u8, section: []const u8) anyerror![]const u8 {
         if (std.mem.eql(u8, sec.name, section)) {
             var buf = std.ArrayListUnmanaged(u8){};
             for (sec.keys, 0..) |entry, i| {
-                if (i > 0) buf.append(alloc, '\n') catch {};
-                buf.appendSlice(alloc, entry.key) catch {};
+                if (i > 0) buf.append(alloc, '\n') catch continue;
+                buf.appendSlice(alloc, entry.key) catch continue;
             }
             return if (buf.items.len > 0) buf.items else "";
         }
@@ -131,8 +131,8 @@ pub fn getSections(source: []const u8) []const u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     for (ini.sections, 0..) |sec, i| {
         if (sec.name.len == 0) continue;
-        if (i > 0 and buf.items.len > 0) buf.append(alloc, '\n') catch {};
-        buf.appendSlice(alloc, sec.name) catch {};
+        if (i > 0 and buf.items.len > 0) buf.append(alloc, '\n') catch continue;
+        buf.appendSlice(alloc, sec.name) catch continue;
     }
     return if (buf.items.len > 0) buf.items else "";
 }

@@ -320,8 +320,8 @@ pub fn findAll(pattern: []const u8, text: []const u8) anyerror![]const u8 {
     while (i <= text.len) : (i += 1) {
         if (matchRegex(regex, text, i)) |end| {
             if (end > i) {
-                if (count > 0) buf.append(alloc, '\n') catch {};
-                buf.appendSlice(alloc, text[i..end]) catch {};
+                if (count > 0) buf.append(alloc, '\n') catch continue;
+                buf.appendSlice(alloc, text[i..end]) catch continue;
                 count += 1;
                 i = end - 1; // -1 because loop increments
                 continue;
@@ -341,9 +341,9 @@ pub fn replace(pattern: []const u8, text: []const u8, replacement: []const u8) a
         if (matchRegex(regex, text, i)) |end| {
             if (end >= i) {
                 var buf = std.ArrayListUnmanaged(u8){};
-                buf.appendSlice(alloc, text[0..i]) catch {};
-                buf.appendSlice(alloc, replacement) catch {};
-                buf.appendSlice(alloc, text[end..]) catch {};
+                buf.appendSlice(alloc, text[0..i]) catch return "";
+                buf.appendSlice(alloc, replacement) catch return "";
+                buf.appendSlice(alloc, text[end..]) catch return "";
                 return buf.items;
             }
         }
@@ -360,12 +360,12 @@ pub fn replaceAll(pattern: []const u8, text: []const u8, replacement: []const u8
     while (i < text.len) {
         if (matchRegex(regex, text, i)) |end| {
             if (end > i) {
-                buf.appendSlice(alloc, replacement) catch {};
+                buf.appendSlice(alloc, replacement) catch continue;
                 i = end;
                 continue;
             }
         }
-        buf.append(alloc, text[i]) catch {};
+        buf.append(alloc, text[i]) catch continue;
         i += 1;
     }
     return if (buf.items.len > 0) buf.items else alloc.dupe(u8, text) catch return error.out_of_memory;

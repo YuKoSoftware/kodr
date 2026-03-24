@@ -55,7 +55,7 @@ fn parseToml(source: []const u8) Value {
             else
                 alloc.dupe(u8, key) catch key;
 
-            root_entries.append(alloc, .{ .key = full_key, .value = value }) catch {};
+            root_entries.append(alloc, .{ .key = full_key, .value = value }) catch continue;
         }
     }
 
@@ -107,13 +107,13 @@ fn parseArray(inner: []const u8) Value {
         if (inner[i] == ']') depth -= 1;
         if (inner[i] == ',' and depth == 0) {
             const elem = std.mem.trim(u8, inner[start..i], " \t");
-            if (elem.len > 0) items.append(alloc, parseValue(elem)) catch {};
+            if (elem.len > 0) items.append(alloc, parseValue(elem)) catch continue;
             start = i + 1;
         }
     }
     // Last element
     const last = std.mem.trim(u8, inner[start..], " \t");
-    if (last.len > 0) items.append(alloc, parseValue(last)) catch {};
+    if (last.len > 0) items.append(alloc, parseValue(last)) catch return .{ .tag = .array, .array_items = items.items };
 
     return .{ .tag = .array, .array_items = items.items };
 }
@@ -143,7 +143,7 @@ fn resolveValue(root: Value, path: []const u8) ?Value {
                 sub_entries.append(alloc, .{
                     .key = entry.key[prefix.len..],
                     .value = entry.value,
-                }) catch {};
+                }) catch continue;
             }
         }
         return .{ .tag = .table, .table_entries = sub_entries.items };
@@ -207,8 +207,8 @@ pub fn getArray(source: []const u8, path: []const u8) anyerror![]const u8 {
 
     var buf = std.ArrayListUnmanaged(u8){};
     for (val.array_items, 0..) |item, i| {
-        if (i > 0) buf.append(alloc, '\n') catch {};
-        buf.appendSlice(alloc, valueToString(item)) catch {};
+        if (i > 0) buf.append(alloc, '\n') catch continue;
+        buf.appendSlice(alloc, valueToString(item)) catch continue;
     }
     return if (buf.items.len > 0) buf.items else "";
 }
@@ -244,8 +244,8 @@ pub fn getKeys(source: []const u8, table: []const u8) anyerror![]const u8 {
             }
             continue;
         };
-        if (key_count > 0) buf.append(alloc, '\n') catch {};
-        buf.appendSlice(alloc, key) catch {};
+        if (key_count > 0) buf.append(alloc, '\n') catch continue;
+        buf.appendSlice(alloc, key) catch continue;
         key_count += 1;
     }
     if (key_count == 0) return error.table_not_found;

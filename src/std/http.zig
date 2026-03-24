@@ -131,11 +131,11 @@ pub fn urlBuild(scheme: []const u8, host: []const u8, port: i32, path: []const u
         const port_str = std.fmt.allocPrint(alloc, ":{d}", .{port}) catch return "";
         buf.appendSlice(alloc, port_str) catch return "";
     }
-    if (path.len > 0 and path[0] != '/') buf.append(alloc, '/') catch {};
+    if (path.len > 0 and path[0] != '/') buf.append(alloc, '/') catch return "";
     buf.appendSlice(alloc, path) catch return "";
     if (query.len > 0) {
-        buf.append(alloc, '?') catch {};
-        buf.appendSlice(alloc, query) catch {};
+        buf.append(alloc, '?') catch return "";
+        buf.appendSlice(alloc, query) catch return "";
     }
     return buf.items;
 }

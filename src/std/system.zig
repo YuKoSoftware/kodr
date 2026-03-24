@@ -18,7 +18,7 @@ pub fn run(cmd: []const u8, args: []const []const u8) RunResult {
     var argv = std.ArrayListUnmanaged([]const u8){};
     argv.append(alloc, cmd) catch return .{ .code = -1, .stdout = "", .stderr = "out of memory" };
     for (args) |arg| {
-        argv.append(alloc, arg) catch {};
+        argv.append(alloc, arg) catch continue;
     }
 
     var child = std.process.Child.init(argv.items, alloc);
@@ -81,11 +81,11 @@ pub fn allEnv() []const u8 {
     var iter = env.iterator();
     var first = true;
     while (iter.next()) |entry| {
-        if (!first) buf.append(alloc, '\n') catch {};
+        if (!first) buf.append(alloc, '\n') catch continue;
         first = false;
-        buf.appendSlice(alloc, entry.key_ptr.*) catch {};
-        buf.append(alloc, '=') catch {};
-        buf.appendSlice(alloc, entry.value_ptr.*) catch {};
+        buf.appendSlice(alloc, entry.key_ptr.*) catch continue;
+        buf.append(alloc, '=') catch continue;
+        buf.appendSlice(alloc, entry.value_ptr.*) catch continue;
     }
     return if (buf.items.len > 0) buf.items else "";
 }
@@ -124,7 +124,7 @@ pub fn trapSignal(sig: i32) void {
         .mask = posix.empty_sigset,
         .flags = .{ .RESTART = true },
     };
-    posix.sigaction(s, &act, null) catch {};
+    posix.sigaction(s, &act, null) catch {}; // fire-and-forget: signal handler
 }
 
 pub fn checkSignal(sig: i32) bool {
@@ -144,7 +144,7 @@ pub fn clearSignal(sig: i32) void {
 
 pub fn raise(sig: i32) void {
     const s: u6 = @intCast(sig);
-    _ = posix.raise(s) catch {};
+    _ = posix.raise(s) catch {}; // fire-and-forget: signal handler
 }
 
 // ── Tests ──

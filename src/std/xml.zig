@@ -94,7 +94,7 @@ fn parseNode(src: []const u8, pos: usize) ?struct { node: XmlNode, end: usize } 
     var attrs = std.ArrayListUnmanaged(Attr){};
     while (true) {
         if (parseAttr(src, i)) |result| {
-            attrs.append(alloc, result.attr) catch {};
+            attrs.append(alloc, result.attr) catch continue;
             i = result.end;
         } else break;
     }
@@ -135,14 +135,14 @@ fn parseNode(src: []const u8, pos: usize) ?struct { node: XmlNode, end: usize } 
         // Try to parse child element
         if (src[i] == '<') {
             if (parseNode(src, i)) |child_result| {
-                children.append(alloc, child_result.node) catch {};
+                children.append(alloc, child_result.node) catch continue;
                 i = child_result.end;
                 continue;
             }
         }
 
         // Accumulate text
-        text_buf.append(alloc, src[i]) catch {};
+        text_buf.append(alloc, src[i]) catch continue;
         i += 1;
     }
 
@@ -228,7 +228,7 @@ fn resolveAll(root: XmlNode, path: []const u8) []const XmlNode {
     var matches = std.ArrayListUnmanaged(XmlNode){};
     for (parent.children) |child| {
         if (std.mem.eql(u8, child.tag, target_tag)) {
-            matches.append(alloc, child) catch {};
+            matches.append(alloc, child) catch continue;
         }
     }
     return matches.items;
@@ -275,8 +275,8 @@ pub fn getAll(source: []const u8, path: []const u8) anyerror![]const u8 {
 
     var buf = std.ArrayListUnmanaged(u8){};
     for (nodes, 0..) |node, i| {
-        if (i > 0) buf.append(alloc, '\n') catch {};
-        buf.appendSlice(alloc, node.text) catch {};
+        if (i > 0) buf.append(alloc, '\n') catch continue;
+        buf.appendSlice(alloc, node.text) catch continue;
     }
     return if (buf.items.len > 0) buf.items else "";
 }
