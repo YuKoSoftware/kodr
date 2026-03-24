@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [ ] 01-01-PLAN.md — Fix ownership const-as-copy (BUG-03) and orhon test output (BUG-04)
-- [ ] 01-02-PLAN.md — Fix cross-module const & passing (BUG-01) and qualified generic validation (BUG-02)
+- [x] 01-02-PLAN.md — Fix cross-module const & passing (BUG-01) and qualified generic validation (BUG-02)
 
 ### Phase 2: Memory & Error Safety
 **Goal**: The compiler and stdlib have no silent error suppression or unrecovered memory leaks
