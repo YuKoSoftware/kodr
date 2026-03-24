@@ -51,15 +51,280 @@ test "peg - load embedded grammar" {
 test "peg - validate minimal program" {
     const alloc = std.testing.allocator;
 
-    // Lex a minimal Orhon program
     var lex = lexer.Lexer.init("module main\n");
     var tokens = try lex.tokenize(alloc);
     defer tokens.deinit(alloc);
 
     const valid = try validate(tokens.items, alloc);
-    // This tests the full pipeline: grammar loading + engine matching
-    // A minimal 'module main\n' should at least parse module_decl
-    _ = valid; // Don't assert yet — need to verify grammar handles this correctly
+    try std.testing.expect(valid);
+}
+
+test "peg - validate real program with function" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\func add(a: i32, b: i32) i32 {
+        \\    return a + b
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with struct" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module example
+        \\
+        \\pub struct Point {
+        \\    pub x: f64
+        \\    pub y: f64
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with imports and metadata" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\#name = "hello"
+        \\#build = exe
+        \\
+        \\import std::console
+        \\
+        \\func main() void {
+        \\    console.println("hello")
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with control flow" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\func abs(x: i32) i32 {
+        \\    if(x < 0) {
+        \\        return 0 - x
+        \\    }
+        \\    return x
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with enum" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module example
+        \\
+        \\pub enum(u8) Direction {
+        \\    North
+        \\    South
+        \\    East
+        \\    West
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with while and for" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\func sum(n: i32) i32 {
+        \\    var total: i32 = 0
+        \\    var i: i32 = 0
+        \\    while(i < n) : (i += 1) {
+        \\        total += i
+        \\    }
+        \\    return total
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with match" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\func classify(n: i32) i32 {
+        \\    match(n) {
+        \\        0 => { return 0 }
+        \\        1 => { return 10 }
+        \\        else => { return 99 }
+        \\    }
+        \\    return 0
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with error union" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\func safe_divide(a: i32, b: i32) (Error | i32) {
+        \\    if(b == 0) {
+        \\        return Error("division by zero")
+        \\    }
+        \\    return a / b
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with struct methods" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module example
+        \\
+        \\pub struct Counter {
+        \\    pub count: i32
+        \\
+        \\    pub func create(start: i32) Counter {
+        \\        return Counter(count: start)
+        \\    }
+        \\
+        \\    pub func get(self: const &Counter) i32 {
+        \\        return self.count
+        \\    }
+        \\
+        \\    pub func increment(self: &Counter) void {
+        \\        self.count = self.count + 1
+        \\    }
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with test decl" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module example
+        \\
+        \\func add(a: i32, b: i32) i32 {
+        \\    return a + b
+        \\}
+        \\
+        \\test "add works" {
+        \\    assert(add(2, 3) == 5)
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with defer" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\func example() i32 {
+        \\    var x: i32 = 0
+        \\    defer {
+        \\        x = 0
+        \\    }
+        \\    x = 42
+        \\    return x
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
+}
+
+test "peg - validate program with elif" {
+    const alloc = std.testing.allocator;
+
+    var lex = lexer.Lexer.init(
+        \\module main
+        \\
+        \\func sign(n: i32) i32 {
+        \\    if(n > 0) {
+        \\        return 1
+        \\    } elif(n < 0) {
+        \\        return 0 - 1
+        \\    } else {
+        \\        return 0
+        \\    }
+        \\}
+        \\
+    );
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    const valid = try validate(tokens.items, alloc);
+    try std.testing.expect(valid);
 }
 
 // Re-export sub-module tests

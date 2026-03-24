@@ -88,6 +88,31 @@ pub fn parseGrammar(source: []const u8, backing_allocator: std.mem.Allocator) !G
         .rule_names = .{},
     };
     try parser.parse();
+
+    // Override character-level rules with token-level equivalents.
+    // The .peg file defines these with character classes for documentation,
+    // but the engine operates on tokens from the lexer.
+
+    // _ = zero or more newline tokens (skip whitespace between constructs)
+    const nl_token = try allocator.create(Expr);
+    nl_token.* = Expr{ .token = .newline };
+    try parser.rules.put(allocator, "_", Expr{ .repeat = nl_token });
+
+    // TERM = statement terminator: newline, or lookahead '}', or EOF
+    // Matches the parser's expectNewlineOrEof + rbrace behavior.
+    const rbrace_ahead = try allocator.create(Expr);
+    rbrace_ahead.* = Expr{ .token = .rbrace };
+    const eof_ahead = try allocator.create(Expr);
+    eof_ahead.* = Expr{ .token = .eof };
+    const term_alts = try allocator.alloc(Expr, 3);
+    term_alts[0] = Expr{ .token = .newline };
+    term_alts[1] = Expr{ .ahead = rbrace_ahead };
+    term_alts[2] = Expr{ .ahead = eof_ahead };
+    try parser.rules.put(allocator, "TERM", Expr{ .choice = term_alts });
+
+    // EOF = match eof token
+    try parser.rules.put(allocator, "EOF", Expr{ .token = .eof });
+
     return Grammar{
         .rules = parser.rules,
         .rule_names = try parser.rule_names.toOwnedSlice(allocator),

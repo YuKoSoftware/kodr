@@ -29,7 +29,7 @@
 # ============================================================
 
 program
-    <- _ module_decl _ (metadata / import_decl / top_level)* _ EOF
+    <- _ module_decl (_ (metadata / import_decl / top_level))* _ EOF
 
 module_decl
     <- doc_block? 'module' (IDENTIFIER / 'main') NL
@@ -87,7 +87,7 @@ pub_decl
 # ============================================================
 
 func_decl
-    <- 'func' func_name '(' _ param_list _ ')' type (block / NL)
+    <- 'func' func_name '(' _ param_list _ ')' type (block / TERM)
 
 thread_decl
     <- 'thread' func_name '(' _ param_list _ ')' type block
@@ -125,7 +125,7 @@ struct_member
     <- doc_block? 'pub'? (func_decl / var_decl / const_decl / compt_decl / field_decl)
 
 field_decl
-    <- IDENTIFIER ':' type ('=' expr)? NL
+    <- IDENTIFIER ':' type ('=' expr)? TERM
 
 
 # ============================================================
@@ -142,7 +142,7 @@ enum_member
     <- doc_block? 'pub'? (func_decl / enum_variant)
 
 enum_variant
-    <- IDENTIFIER ('(' _ param_list _ ')')? NL
+    <- IDENTIFIER ('(' _ param_list _ ')')? TERM
 
 
 # ============================================================
@@ -153,7 +153,7 @@ bitfield_decl
     <- 'bitfield' '(' type ')' IDENTIFIER '{' _ bitfield_body _ '}'
 
 bitfield_body
-    <- (IDENTIFIER NL _)*
+    <- (IDENTIFIER TERM _)*
 
 
 # ============================================================
@@ -164,13 +164,13 @@ bridge_decl
     <- 'bridge' (bridge_func / bridge_const / bridge_struct)
 
 bridge_func
-    <- 'func' func_name '(' _ param_list _ ')' type NL
+    <- 'func' func_name '(' _ param_list _ ')' type TERM
 
 bridge_const
-    <- 'const' IDENTIFIER ':' type NL
+    <- 'const' IDENTIFIER ':' type TERM
 
 bridge_struct
-    <- 'struct' IDENTIFIER generic_params? ('{' _ bridge_struct_body _ '}' / NL)
+    <- 'struct' IDENTIFIER generic_params? ('{' _ bridge_struct_body _ '}' / TERM)
 
 bridge_struct_body
     <- (doc_block? 'pub'? bridge_decl _)*
@@ -181,12 +181,12 @@ bridge_struct_body
 # ============================================================
 
 const_decl
-    <- 'const' IDENTIFIER destruct_tail NL
-     / 'const' IDENTIFIER (':' type)? '=' expr NL
+    <- 'const' IDENTIFIER destruct_tail TERM
+     / 'const' IDENTIFIER (':' type)? '=' expr TERM
 
 var_decl
-    <- 'var' IDENTIFIER destruct_tail NL
-     / 'var' IDENTIFIER (':' type)? '=' expr NL
+    <- 'var' IDENTIFIER destruct_tail TERM
+     / 'var' IDENTIFIER (':' type)? '=' expr TERM
 
 destruct_tail
     <- (',' IDENTIFIER)+ '=' expr
@@ -222,7 +222,7 @@ statement
         / expr_or_assignment) _
 
 return_stmt
-    <- 'return' (!NL !'}' !EOF expr)? NL
+    <- 'return' (!NL !'}' !EOF expr)? TERM
 
 if_stmt
     <- 'if' '(' expr ')' block elif_chain?
@@ -255,14 +255,14 @@ match_pattern
      / expr                                     # includes range_expr (1..10)
 
 break_stmt
-    <- 'break' NL
+    <- 'break' TERM
 
 continue_stmt
-    <- 'continue' NL
+    <- 'continue' TERM
 
 expr_or_assignment
-    <- expr assign_op expr NL
-     / expr NL
+    <- expr assign_op expr TERM
+     / expr TERM
 
 assign_expr
     <- expr assign_op expr
@@ -559,6 +559,10 @@ STRING_LITERAL  <- '"' (!'"' .)* '"'            # simplified — lexer handles e
 DOC_COMMENT     <- '///' (!'\n' .)*
 NL              <- '\n'
 EOF             <- !.
+
+# Statement terminator: newline, or lookahead '}' or EOF (no newline needed before })
+# Matches the parser's expectNewlineOrEof + rbrace behavior.
+TERM            <- NL / &'}' / EOF
 
 # Whitespace and comments (skipped between tokens by lexer)
 _               <- ([ \t\n] / '//' (!'\n' .)* '\n')*
