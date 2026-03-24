@@ -127,9 +127,9 @@ pub fn getArray(source: []const u8, path: []const u8) anyerror![]const u8 {
         .array => |arr| {
             var buf = std.ArrayListUnmanaged(u8){};
             for (arr.items, 0..) |item, i| {
-                if (i > 0) buf.append(alloc, '\n') catch {};
+                if (i > 0) buf.append(alloc, '\n') catch continue;
                 const s = valueToString(item) catch continue;
-                buf.appendSlice(alloc, s) catch {};
+                buf.appendSlice(alloc, s) catch continue;
             }
             return if (buf.items.len > 0) buf.items else "";
         },
@@ -156,20 +156,20 @@ pub fn object(keys: anytype, values: anytype) []const u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     buf.append(alloc, '{') catch return "{}";
     for (keys, 0..) |key, i| {
-        if (i > 0) buf.append(alloc, ',') catch {};
-        buf.append(alloc, '"') catch {};
-        buf.appendSlice(alloc, key) catch {};
-        buf.appendSlice(alloc, "\":") catch {};
+        if (i > 0) buf.append(alloc, ',') catch continue;
+        buf.append(alloc, '"') catch continue;
+        buf.appendSlice(alloc, key) catch continue;
+        buf.appendSlice(alloc, "\":") catch continue;
         const val: []const u8 = values[i];
         if (isJsonLiteral(val)) {
-            buf.appendSlice(alloc, val) catch {};
+            buf.appendSlice(alloc, val) catch continue;
         } else {
-            buf.append(alloc, '"') catch {};
-            buf.appendSlice(alloc, val) catch {};
-            buf.append(alloc, '"') catch {};
+            buf.append(alloc, '"') catch continue;
+            buf.appendSlice(alloc, val) catch continue;
+            buf.append(alloc, '"') catch continue;
         }
     }
-    buf.append(alloc, '}') catch {};
+    buf.append(alloc, '}') catch return "{}";
     return buf.items;
 }
 

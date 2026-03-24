@@ -25,41 +25,41 @@ fn parseCsv(source: []const u8) ParsedCsv {
             if (c == '"') {
                 // Check for escaped quote ("")
                 if (i + 1 < source.len and source[i + 1] == '"') {
-                    field.append(alloc, '"') catch {};
+                    field.append(alloc, '"') catch continue;
                     i += 1;
                 } else {
                     in_quotes = false;
                 }
             } else {
-                field.append(alloc, c) catch {};
+                field.append(alloc, c) catch continue;
             }
         } else {
             if (c == '"') {
                 in_quotes = true;
             } else if (c == ',') {
-                fields.append(alloc, dupe(field.items)) catch {};
+                fields.append(alloc, dupe(field.items)) catch continue;
                 field.clearRetainingCapacity();
             } else if (c == '\n' or (c == '\r' and i + 1 < source.len and source[i + 1] == '\n')) {
-                fields.append(alloc, dupe(field.items)) catch {};
+                fields.append(alloc, dupe(field.items)) catch continue;
                 field.clearRetainingCapacity();
-                rows.append(alloc, dupeSlice(fields.items)) catch {};
+                rows.append(alloc, dupeSlice(fields.items)) catch continue;
                 fields.clearRetainingCapacity();
                 if (c == '\r') i += 1; // skip \n after \r
             } else if (c == '\r') {
-                fields.append(alloc, dupe(field.items)) catch {};
+                fields.append(alloc, dupe(field.items)) catch continue;
                 field.clearRetainingCapacity();
-                rows.append(alloc, dupeSlice(fields.items)) catch {};
+                rows.append(alloc, dupeSlice(fields.items)) catch continue;
                 fields.clearRetainingCapacity();
             } else {
-                field.append(alloc, c) catch {};
+                field.append(alloc, c) catch continue;
             }
         }
     }
 
-    // Last field and row
+    // Last field and row — best-effort: OOM silently drops the final row
     if (field.items.len > 0 or fields.items.len > 0) {
-        fields.append(alloc, dupe(field.items)) catch {};
-        rows.append(alloc, dupeSlice(fields.items)) catch {};
+        fields.append(alloc, dupe(field.items)) catch return .{ .rows = rows.items };
+        rows.append(alloc, dupeSlice(fields.items)) catch return .{ .rows = rows.items };
     }
 
     return .{ .rows = rows.items };
@@ -95,8 +95,8 @@ pub fn getRow(source: []const u8, row: i32) anyerror![]const u8 {
 
     var buf = std.ArrayListUnmanaged(u8){};
     for (fields, 0..) |f, i| {
-        if (i > 0) buf.append(alloc, '\t') catch {};
-        buf.appendSlice(alloc, f) catch {};
+        if (i > 0) buf.append(alloc, '\t') catch continue;
+        buf.appendSlice(alloc, f) catch continue;
     }
     return if (buf.items.len > 0) buf.items else "";
 }

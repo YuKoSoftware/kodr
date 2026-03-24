@@ -1,6 +1,9 @@
 // collections.zig — generic data structures sidecar for std::collections
 // Provides List(T), Map(K, V), Set(T) as Zig generic type functions.
 // Structs self-initialize with .{} and default to page_allocator.
+//
+// OOM policy: collection methods are best-effort — OOM silently drops items.
+// Use allocator-aware Zig collections directly for hard guarantees.
 
 const std = @import("std");
 

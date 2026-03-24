@@ -12,21 +12,21 @@ var buf: [4096]u8 = undefined;
 var w: std.fs.File.Writer = stdout.writer(&buf);
 
 pub fn print(msg: []const u8) void {
-    w.interface.writeAll(msg) catch {};
+    w.interface.writeAll(msg) catch {}; // fire-and-forget: I/O in void fn
 }
 
 pub fn println(msg: []const u8) void {
-    w.interface.writeAll(msg) catch {};
+    w.interface.writeAll(msg) catch {}; // fire-and-forget: I/O in void fn
     w.interface.writeAll("\n") catch {};
     w.interface.flush() catch {};
 }
 
 pub fn flush() void {
-    w.interface.flush() catch {};
+    w.interface.flush() catch {}; // fire-and-forget: I/O in void fn
 }
 
 pub fn debugPrint(msg: []const u8) void {
-    stderr.writeAll(msg) catch {};
+    stderr.writeAll(msg) catch {}; // fire-and-forget: I/O in void fn
 }
 
 // GetResult mirrors (Error | string) as the codegen expects: .ok and .err tags

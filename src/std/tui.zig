@@ -38,7 +38,7 @@ pub fn enableRawMode() anyerror!void {
 
 pub fn disableRawMode() void {
     if (original_termios) |term| {
-        posix.tcsetattr(posix.STDIN_FILENO, .FLUSH, term) catch {};
+        posix.tcsetattr(posix.STDIN_FILENO, .FLUSH, term) catch {}; // fire-and-forget: terminal I/O in void fn
         original_termios = null;
     }
 }
@@ -399,7 +399,7 @@ pub const Screen = struct {
                 // Move cursor (1-based)
                 var pos_buf: [32]u8 = undefined;
                 const pos = std.fmt.bufPrint(&pos_buf, "\x1b[{d};{d}H", .{ r + 1, c + 1 }) catch continue;
-                w.interface.writeAll(pos) catch {};
+                w.interface.writeAll(pos) catch {}; // fire-and-forget: terminal I/O in void fn
 
                 const cell = self.back[i];
                 if (cell.fg != NO_COLOR or cell.bg != NO_COLOR or cell.bold) {
@@ -438,7 +438,7 @@ pub const Screen = struct {
                     }
                     style_buf[style_len] = 'm';
                     style_len += 1;
-                    w.interface.writeAll(style_buf[0..style_len]) catch {};
+                    w.interface.writeAll(style_buf[0..style_len]) catch {}; // fire-and-forget: terminal I/O in void fn
                     w.interface.writeAll(&.{cell.ch}) catch {};
                     w.interface.writeAll("\x1b[0m") catch {};
                 } else {
@@ -448,7 +448,7 @@ pub const Screen = struct {
                 self.front[i] = self.back[i];
             }
         }
-        w.interface.flush() catch {};
+        w.interface.flush() catch {}; // fire-and-forget: terminal I/O in void fn
     }
 
     pub fn clear(self: *Screen) void {
@@ -547,12 +547,12 @@ var out_buf: [4096]u8 = undefined;
 
 fn writeEsc(seq: []const u8) void {
     var w = stdout.writer(&out_buf);
-    w.interface.writeAll(seq) catch {};
+    w.interface.writeAll(seq) catch {}; // fire-and-forget: terminal I/O in void fn
 }
 
 fn flushOutput() void {
     var w = stdout.writer(&out_buf);
-    w.interface.flush() catch {};
+    w.interface.flush() catch {}; // fire-and-forget: terminal I/O in void fn
 }
 
 // ── Tests ──

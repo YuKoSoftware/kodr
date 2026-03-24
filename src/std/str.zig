@@ -202,9 +202,9 @@ pub fn splitBy(s: []const u8, sep: []const u8) []const u8 {
     var first = true;
     var iter = std.mem.splitSequence(u8, s, sep);
     while (iter.next()) |part| {
-        if (!first) buf.append(alloc, '\n') catch {};
+        if (!first) buf.append(alloc, '\n') catch continue;
         first = false;
-        buf.appendSlice(alloc, part) catch {};
+        buf.appendSlice(alloc, part) catch continue;
     }
     return if (buf.items.len > 0) buf.items else "";
 }
