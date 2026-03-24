@@ -32,6 +32,10 @@ pub const CodeGen = struct {
     all_decls: ?*std.StringHashMap(*declarations.DeclTable), // all module decl tables for cross-module default args
     file_offsets: []const module.FileOffset, // combined-line → original file+line
     module_builds: ?*const std.StringHashMapUnmanaged(module.BuildType), // imported module → build type
+    // Track variables narrowed by `is Error` or `is null` checks — used to resolve
+    // `.value` unwrap when MIR type classification is unavailable (cross-module calls).
+    error_narrowed: std.StringHashMapUnmanaged(void) = .{},
+    null_narrowed: std.StringHashMapUnmanaged(void) = .{},
     // MIR annotation table — Phase 1+2 typed annotation pass
     node_map: ?*const mir.NodeMap = null,
     union_registry: ?*const mir.UnionRegistry = null,
@@ -156,6 +160,8 @@ pub const CodeGen = struct {
         self.type_strings.deinit(self.allocator);
         self.output.deinit(self.allocator);
         self.reassigned_vars.deinit(self.allocator);
+        self.error_narrowed.deinit(self.allocator);
+        self.null_narrowed.deinit(self.allocator);
     }
 
     /// Get the generated Zig source
@@ -1235,6 +1241,9 @@ pub const CodeGen = struct {
                     const cmp = if (is_eq) "==" else "!=";
                     // null is a keyword, parsed as .null_literal not .identifier
                     if (b.right.* == .null_literal) {
+                        // Record narrowing for `.value` resolution
+                        if (val_node.* == .identifier)
+                            try self.null_narrowed.put(self.allocator, val_node.identifier, {});
                         try self.emit("(");
                         try self.generateExpr(val_node);
                         try self.emitFmt(" {s} .none)", .{cmp});
@@ -1243,6 +1252,9 @@ pub const CodeGen = struct {
                     if (b.right.* == .identifier) {
                         const rhs = b.right.identifier;
                         if (std.mem.eql(u8, rhs, K.Type.ERROR)) {
+                            // Record narrowing for `.value` resolution
+                            if (val_node.* == .identifier)
+                                try self.error_narrowed.put(self.allocator, val_node.identifier, {});
                             try self.emit("(");
                             try self.generateExpr(val_node);
                             try self.emitFmt(" {s} .err)", .{cmp});
@@ -1454,8 +1466,9 @@ pub const CodeGen = struct {
                     try self.generateExpr(f.object);
                     try self.emit("[0]");
                 } else if (std.mem.eql(u8, f.field, K.Type.ERROR)) {
+                    // result.Error → result.err.message (extract error message string)
                     try self.generateExpr(f.object);
-                    try self.emit(".err");
+                    try self.emit(".err.message");
                 } else if (std.mem.eql(u8, f.field, "value") and
                     (self.getTypeClass(f.object) == .arbitrary_union or self.getTypeClass(f.object) == .null_union or self.getTypeClass(f.object) == .error_union))
                 {
@@ -1496,6 +1509,19 @@ pub const CodeGen = struct {
                         // result.i32 / result.User etc → result.ok (error union access)
                         try self.generateExpr(f.object);
                         try self.emit(".ok");
+                    }
+                } else if (std.mem.eql(u8, f.field, "value") and f.object.* == .identifier) {
+                    // Fallback `.value` unwrap using narrowing info from `is Error` / `is null` checks.
+                    // Covers cross-module bridge calls where MIR type class is unavailable.
+                    if (self.error_narrowed.contains(f.object.identifier)) {
+                        try self.generateExpr(f.object);
+                        try self.emit(".ok");
+                    } else if (self.null_narrowed.contains(f.object.identifier)) {
+                        try self.generateExpr(f.object);
+                        try self.emit(".some");
+                    } else {
+                        try self.generateExpr(f.object);
+                        try self.emit(".value");
                     }
                 } else {
                     try self.generateExpr(f.object);
@@ -1595,6 +1621,9 @@ pub const CodeGen = struct {
                     const val_mir = m.lhs().children[0];
                     const cmp = if (is_eq) "==" else "!=";
                     if (b.right.* == .null_literal) {
+                        // Record narrowing for `.value` resolution
+                        if (val_mir.ast.* == .identifier)
+                            try self.null_narrowed.put(self.allocator, val_mir.ast.identifier, {});
                         try self.emit("(");
                         try self.generateExprMir(val_mir);
                         try self.emitFmt(" {s} .none)", .{cmp});
@@ -1603,6 +1632,9 @@ pub const CodeGen = struct {
                     if (b.right.* == .identifier) {
                         const rhs = b.right.identifier;
                         if (std.mem.eql(u8, rhs, K.Type.ERROR)) {
+                            // Record narrowing for `.value` resolution
+                            if (val_mir.ast.* == .identifier)
+                                try self.error_narrowed.put(self.allocator, val_mir.ast.identifier, {});
                             try self.emit("(");
                             try self.generateExprMir(val_mir);
                             try self.emitFmt(" {s} .err)", .{cmp});
@@ -1820,8 +1852,9 @@ pub const CodeGen = struct {
                     try self.generateExprMir(obj_mir);
                     try self.emit("[0]");
                 } else if (std.mem.eql(u8, f.field, K.Type.ERROR)) {
+                    // result.Error → result.err.message (extract error message string)
                     try self.generateExprMir(obj_mir);
-                    try self.emit(".err");
+                    try self.emit(".err.message");
                 } else if (std.mem.eql(u8, f.field, "value") and
                     (obj_tc == .arbitrary_union or obj_tc == .null_union or obj_tc == .error_union))
                 {
@@ -1859,6 +1892,18 @@ pub const CodeGen = struct {
                     } else {
                         try self.generateExprMir(obj_mir);
                         try self.emit(".ok");
+                    }
+                } else if (std.mem.eql(u8, f.field, "value") and f.object.* == .identifier) {
+                    // Fallback `.value` unwrap using narrowing info from `is Error` / `is null` checks.
+                    if (self.error_narrowed.contains(f.object.identifier)) {
+                        try self.generateExprMir(obj_mir);
+                        try self.emit(".ok");
+                    } else if (self.null_narrowed.contains(f.object.identifier)) {
+                        try self.generateExprMir(obj_mir);
+                        try self.emit(".some");
+                    } else {
+                        try self.generateExprMir(obj_mir);
+                        try self.emit(".value");
                     }
                 } else {
                     try self.generateExprMir(obj_mir);

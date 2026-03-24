@@ -118,47 +118,55 @@ pub const Reporter = struct {
     }
 };
 
-// ANSI color codes
+// ANSI codes
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
 const CYAN = "\x1b[36m";
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
+const RED_BG = "\x1b[48;5;52m"; // dark red background
+const YELLOW_BG = "\x1b[48;5;58m"; // dark yellow background
+const WHITE = "\x1b[97m"; // bright white text
+
+// Full-width header bar: 50 spaces to pad the label
+const HEADER_PAD = "                                                  ";
 
 fn printDiagnostic(stderr: anytype, diag: *const OrhonError, label: []const u8, mode: BuildMode) !void {
     const is_error = std.mem.eql(u8, label, "ERROR");
-    const color = if (is_error) RED else YELLOW;
+    const header_bg = if (is_error) "\x1b[41m" else "\x1b[43m"; // red / yellow background
+    const header_fg = if (is_error) WHITE else "\x1b[30m"; // white on red, black on yellow
+
+    if (mode != .debug) {
+        try stderr.print("{s}: {s}\n", .{ label, diag.message });
+        return;
+    }
+
+    // Full-width colored header bar
+    const pad_len = if (HEADER_PAD.len > label.len + 2) HEADER_PAD.len - label.len - 2 else 0;
+    try stderr.print("\n{s}{s}{s}  {s}{s}{s}\n", .{ header_bg, BOLD, header_fg, label, HEADER_PAD[0..pad_len], RESET });
+
+    // Message
+    try stderr.print("\n  {s}{s}{s}\n", .{ BOLD, diag.message, RESET });
 
     if (diag.loc) |loc| {
-        if (mode == .debug) {
-            // Header: ── ERROR ─────────────────
-            try stderr.print("\n{s}{s}── {s} ─────────────────────────────────────────{s}\n", .{ BOLD, color, label, RESET });
-            // Message
-            try stderr.print("{s}{s}{s}\n", .{ BOLD, diag.message, RESET });
-            // Location
-            if (loc.line > 0 and loc.file.len > 0) {
-                try stderr.print("{s}  --> {s}:{d}{s}\n", .{ CYAN, loc.file, loc.line, RESET });
-            } else if (loc.line > 0) {
-                try stderr.print("{s}  at line {d}{s}\n", .{ CYAN, loc.line, RESET });
-            }
-            // Source snippet
-            if (loc.file.len > 0 and loc.line > 0) {
-                if (readSourceLine(loc.file, loc.line)) |line| {
-                    try stderr.print("{s}   |{s}\n", .{ DIM, RESET });
-                    try stderr.print("{s}{d: >3}|{s}  {s}\n", .{ DIM, loc.line, RESET, line });
-                    try stderr.print("{s}   |{s}\n", .{ DIM, RESET });
-                }
-            }
-            for (diag.notes) |note| {
-                try stderr.print("{s}  note:{s} {s}\n", .{ DIM, RESET, note });
-            }
-        } else {
-            try stderr.print("{s}: {s}\n", .{ label, diag.message });
+        // Location
+        if (loc.line > 0 and loc.file.len > 0) {
+            try stderr.print("  {s}──▸ {s}:{d}{s}\n", .{ CYAN, loc.file, loc.line, RESET });
+        } else if (loc.line > 0) {
+            try stderr.print("  {s}at line {d}{s}\n", .{ CYAN, loc.line, RESET });
         }
-    } else {
-        try stderr.print("\n{s}{s}── {s} ─────────────────────────────────────────{s}\n", .{ BOLD, color, label, RESET });
-        try stderr.print("{s}{s}{s}\n", .{ BOLD, diag.message, RESET });
+        // Source snippet
+        if (loc.file.len > 0 and loc.line > 0) {
+            if (readSourceLine(loc.file, loc.line)) |line| {
+                try stderr.print("{s}       │{s}\n", .{ DIM, RESET });
+                try stderr.print("{s}{d: >5}{s} {s}│{s}  {s}{s}{s}\n", .{ BOLD, loc.line, RESET, DIM, RESET, BOLD, line, RESET });
+                try stderr.print("{s}       │{s}\n", .{ DIM, RESET });
+            }
+        }
+        for (diag.notes) |note| {
+            try stderr.print("  {s}note:{s} {s}\n", .{ DIM, RESET, note });
+        }
     }
 }
 
