@@ -37,6 +37,9 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ OOM error propagation in codegen (no more `catch unreachable` on allocPrint) — Phase 2
 - ✓ Stdlib `catch {}` sweep: 103 instances classified and fixed/documented — Phase 2
 - ✓ `Ptr(T).cast(addr)` method-style pointer constructors — Phase 2
+- ✓ LSP per-request arena memory (no unbounded growth) — Phase 3
+- ✓ LSP header buffer hardening (4096 bytes, truncation detection) — Phase 3
+- ✓ LSP content-length guard (64 MiB cap, rejects oversized payloads) — Phase 3
 
 ### Active
 
@@ -99,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-24 after Phase 2 completion*
+*Last updated: 2026-03-24 after Phase 3 completion (v0.9 milestone complete)*
