@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 01-02-PLAN.md — BUG-01 and BUG-02 fixed
-last_updated: "2026-03-24T16:07:39.960Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-03-24T16:17:41.062Z"
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -47,6 +47,7 @@ Plan: 2 of 2
 
 *Updated after each plan completion*
 | Phase 01-compiler-bug-fixes P02 | 25 | 2 tasks | 4 files |
+| Phase 01 P01 | 40 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -60,6 +61,8 @@ Recent decisions affecting current work:
 - Stdlib policy: Clean up 103 catch {} — safety hazard for a "safe" language compiler
 - [Phase 01-compiler-bug-fixes]: value_to_const_ref coercion mirrors array_to_slice in codegen — both prepend & for parameter passing
 - [Phase 01-compiler-bug-fixes]: Qualified generic validation falls back to trusting when all_decls is null or module not yet processed — avoids false positives in dependency order
+- [Phase 01]: Const values are implicitly copyable — is_const field added to VarState for clean const-vs-var ownership tracking
+- [Phase 01]: Auto-inject stdlib imports in codegen — str and collections always auto-imported in generated Zig files for ergonomic string/collection usage
 
 ### Pending Todos
 
@@ -71,6 +74,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T16:07:39.958Z
-Stopped at: Completed 01-02-PLAN.md — BUG-01 and BUG-02 fixed
+Last session: 2026-03-24T16:17:41.060Z
+Stopped at: Completed 01-01-PLAN.md
 Resume file: None

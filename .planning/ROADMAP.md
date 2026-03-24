@@ -12,7 +12,7 @@ Three focused phases to clear the correctness debt accumulated through rapid v0.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Compiler Bug Fixes** - Fix the four codegen/analysis bugs that produce wrong or crashing output
+- [x] **Phase 1: Compiler Bug Fixes** - Fix the four codegen/analysis bugs that produce wrong or crashing output (completed 2026-03-24)
 - [ ] **Phase 2: Memory & Error Safety** - Eliminate memory leaks and silent error suppression throughout the compiler and stdlib
 - [ ] **Phase 3: LSP Hardening** - Make the language server memory-safe and robust against large or malicious requests
 
@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Fix ownership const-as-copy (BUG-03) and orhon test output (BUG-04)
+- [x] 01-01-PLAN.md — Fix ownership const-as-copy (BUG-03) and orhon test output (BUG-04)
 - [x] 01-02-PLAN.md — Fix cross-module const & passing (BUG-01) and qualified generic validation (BUG-02)
 
 ### Phase 2: Memory & Error Safety
@@ -61,6 +61,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Compiler Bug Fixes | 0/2 | Not started | - |
+| 1. Compiler Bug Fixes | 2/2 | Complete   | 2026-03-24 |
 | 2. Memory & Error Safety | 0/TBD | Not started | - |
 | 3. LSP Hardening | 0/TBD | Not started | - |

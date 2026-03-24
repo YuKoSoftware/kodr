@@ -11,8 +11,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [x] **BUG-01**: Cross-module struct method calls emit by-value instead of `const &` — codegen needs imported DeclTables or MIR argument mode annotations
 - [x] **BUG-02**: Qualified generic types (`math.Vec2(f64)`) pass validation without checking target type exists in referenced module's DeclTable
-- [ ] **BUG-03**: Const struct values incorrectly treated as moved when passed by value to functions — ownership checker should treat by-value passing of const as copy
-- [ ] **BUG-04**: `orhon test` reports 0 passed/0 failed instead of actually running test blocks — debug test command pipeline
+- [x] **BUG-03**: Const struct values incorrectly treated as moved when passed by value to functions — ownership checker should treat by-value passing of const as copy
+- [x] **BUG-04**: `orhon test` reports 0 passed/0 failed instead of actually running test blocks — debug test command pipeline
 
 ### Memory & Error Handling
 
@@ -56,8 +56,8 @@ Deferred to future milestones. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | BUG-01 | Phase 1 | Complete |
 | BUG-02 | Phase 1 | Complete |
-| BUG-03 | Phase 1 | Pending |
-| BUG-04 | Phase 1 | Pending |
+| BUG-03 | Phase 1 | Complete |
+| BUG-04 | Phase 1 | Complete |
 | MEM-01 | Phase 2 | Pending |
 | MEM-02 | Phase 2 | Pending |
 | MEM-03 | Phase 2 | Pending |
