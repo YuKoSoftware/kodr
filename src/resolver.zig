@@ -61,6 +61,8 @@ pub const TypeResolver = struct {
     file_offsets: []const module.FileOffset = &.{},
     loop_depth: u32 = 0, // track nesting depth for break/continue validation
     current_return_type: ?RT = null, // expected return type of current function
+    /// All module DeclTables — for cross-module qualified generic type validation.
+    all_decls: ?*const std.StringHashMap(*declarations.DeclTable) = null,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -836,13 +838,38 @@ pub const TypeResolver = struct {
             },
             .type_generic => |g| {
                 // Validate the base type name is known (builtin, compt func, or user-defined)
-                // Qualified names (module.Type) are from imports — trust them, Zig validates at compile time
-                const is_qualified = std.mem.indexOfScalar(u8, g.name, '.') != null;
-                const is_known = is_qualified or
-                    builtins.isBuiltinType(g.name) or
+                const dot_pos = std.mem.indexOfScalar(u8, g.name, '.');
+                const is_qualified = dot_pos != null;
+                var is_known = builtins.isBuiltinType(g.name) or
                     self.decls.funcs.contains(g.name) or
                     self.decls.structs.contains(g.name) or
                     scope.lookup(g.name) != null;
+
+                // For qualified names (module.Type), validate against cross-module DeclTables
+                if (is_qualified and !is_known) {
+                    if (dot_pos) |dp| {
+                        const module_name = g.name[0..dp];
+                        const type_name = g.name[dp + 1 ..];
+                        if (self.all_decls) |ad| {
+                            if (ad.get(module_name)) |mod_decls| {
+                                is_known = mod_decls.structs.contains(type_name) or
+                                    mod_decls.enums.contains(type_name) or
+                                    mod_decls.funcs.contains(type_name) or
+                                    mod_decls.types.contains(type_name);
+                            } else {
+                                // Module not found in all_decls — may not yet be processed;
+                                // trust qualified names in this case (Zig validates at compile time)
+                                is_known = true;
+                            }
+                        } else {
+                            // No cross-module info available — trust qualified names (fallback)
+                            is_known = true;
+                        }
+                    }
+                } else if (is_qualified) {
+                    // Already known via local decls — nothing more to do
+                }
+
                 if (!is_known) {
                     const msg = try std.fmt.allocPrint(self.allocator,
                         "unknown generic type '{s}'", .{g.name});
@@ -1542,4 +1569,78 @@ test "resolver - match exhaustiveness with many arms" {
     // Should report missing T18
     try resolver.checkMatchExhaustiveness(union_type, arms, match_node);
     try std.testing.expect(reporter.hasErrors());
+}
+
+test "resolver - validateType catches unknown qualified generic" {
+    const alloc = std.testing.allocator;
+    var local_decls = declarations.DeclTable.init(alloc);
+    defer local_decls.deinit();
+    var math_decls = declarations.DeclTable.init(alloc);
+    defer math_decls.deinit();
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var resolver = TypeResolver.init(alloc, &local_decls, &reporter);
+    defer resolver.deinit();
+    var scope = Scope.init(alloc, null);
+    defer scope.deinit();
+
+    var all_decls = std.StringHashMap(*declarations.DeclTable).init(alloc);
+    defer all_decls.deinit();
+    // math module exists but does NOT have "Vec2"
+    try all_decls.put("math", &math_decls);
+    resolver.all_decls = &all_decls;
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const i32_type = try a.create(parser.Node);
+    i32_type.* = .{ .type_named = "i32" };
+    const args = try a.alloc(*parser.Node, 1);
+    args[0] = i32_type;
+    const generic_node = try a.create(parser.Node);
+    generic_node.* = .{ .type_generic = .{ .name = "math.Vec2", .args = args } };
+
+    try resolver.validateType(generic_node, &scope);
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "resolver - validateType accepts known qualified generic" {
+    const alloc = std.testing.allocator;
+    var local_decls = declarations.DeclTable.init(alloc);
+    defer local_decls.deinit();
+    var math_decls = declarations.DeclTable.init(alloc);
+    defer math_decls.deinit();
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var resolver = TypeResolver.init(alloc, &local_decls, &reporter);
+    defer resolver.deinit();
+    var scope = Scope.init(alloc, null);
+    defer scope.deinit();
+
+    // Add Vec2 to the math module's structs
+    try math_decls.structs.put("Vec2", .{
+        .name = "Vec2",
+        .fields = &.{},
+        .is_pub = true,
+    });
+
+    var all_decls = std.StringHashMap(*declarations.DeclTable).init(alloc);
+    defer all_decls.deinit();
+    try all_decls.put("math", &math_decls);
+    resolver.all_decls = &all_decls;
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const i32_type = try a.create(parser.Node);
+    i32_type.* = .{ .type_named = "i32" };
+    const args = try a.alloc(*parser.Node, 1);
+    args[0] = i32_type;
+    const generic_node = try a.create(parser.Node);
+    generic_node.* = .{ .type_generic = .{ .name = "math.Vec2", .args = args } };
+
+    try resolver.validateType(generic_node, &scope);
+    try std.testing.expect(!reporter.hasErrors());
 }

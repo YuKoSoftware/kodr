@@ -1048,6 +1048,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         defer type_resolver.deinit();
         type_resolver.locs = locs_ptr;
         type_resolver.file_offsets = file_offsets;
+        type_resolver.all_decls = &all_module_decls;
 
         try type_resolver.resolve(ast);
         if (reporter.hasErrors()) return null;
