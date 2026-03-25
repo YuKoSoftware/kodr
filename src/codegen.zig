@@ -52,6 +52,10 @@ pub const CodeGen = struct {
     mir_root: ?*mir.MirNode = null,
     // MIR node for the current function — replaces current_func_node progressively
     current_func_mir: ?*mir.MirNode = null,
+    // Pre-statement hoisting buffer — interpolation temp vars are appended here,
+    // flushed to main output before the statement that references them.
+    pre_stmts: std.ArrayListUnmanaged(u8) = .{},
+    interp_count: u32 = 0,
 
     /// Query MIR annotation for an AST node.
     pub fn getNodeInfo(self: *const CodeGen, node: *parser.Node) ?mir.NodeInfo {
@@ -195,6 +199,7 @@ pub const CodeGen = struct {
         self.reassigned_vars.deinit(self.allocator);
         self.error_narrowed.deinit(self.allocator);
         self.null_narrowed.deinit(self.allocator);
+        self.pre_stmts.deinit(self.allocator);
     }
 
     /// Get the generated Zig source
@@ -223,6 +228,14 @@ pub const CodeGen = struct {
         try self.emitIndent();
         try self.emit(s);
         try self.emit("\n");
+    }
+
+    /// Flush hoisted pre-statement declarations (interpolation temp vars) to main output.
+    /// Must be called before emitting the statement that references the hoisted vars.
+    fn flushPreStmts(self: *CodeGen) !void {
+        if (self.pre_stmts.items.len == 0) return;
+        try self.output.appendSlice(self.allocator, self.pre_stmts.items);
+        self.pre_stmts.clearRetainingCapacity();
     }
 
     fn emitLineFmt(self: *CodeGen, comptime fmt: []const u8, args: anytype) !void {
@@ -1289,6 +1302,7 @@ pub const CodeGen = struct {
         self.indent += 1;
 
         for (m.children) |child| {
+            try self.flushPreStmts();
             try self.emitIndent();
             try self.generateStatementMir(child);
             try self.emit("\n");
@@ -1435,7 +1449,8 @@ pub const CodeGen = struct {
                 if (m.injected_name) |name| {
                     try self.emitFmt("const {s} = ", .{name});
                     if (m.interp_parts) |parts| {
-                        try self.generateInterpolatedStringMir(parts, m.children);
+                        // Use inline variant — temp_var already provides the const + sibling defer
+                        try self.generateInterpolatedStringMirInline(parts, m.children);
                     }
                     try self.emit(";");
                 }
@@ -2575,38 +2590,62 @@ pub const CodeGen = struct {
     }
 
     /// Generate string interpolation using std.fmt.allocPrint.
+    /// Hoists the allocPrint call to a temp variable in pre_stmts, then emits only the
+    /// temp var name as the expression — avoiding a memory leak by pairing with defer free.
     /// "hello @{name}, value @{x}!" →
-    ///   std.fmt.allocPrint(std.heap.page_allocator, "hello {s}, value {}", .{name, x}) catch unreachable
+    ///   (hoisted) const _interp_0 = std.fmt.allocPrint(...) catch |err| return err;
+    ///   (hoisted) defer std.heap.page_allocator.free(_interp_0);
+    ///   (inline)  _interp_0
     fn generateInterpolatedString(self: *CodeGen, interp: parser.InterpolatedString) anyerror!void {
-        try self.emit("std.fmt.allocPrint(std.heap.page_allocator, \"");
-        // Build format string
+        const n = self.interp_count;
+        self.interp_count += 1;
+
+        // Build indent prefix for the hoisted lines
+        var indent_buf: [256]u8 = undefined;
+        var indent_len: usize = 0;
+        var i: usize = 0;
+        while (i < self.indent and indent_len + 4 <= indent_buf.len) : (i += 1) {
+            @memcpy(indent_buf[indent_len .. indent_len + 4], "    ");
+            indent_len += 4;
+        }
+        const indent_str = indent_buf[0..indent_len];
+
+        // Append: <indent>const _interp_N = std.fmt.allocPrint(std.heap.page_allocator, "fmt", .{args}) catch |err| return err;
+        var name_buf: [32]u8 = undefined;
+        const var_name = std.fmt.bufPrint(&name_buf, "_interp_{d}", .{n}) catch "_interp";
+        try self.pre_stmts.appendSlice(self.allocator, indent_str);
+        try self.pre_stmts.appendSlice(self.allocator, "const ");
+        try self.pre_stmts.appendSlice(self.allocator, var_name);
+        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.page_allocator, \"");
+
+        // Build format string into pre_stmts
         for (interp.parts) |part| {
             switch (part) {
                 .literal => |text| {
-                    // Escape any braces and special chars in the literal
                     for (text) |ch| {
                         switch (ch) {
-                            '{' => try self.emit("{{"),
-                            '}' => try self.emit("}}"),
-                            '\\' => try self.emit("\\"),
-                            else => {
-                                const buf: [1]u8 = .{ch};
-                                try self.emit(&buf);
-                            },
+                            '{' => try self.pre_stmts.appendSlice(self.allocator, "{{"),
+                            '}' => try self.pre_stmts.appendSlice(self.allocator, "}}"),
+                            '\\' => try self.pre_stmts.appendSlice(self.allocator, "\\"),
+                            else => try self.pre_stmts.append(self.allocator, ch),
                         }
                     }
                 },
                 .expr => |node| {
                     if (self.isStringExpr(node)) {
-                        try self.emit("{s}");
+                        try self.pre_stmts.appendSlice(self.allocator, "{s}");
                     } else {
-                        try self.emit("{}");
+                        try self.pre_stmts.appendSlice(self.allocator, "{}");
                     }
                 },
             }
         }
-        try self.emit("\", .{");
-        // Build args tuple
+        try self.pre_stmts.appendSlice(self.allocator, "\", .{");
+
+        // Build args tuple into pre_stmts — but the args are expressions from AST,
+        // so we temporarily redirect output to pre_stmts by swapping buffers.
+        const saved_output = self.output;
+        self.output = self.pre_stmts;
         var first = true;
         for (interp.parts) |part| {
             switch (part) {
@@ -2618,7 +2657,18 @@ pub const CodeGen = struct {
                 },
             }
         }
-        try self.emit("}) catch |err| return err");
+        self.pre_stmts = self.output;
+        self.output = saved_output;
+
+        try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
+        // Append: <indent>defer std.heap.page_allocator.free(_interp_N);
+        try self.pre_stmts.appendSlice(self.allocator, indent_str);
+        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.page_allocator.free(");
+        try self.pre_stmts.appendSlice(self.allocator, var_name);
+        try self.pre_stmts.appendSlice(self.allocator, ");\n");
+
+        // Emit just the temp var name as the expression
+        try self.emit(var_name);
     }
 
     /// MIR-path for loop codegen.
@@ -2979,8 +3029,11 @@ pub const CodeGen = struct {
         }
     }
 
-    /// MIR-path interpolated string — uses interp_parts for literals, children for exprs.
-    fn generateInterpolatedStringMir(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void {
+    /// MIR-path interpolated string — inline variant used by temp_var statement handler.
+    /// Emits allocPrint directly to main output (no hoisting). The temp_var path already
+    /// wraps this in `const _orhon_interp_N = ...;` with a sibling injected_defer node,
+    /// so no pre_stmts hoisting is needed here.
+    fn generateInterpolatedStringMirInline(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void {
         try self.emit("std.fmt.allocPrint(std.heap.page_allocator, \"");
         var expr_idx: usize = 0;
         // Build format string
@@ -3018,6 +3071,79 @@ pub const CodeGen = struct {
             first = false;
         }
         try self.emit("}) catch |err| return err");
+    }
+
+    /// MIR-path interpolated string — uses interp_parts for literals, children for exprs.
+    /// Hoists the allocPrint call to a temp variable in pre_stmts, then emits only the
+    /// temp var name — paired with defer free to avoid a memory leak.
+    fn generateInterpolatedStringMir(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void {
+        const n = self.interp_count;
+        self.interp_count += 1;
+
+        // Build indent prefix for hoisted lines
+        var indent_buf: [256]u8 = undefined;
+        var indent_len: usize = 0;
+        var i: usize = 0;
+        while (i < self.indent and indent_len + 4 <= indent_buf.len) : (i += 1) {
+            @memcpy(indent_buf[indent_len .. indent_len + 4], "    ");
+            indent_len += 4;
+        }
+        const indent_str = indent_buf[0..indent_len];
+
+        var name_buf: [32]u8 = undefined;
+        const var_name = std.fmt.bufPrint(&name_buf, "_interp_{d}", .{n}) catch "_interp";
+        try self.pre_stmts.appendSlice(self.allocator, indent_str);
+        try self.pre_stmts.appendSlice(self.allocator, "const ");
+        try self.pre_stmts.appendSlice(self.allocator, var_name);
+        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.page_allocator, \"");
+
+        // Build format string into pre_stmts
+        var expr_idx: usize = 0;
+        for (parts) |part| {
+            switch (part) {
+                .literal => |text| {
+                    for (text) |ch| {
+                        switch (ch) {
+                            '{' => try self.pre_stmts.appendSlice(self.allocator, "{{"),
+                            '}' => try self.pre_stmts.appendSlice(self.allocator, "}}"),
+                            '\\' => try self.pre_stmts.appendSlice(self.allocator, "\\"),
+                            else => try self.pre_stmts.append(self.allocator, ch),
+                        }
+                    }
+                },
+                .expr => {
+                    if (expr_idx < expr_children.len and mirIsString(expr_children[expr_idx])) {
+                        try self.pre_stmts.appendSlice(self.allocator, "{s}");
+                    } else {
+                        try self.pre_stmts.appendSlice(self.allocator, "{}");
+                    }
+                    expr_idx += 1;
+                },
+            }
+        }
+        try self.pre_stmts.appendSlice(self.allocator, "\", .{");
+
+        // Redirect output to pre_stmts to emit arg expressions
+        const saved_output = self.output;
+        self.output = self.pre_stmts;
+        var first = true;
+        for (expr_children) |child| {
+            if (!first) try self.emit(", ");
+            try self.generateExprMir(child);
+            first = false;
+        }
+        self.pre_stmts = self.output;
+        self.output = saved_output;
+
+        try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
+        // Append: <indent>defer std.heap.page_allocator.free(_interp_N);
+        try self.pre_stmts.appendSlice(self.allocator, indent_str);
+        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.page_allocator.free(");
+        try self.pre_stmts.appendSlice(self.allocator, var_name);
+        try self.pre_stmts.appendSlice(self.allocator, ");\n");
+
+        // Emit just the temp var name as the expression
+        try self.emit(var_name);
     }
 
     /// MIR-path collection expr — all unmanaged collections zero-initialize.
