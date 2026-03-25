@@ -77,7 +77,7 @@ Plans:
   3. Root cause of the intermittent unit test failure is identified and fixed at the source — no retries, no skips
 **Plans**: 1 plan
 Plans:
-- [ ] 13-01-PLAN.md — Fix intermittent test race, verify tester module, update TODO.md
+- [x] 13-01-PLAN.md — Fix intermittent test race, verify tester module, update TODO.md
 
 ### Phase 14: Gate
 **Goal**: The full test suite passes cleanly — zero failures across all 11 stages
@@ -99,5 +99,5 @@ Plans:
 | 10. Tamga Compatibility Update | v0.11 | Complete | Complete | 2026-03-25 |
 | 11. Full Test Suite Gate | v0.11 | Complete | Complete | 2026-03-25 |
 | 12. Fuzz Testing | v0.12 | 1/1 | Complete    | 2026-03-25 |
-| 13. Bug Fixes | v0.12 | 0/1 | In progress | - |
+| 13. Bug Fixes | v0.12 | 1/1 | Complete   | 2026-03-25 |
 | 14. Gate | v0.12 | 0/TBD | Not started | - |

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.12
 milestone_name: Quality & Polish
-status: Ready to plan
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-03-25T16:18:58.279Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-03-25T16:56:16.950Z"
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 12 — fuzz-testing
+**Current focus:** Phase 13 — bug-fixes
 
 ## Current Position
 
-Phase: 13
-Plan: Not started
+Phase: 13 (bug-fixes) — EXECUTING
+Plan: 1 of 1
 
 ## Performance Metrics
 
@@ -52,6 +52,8 @@ Recent decisions affecting current work:
 - v0.11: Const auto-borrow via MIR annotation — re-derive const-ness from AST
 - v0.11: Type-directed pointer coercion — `.cast()` removed
 - [Phase 12-fuzz-testing]: Parser fuzz test treats lex errors as non-failures — lexer and parser are tested independently
+- [Phase 13-bug-fixes]: Use std.testing.tmpDir for file-based unit tests to avoid /tmp path races under parallel execution
+- [Phase 13-bug-fixes]: Remove ziglib — bridge testbed no longer needed once real stdlib modules cover all patterns
 
 ### Pending Todos
 
@@ -63,6 +65,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T16:14:55.012Z
-Stopped at: Completed 12-01-PLAN.md
+Last session: 2026-03-25T16:56:16.947Z
+Stopped at: Completed 13-01-PLAN.md
 Resume file: None
