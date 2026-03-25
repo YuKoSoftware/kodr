@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Language Simplification
-status: Phase complete — ready for verification
+status: Ready to plan
 stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-03-25T11:56:18.133Z"
+last_updated: "2026-03-25T11:57:44.817Z"
 progress:
   total_phases: 4
   completed_phases: 1
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-25)
 
 ## Current Position
 
-Phase: 08 (const-auto-borrow) — EXECUTING
-Plan: 2 of 2
+Phase: 09
+Plan: Not started
 
 ## Performance Metrics
 
