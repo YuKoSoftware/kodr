@@ -1,65 +1,68 @@
-# Requirements: Orhon Compiler — Test Suite & Code Quality
+# Requirements: Orhon Compiler — Language Simplification
 
 **Defined:** 2026-03-25
 **Core Value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
 
-## v0.10 Requirements
+## v0.11 Requirements
 
 Requirements for this milestone. Each maps to roadmap phases.
 
-### Codegen Correctness
+### Const Auto-Borrow
 
-- [x] **CGEN-01**: Tester module compiles successfully — test stages 09 and 10 pass (100 tests)
-- [x] **CGEN-02**: Cross-module struct methods emit correct `&` for `const &` parameters (BUG-01)
-- [x] **CGEN-03**: Qualified generic types (e.g. `math.Vec2(f64)`) validated at Orhon level before codegen (BUG-02)
+- [ ] **CBOR-01**: `const` non-primitive values auto-borrow as `const &` when passed by value — no silent deep copies
+- [ ] **CBOR-02**: Explicit `copy()` still works for owned copies of `const` values
+- [ ] **CBOR-03**: `var` non-primitive values still move on by-value pass (unchanged)
 
-### Error Suppression
+### Ptr Syntax
 
-- [x] **ESUP-01**: All `catch unreachable` in codegen.zig replaced with proper error propagation (15 instances)
-- [x] **ESUP-02**: All `catch {}` in stdlib sidecars replaced with proper error handling (28 instances across 6 files)
+- [ ] **PTRS-01**: `const p: Ptr(T) = &x` creates a safe pointer via type annotation + `&`
+- [ ] **PTRS-02**: `const r: RawPtr(T) = &x` creates an unsafe pointer — type carries safety level
+- [ ] **PTRS-03**: `const v: VolatilePtr(T) = 0xFF200000` creates volatile pointer from integer address
+- [ ] **PTRS-04**: Old `Ptr(T).cast(&x)` and `Ptr(T, &x)` syntax removed — compile error
 
-### Project Hygiene
+### Compatibility
 
-- [x] **HYGN-01**: Version numbers aligned across build.zig, build.zig.zon, and PROJECT.md
-- [x] **HYGN-02**: String interpolation temp buffers freed after use (BUG-05)
-
-### Documentation
-
-- [x] **DOCS-01**: Example module covers all implemented language features (RawPtr/VolatilePtr, #bitsize, any generics, typeOf(), include vs import)
+- [ ] **COMP-01**: Tamga companion project updated for new Ptr syntax and compiles
+- [ ] **COMP-02**: Example module and tester fixtures updated for both changes
+- [ ] **COMP-03**: Language docs updated for both changes
 
 ### Gate
 
-- [x] **GATE-01**: `./testall.sh` passes all 11 stages with 0 failures
+- [ ] **GATE-01**: `./testall.sh` passes all 11 stages with 0 failures
 
-## v0.9 Requirements (Previous Milestone — Complete)
+## v0.10 Requirements (Previous Milestone — Complete)
 
-### Bug Fixes
+### Codegen Correctness
 
-- [x] **BUG-01**: Cross-module struct method calls emit by-value instead of `const &` — Phase 1
-- [x] **BUG-02**: Qualified generic types pass validation without checking target type exists — Phase 1
-- [x] **BUG-03**: Const struct values incorrectly treated as moved — Phase 1
-- [x] **BUG-04**: `orhon test` reports 0 passed/0 failed — Phase 1
+- [x] **CGEN-01**: Tester module compiles — test stages 09+10 pass — Phase 4
+- [x] **CGEN-02**: Cross-module struct methods emit correct `&` for `const &` params — Phase 4
+- [x] **CGEN-03**: Qualified generic types validated at Orhon level — Phase 4
 
-### Memory & Error Handling
+### Error Suppression
 
-- [x] **MEM-01**: String interpolation temp buffer cleanup via MIR defer injection — Phase 2
-- [x] **MEM-02**: OOM error propagation in codegen — Phase 2
-- [x] **MEM-03**: 103 `catch {}` classified and fixed/documented — Phase 2
-- [x] **MEM-04**: Ptr(T).cast(addr) method-style constructors — Phase 2
+- [x] **ESUP-01**: Codegen catch unreachable replaced with @panic — Phase 5
+- [x] **ESUP-02**: Stdlib catch {} data-loss sites fixed — Phase 5
 
-### LSP Hardening
+### Project Hygiene
 
-- [x] **LSP-01**: Per-request ArenaAllocator — Phase 3
-- [x] **LSP-02**: Header buffer hardening — Phase 3
-- [x] **LSP-03**: Content-length guard — Phase 3
+- [x] **HYGN-01**: Version aligned to v0.10.0 — Phase 6
+- [x] **HYGN-02**: String interpolation leak fixed — Phase 6
+
+### Documentation
+
+- [x] **DOCS-01**: Example module completed — Phase 6
+
+### Gate
+
+- [x] **GATE-01**: testall.sh 236/236 pass — Phase 7
 
 ## v2 Requirements
 
-Deferred to future milestones. Tracked but not in current roadmap.
+Deferred to future milestones.
 
 ### Architecture
 
-- **ARCH-01**: Zig IR layer — split codegen into Zig IR structs, lowering pass, and printer
+- **ARCH-01**: Zig IR layer — split codegen into IR structs, lowering pass, and printer
 - **ARCH-02**: Dependency-parallel module compilation via thread pool
 - **ARCH-03**: MIR optimization passes (SSA, inlining, DCE, constant folding)
 - **ARCH-04**: MIR binary serialization and caching
@@ -74,31 +77,32 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| New language features | Stabilization milestone — no new syntax or semantics |
+| New language features beyond the two simplifications | Focused milestone |
 | Zig IR refactor | Large architectural change, separate milestone |
 | Parallel compilation | Optimization, not correctness |
-| Tamga companion modifications | Read-only reference project |
-| v1.0 release | This milestone prepares for it but doesn't ship it |
+| Async/await | Deferred language feature |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CGEN-01 | Phase 4 | Complete |
-| CGEN-02 | Phase 4 | Complete |
-| CGEN-03 | Phase 4 | Complete |
-| ESUP-01 | Phase 5 | Complete |
-| ESUP-02 | Phase 5 | Complete |
-| HYGN-01 | Phase 6 | Complete |
-| HYGN-02 | Phase 6 | Complete |
-| DOCS-01 | Phase 6 | Complete |
-| GATE-01 | Phase 7 | Complete |
+| CBOR-01 | — | Pending |
+| CBOR-02 | — | Pending |
+| CBOR-03 | — | Pending |
+| PTRS-01 | — | Pending |
+| PTRS-02 | — | Pending |
+| PTRS-03 | — | Pending |
+| PTRS-04 | — | Pending |
+| COMP-01 | — | Pending |
+| COMP-02 | — | Pending |
+| COMP-03 | — | Pending |
+| GATE-01 | — | Pending |
 
 **Coverage:**
-- v0.10 requirements: 9 total
-- Mapped to phases: 9
-- Unmapped: 0 ✓
+- v0.11 requirements: 11 total
+- Mapped to phases: 0
+- Unmapped: 11
 
 ---
 *Requirements defined: 2026-03-25*
-*Last updated: 2026-03-25 after roadmap creation*
+*Last updated: 2026-03-25 after initial definition*
