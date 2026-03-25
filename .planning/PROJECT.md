@@ -48,8 +48,8 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 ### Active
 
 - [x] Fuzz testing for lexer and parser — v0.12 Phase 12
-- [ ] Tester module cross-module codegen fix — v0.12
-- [ ] Intermittent unit test failure fix — v0.12
+- [x] Tester module cross-module codegen fix — v0.12 Phase 13
+- [x] Intermittent unit test failure fix — v0.12 Phase 13
 
 ### Out of Scope
 
@@ -113,4 +113,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-25 after Phase 12 completion*
+*Last updated: 2026-03-25 after Phase 13 completion*
