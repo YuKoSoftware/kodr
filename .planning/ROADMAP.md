@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 4: Codegen Correctness** - Fix the tester module codegen failures that block 100 runtime tests (completed 2026-03-25)
 - [ ] **Phase 5: Error Suppression Sweep** - Replace all remaining silent `catch unreachable` and `catch {}` with proper error propagation
-- [ ] **Phase 6: Polish & Completeness** - Align version numbers, fix string interpolation leak, complete example module coverage
+- [x] **Phase 6: Polish & Completeness** - Align version numbers, fix string interpolation leak, complete example module coverage (completed 2026-03-25)
 - [ ] **Phase 7: Full Test Suite Gate** - Verify all 11 test stages pass with zero failures
 
 ## Phase Details
@@ -57,10 +57,10 @@ Plans:
   1. `build.zig`, `build.zig.zon`, and `PROJECT.md` all report the same version string with no drift
   2. A program that uses `@{variable}` string interpolation in a loop does not grow memory unboundedly — temp buffers are freed after each interpolation
   3. The example module compiles successfully and contains working demonstrations of RawPtr/VolatilePtr, `#bitsize`, any generics, `typeOf()`, and `include` vs `import`
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 06-01-PLAN.md — Align version to v0.10.0 and fix string interpolation memory leak (HYGN-01, HYGN-02)
+- [x] 06-01-PLAN.md — Align version to v0.10.0 and fix string interpolation memory leak (HYGN-01, HYGN-02)
 - [x] 06-02-PLAN.md — Complete example module with missing feature demonstrations (DOCS-01)
 
 ### Phase 7: Full Test Suite Gate
@@ -81,5 +81,5 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 4. Codegen Correctness | 2/2 | Complete   | 2026-03-25 |
 | 5. Error Suppression Sweep | 1/2 | In Progress|  |
-| 6. Polish & Completeness | 1/2 | In Progress|  |
+| 6. Polish & Completeness | 2/2 | Complete   | 2026-03-25 |
 | 7. Full Test Suite Gate | 0/? | Not started | - |

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-03-25T07:43:33.035Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-03-25T07:54:24.559Z"
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -60,6 +60,7 @@ Plan: 2 of 2
 | Phase 05-error-suppression-sweep P02 | 12 | 2 tasks | 2 files |
 | Phase 05-error-suppression-sweep P01 | 45 | 2 tasks | 1 files |
 | Phase 06-polish-completeness P02 | 2 | 2 tasks | 2 files |
+| Phase 06-polish-completeness P01 | 15 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Recent decisions affecting current work:
 - [Phase 05-error-suppression-sweep]: @panic used for thread spawn failures in generated Zig — generated return type is _OrhonHandle(T) not anyerror!, making error propagation incompatible; @panic avoids UB and gives actionable error messages
 - [Phase 06-polish-completeness]: VolatilePtr and #bitsize demonstrated as comment-only blocks in example module — hardware register usage and anchor-file metadata cannot run in standard programs
 - [Phase 06-polish-completeness]: include vs import shown as comment-only alongside live import to avoid symbol conflicts in example module
+- [Phase 06-polish-completeness]: Version unified to v0.10.0 across build.zig, build.zig.zon, and PROJECT.md
+- [Phase 06-polish-completeness]: Interpolation codegen uses pre-statement hoisting buffer (pre_stmts) to pair allocPrint with defer free — separate inline variant for MIR temp_var path to avoid double-hoisting
 
 ### Pending Todos
 
@@ -102,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T07:43:33.032Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-03-25T07:54:24.556Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None

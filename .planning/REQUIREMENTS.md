@@ -20,8 +20,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Project Hygiene
 
-- [ ] **HYGN-01**: Version numbers aligned across build.zig, build.zig.zon, and PROJECT.md
-- [ ] **HYGN-02**: String interpolation temp buffers freed after use (BUG-05)
+- [x] **HYGN-01**: Version numbers aligned across build.zig, build.zig.zon, and PROJECT.md
+- [x] **HYGN-02**: String interpolation temp buffers freed after use (BUG-05)
 
 ### Documentation
 
@@ -89,8 +89,8 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | CGEN-03 | Phase 4 | Complete |
 | ESUP-01 | Phase 5 | Complete |
 | ESUP-02 | Phase 5 | Complete |
-| HYGN-01 | Phase 6 | Pending |
-| HYGN-02 | Phase 6 | Pending |
+| HYGN-01 | Phase 6 | Complete |
+| HYGN-02 | Phase 6 | Complete |
 | DOCS-01 | Phase 6 | Complete |
 | GATE-01 | Phase 7 | Pending |
 
