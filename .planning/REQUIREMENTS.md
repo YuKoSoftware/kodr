@@ -1,31 +1,57 @@
-# Requirements: Orhon Compiler — Bug Fixes & Cleanup
+# Requirements: Orhon Compiler — Test Suite & Code Quality
 
-**Defined:** 2026-03-24
+**Defined:** 2026-03-25
 **Core Value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
 
-## v1 Requirements
+## v0.10 Requirements
 
 Requirements for this milestone. Each maps to roadmap phases.
 
+### Codegen Correctness
+
+- [ ] **CGEN-01**: Tester module compiles successfully — test stages 09 and 10 pass (100 tests)
+- [ ] **CGEN-02**: Cross-module struct methods emit correct `&` for `const &` parameters (BUG-01)
+- [ ] **CGEN-03**: Qualified generic types (e.g. `math.Vec2(f64)`) validated at Orhon level before codegen (BUG-02)
+
+### Error Suppression
+
+- [ ] **ESUP-01**: All `catch unreachable` in codegen.zig replaced with proper error propagation (15 instances)
+- [ ] **ESUP-02**: All `catch {}` in stdlib sidecars replaced with proper error handling (28 instances across 6 files)
+
+### Project Hygiene
+
+- [ ] **HYGN-01**: Version numbers aligned across build.zig, build.zig.zon, and PROJECT.md
+- [ ] **HYGN-02**: String interpolation temp buffers freed after use (BUG-05)
+
+### Documentation
+
+- [ ] **DOCS-01**: Example module covers all implemented language features (RawPtr/VolatilePtr, #bitsize, any generics, typeOf(), include vs import)
+
+### Gate
+
+- [ ] **GATE-01**: `./testall.sh` passes all 11 stages with 0 failures
+
+## v0.9 Requirements (Previous Milestone — Complete)
+
 ### Bug Fixes
 
-- [x] **BUG-01**: Cross-module struct method calls emit by-value instead of `const &` — codegen needs imported DeclTables or MIR argument mode annotations
-- [x] **BUG-02**: Qualified generic types (`math.Vec2(f64)`) pass validation without checking target type exists in referenced module's DeclTable
-- [x] **BUG-03**: Const struct values incorrectly treated as moved when passed by value to functions — ownership checker should treat by-value passing of const as copy
-- [x] **BUG-04**: `orhon test` reports 0 passed/0 failed instead of actually running test blocks — debug test command pipeline
+- [x] **BUG-01**: Cross-module struct method calls emit by-value instead of `const &` — Phase 1
+- [x] **BUG-02**: Qualified generic types pass validation without checking target type exists — Phase 1
+- [x] **BUG-03**: Const struct values incorrectly treated as moved — Phase 1
+- [x] **BUG-04**: `orhon test` reports 0 passed/0 failed — Phase 1
 
 ### Memory & Error Handling
 
-- [x] **MEM-01**: String interpolation `@{variable}` allocates temp buffers that are never freed — establish cleanup strategy
-- [x] **MEM-02**: `catch unreachable` in codegen (lines 655, 688, 2123) crashes on OOM instead of propagating errors through Zig error system
-- [x] **MEM-03**: 103 `catch {}` instances across 15 stdlib bridge files silently suppress allocation/I/O failures — propagate or apply consistent error strategy
-- [x] **MEM-04**: Tester module pointer/collection constructors need migration to `.new()`/`.cast()` method-style constructors
+- [x] **MEM-01**: String interpolation temp buffer cleanup via MIR defer injection — Phase 2
+- [x] **MEM-02**: OOM error propagation in codegen — Phase 2
+- [x] **MEM-03**: 103 `catch {}` classified and fixed/documented — Phase 2
+- [x] **MEM-04**: Ptr(T).cast(addr) method-style constructors — Phase 2
 
 ### LSP Hardening
 
-- [x] **LSP-01**: Wrap `runAnalysis()` in per-request ArenaAllocator to prevent unbounded memory growth during long editing sessions
-- [x] **LSP-02**: Replace fixed 1024-byte header line buffer in `readMessage()` with dynamic allocation or larger compile-time constant
-- [x] **LSP-03**: Add upper bound on content-length header to prevent OOM from malicious or oversized requests
+- [x] **LSP-01**: Per-request ArenaAllocator — Phase 3
+- [x] **LSP-02**: Header buffer hardening — Phase 3
+- [x] **LSP-03**: Content-length guard — Phase 3
 
 ## v2 Requirements
 
@@ -39,6 +65,11 @@ Deferred to future milestones. Tracked but not in current roadmap.
 - **ARCH-04**: MIR binary serialization and caching
 - **ARCH-05**: PEG syntax documentation auto-generator
 
+### Polish
+
+- **PLSH-01**: MIR residual AST accesses cleanup (6 remaining)
+- **PLSH-02**: Fuzz testing integration into CI
+
 ## Out of Scope
 
 | Feature | Reason |
@@ -46,31 +77,28 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | New language features | Stabilization milestone — no new syntax or semantics |
 | Zig IR refactor | Large architectural change, separate milestone |
 | Parallel compilation | Optimization, not correctness |
-| Tamga companion bugs | External project, different scope |
+| Tamga companion modifications | Read-only reference project |
 | v1.0 release | This milestone prepares for it but doesn't ship it |
-| Formatter improvements | Not a bug, not blocking |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUG-01 | Phase 1 | Complete |
-| BUG-02 | Phase 1 | Complete |
-| BUG-03 | Phase 1 | Complete |
-| BUG-04 | Phase 1 | Complete |
-| MEM-01 | Phase 2 | Complete |
-| MEM-02 | Phase 2 | Complete |
-| MEM-03 | Phase 2 | Complete |
-| MEM-04 | Phase 2 | Complete |
-| LSP-01 | Phase 3 | Complete |
-| LSP-02 | Phase 3 | Complete |
-| LSP-03 | Phase 3 | Complete |
+| CGEN-01 | — | Pending |
+| CGEN-02 | — | Pending |
+| CGEN-03 | — | Pending |
+| ESUP-01 | — | Pending |
+| ESUP-02 | — | Pending |
+| HYGN-01 | — | Pending |
+| HYGN-02 | — | Pending |
+| DOCS-01 | — | Pending |
+| GATE-01 | — | Pending |
 
 **Coverage:**
-- v1 requirements: 11 total
-- Mapped to phases: 11
-- Unmapped: 0 ✓
+- v0.10 requirements: 9 total
+- Mapped to phases: 0
+- Unmapped: 9 ⚠️
 
 ---
-*Requirements defined: 2026-03-24*
-*Last updated: 2026-03-24 after roadmap creation*
+*Requirements defined: 2026-03-25*
+*Last updated: 2026-03-25 after initial definition*
