@@ -9,6 +9,7 @@ const declarations = @import("declarations.zig");
 const errors = @import("errors.zig");
 const types = @import("types.zig");
 const K = @import("constants.zig");
+const builtins = @import("builtins.zig");
 
 const RT = types.ResolvedType;
 
@@ -164,6 +165,14 @@ pub const MirAnnotator = struct {
     current_func_name: ?[]const u8 = null,
     /// All module DeclTables — for cross-module function signature resolution.
     all_decls: ?*const std.StringHashMap(*declarations.DeclTable) = null,
+    /// Variable names declared via const_decl (for const auto-borrow detection).
+    const_vars: std.StringHashMapUnmanaged(void) = .{},
+    /// Function name → set of param indices that need *const T in Zig output.
+    /// Populated by annotateCallCoercions when a const non-primitive arg is detected.
+    const_ref_params: std.StringHashMapUnmanaged(std.AutoHashMapUnmanaged(usize, void)) = .{},
+    /// Function parameter names in the current function that have been promoted to *const T.
+    /// Used to prevent double-borrow when forwarding const-ref params to other functions.
+    promoted_params: std.StringHashMapUnmanaged(void) = .{},
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -186,6 +195,13 @@ pub const MirAnnotator = struct {
         self.node_map.deinit(self.allocator);
         self.union_registry.deinit();
         self.var_types.deinit(self.allocator);
+        self.const_vars.deinit(self.allocator);
+        var it = self.const_ref_params.valueIterator();
+        while (it.next()) |inner| {
+            inner.deinit(self.allocator);
+        }
+        self.const_ref_params.deinit(self.allocator);
+        self.promoted_params.deinit(self.allocator);
     }
 
     /// Annotate the entire program AST.
@@ -214,6 +230,20 @@ pub const MirAnnotator = struct {
                 const prev_func = self.current_func_name;
                 self.current_func_name = f.name;
                 defer self.current_func_name = prev_func;
+                // Populate promoted_params from const_ref_params for this function.
+                // This prevents double-borrow when forwarding const-ref params (Pitfall 3).
+                self.promoted_params.clearRetainingCapacity();
+                if (self.const_ref_params.get(f.name)) |param_indices| {
+                    if (self.decls.funcs.get(f.name)) |sig| {
+                        var idx_it = param_indices.keyIterator();
+                        while (idx_it.next()) |idx| {
+                            if (idx.* < sig.params.len) {
+                                try self.promoted_params.put(self.allocator, sig.params[idx.*].name, {});
+                            }
+                        }
+                    }
+                }
+                defer self.promoted_params.clearRetainingCapacity();
                 // Annotate body
                 try self.annotateNode(f.body);
             },
@@ -260,6 +290,10 @@ pub const MirAnnotator = struct {
                 const info = NodeInfo{ .resolved_type = t, .type_class = classifyType(t) };
                 try self.recordNode(node, t);
                 try self.var_types.put(self.allocator, v.name, info);
+                // Track const variables for const auto-borrow at call sites
+                if (node.* == .const_decl) {
+                    try self.const_vars.put(self.allocator, v.name, {});
+                }
 
                 // Canonicalize arb union types
                 if (t == .union_type) {
@@ -434,10 +468,21 @@ pub const MirAnnotator = struct {
 
     /// Detect coercions in function call arguments.
     /// Compares arg types with param types and marks coercion annotations.
+    /// Also applies const auto-borrow: const non-primitive args passed to by-value params
+    /// get value_to_const_ref coercion and are recorded in const_ref_params.
     fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
         const sig = self.resolveCallSig(c) orelse return;
         const param_count = @min(c.args.len, sig.params.len);
+        // Resolve the callee name for const_ref_params tracking
+        const func_name: ?[]const u8 = if (c.callee.* == .identifier)
+            c.callee.identifier
+        else if (c.callee.* == .field_expr)
+            c.callee.field_expr.field
+        else
+            null;
+        var idx: usize = 0;
         for (c.args[0..param_count], sig.params[0..param_count]) |arg, param| {
+            defer idx += 1;
             const arg_type = self.lookupType(arg) orelse continue;
             const coercion = detectCoercion(arg_type, param.type_);
             if (coercion.kind) |kind| {
@@ -447,8 +492,55 @@ pub const MirAnnotator = struct {
                     .coercion = kind,
                     .coerce_tag = coercion.tag,
                 });
+            } else {
+                // Const auto-borrow: annotate const non-primitive args with value_to_const_ref.
+                // Only applies to identifier arguments that reference a const variable.
+                if (arg.* == .identifier) {
+                    const name = arg.identifier;
+                    // Skip promoted params (already *const T — prevents double-borrow)
+                    if (!self.promoted_params.contains(name) and self.const_vars.contains(name)) {
+                        // Only non-primitive, non-value-type args qualify
+                        if (isNonPrimitiveType(arg_type)) {
+                            try self.node_map.put(self.allocator, arg, .{
+                                .resolved_type = arg_type,
+                                .type_class = classifyType(arg_type),
+                                .coercion = .value_to_const_ref,
+                            });
+                            // Record (func_name, param_index) for Zig signature promotion
+                            if (func_name) |fname| {
+                                try self.recordConstRefParam(fname, idx);
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+
+    /// Returns true if the type requires a reference rather than a value copy.
+    /// Primitives (i32, f32, bool, String, etc.) and value types (Vector) are excluded.
+    fn isNonPrimitiveType(t: RT) bool {
+        return switch (t) {
+            .primitive => false,
+            .generic => |g| !builtins.isValueType(g.name),
+            .unknown, .inferred => false,
+            else => true,
+        };
+    }
+
+    /// Record that a function parameter at the given index needs *const T in Zig output.
+    fn recordConstRefParam(self: *MirAnnotator, func_name: []const u8, param_idx: usize) !void {
+        const gop = try self.const_ref_params.getOrPut(self.allocator, func_name);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .{};
+        }
+        try gop.value_ptr.put(self.allocator, param_idx, {});
+    }
+
+    /// Check if a function parameter should be emitted as *const T.
+    pub fn isConstRefParam(self: *const MirAnnotator, func_name: []const u8, param_idx: usize) bool {
+        const param_set = self.const_ref_params.get(func_name) orelse return false;
+        return param_set.contains(param_idx);
     }
 
     /// Detect coercions for variable/const declarations.
@@ -1779,4 +1871,260 @@ test "resolveCallSig - cross-module lookup" {
     const sig = annotator.resolveCallSig(call);
     try std.testing.expect(sig != null);
     try std.testing.expectEqualStrings("length", sig.?.name);
+}
+
+test "const auto-borrow - const_vars tracking" {
+    // Verify that const_vars contains the name after annotating a const_decl,
+    // but NOT the name after annotating a var_decl.
+    const alloc = std.testing.allocator;
+    var decls = declarations.DeclTable.init(alloc);
+    defer decls.deinit();
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var type_map = std.AutoHashMapUnmanaged(*parser.Node, RT){};
+    defer type_map.deinit(alloc);
+
+    var annotator = MirAnnotator.init(alloc, &reporter, &decls, &type_map);
+    defer annotator.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // const c: Vec2 = ...
+    const val_node = try a.create(parser.Node);
+    val_node.* = .{ .identifier = "someVal" };
+    const const_node = try a.create(parser.Node);
+    const_node.* = .{ .const_decl = .{ .name = "c", .type_annotation = null, .value = val_node, .is_pub = false } };
+    try type_map.put(alloc, const_node, RT{ .named = "Vec2" });
+    try type_map.put(alloc, val_node, RT{ .named = "Vec2" });
+
+    // var v: Vec2 = ...
+    const val_node2 = try a.create(parser.Node);
+    val_node2.* = .{ .identifier = "someOtherVal" };
+    const var_node = try a.create(parser.Node);
+    var_node.* = .{ .var_decl = .{ .name = "v", .type_annotation = null, .value = val_node2, .is_pub = false } };
+    try type_map.put(alloc, var_node, RT{ .named = "Vec2" });
+    try type_map.put(alloc, val_node2, RT{ .named = "Vec2" });
+
+    try annotator.annotateNode(const_node);
+    try annotator.annotateNode(var_node);
+
+    // const_vars should contain "c" but not "v"
+    try std.testing.expect(annotator.const_vars.contains("c"));
+    try std.testing.expect(!annotator.const_vars.contains("v"));
+}
+
+test "const auto-borrow - annotateCallCoercions applies value_to_const_ref" {
+    // When a const non-primitive arg is passed to a by-value param, it should get
+    // value_to_const_ref coercion and the (func_name, param_index) should be recorded.
+    const alloc = std.testing.allocator;
+    var decls = declarations.DeclTable.init(alloc);
+    defer decls.deinit();
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var type_map = std.AutoHashMapUnmanaged(*parser.Node, RT){};
+    defer type_map.deinit(alloc);
+
+    var annotator = MirAnnotator.init(alloc, &reporter, &decls, &type_map);
+    defer annotator.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Register the function: func process(cfg: Config) void
+    // Note: params (ParamSig slice) is owned by decls — freed by decls.deinit()
+    // param_nodes is NOT freed by decls.deinit() — must free separately
+    const params = try alloc.alloc(declarations.ParamSig, 1);
+    const param_nodes = try alloc.alloc(*parser.Node, 1);
+    defer alloc.free(param_nodes);
+    const param_type_node = try a.create(parser.Node);
+    param_type_node.* = .{ .type_named = "Config" };
+    param_nodes[0] = param_type_node;
+    params[0] = .{ .name = "cfg", .type_ = RT{ .named = "Config" } };
+    const ret_node = try a.create(parser.Node);
+    ret_node.* = .{ .type_named = "void" };
+    try decls.funcs.put("process", .{
+        .name = "process",
+        .params = params,
+        .param_nodes = param_nodes,
+        .return_type = RT{ .primitive = .void },
+        .return_type_node = ret_node,
+        .is_compt = false,
+        .is_pub = false,
+        .is_thread = false,
+    });
+
+    // Mark "cfg_val" as a const var
+    try annotator.const_vars.put(alloc, "cfg_val", {});
+
+    // Build call: process(cfg_val)
+    const arg_node = try a.create(parser.Node);
+    arg_node.* = .{ .identifier = "cfg_val" };
+    try type_map.put(alloc, arg_node, RT{ .named = "Config" });
+
+    const callee_node = try a.create(parser.Node);
+    callee_node.* = .{ .identifier = "process" };
+    const call_args = try a.alloc(*parser.Node, 1);
+    call_args[0] = arg_node;
+    const call_arg_names = try a.alloc([]const u8, 1);
+    call_arg_names[0] = "";
+
+    const call_expr = parser.CallExpr{
+        .callee = callee_node,
+        .args = call_args,
+        .arg_names = call_arg_names,
+    };
+
+    try annotator.annotateCallCoercions(call_expr);
+
+    // The arg node should have value_to_const_ref coercion
+    const info = annotator.node_map.get(arg_node);
+    try std.testing.expect(info != null);
+    try std.testing.expectEqual(Coercion.value_to_const_ref, info.?.coercion.?);
+
+    // const_ref_params should record ("process", 0)
+    try std.testing.expect(annotator.isConstRefParam("process", 0));
+}
+
+test "const auto-borrow - primitives excluded" {
+    // A const i32 arg should NOT get value_to_const_ref coercion.
+    const alloc = std.testing.allocator;
+    var decls = declarations.DeclTable.init(alloc);
+    defer decls.deinit();
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var type_map = std.AutoHashMapUnmanaged(*parser.Node, RT){};
+    defer type_map.deinit(alloc);
+
+    var annotator = MirAnnotator.init(alloc, &reporter, &decls, &type_map);
+    defer annotator.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Register func add(x: i32) i32
+    // Note: params (ParamSig slice) is owned by decls — freed by decls.deinit()
+    // param_nodes is NOT freed by decls.deinit() — must free separately
+    const params = try alloc.alloc(declarations.ParamSig, 1);
+    const param_nodes = try alloc.alloc(*parser.Node, 1);
+    defer alloc.free(param_nodes);
+    const param_type_node = try a.create(parser.Node);
+    param_type_node.* = .{ .type_named = "i32" };
+    param_nodes[0] = param_type_node;
+    params[0] = .{ .name = "x", .type_ = RT{ .primitive = .i32 } };
+    const ret_node = try a.create(parser.Node);
+    ret_node.* = .{ .type_named = "i32" };
+    try decls.funcs.put("add", .{
+        .name = "add",
+        .params = params,
+        .param_nodes = param_nodes,
+        .return_type = RT{ .primitive = .i32 },
+        .return_type_node = ret_node,
+        .is_compt = false,
+        .is_pub = false,
+        .is_thread = false,
+    });
+
+    // Mark "n" as a const var (i32)
+    try annotator.const_vars.put(alloc, "n", {});
+
+    // Build call: add(n)
+    const arg_node = try a.create(parser.Node);
+    arg_node.* = .{ .identifier = "n" };
+    try type_map.put(alloc, arg_node, RT{ .primitive = .i32 });
+
+    const callee_node = try a.create(parser.Node);
+    callee_node.* = .{ .identifier = "add" };
+    const call_args = try a.alloc(*parser.Node, 1);
+    call_args[0] = arg_node;
+    const call_arg_names = try a.alloc([]const u8, 1);
+    call_arg_names[0] = "";
+
+    const call_expr = parser.CallExpr{
+        .callee = callee_node,
+        .args = call_args,
+        .arg_names = call_arg_names,
+    };
+
+    try annotator.annotateCallCoercions(call_expr);
+
+    // No coercion should be applied (primitive type)
+    const info = annotator.node_map.get(arg_node);
+    if (info) |i| {
+        try std.testing.expect(i.coercion == null or i.coercion.? != .value_to_const_ref);
+    }
+    // const_ref_params should NOT have "add"
+    try std.testing.expect(!annotator.isConstRefParam("add", 0));
+}
+
+test "const auto-borrow - const_ref_params populated" {
+    // Verify (func_name, param_index) is recorded when a const struct arg is passed by value.
+    const alloc = std.testing.allocator;
+    var decls = declarations.DeclTable.init(alloc);
+    defer decls.deinit();
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var type_map = std.AutoHashMapUnmanaged(*parser.Node, RT){};
+    defer type_map.deinit(alloc);
+
+    var annotator = MirAnnotator.init(alloc, &reporter, &decls, &type_map);
+    defer annotator.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Register func render(scene: Scene) void
+    // Note: params (ParamSig slice) is owned by decls — freed by decls.deinit()
+    // param_nodes is NOT freed by decls.deinit() — must free separately
+    const params = try alloc.alloc(declarations.ParamSig, 1);
+    const param_nodes = try alloc.alloc(*parser.Node, 1);
+    defer alloc.free(param_nodes);
+    const param_type_node = try a.create(parser.Node);
+    param_type_node.* = .{ .type_named = "Scene" };
+    param_nodes[0] = param_type_node;
+    params[0] = .{ .name = "scene", .type_ = RT{ .named = "Scene" } };
+    const ret_node = try a.create(parser.Node);
+    ret_node.* = .{ .type_named = "void" };
+    try decls.funcs.put("render", .{
+        .name = "render",
+        .params = params,
+        .param_nodes = param_nodes,
+        .return_type = RT{ .primitive = .void },
+        .return_type_node = ret_node,
+        .is_compt = false,
+        .is_pub = false,
+        .is_thread = false,
+    });
+
+    // Mark "s" as const
+    try annotator.const_vars.put(alloc, "s", {});
+
+    // Build call: render(s)
+    const arg_node = try a.create(parser.Node);
+    arg_node.* = .{ .identifier = "s" };
+    try type_map.put(alloc, arg_node, RT{ .named = "Scene" });
+
+    const callee_node = try a.create(parser.Node);
+    callee_node.* = .{ .identifier = "render" };
+    const call_args = try a.alloc(*parser.Node, 1);
+    call_args[0] = arg_node;
+    const call_arg_names = try a.alloc([]const u8, 1);
+    call_arg_names[0] = "";
+
+    const call_expr = parser.CallExpr{
+        .callee = callee_node,
+        .args = call_args,
+        .arg_names = call_arg_names,
+    };
+
+    try annotator.annotateCallCoercions(call_expr);
+
+    // ("render", 0) should be in const_ref_params
+    try std.testing.expect(annotator.isConstRefParam("render", 0));
+    // ("render", 1) should NOT be in const_ref_params
+    try std.testing.expect(!annotator.isConstRefParam("render", 1));
 }
