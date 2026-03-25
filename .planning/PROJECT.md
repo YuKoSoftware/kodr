@@ -43,9 +43,9 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 
 ### Active
 
-- [ ] Fix tester module codegen — stages 09+10 (100 tests) must pass
-- [ ] Fix cross-module struct ref-passing (BUG-01)
-- [ ] Fix qualified generic type validation (BUG-02)
+- [x] Fix tester module codegen — stages 09+10 (100 tests) must pass — Phase 4
+- [x] Fix cross-module struct ref-passing (BUG-01) — Phase 4
+- [x] Fix qualified generic type validation (BUG-02) — Phase 4
 - [ ] Sweep remaining 15 `catch unreachable` in codegen.zig
 - [ ] Sweep remaining 28 `catch {}` in stdlib sidecars
 - [ ] Align version numbers across build.zig, build.zig.zon, PROJECT.md
@@ -120,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-25 after milestone v0.10 start*
+*Last updated: 2026-03-25 after Phase 4 completion*
