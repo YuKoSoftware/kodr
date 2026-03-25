@@ -127,7 +127,11 @@ Plans:
   3. `const v: VolatilePtr(T) = 0xFF200000` compiles and generates a volatile pointer from an integer address
   4. `Ptr(T).cast(&x)` and `Ptr(T, &x)` produce a compile error with a clear migration message
   5. The `ptr_cast_expr` and `ptr_expr` PEG rules are removed from `orhon.peg`
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Add type-directed pointer coercion to codegen and update fixtures to new syntax
+- [ ] 09-02-PLAN.md — Remove old PEG rules, builder code, parser types, dead codegen, and add negative test
 
 #### Phase 10: Compatibility Updates
 **Goal**: All existing code using the new semantics compiles — Tamga, example module, tester, and docs are current
@@ -163,7 +167,7 @@ Current: 8 → 9 → 10 → 11
 | 5. Error Suppression Sweep | v0.10 | 2/2 | Complete | 2026-03-25 |
 | 6. Polish & Completeness | v0.10 | 2/2 | Complete | 2026-03-25 |
 | 7. Full Test Suite Gate | v0.10 | 1/1 | Complete | 2026-03-25 |
-| 8. Const Auto-Borrow | v0.11 | 1/2 | In Progress|  |
-| 9. Ptr Syntax Simplification | v0.11 | 0/? | Not started | - |
+| 8. Const Auto-Borrow | v0.11 | 2/2 | Complete |  |
+| 9. Ptr Syntax Simplification | v0.11 | 0/2 | In Progress | - |
 | 10. Compatibility Updates | v0.11 | 0/? | Not started | - |
 | 11. Full Test Suite Gate | v0.11 | 0/? | Not started | - |
