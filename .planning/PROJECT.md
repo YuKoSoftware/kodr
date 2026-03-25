@@ -44,12 +44,16 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ Ptr syntax simplification — type annotation + `&` replaces `.cast()` — v0.11 Phase 9
 - ✓ Tamga companion project updated for v0.11 syntax changes — v0.11 Phase 10
 - ✓ Full test suite gate 240/240 — v0.11 Phase 11
+- ✓ Fuzz testing for lexer and parser — v0.12 Phase 12
+- ✓ Tester module cross-module codegen fix — v0.12 Phase 13
+- ✓ Intermittent unit test failure fix — v0.12 Phase 13
 
 ### Active
 
-- [x] Fuzz testing for lexer and parser — v0.12 Phase 12
-- [x] Tester module cross-module codegen fix — v0.12 Phase 13
-- [x] Intermittent unit test failure fix — v0.12 Phase 13
+- [ ] Enum variants with explicit integer values (`A = 4` in typed enums) — v0.13 Phase 15
+- [ ] `is` operator with module-qualified types (`ev is mod.Type`) — v0.13 Phase 16
+- [ ] `Unit` type recognized in return position (`Error | Unit`) — v0.13 Phase 17
+- [ ] `pub type Alias = T` type alias syntax — v0.13 Phase 18
 
 ### Out of Scope
 
@@ -61,16 +65,17 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - New language features — this milestone is quality-focused, not feature-focused
 - Architecture refactors — deferred to future milestone
 
-## Current Milestone: v0.12 Quality & Polish
+## Current Milestone: v0.13 Tamga Compatibility
 
-**Goal:** Close all remaining bugs, add fuzz testing, and eliminate the intermittent test failure — zero open issues.
+**Goal:** Fix 4 compiler gaps discovered while building the Tamga framework — parser and codegen changes to support real-world usage patterns.
 
 **Target features:**
-- Fuzz testing integration for lexer and parser using `std.testing.fuzz`
-- Fix remaining tester module cross-module codegen issues
-- Investigate and fix the intermittent unit test failure
+- Enum variants with explicit integer values
+- `is` operator with module-qualified types
+- `Unit` type in return position
+- `pub type Alias = T` type alias syntax
 
-**Previous:** v0.11 Language Simplification — shipped 2026-03-25
+**Previous:** v0.12 Quality & Polish — shipped 2026-03-25
 
 ## Context
 
@@ -113,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-25 after Phase 13 completion*
+*Last updated: 2026-03-25 — v0.13 milestone created from Tamga bugs*

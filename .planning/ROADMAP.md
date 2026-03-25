@@ -4,7 +4,8 @@
 
 - ✅ **v0.10 Bug Fix & Cleanup** - Phases 1-7 (shipped 2026-03-24)
 - ✅ **v0.11 Language Simplification** - Phases 8-11 (shipped 2026-03-25)
-- 🚧 **v0.12 Quality & Polish** - Phases 12-14 (in progress)
+- ✅ **v0.12 Quality & Polish** - Phases 12-14 (shipped 2026-03-25)
+- 🚧 **v0.13 Tamga Compatibility** - Phases 15-18 (in progress)
 
 ## Phases
 
@@ -88,6 +89,50 @@ Plans:
   2. No stage produces unexpected output or skipped tests
 **Plans**: TBD
 
+### 🚧 v0.13 Tamga Compatibility (In Progress)
+
+**Milestone Goal:** Fix 4 compiler gaps discovered while building the Tamga framework — parser and codegen changes to support real-world usage patterns.
+
+### Phase 15: Enum Explicit Values
+**Goal**: Typed enums support explicit integer value assignments per variant (e.g., `A = 4`)
+**Depends on**: Phase 14
+**Requirements**: TAMGA-01
+**Success Criteria** (what must be TRUE):
+  1. `pub enum(u32) Foo { A = 1, B = 5 }` parses and compiles
+  2. Codegen emits variant `= value` assignments in Zig enum
+  3. Existing sequential enums unchanged
+**Plans**: TBD
+
+### Phase 16: `is` Operator Qualified Types
+**Goal**: The `is` operator works with cross-module types — both `mod.Type` and unqualified forms
+**Depends on**: Phase 15
+**Requirements**: TAMGA-02
+**Success Criteria** (what must be TRUE):
+  1. `ev is module.Type` parses (dotted type names on RHS)
+  2. Codegen emits module-qualified names in generated Zig
+  3. Union-of-structs dispatch works across module boundaries
+**Plans**: TBD
+
+### Phase 17: Unit Type Support
+**Goal**: `Unit` is recognized as a builtin type, enabling `(Error | Unit)` for void returns
+**Depends on**: Phase 16
+**Requirements**: TAMGA-03
+**Success Criteria** (what must be TRUE):
+  1. `Unit` recognized as builtin type mapping to Zig `void`
+  2. `(Error | Unit)` compiles — codegen emits `anyerror!void`
+  3. Bridge functions returning `(Error | Unit)` work
+**Plans**: TBD
+
+### Phase 18: Type Alias Syntax
+**Goal**: `pub type Alias = T` declarations supported, generating Zig `pub const Alias = Type`
+**Depends on**: Phase 17
+**Requirements**: TAMGA-04
+**Success Criteria** (what must be TRUE):
+  1. `pub type Alias = SomeType` parses and compiles
+  2. Codegen emits `pub const Alias = SomeType` in Zig
+  3. Aliases work with all type forms (primitives, generics, pointers, structs)
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:** Phases execute in numeric order: 12 → 13 → 14
@@ -101,3 +146,7 @@ Plans:
 | 12. Fuzz Testing | v0.12 | 1/1 | Complete    | 2026-03-25 |
 | 13. Bug Fixes | v0.12 | 1/1 | Complete    | 2026-03-25 |
 | 14. Gate | v0.12 | 0/TBD | Complete    | 2026-03-25 |
+| 15. Enum Explicit Values | v0.13 | 0/TBD | Pending | — |
+| 16. `is` Operator Qualified Types | v0.13 | 0/TBD | Pending | — |
+| 17. Unit Type Support | v0.13 | 0/TBD | Pending | — |
+| 18. Type Alias Syntax | v0.13 | 0/TBD | Pending | — |
