@@ -25,7 +25,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Documentation
 
-- [ ] **DOCS-01**: Example module covers all implemented language features (RawPtr/VolatilePtr, #bitsize, any generics, typeOf(), include vs import)
+- [x] **DOCS-01**: Example module covers all implemented language features (RawPtr/VolatilePtr, #bitsize, any generics, typeOf(), include vs import)
 
 ### Gate
 
@@ -91,7 +91,7 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | ESUP-02 | Phase 5 | Complete |
 | HYGN-01 | Phase 6 | Pending |
 | HYGN-02 | Phase 6 | Pending |
-| DOCS-01 | Phase 6 | Pending |
+| DOCS-01 | Phase 6 | Complete |
 | GATE-01 | Phase 7 | Pending |
 
 **Coverage:**
