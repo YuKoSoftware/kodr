@@ -18,7 +18,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **PTRS-01**: `const p: Ptr(T) = &x` creates a safe pointer via type annotation + `&`
 - [x] **PTRS-02**: `const r: RawPtr(T) = &x` creates an unsafe pointer — type carries safety level
 - [x] **PTRS-03**: `const v: VolatilePtr(T) = 0xFF200000` creates volatile pointer from integer address
-- [ ] **PTRS-04**: Old `Ptr(T).cast(&x)` and `Ptr(T, &x)` syntax removed — compile error
+- [x] **PTRS-04**: Old `Ptr(T).cast(&x)` and `Ptr(T, &x)` syntax removed — compile error
 
 ### Compatibility
 
@@ -92,7 +92,7 @@ Deferred to future milestones.
 | PTRS-01 | Phase 9 | Complete |
 | PTRS-02 | Phase 9 | Complete |
 | PTRS-03 | Phase 9 | Complete |
-| PTRS-04 | Phase 9 | Pending |
+| PTRS-04 | Phase 9 | Complete |
 | COMP-01 | Phase 10 | Pending |
 | COMP-02 | Phase 10 | Pending |
 | COMP-03 | Phase 10 | Pending |

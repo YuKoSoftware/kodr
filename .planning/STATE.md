@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Language Simplification
-status: Ready to execute
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-03-25T13:16:38.218Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-03-25T13:22:35.619Z"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -52,6 +52,7 @@ Plan: 2 of 2
 | Phase 08 P01 | 20 | 2 tasks | 1 files |
 | Phase 08-const-auto-borrow P02 | 35 | 2 tasks | 6 files |
 | Phase 09-ptr-syntax-simplification P01 | 3 | 2 tasks | 3 files |
+| Phase 09-ptr-syntax-simplification P02 | 7 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ Recent decisions affecting current work:
 - [Phase 08-const-auto-borrow]: Cross-module const auto-borrow skipped (Pitfall 5) — only same-module direct calls promoted in Phase 8
 - [Phase 08-const-auto-borrow]: Enums and bitfields excluded from const auto-borrow — small value types should be copied not borrowed
 - [Phase 09]: Type-directed coercion uses blk pattern inline in each of the 4 declaration functions
+- [Phase 09-ptr-syntax-simplification]: Both ptr_cast_expr and ptr_expr PEG rules removed — type annotation drives coercion
+- [Phase 09-ptr-syntax-simplification]: MirKind.ptr_expr removed alongside all AST references — no stray enum variant left
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T13:16:38.216Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-03-25T13:22:35.617Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None

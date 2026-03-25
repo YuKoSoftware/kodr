@@ -131,7 +131,7 @@ Plans:
 
 Plans:
 - [x] 09-01-PLAN.md — Add type-directed pointer coercion to codegen and update fixtures to new syntax
-- [ ] 09-02-PLAN.md — Remove old PEG rules, builder code, parser types, dead codegen, and add negative test
+- [x] 09-02-PLAN.md — Remove old PEG rules, builder code, parser types, dead codegen, and add negative test
 
 #### Phase 10: Compatibility Updates
 **Goal**: All existing code using the new semantics compiles — Tamga, example module, tester, and docs are current
