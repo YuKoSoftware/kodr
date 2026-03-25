@@ -172,5 +172,5 @@ Current: 8 → 9 → 10 → 11
 | 7. Full Test Suite Gate | v0.10 | 1/1 | Complete | 2026-03-25 |
 | 8. Const Auto-Borrow | v0.11 | 2/2 | Complete |  |
 | 9. Ptr Syntax Simplification | v0.11 | 2/2 | Complete |  |
-| 10. Compatibility Updates | v0.11 | 1/1 | Complete   | 2026-03-25 |
+| 10. Compatibility Updates | v0.11 | 1/1 | Complete    | 2026-03-25 |
 | 11. Full Test Suite Gate | v0.11 | 0/? | Not started | - |
