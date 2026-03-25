@@ -41,8 +41,10 @@ const b: Vec2(f64) = a.add(a)   // ERROR: use of moved value 'a'
 ### Codegen — tester module fails to compile (cross-module codegen) — partially fixed v0.9.6
 
 ~~For-loop index variables, destructure name leaking, named tuple types, null literal
-wrapping~~ — all fixed. Remaining: pointer constructors and collection constructors
-being migrated to `.new()`/`.cast()` method-style syntax (no more type-as-value).
+wrapping~~ — all fixed. ~~Pointer constructors and collection constructors migrated
+to `.new()`/`.cast()` method-style syntax.~~ Collection `.new()` fixed in v0.10 Phase 4.
+Pointer syntax simplified: `Ptr(T).cast(&x)` replaced by `const p: Ptr(T) = &x` — type
+annotation carries pointer kind, `&` takes the address. `.cast()` removed.
 
 ### Module — sidecar path leaked (`error(gpa)`) — fixed v0.9.6
 

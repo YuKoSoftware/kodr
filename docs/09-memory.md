@@ -11,7 +11,8 @@
 
 ### Copy vs Move
 - **Primitives** (`i32`, `i64`, `u8`, `f64`, `bool`, `usize`, `isize`, `String` etc.) — silently copy on assignment, compiler does not track them. `String` is `[]const u8` under the hood (a pointer + length), so copying is always cheap (16 bytes).
-- **Everything else** (structs, slices, user types) — move by default, compiler tracks ownership
+- **`var` non-primitives** (structs, slices, user types) — move by default, compiler tracks ownership
+- **`const` non-primitives** — auto-borrowed as `const &` when passed by value. The compiler passes a read-only reference instead of copying. No silent deep copies. Use `copy()` when you actually need a copy.
 - `move` for explicit move intent
 - `copy` for explicit copies of non-primitives
 - For mutable byte manipulation, use `[]u8` (mutable array) — this is a move type
@@ -27,9 +28,17 @@ var data: MyStruct = getData()
 var d2: MyStruct = data          // move, data is now invalid
 var d3: MyStruct = copy(d2)     // explicit copy, d2 still valid
 var d4: MyStruct = move(d2)     // explicit move, documents intent
+
+const config: Config = getConfig()
+processA(config)        // auto-borrowed as const &, no copy
+processB(config)        // still valid — never moved, never copied
+var mine: Config = copy(config)  // explicit copy when you need owned data
 ```
 
 Use-after-move is a compile time error. Zero runtime overhead — moved variables do not exist in the output binary.
+
+### Why `const` Auto-Borrows
+`const` means immutable — the value will never change. Since it cannot change, passing it by reference is always safe. The compiler passes `const &T` under the hood, avoiding silent copies of large structs. This is zero-cost and invisible to the user. If you need an actual owned copy, use `copy()` explicitly.
 
 ### Borrowing
 `&` borrows a value without transferring ownership. Caller retains ownership.
@@ -82,14 +91,14 @@ Moving individual fields out of a struct is a compile time error.
 
 ## Pointers
 
-Traditional `*T` pointer syntax does not exist in Orhon. Instead there are three distinct pointer types, each with a clear purpose. All follow the same `Type(T, value)` instantiation pattern used everywhere in Orhon.
+Traditional `*T` pointer syntax does not exist in Orhon. Instead there are three distinct pointer types, each with a clear purpose. Pointer construction uses the type annotation and `&` (address-of) — the type carries the safety level, no extra syntax needed.
 
 ### `Ptr(T)` — Safe Pointer, General Use
 Compiler tracked. Always `const` — the pointer cannot be reassigned. Points to a single value only — no pointer arithmetic, no `[]` indexing. Must be initialized from a variable address (`&x`) — raw integer addresses are not allowed. The ownership pass ensures you cannot use a `Ptr(T)` after the pointee has moved — this is a hard compile-time error. No warnings emitted.
 
 ```
 var x: i32 = 10
-const ptr: Ptr(i32) = Ptr(i32, &x)
+const ptr: Ptr(i32) = &x
 
 ptr.value          // read the pointed-to value
 
@@ -97,15 +106,15 @@ var x2: i32 = x   // x moved — compiler error if ptr.value is used after this
 ```
 
 ### `RawPtr(T)` — Unsafe Pointer, No Restrictions
-Zero overhead — just a memory address. No compiler tracking, no ownership checks, no bounds checking. Accepts `&variable` or a raw integer address. `[]` indexing with full pointer arithmetic. Always emits a compiler warning — you are opting out of safety.
+Zero overhead — just a memory address. No compiler tracking, no ownership checks, no bounds checking. `[]` indexing with full pointer arithmetic. Always emits a compiler warning — you are opting out of safety.
 
 ```
 // from a variable
-const raw: RawPtr(i32) = RawPtr(i32, &x)
+const raw: RawPtr(i32) = &x
 raw[0]    // read value, no bounds check
 
 // from a hardware address
-const vga: RawPtr(u8) = RawPtr(u8, 0xB8000)
+const vga: RawPtr(u8) = 0xB8000
 vga[0]
 vga[5]
 
@@ -118,10 +127,24 @@ arr[n]    // nth element, pointer arithmetic under the hood
 Same as `RawPtr(T)` with one difference: every read and write is volatile — the compiler never caches or optimizes them away. For memory-mapped hardware registers where the value can change outside the program. Always emits a compiler warning.
 
 ```
-const reg: VolatilePtr(u32) = VolatilePtr(u32, 0xFF200000)
+const reg: VolatilePtr(u32) = 0xFF200000
 reg[0]         // volatile read
 reg[0] = 0x1   // volatile write
 reg[1] = 0x2   // volatile write to next register
+```
+
+### Pointer Construction
+The type annotation determines pointer kind — `&` takes the address, integer literals provide hardware addresses:
+
+```
+// From a variable — & takes the address
+const p: Ptr(i32) = &x             // safe, const, compiler-tracked
+const r: RawPtr(i32) = &x          // unsafe, warns
+const v: VolatilePtr(u32) = &x     // volatile, warns
+
+// From a hardware address — integer literal
+const reg: VolatilePtr(u32) = 0xFF200000
+const mem: RawPtr(u8) = 0xB8000
 ```
 
 ### Pointer Rules
