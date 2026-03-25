@@ -9,8 +9,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Fuzz Testing
 
-- [ ] **FUZZ-01**: Lexer fuzz testing using `std.testing.fuzz` — random input doesn't crash the lexer
-- [ ] **FUZZ-02**: Parser fuzz testing using `std.testing.fuzz` — random token streams don't crash the parser
+- [x] **FUZZ-01**: Lexer fuzz testing using `std.testing.fuzz` — random input doesn't crash the lexer
+- [x] **FUZZ-02**: Parser fuzz testing using `std.testing.fuzz` — random token streams don't crash the parser
 
 ### Tester Module
 
@@ -53,8 +53,8 @@ Deferred to future milestones.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FUZZ-01 | Phase 12 | Pending |
-| FUZZ-02 | Phase 12 | Pending |
+| FUZZ-01 | Phase 12 | Complete |
+| FUZZ-02 | Phase 12 | Complete |
 | TEST-01 | Phase 13 | Pending |
 | RELY-01 | Phase 13 | Pending |
 | GATE-01 | Phase 14 | Pending |

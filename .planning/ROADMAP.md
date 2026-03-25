@@ -65,7 +65,7 @@
   3. Fuzz targets integrated into the existing `src/fuzz.zig` harness and documented in COMPILER.md
 **Plans**: 1 plan
 Plans:
-- [ ] 12-01-PLAN.md — Parser fuzz test, standalone harness hardening, COMPILER.md docs
+- [x] 12-01-PLAN.md — Parser fuzz test, standalone harness hardening, COMPILER.md docs
 
 ### Phase 13: Bug Fixes
 **Goal**: Tester module compiles end-to-end and unit tests pass reliably on every run
@@ -96,6 +96,6 @@ Plans:
 | 9. Ptr Syntax Simplification | v0.11 | Complete | Complete | 2026-03-25 |
 | 10. Tamga Compatibility Update | v0.11 | Complete | Complete | 2026-03-25 |
 | 11. Full Test Suite Gate | v0.11 | Complete | Complete | 2026-03-25 |
-| 12. Fuzz Testing | v0.12 | 0/1 | In progress | - |
+| 12. Fuzz Testing | v0.12 | 1/1 | Complete   | 2026-03-25 |
 | 13. Bug Fixes | v0.12 | 0/TBD | Not started | - |
 | 14. Gate | v0.12 | 0/TBD | Not started | - |
