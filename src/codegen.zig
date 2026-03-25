@@ -2411,7 +2411,10 @@ pub const CodeGen = struct {
                 try self.generateExprMir(m.children[0]);
             },
             .interpolation => {
-                if (m.interp_parts) |parts| {
+                // If the MIR lowerer hoisted this to a temp var, emit just the var name
+                if (m.injected_name) |var_name| {
+                    try self.emit(var_name);
+                } else if (m.interp_parts) |parts| {
                     try self.generateInterpolatedStringMir(parts, m.children);
                 }
             },
@@ -2660,7 +2663,12 @@ pub const CodeGen = struct {
         self.pre_stmts = self.output;
         self.output = saved_output;
 
-        try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
+        // Use error propagation only if the enclosing function has an error return type.
+        if (self.funcReturnTypeClass() == .error_union) {
+            try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
+        } else {
+            try self.pre_stmts.appendSlice(self.allocator, "}) catch unreachable;\n");
+        }
         // Append: <indent>defer std.heap.page_allocator.free(_interp_N);
         try self.pre_stmts.appendSlice(self.allocator, indent_str);
         try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.page_allocator.free(");
@@ -3070,7 +3078,13 @@ pub const CodeGen = struct {
             try self.generateExprMir(child);
             first = false;
         }
-        try self.emit("}) catch |err| return err");
+        // Use error propagation only if the enclosing function has an error return type.
+        // Otherwise use unreachable — page_allocator OOM is extremely rare in practice.
+        if (self.funcReturnTypeClass() == .error_union) {
+            try self.emit("}) catch |err| return err");
+        } else {
+            try self.emit("}) catch unreachable");
+        }
     }
 
     /// MIR-path interpolated string — uses interp_parts for literals, children for exprs.
@@ -3135,7 +3149,12 @@ pub const CodeGen = struct {
         self.pre_stmts = self.output;
         self.output = saved_output;
 
-        try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
+        // Use error propagation only if the enclosing function has an error return type.
+        if (self.funcReturnTypeClass() == .error_union) {
+            try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
+        } else {
+            try self.pre_stmts.appendSlice(self.allocator, "}) catch unreachable;\n");
+        }
         // Append: <indent>defer std.heap.page_allocator.free(_interp_N);
         try self.pre_stmts.appendSlice(self.allocator, indent_str);
         try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.page_allocator.free(");

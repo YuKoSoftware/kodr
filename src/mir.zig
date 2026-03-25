@@ -1143,6 +1143,17 @@ pub const MirLowerer = struct {
                 const name = try std.fmt.allocPrint(self.allocator, "_orhon_interp_{d}", .{self.interp_counter});
                 self.interp_counter += 1;
 
+                // Lower expr children from the interpolated string parts
+                const interp = interp_node.interpolated_string;
+                var expr_children = std.ArrayListUnmanaged(*MirNode){};
+                for (interp.parts) |part| {
+                    switch (part) {
+                        .expr => |expr_node| try expr_children.append(self.allocator, try self.lowerNode(expr_node)),
+                        .literal => {},
+                    }
+                }
+                const lowered_children = try expr_children.toOwnedSlice(self.allocator);
+
                 // temp_var: const _orhon_interp_N = allocPrint(...)
                 const temp = try self.allocator.create(MirNode);
                 temp.* = .{
@@ -1150,8 +1161,9 @@ pub const MirLowerer = struct {
                     .resolved_type = RT{ .primitive = .string },
                     .type_class = .string,
                     .kind = .temp_var,
-                    .children = &.{},
+                    .children = lowered_children,
                     .injected_name = name,
+                    .interp_parts = interp.parts,
                 };
 
                 // injected_defer: defer std.heap.page_allocator.free(_orhon_interp_N)

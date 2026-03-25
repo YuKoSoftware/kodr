@@ -1041,7 +1041,51 @@ fn buildFloatLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 }
 
 fn buildStringLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    return ctx.newNode(.{ .string_literal = tokenText(ctx, cap.start_pos) });
+    const raw = tokenText(ctx, cap.start_pos);
+    // Guard against malformed tokens (need at least opening and closing quote)
+    if (raw.len < 2) return ctx.newNode(.{ .string_literal = raw });
+    const inner = raw[1 .. raw.len - 1];
+
+    // Fast path: no interpolation — plain string literal (unchanged behavior)
+    if (std.mem.indexOf(u8, inner, "@{") == null) {
+        return ctx.newNode(.{ .string_literal = raw });
+    }
+
+    // Slow path: build InterpolatedPart list by scanning for @{...} markers
+    var parts = std.ArrayListUnmanaged(parser.InterpolatedPart){};
+    var pos: usize = 0;
+    while (pos < inner.len) {
+        if (std.mem.indexOf(u8, inner[pos..], "@{")) |rel| {
+            const abs = pos + rel;
+            // Emit literal text before @{
+            if (rel > 0) {
+                const lit = try ctx.alloc().dupe(u8, inner[pos..abs]);
+                try parts.append(ctx.alloc(), .{ .literal = lit });
+            }
+            // Find the closing }
+            const expr_start = abs + 2;
+            if (std.mem.indexOfScalarPos(u8, inner, expr_start, '}')) |close| {
+                const expr_text = try ctx.alloc().dupe(u8, inner[expr_start..close]);
+                const expr_node = try ctx.newNodeAt(.{ .identifier = expr_text }, cap.start_pos);
+                try parts.append(ctx.alloc(), .{ .expr = expr_node });
+                pos = close + 1;
+            } else {
+                // Unclosed @{ — emit remainder as literal (silent degradation)
+                const lit = try ctx.alloc().dupe(u8, inner[abs..]);
+                try parts.append(ctx.alloc(), .{ .literal = lit });
+                break;
+            }
+        } else {
+            // No more @{ — emit remainder as literal
+            const lit = try ctx.alloc().dupe(u8, inner[pos..]);
+            try parts.append(ctx.alloc(), .{ .literal = lit });
+            break;
+        }
+    }
+
+    return ctx.newNodeAt(.{
+        .interpolated_string = .{ .parts = try parts.toOwnedSlice(ctx.alloc()) },
+    }, cap.start_pos);
 }
 
 fn buildBoolLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
