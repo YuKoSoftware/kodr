@@ -4,39 +4,21 @@
 
 ## Bugs
 
-### Codegen — cross-module struct ref-passing
+### ~~Codegen — cross-module struct ref-passing~~ — fixed v0.10 Phase 4
 
-When calling a method on an imported module's struct, the codegen doesn't know the
-method's parameter types. If a parameter takes `const &T`, the codegen emits the
-argument by value instead of taking its address with `&`. Zig then errors with
-`expected type '*const T', found 'T'`.
+~~Codegen didn't know imported method parameter types.~~ Fixed: MIR `resolveCallSig`
+now resolves cross-module instance method signatures for `value_to_const_ref` coercion.
 
-Affected: any cross-module struct method with `const &` non-self parameters.
-Workaround: use by-value parameters for cross-module struct methods.
+### ~~Resolver — qualified generic types not validated~~ — fixed v0.10 Phase 4
 
-Fix: codegen needs access to imported module DeclTables during method call generation,
-or the MIR pass should annotate call arguments with the expected parameter passing mode.
+~~Qualified generic types bypassed validation.~~ Fixed: resolver reports Orhon-level
+errors when module is found but type doesn't exist in its DeclTable.
 
-### Resolver — qualified generic types not validated
+### ~~Ownership — const values treated as moved on by-value pass~~ — fixed v0.11 Phase 8
 
-`math.Vec2(f64)` passes resolver validation without checking that `Vec2` exists in the
-math module's DeclTable. Currently, any dot-qualified generic type is trusted — validation
-is deferred to Zig compile time. `math.Nonexistent(f64)` would pass the resolver silently.
-
-Fix: resolver needs cross-module DeclTable access during `validateType()` for
-`type_generic` nodes with qualified names.
-
-### Ownership — const values treated as moved on by-value pass
-
-Passing a `const` struct value to a function by value counts as a move. Using the same
-const value in two separate calls errors with "use of moved value". Const values are
-immutable and should be implicitly copyable — the ownership checker should treat by-value
-passing of const values as a copy, not a move.
-
-```
-const a: Vec2(f64) = Vec2(f64)(x: 1.0, y: 2.0)
-const b: Vec2(f64) = a.add(a)   // ERROR: use of moved value 'a'
-```
+~~Const struct values counted as moves.~~ Fixed: const non-primitives now auto-borrow
+as `const &` at call sites. Codegen emits `*const T` signatures and `&arg` at call sites.
+`copy()` still works for explicit copies.
 
 ### Codegen — tester module fails to compile (cross-module codegen) — partially fixed v0.9.6
 
@@ -51,35 +33,26 @@ annotation carries pointer kind, `&` takes the address. `.cast()` removed.
 ~~`module.zig:660` allocates a sidecar path string that is never freed.~~ Fixed: freed
 in `Resolver.deinit()`.
 
-### `orhon test` — output format mismatch
+### ~~`orhon test` — output format mismatch~~ — fixed v0.10 Phase 4 (v0.9 Phase 1)
 
-`orhon test` reports `0 passed, 0 failed` instead of running tests and reporting
-`all tests passed`. The test command generates the test binary but either doesn't run
-the Zig test runner or doesn't parse its output correctly.
+~~Reports 0 passed/0 failed.~~ Fixed: test output parsing corrected.
 
-Affected: `test/05_compile.sh` — "orhon test — all tests pass" check.
+### ~~Stdlib — string interpolation leaks memory~~ — fixed v0.10 Phase 6
 
-### Stdlib — string interpolation leaks memory
+~~`@{variable}` allocates temp buffers never freed.~~ Fixed: codegen emits
+`defer std.heap.page_allocator.free(...)` after each `allocPrint`.
 
-`@{variable}` interpolation allocates temporary buffers that are never freed. Known
-since early implementation. Fix after default allocator strategy matures.
+### ~~Codegen — `catch unreachable` in generated code~~ — fixed v0.10 Phase 5
 
-### Codegen — `catch unreachable` in generated code
+~~Thread shared state allocation crashes on OOM.~~ Fixed: 4 compiler-side instances
+replaced with `@panic` with diagnostic messages. 8 generated-code instances are
+correct (error union narrowing) and remain.
 
-Thread shared state allocation and string interpolation emit `catch unreachable` in
-the generated Zig code (`codegen.zig` lines 655, 688, 2123). This crashes on OOM
-instead of propagating errors.
+### ~~Stdlib — silent error suppression (`catch {}`)~~ — fixed v0.10 Phase 5
 
-Fix: generated code should propagate allocation errors through the Zig error system.
-
-### Stdlib — silent error suppression (`catch {}`)
-
-103 instances of `catch {}` across 15 stdlib sidecar files silently swallow allocation
-failures and I/O errors. Affected: collections, json, xml, yaml, csv, toml, ini, http,
-fs, system, console, stream, regex, str, tui.
-
-Fix: stdlib bridge functions should propagate errors back to the caller or use a
-consistent error handling strategy.
+~~103 instances of `catch {}` across 15 files.~~ Fixed: v0.9 Phase 2 fixed 75 instances,
+v0.10 Phase 5 fixed remaining 8 data-loss sites (collections, stream). 20 fire-and-forget
+I/O sites (console, tui, fs, system) intentionally retained.
 
 ---
 
