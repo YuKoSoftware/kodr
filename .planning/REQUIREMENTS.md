@@ -29,7 +29,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Gate
 
-- [ ] **GATE-01**: `./testall.sh` passes all 11 stages with 0 failures
+- [x] **GATE-01**: `./testall.sh` passes all 11 stages with 0 failures
 
 ## v0.9 Requirements (Previous Milestone — Complete)
 
@@ -92,7 +92,7 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | HYGN-01 | Phase 6 | Complete |
 | HYGN-02 | Phase 6 | Complete |
 | DOCS-01 | Phase 6 | Complete |
-| GATE-01 | Phase 7 | Pending |
+| GATE-01 | Phase 7 | Complete |
 
 **Coverage:**
 - v0.10 requirements: 9 total

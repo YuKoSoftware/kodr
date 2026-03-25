@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Codegen Correctness** - Fix the tester module codegen failures that block 100 runtime tests (completed 2026-03-25)
 - [ ] **Phase 5: Error Suppression Sweep** - Replace all remaining silent `catch unreachable` and `catch {}` with proper error propagation
 - [x] **Phase 6: Polish & Completeness** - Align version numbers, fix string interpolation leak, complete example module coverage (completed 2026-03-25)
-- [ ] **Phase 7: Full Test Suite Gate** - Verify all 11 test stages pass with zero failures
+- [x] **Phase 7: Full Test Suite Gate** - Verify all 11 test stages pass with zero failures (completed 2026-03-25)
 
 ## Phase Details
 
@@ -70,10 +70,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. `./testall.sh` exits 0 with all 11 stages reported as passed
   2. No stage produces unexpected output or skipped tests — failure count is exactly 0 across all stages
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 07-01-PLAN.md — Fix stale null union test assertions and add PEG builder string interpolation (GATE-01)
+- [x] 07-01-PLAN.md — Fix stale null union test assertions and add PEG builder string interpolation (GATE-01)
 
 ## Progress
 
@@ -85,4 +85,4 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 4. Codegen Correctness | 2/2 | Complete   | 2026-03-25 |
 | 5. Error Suppression Sweep | 1/2 | In Progress|  |
 | 6. Polish & Completeness | 2/2 | Complete   | 2026-03-25 |
-| 7. Full Test Suite Gate | 0/1 | Not started | - |
+| 7. Full Test Suite Gate | 1/1 | Complete   | 2026-03-25 |
