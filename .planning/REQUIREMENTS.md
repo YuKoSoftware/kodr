@@ -10,8 +10,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Codegen Correctness
 
 - [ ] **CGEN-01**: Tester module compiles successfully — test stages 09 and 10 pass (100 tests)
-- [ ] **CGEN-02**: Cross-module struct methods emit correct `&` for `const &` parameters (BUG-01)
-- [ ] **CGEN-03**: Qualified generic types (e.g. `math.Vec2(f64)`) validated at Orhon level before codegen (BUG-02)
+- [x] **CGEN-02**: Cross-module struct methods emit correct `&` for `const &` parameters (BUG-01)
+- [x] **CGEN-03**: Qualified generic types (e.g. `math.Vec2(f64)`) validated at Orhon level before codegen (BUG-02)
 
 ### Error Suppression
 
@@ -85,8 +85,8 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CGEN-01 | Phase 4 | Pending |
-| CGEN-02 | Phase 4 | Pending |
-| CGEN-03 | Phase 4 | Pending |
+| CGEN-02 | Phase 4 | Complete |
+| CGEN-03 | Phase 4 | Complete |
 | ESUP-01 | Phase 5 | Pending |
 | ESUP-02 | Phase 5 | Pending |
 | HYGN-01 | Phase 6 | Pending |

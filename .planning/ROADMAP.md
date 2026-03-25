@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [ ] 04-01-PLAN.md — Fix collection .new() constructor codegen (CGEN-01)
-- [ ] 04-02-PLAN.md — Fix cross-module ref-passing and qualified generic validation (CGEN-02, CGEN-03)
+- [x] 04-02-PLAN.md — Fix cross-module ref-passing and qualified generic validation (CGEN-02, CGEN-03)
 
 ### Phase 5: Error Suppression Sweep
 **Goal**: The compiler and stdlib have no remaining silent error suppressors
