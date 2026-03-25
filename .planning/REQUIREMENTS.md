@@ -9,9 +9,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Const Auto-Borrow
 
-- [ ] **CBOR-01**: `const` non-primitive values auto-borrow as `const &` when passed by value — no silent deep copies
-- [ ] **CBOR-02**: Explicit `copy()` still works for owned copies of `const` values
-- [ ] **CBOR-03**: `var` non-primitive values still move on by-value pass (unchanged)
+- [x] **CBOR-01**: `const` non-primitive values auto-borrow as `const &` when passed by value — no silent deep copies
+- [x] **CBOR-02**: Explicit `copy()` still works for owned copies of `const` values
+- [x] **CBOR-03**: `var` non-primitive values still move on by-value pass (unchanged)
 
 ### Ptr Syntax
 
@@ -86,9 +86,9 @@ Deferred to future milestones.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CBOR-01 | Phase 8 | Pending |
-| CBOR-02 | Phase 8 | Pending |
-| CBOR-03 | Phase 8 | Pending |
+| CBOR-01 | Phase 8 | Complete |
+| CBOR-02 | Phase 8 | Complete |
+| CBOR-03 | Phase 8 | Complete |
 | PTRS-01 | Phase 9 | Pending |
 | PTRS-02 | Phase 9 | Pending |
 | PTRS-03 | Phase 9 | Pending |

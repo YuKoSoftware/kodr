@@ -114,7 +114,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — MIR annotator const-variable tracking and auto-borrow coercion annotation
+- [x] 08-01-PLAN.md — MIR annotator const-variable tracking and auto-borrow coercion annotation
 - [ ] 08-02-PLAN.md — CodeGen *const T signature emission, var caller handling, and integration tests
 
 #### Phase 9: Ptr Syntax Simplification
@@ -163,7 +163,7 @@ Current: 8 → 9 → 10 → 11
 | 5. Error Suppression Sweep | v0.10 | 2/2 | Complete | 2026-03-25 |
 | 6. Polish & Completeness | v0.10 | 2/2 | Complete | 2026-03-25 |
 | 7. Full Test Suite Gate | v0.10 | 1/1 | Complete | 2026-03-25 |
-| 8. Const Auto-Borrow | v0.11 | 0/2 | Planning | - |
+| 8. Const Auto-Borrow | v0.11 | 1/2 | In Progress|  |
 | 9. Ptr Syntax Simplification | v0.11 | 0/? | Not started | - |
 | 10. Compatibility Updates | v0.11 | 0/? | Not started | - |
 | 11. Full Test Suite Gate | v0.11 | 0/? | Not started | - |

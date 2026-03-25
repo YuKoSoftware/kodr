@@ -2,16 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Language Simplification
-status: planning
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-25T10:56:45.089Z"
-last_activity: 2026-03-25 — Roadmap created for v0.11 milestone
+status: Ready to execute
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-03-25T11:31:48.013Z"
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -21,16 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 8 — Const Auto-Borrow
+**Current focus:** Phase 08 — const-auto-borrow
 
 ## Current Position
 
-Phase: 8 of 11 (Const Auto-Borrow)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-25 — Roadmap created for v0.11 milestone
-
-Progress: [░░░░░░░░░░] 0% (v0.11 phases)
+Phase: 08 (const-auto-borrow) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -55,6 +49,7 @@ Progress: [░░░░░░░░░░] 0% (v0.11 phases)
 - Trend: Stable
 
 *Updated after each plan completion*
+| Phase 08 P01 | 20 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -66,6 +61,8 @@ Recent decisions affecting current work:
 - Const auto-borrow: `is_const` flag in ownership.zig currently skips move marking — fix is to emit `&value` at call sites in codegen instead of copy
 - Ptr simplification: `ptr_cast_expr` and `ptr_expr` PEG rules to be removed; type annotation drives safety level; `.cast()` becomes a compile error
 - Breaking changes are safe to land now — no known external users before wider adoption
+- [Phase 08]: const_vars set in MirAnnotator re-derives const-ness from AST (Option A) — avoids coupling to ownership checker
+- [Phase 08]: const_ref_params maps function name to param index set — enables codegen to emit *const T for promoted params without changing function signatures at declaration time
 
 ### Pending Todos
 
@@ -78,6 +75,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T10:56:45.087Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-const-auto-borrow/08-CONTEXT.md
+Last session: 2026-03-25T11:31:48.011Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None
