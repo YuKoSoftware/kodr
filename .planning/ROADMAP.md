@@ -70,7 +70,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. `./testall.sh` exits 0 with all 11 stages reported as passed
   2. No stage produces unexpected output or skipped tests — failure count is exactly 0 across all stages
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 07-01-PLAN.md — Fix stale null union test assertions and add PEG builder string interpolation (GATE-01)
 
 ## Progress
 
@@ -82,4 +85,4 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 4. Codegen Correctness | 2/2 | Complete   | 2026-03-25 |
 | 5. Error Suppression Sweep | 1/2 | In Progress|  |
 | 6. Polish & Completeness | 2/2 | Complete   | 2026-03-25 |
-| 7. Full Test Suite Gate | 0/? | Not started | - |
+| 7. Full Test Suite Gate | 0/1 | Not started | - |
