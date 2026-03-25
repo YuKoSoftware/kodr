@@ -994,14 +994,18 @@ test "compareVersions" {
 }
 
 test "read module name" {
-    // Create a temp file
-    const tmp_path = "/tmp/test_module.orh";
+    // Use an isolated temp directory to avoid races under parallel test execution.
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
     {
-        const f = try std.fs.cwd().createFile(tmp_path, .{});
+        const f = try tmp.dir.createFile("test_module.orh", .{});
         defer f.close();
         try f.writeAll("module testmod\n\nfunc main() void {}\n");
     }
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, "test_module.orh");
+    defer std.testing.allocator.free(tmp_path);
 
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
