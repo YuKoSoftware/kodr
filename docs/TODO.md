@@ -20,13 +20,18 @@ errors when module is found but type doesn't exist in its DeclTable.
 as `const &` at call sites. Codegen emits `*const T` signatures and `&arg` at call sites.
 `copy()` still works for explicit copies.
 
-### Codegen — tester module fails to compile (cross-module codegen) — partially fixed v0.9.6
+### ~~Codegen — tester module fails to compile (cross-module codegen)~~ — fixed v0.12 Phase 13
 
 ~~For-loop index variables, destructure name leaking, named tuple types, null literal
-wrapping~~ — all fixed. ~~Pointer constructors and collection constructors migrated
-to `.new()`/`.cast()` method-style syntax.~~ Collection `.new()` fixed in v0.10 Phase 4.
-Pointer syntax simplified: `Ptr(T).cast(&x)` replaced by `const p: Ptr(T) = &x` — type
-annotation carries pointer kind, `&` takes the address. `.cast()` removed.
+wrapping, pointer syntax, collection constructors~~ — all fixed. Test stages 09 (21/21)
+and 10 (102/102) pass fully. Cross-module codegen is correct end-to-end.
+
+### ~~Unit test — intermittent "read module name" failure~~ — fixed v0.12 Phase 13
+
+~~The "read module name" test in module.zig wrote to a hardcoded `/tmp/test_module.orh`
+path, causing write/delete races when Zig runs tests in parallel threads or when multiple
+`zig build test` invocations overlap.~~ Fixed: switched to `std.testing.tmpDir` so each
+test invocation gets an isolated temporary directory with automatic cleanup.
 
 ### Module — sidecar path leaked (`error(gpa)`) — fixed v0.9.6
 
