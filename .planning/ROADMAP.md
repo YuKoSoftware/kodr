@@ -40,8 +40,8 @@ Plans:
 **Depends on**: Phase 4
 **Requirements**: ESUP-01, ESUP-02
 **Success Criteria** (what must be TRUE):
-  1. `grep -c 'catch unreachable' src/codegen.zig` returns 0 — all 15 instances replaced with explicit error propagation
-  2. `grep -rn 'catch {}' src/std/` returns 0 — all 28 instances across the 6 stdlib sidecars replaced with explicit handling or documented fire-and-forget comments
+  1. Zero compiler-side `catch unreachable` in codegen.zig — 4 thread allocation sites replaced with `@panic` (generated-code emit instances are correct and remain)
+  2. Zero data-loss `catch {}` in stdlib — collections.zig and stream.zig use `catch return`/`catch break`. Remaining `catch {}` are fire-and-forget void I/O (console, tui, fs, system) where error discard is intentional
   3. No test stage regresses as a result of the sweep — `./testall.sh` stages 01-10 still pass
 **Plans:** 1/2 plans executed
 
