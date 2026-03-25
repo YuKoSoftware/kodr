@@ -4,7 +4,13 @@ module example
 
 // ─── Imports ─────────────────────────────────────────────────────────────────
 
+// import — scoped access: use module name as prefix
 import std::console
+
+// include — flat access: symbols dumped directly into scope (no prefix needed)
+// Example: include std::collections makes List, Map, Set available without prefix
+//   include std::collections
+//   var items: List(i32) = List(i32).new()   // no "collections." prefix
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
