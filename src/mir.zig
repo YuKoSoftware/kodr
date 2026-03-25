@@ -583,6 +583,24 @@ pub const MirAnnotator = struct {
                     }
                 }
             }
+            // Instance method: obj.method(args) — resolve obj's type to find the declaring module.
+            // The object is a variable; look up its resolved type then search the module that owns
+            // the struct definition for the method signature.
+            const method_name = c.callee.field_expr.field;
+            if (self.lookupType(c.callee.field_expr.object)) |obj_type| {
+                if (self.all_decls) |ad| {
+                    // Use struct name to find the owning module precisely.
+                    if (obj_type == .named) {
+                        const struct_name = obj_type.named;
+                        var it = ad.iterator();
+                        while (it.next()) |entry| {
+                            if (entry.value_ptr.*.structs.contains(struct_name)) {
+                                return entry.value_ptr.*.funcs.get(method_name);
+                            }
+                        }
+                    }
+                }
+            }
         }
         return null;
     }
