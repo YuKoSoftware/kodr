@@ -84,21 +84,21 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CGEN-01 | — | Pending |
-| CGEN-02 | — | Pending |
-| CGEN-03 | — | Pending |
-| ESUP-01 | — | Pending |
-| ESUP-02 | — | Pending |
-| HYGN-01 | — | Pending |
-| HYGN-02 | — | Pending |
-| DOCS-01 | — | Pending |
-| GATE-01 | — | Pending |
+| CGEN-01 | Phase 4 | Pending |
+| CGEN-02 | Phase 4 | Pending |
+| CGEN-03 | Phase 4 | Pending |
+| ESUP-01 | Phase 5 | Pending |
+| ESUP-02 | Phase 5 | Pending |
+| HYGN-01 | Phase 6 | Pending |
+| HYGN-02 | Phase 6 | Pending |
+| DOCS-01 | Phase 6 | Pending |
+| GATE-01 | Phase 7 | Pending |
 
 **Coverage:**
 - v0.10 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9 ⚠️
+- Mapped to phases: 9
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-25*
-*Last updated: 2026-03-25 after initial definition*
+*Last updated: 2026-03-25 after roadmap creation*

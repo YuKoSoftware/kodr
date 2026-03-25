@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: test-suite-code-quality
-status: Defining requirements
+status: Roadmap defined
 stopped_at: null
 last_updated: "2026-03-25T00:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Defining requirements for v0.10
+**Current focus:** Phase 4 — Codegen Correctness
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 4 (Codegen Correctness) — Not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-25 — Milestone v0.10 started
+Status: Roadmap defined, ready for planning
+Last activity: 2026-03-25 — Roadmap created for v0.10
+
+Progress: [----------] 0/4 phases
 
 ## Performance Metrics
 
@@ -40,7 +42,10 @@ Last activity: 2026-03-25 — Milestone v0.10 started
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 4. Codegen Correctness | TBD | - | - |
+| 5. Error Suppression Sweep | TBD | - | - |
+| 6. Polish & Completeness | TBD | - | - |
+| 7. Full Test Suite Gate | TBD | - | - |
 
 **Recent Trend:**
 
@@ -89,5 +94,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-24T18:00:55.479Z
-Stopped at: Completed 03-02-PLAN.md
+Stopped at: Roadmap defined for v0.10
 Resume file: None

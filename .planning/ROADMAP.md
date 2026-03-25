@@ -1,75 +1,73 @@
-# Roadmap: Orhon Compiler — Bug Fixes & Cleanup
+# Roadmap: Orhon Compiler — Test Suite & Code Quality
 
 ## Overview
 
-Three focused phases to clear the correctness debt accumulated through rapid v0.9.x development. Phase 1 fixes the compiler bugs that produce wrong or crashing output. Phase 2 eliminates the memory and error handling hazards that contradict the compiler's safety contract. Phase 3 hardens the LSP so it can run reliably during long editing sessions. After all three phases, `./testall.sh` passes cleanly and the codebase has no known correctness holes.
+Four phases to complete the v0.10 milestone. Phase 4 fixes the codegen bugs responsible for 100 failing test cases. Phase 5 sweeps the remaining silent error suppressors that contradict the compiler's safety contract. Phase 6 closes the polish gaps: version drift, memory leak, and example module holes. Phase 7 is a verification gate — `./testall.sh` must pass all 11 stages cleanly before the milestone closes.
 
 ## Phases
 
 **Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+- Integer phases (1, 2, 3): Completed in v0.9 milestone
+- Integer phases (4, 5, 6, 7): This milestone (v0.10)
+- Decimal phases (N.1, N.2): Urgent insertions if needed (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Compiler Bug Fixes** - Fix the four codegen/analysis bugs that produce wrong or crashing output (completed 2026-03-24)
-- [ ] **Phase 2: Memory & Error Safety** - Eliminate memory leaks and silent error suppression throughout the compiler and stdlib
-- [x] **Phase 3: LSP Hardening** - Make the language server memory-safe and robust against large or malicious requests (completed 2026-03-24)
+- [ ] **Phase 4: Codegen Correctness** - Fix the tester module codegen failures that block 100 runtime tests
+- [ ] **Phase 5: Error Suppression Sweep** - Replace all remaining silent `catch unreachable` and `catch {}` with proper error propagation
+- [ ] **Phase 6: Polish & Completeness** - Align version numbers, fix string interpolation leak, complete example module coverage
+- [ ] **Phase 7: Full Test Suite Gate** - Verify all 11 test stages pass with zero failures
 
 ## Phase Details
 
-### Phase 1: Compiler Bug Fixes
-**Goal**: The compiler produces correct output for every known failing case
-**Depends on**: Nothing (first phase)
-**Requirements**: BUG-01, BUG-02, BUG-03, BUG-04
+### Phase 4: Codegen Correctness
+**Goal**: The tester module compiles and all 100 runtime tests run and pass
+**Depends on**: Phase 3 (LSP Hardening — v0.9 milestone)
+**Requirements**: CGEN-01, CGEN-02, CGEN-03
 **Success Criteria** (what must be TRUE):
-  1. Cross-module struct method calls emit `const &` argument passing, not by-value copies
-  2. Qualified generic types like `math.Vec2(f64)` fail with a clear error when the target type does not exist in the referenced module
-  3. Passing a const struct to a function by value does not trigger a spurious ownership-move error
-  4. `orhon test` actually runs test blocks and reports the correct passed/failed count
-**Plans**: 2 plans
+  1. `orhon build` on the tester module produces valid Zig with no `type 'i32' has no members` or similar errors
+  2. Cross-module struct methods with `const &` parameters emit `&arg` at every call site in generated Zig
+  3. A reference to `math.Vec2(f64)` where `Vec2` does not exist in module `math` produces a clear Orhon-level error before codegen runs
+  4. Test stages 09 (language) and 10 (runtime) both pass — 100 tests executed, 0 compilation failures
+**Plans**: TBD
 
-Plans:
-- [x] 01-01-PLAN.md — Fix ownership const-as-copy (BUG-03) and orhon test output (BUG-04)
-- [x] 01-02-PLAN.md — Fix cross-module const & passing (BUG-01) and qualified generic validation (BUG-02)
-
-### Phase 2: Memory & Error Safety
-**Goal**: The compiler and stdlib have no silent error suppression or unrecovered memory leaks
-**Depends on**: Phase 1
-**Requirements**: MEM-01, MEM-02, MEM-03, MEM-04
+### Phase 5: Error Suppression Sweep
+**Goal**: The compiler and stdlib have no remaining silent error suppressors
+**Depends on**: Phase 4
+**Requirements**: ESUP-01, ESUP-02
 **Success Criteria** (what must be TRUE):
-  1. String interpolation `@{variable}` expressions do not leak temp buffers — cleanup happens at each call site or via a documented arena strategy
-  2. Codegen never panics with `catch unreachable` on OOM — all three sites propagate errors through the Zig error system
-  3. All 103 `catch {}` instances across the 15 stdlib bridge files are replaced with explicit propagation or a documented, consistent strategy
-  4. Tester module pointer and collection constructors use `.new()`/`.cast()` method-style — no bare type-as-value construction remains
-**Plans**: 3 plans
+  1. `grep -c 'catch unreachable' src/codegen.zig` returns 0 — all 15 instances replaced with explicit error propagation
+  2. `grep -rn 'catch {}' src/std/` returns 0 — all 28 instances across the 6 stdlib sidecars replaced with explicit handling or documented fire-and-forget comments
+  3. No test stage regresses as a result of the sweep — `./testall.sh` stages 01-10 still pass
+**Plans**: TBD
 
-Plans:
-- [x] 02-01-PLAN.md — Fix interpolation catch unreachable in codegen (MEM-01, MEM-02)
-- [x] 02-02-PLAN.md — Stdlib catch {} sweep across 15 bridge files (MEM-03)
-- [x] 02-03-PLAN.md — Add Ptr .cast() constructor and migrate tester/example (MEM-04)
-
-### Phase 3: LSP Hardening
-**Goal**: The language server runs without unbounded memory growth and rejects oversized input safely
-**Depends on**: Phase 2
-**Requirements**: LSP-01, LSP-02, LSP-03
+### Phase 6: Polish & Completeness
+**Goal**: Version numbers are consistent, string interpolation does not leak, and the example module documents every implemented feature
+**Depends on**: Phase 5
+**Requirements**: HYGN-01, HYGN-02, DOCS-01
 **Success Criteria** (what must be TRUE):
-  1. A long editing session does not cause unbounded LSP memory growth — `runAnalysis()` uses a per-request arena that is freed after each request
-  2. Header lines longer than the previous fixed 1024-byte buffer are handled without truncation or buffer overrun
-  3. A content-length header claiming an oversized payload is rejected with an error rather than triggering an OOM allocation
-**Plans**: 2 plans
+  1. `build.zig`, `build.zig.zon`, and `PROJECT.md` all report the same version string with no drift
+  2. A program that uses `@{variable}` string interpolation in a loop does not grow memory unboundedly — temp buffers are freed after each interpolation
+  3. The example module compiles successfully and contains working demonstrations of RawPtr/VolatilePtr, `#bitsize`, any generics, `typeOf()`, and `include` vs `import`
+**Plans**: TBD
 
-Plans:
-- [x] 03-01-PLAN.md — Harden readMessage with larger header buffer and content-length guard (LSP-02, LSP-03)
-- [x] 03-02-PLAN.md — Per-request ArenaAllocator in runAnalysis (LSP-01)
+### Phase 7: Full Test Suite Gate
+**Goal**: Every test stage passes, confirming the milestone is complete
+**Depends on**: Phase 6
+**Requirements**: GATE-01
+**Success Criteria** (what must be TRUE):
+  1. `./testall.sh` exits 0 with all 11 stages reported as passed
+  2. No stage produces unexpected output or skipped tests — failure count is exactly 0 across all stages
+**Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3
+Phases execute in numeric order: 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Compiler Bug Fixes | 2/2 | Complete   | 2026-03-24 |
-| 2. Memory & Error Safety | 1/3 | In Progress|  |
-| 3. LSP Hardening | 2/2 | Complete   | 2026-03-24 |
+| 4. Codegen Correctness | 0/? | Not started | - |
+| 5. Error Suppression Sweep | 0/? | Not started | - |
+| 6. Polish & Completeness | 0/? | Not started | - |
+| 7. Full Test Suite Gate | 0/? | Not started | - |
