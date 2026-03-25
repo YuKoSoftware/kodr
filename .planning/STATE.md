@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.12
-milestone_name: Quality & Polish
+milestone: v0.13
+milestone_name: Tamga Compatibility
 status: Milestone complete
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-03-25T17:17:33.935Z"
+stopped_at: Phase 15 context gathered
+last_updated: "2026-03-25T20:44:06.442Z"
 progress:
   total_phases: 3
   completed_phases: 2
@@ -65,6 +65,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T16:56:16.947Z
-Stopped at: Completed 13-01-PLAN.md
-Resume file: None
+Last session: 2026-03-25T20:44:06.440Z
+Stopped at: Phase 15 context gathered
+Resume file: .planning/phases/15-enum-explicit-values/15-CONTEXT.md
