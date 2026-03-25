@@ -597,5 +597,26 @@ func main() void {
         console.println("FAIL bitfield_methods")
     }
 
+    // Test: const auto-borrow (CBOR-01) — const struct auto-borrows as *const T
+    if(tester.test_const_auto_borrow() == 7.0) {
+        console.println("PASS const_auto_borrow")
+    } else {
+        console.println("FAIL const_auto_borrow")
+    }
+
+    // Test: var caller of promoted function — also emits &arg at call site
+    if(tester.test_var_caller_promoted() == 30.0) {
+        console.println("PASS var_caller_promoted")
+    } else {
+        console.println("FAIL var_caller_promoted")
+    }
+
+    // Test: copy() on const value bypasses auto-borrow (CBOR-02)
+    if(tester.test_const_copy() == 11.0) {
+        console.println("PASS const_copy")
+    } else {
+        console.println("FAIL const_copy")
+    }
+
     console.println("TESTER:DONE")
 }

@@ -1372,3 +1372,45 @@ pub func test_bitfield_methods() i32 {
     }
     return 0
 }
+
+// ─── Const Auto-Borrow ───────────────────────────────────────
+
+pub struct Point2D {
+    pub x: f64
+    pub y: f64
+}
+
+// Helper: const auto-borrow target — param promoted to *const Point2D in Zig output
+
+func sum_point(p: Point2D) f64 {
+    return p.x + p.y
+}
+
+// Helper: multiply point coords
+
+func mul_point(p: Point2D) f64 {
+    return p.x * p.y
+}
+
+// Const auto-borrow (CBOR-01): const struct auto-borrows as *const T at call site
+
+pub func test_const_auto_borrow() f64 {
+    const pt: Point2D = Point2D(x: 3.0, y: 4.0)
+    return sum_point(pt)
+}
+
+// Var caller of promoted function — also emits &arg at call site (Pitfall 2)
+
+pub func test_var_caller_promoted() f64 {
+    var pt: Point2D = Point2D(x: 5.0, y: 6.0)
+    return mul_point(pt)
+}
+
+// copy() on a const value produces an owned copy — auto-borrow is bypassed (CBOR-02)
+
+pub func test_const_copy() f64 {
+    const pt: Point2D = Point2D(x: 1.0, y: 2.0)
+    var pt2: Point2D = copy(pt)
+    pt2.x = 10.0
+    return pt2.x + pt.x
+}

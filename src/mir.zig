@@ -470,10 +470,15 @@ pub const MirAnnotator = struct {
     /// Compares arg types with param types and marks coercion annotations.
     /// Also applies const auto-borrow: const non-primitive args passed to by-value params
     /// get value_to_const_ref coercion and are recorded in const_ref_params.
+    /// Const auto-borrow is limited to same-module direct calls (c.callee is an identifier).
+    /// Cross-module calls (field_expr callee) are excluded — function signature promotion
+    /// must match across module boundaries, which requires cross-module coordination.
     fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
         const sig = self.resolveCallSig(c) orelse return;
         const param_count = @min(c.args.len, sig.params.len);
-        // Resolve the callee name for const_ref_params tracking
+        // Resolve the callee name for const_ref_params tracking.
+        // Only direct calls (identifier callee) qualify for const auto-borrow.
+        const is_direct_call = c.callee.* == .identifier;
         const func_name: ?[]const u8 = if (c.callee.* == .identifier)
             c.callee.identifier
         else if (c.callee.* == .field_expr)
@@ -494,13 +499,18 @@ pub const MirAnnotator = struct {
                 });
             } else {
                 // Const auto-borrow: annotate const non-primitive args with value_to_const_ref.
-                // Only applies to identifier arguments that reference a const variable.
-                if (arg.* == .identifier) {
+                // Only applies to same-module direct calls (Pitfall 5: cross-module skipped).
+                if (is_direct_call and arg.* == .identifier) {
                     const name = arg.identifier;
                     // Skip promoted params (already *const T — prevents double-borrow)
                     if (!self.promoted_params.contains(name) and self.const_vars.contains(name)) {
-                        // Only non-primitive, non-value-type args qualify
-                        if (isNonPrimitiveType(arg_type)) {
+                        // Only non-primitive, non-value-type args qualify.
+                        // Enums and bitfields are small value types — exclude them.
+                        const is_enum_or_bitfield = if (arg_type == .named) blk: {
+                            const n = arg_type.named;
+                            break :blk self.decls.enums.contains(n) or self.decls.bitfields.contains(n);
+                        } else false;
+                        if (isNonPrimitiveType(arg_type) and !is_enum_or_bitfield) {
                             try self.node_map.put(self.allocator, arg, .{
                                 .resolved_type = arg_type,
                                 .type_class = classifyType(arg_type),
