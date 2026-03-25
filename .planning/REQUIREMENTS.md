@@ -53,16 +53,16 @@ Deferred to future milestones.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FUZZ-01 | TBD | Pending |
-| FUZZ-02 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| RELY-01 | TBD | Pending |
-| GATE-01 | TBD | Pending |
+| FUZZ-01 | Phase 12 | Pending |
+| FUZZ-02 | Phase 12 | Pending |
+| TEST-01 | Phase 13 | Pending |
+| RELY-01 | Phase 13 | Pending |
+| GATE-01 | Phase 14 | Pending |
 
 **Coverage:**
 - v0.12 requirements: 5 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 5
+- Mapped to phases: 5
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-25*
