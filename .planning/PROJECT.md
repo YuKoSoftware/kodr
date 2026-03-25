@@ -46,8 +46,8 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - [x] Fix tester module codegen — stages 09+10 (100 tests) must pass — Phase 4
 - [x] Fix cross-module struct ref-passing (BUG-01) — Phase 4
 - [x] Fix qualified generic type validation (BUG-02) — Phase 4
-- [ ] Sweep remaining 15 `catch unreachable` in codegen.zig
-- [ ] Sweep remaining 28 `catch {}` in stdlib sidecars
+- [x] Sweep remaining `catch unreachable` in codegen.zig — Phase 5 (4 compiler-side replaced with @panic)
+- [x] Sweep remaining `catch {}` in stdlib sidecars — Phase 5 (data-loss sites fixed, fire-and-forget I/O retained)
 - [ ] Align version numbers across build.zig, build.zig.zon, PROJECT.md
 - [ ] Complete example module with missing language features
 - [ ] Fix string interpolation memory leak (BUG-05)
@@ -120,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-25 after Phase 4 completion*
+*Last updated: 2026-03-25 after Phase 5 completion*
