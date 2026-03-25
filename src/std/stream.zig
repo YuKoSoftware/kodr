@@ -17,12 +17,12 @@ pub const Buffer = struct {
 
     pub fn fromString(src: []const u8) Buffer {
         var buf = Buffer.create();
-        buf.data.appendSlice(alloc, src) catch {}; // fire-and-forget: stream I/O in void fn
+        buf.data.appendSlice(alloc, src) catch { return buf; }; // OOM: return empty buffer
         return buf;
     }
 
     pub fn write(self: *Buffer, src: []const u8) void {
-        self.data.appendSlice(alloc, src) catch {}; // fire-and-forget: stream I/O in void fn
+        self.data.appendSlice(alloc, src) catch return; // OOM: cannot write
     }
 
     pub fn read(self: *Buffer, n: i32) []const u8 {
