@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Language Simplification
-status: Ready to execute
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-03-25T11:31:48.013Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-03-25T11:56:18.133Z"
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -50,6 +50,7 @@ Plan: 2 of 2
 
 *Updated after each plan completion*
 | Phase 08 P01 | 20 | 2 tasks | 1 files |
+| Phase 08-const-auto-borrow P02 | 35 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,8 @@ Recent decisions affecting current work:
 - Breaking changes are safe to land now — no known external users before wider adoption
 - [Phase 08]: const_vars set in MirAnnotator re-derives const-ness from AST (Option A) — avoids coupling to ownership checker
 - [Phase 08]: const_ref_params maps function name to param index set — enables codegen to emit *const T for promoted params without changing function signatures at declaration time
+- [Phase 08-const-auto-borrow]: Cross-module const auto-borrow skipped (Pitfall 5) — only same-module direct calls promoted in Phase 8
+- [Phase 08-const-auto-borrow]: Enums and bitfields excluded from const auto-borrow — small value types should be copied not borrowed
 
 ### Pending Todos
 
@@ -75,6 +78,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T11:31:48.011Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-03-25T11:56:18.131Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None

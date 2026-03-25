@@ -115,7 +115,7 @@ Plans:
 
 Plans:
 - [x] 08-01-PLAN.md — MIR annotator const-variable tracking and auto-borrow coercion annotation
-- [ ] 08-02-PLAN.md — CodeGen *const T signature emission, var caller handling, and integration tests
+- [x] 08-02-PLAN.md — CodeGen *const T signature emission, var caller handling, and integration tests
 
 #### Phase 9: Ptr Syntax Simplification
 **Goal**: Pointer construction uses type annotation + `&` — verbose `.cast()` syntax is removed
