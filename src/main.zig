@@ -378,8 +378,6 @@ const SORT_ORH    = @embedFile("std/sort.orh");
 const SORT_ZIG    = @embedFile("std/sort.zig");
 const RANDOM_ORH  = @embedFile("std/random.orh");
 const RANDOM_ZIG  = @embedFile("std/random.zig");
-const ZIGLIB_ORH  = @embedFile("std/ziglib.orh");
-const ZIGLIB_ZIG  = @embedFile("std/ziglib.zig");
 const ENCODING_ORH = @embedFile("std/encoding.orh");
 const ENCODING_ZIG = @embedFile("std/encoding.zig");
 const STREAM_ORH   = @embedFile("std/stream.orh");
@@ -451,8 +449,6 @@ fn ensureStdFiles(allocator: std.mem.Allocator) !void {
         .{ .name = "sort.zig",    .content = SORT_ZIG },
         .{ .name = "random.orh",  .content = RANDOM_ORH },
         .{ .name = "random.zig",  .content = RANDOM_ZIG },
-        .{ .name = "ziglib.orh",  .content = ZIGLIB_ORH },
-        .{ .name = "ziglib.zig",  .content = ZIGLIB_ZIG },
         .{ .name = "encoding.orh", .content = ENCODING_ORH },
         .{ .name = "encoding.zig", .content = ENCODING_ZIG },
         .{ .name = "stream.orh",   .content = STREAM_ORH },
