@@ -130,7 +130,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Add type-directed pointer coercion to codegen and update fixtures to new syntax
+- [x] 09-01-PLAN.md — Add type-directed pointer coercion to codegen and update fixtures to new syntax
 - [ ] 09-02-PLAN.md — Remove old PEG rules, builder code, parser types, dead codegen, and add negative test
 
 #### Phase 10: Compatibility Updates
@@ -168,6 +168,6 @@ Current: 8 → 9 → 10 → 11
 | 6. Polish & Completeness | v0.10 | 2/2 | Complete | 2026-03-25 |
 | 7. Full Test Suite Gate | v0.10 | 1/1 | Complete | 2026-03-25 |
 | 8. Const Auto-Borrow | v0.11 | 2/2 | Complete |  |
-| 9. Ptr Syntax Simplification | v0.11 | 0/2 | In Progress | - |
+| 9. Ptr Syntax Simplification | v0.11 | 1/2 | In Progress|  |
 | 10. Compatibility Updates | v0.11 | 0/? | Not started | - |
 | 11. Full Test Suite Gate | v0.11 | 0/? | Not started | - |

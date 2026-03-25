@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Language Simplification
-status: Ready to plan
-stopped_at: Phase 9 context gathered
-last_updated: "2026-03-25T12:53:02.448Z"
+status: Ready to execute
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-03-25T13:16:38.218Z"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 08 — const-auto-borrow
+**Current focus:** Phase 09 — ptr-syntax-simplification
 
 ## Current Position
 
-Phase: 09
-Plan: Not started
+Phase: 09 (ptr-syntax-simplification) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Plan: Not started
 *Updated after each plan completion*
 | Phase 08 P01 | 20 | 2 tasks | 1 files |
 | Phase 08-const-auto-borrow P02 | 35 | 2 tasks | 6 files |
+| Phase 09-ptr-syntax-simplification P01 | 3 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,7 @@ Recent decisions affecting current work:
 - [Phase 08]: const_ref_params maps function name to param index set — enables codegen to emit *const T for promoted params without changing function signatures at declaration time
 - [Phase 08-const-auto-borrow]: Cross-module const auto-borrow skipped (Pitfall 5) — only same-module direct calls promoted in Phase 8
 - [Phase 08-const-auto-borrow]: Enums and bitfields excluded from const auto-borrow — small value types should be copied not borrowed
+- [Phase 09]: Type-directed coercion uses blk pattern inline in each of the 4 declaration functions
 
 ### Pending Todos
 
@@ -78,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T12:53:02.446Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-ptr-syntax-simplification/09-CONTEXT.md
+Last session: 2026-03-25T13:16:38.216Z
+Stopped at: Completed 09-01-PLAN.md
+Resume file: None
