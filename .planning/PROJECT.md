@@ -45,7 +45,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 
 - [x] Const auto-borrow — `const` values pass as `const &` instead of implicit copy — Phase 8
 - [x] Ptr syntax simplification — remove `.cast()` and `Ptr(T, &x)`, use type annotation + `&` — Phase 9
-- [ ] Update Tamga companion project for new Ptr syntax
+- [x] Update Tamga companion project for new Ptr syntax — Phase 10
 - [ ] Ensure testall.sh passes all 11 stages after changes
 
 ### Out of Scope
@@ -108,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-25 after Phase 9 completion*
+*Last updated: 2026-03-25 after Phase 10 completion*
