@@ -111,7 +111,11 @@ Plans:
   2. Calling `.copy()` on a `const` value produces an owned copy — explicit opt-in still works
   3. A `var` struct value passed by value still generates a move — `var` semantics are unchanged
   4. Programs that previously relied on implicit const copy continue compiling — the codegen change is transparent to correct code
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — MIR annotator const-variable tracking and auto-borrow coercion annotation
+- [ ] 08-02-PLAN.md — CodeGen *const T signature emission, var caller handling, and integration tests
 
 #### Phase 9: Ptr Syntax Simplification
 **Goal**: Pointer construction uses type annotation + `&` — verbose `.cast()` syntax is removed
@@ -159,7 +163,7 @@ Current: 8 → 9 → 10 → 11
 | 5. Error Suppression Sweep | v0.10 | 2/2 | Complete | 2026-03-25 |
 | 6. Polish & Completeness | v0.10 | 2/2 | Complete | 2026-03-25 |
 | 7. Full Test Suite Gate | v0.10 | 1/1 | Complete | 2026-03-25 |
-| 8. Const Auto-Borrow | v0.11 | 0/? | Not started | - |
+| 8. Const Auto-Borrow | v0.11 | 0/2 | Planning | - |
 | 9. Ptr Syntax Simplification | v0.11 | 0/? | Not started | - |
 | 10. Compatibility Updates | v0.11 | 0/? | Not started | - |
 | 11. Full Test Suite Gate | v0.11 | 0/? | Not started | - |
