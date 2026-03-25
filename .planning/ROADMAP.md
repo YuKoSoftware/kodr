@@ -63,7 +63,9 @@
   1. `zig build fuzz` runs a lexer fuzz target — arbitrary byte sequences don't panic or crash the lexer
   2. Parser fuzz target runs against random token streams — no panics, no crashes, all error paths return gracefully
   3. Fuzz targets integrated into the existing `src/fuzz.zig` harness and documented in COMPILER.md
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 12-01-PLAN.md — Parser fuzz test, standalone harness hardening, COMPILER.md docs
 
 ### Phase 13: Bug Fixes
 **Goal**: Tester module compiles end-to-end and unit tests pass reliably on every run
@@ -94,6 +96,6 @@
 | 9. Ptr Syntax Simplification | v0.11 | Complete | Complete | 2026-03-25 |
 | 10. Tamga Compatibility Update | v0.11 | Complete | Complete | 2026-03-25 |
 | 11. Full Test Suite Gate | v0.11 | Complete | Complete | 2026-03-25 |
-| 12. Fuzz Testing | v0.12 | 0/TBD | Not started | - |
+| 12. Fuzz Testing | v0.12 | 0/1 | In progress | - |
 | 13. Bug Fixes | v0.12 | 0/TBD | Not started | - |
 | 14. Gate | v0.12 | 0/TBD | Not started | - |
