@@ -72,7 +72,7 @@ if [ -f .orh-cache/generated/example.zig ]; then pass "generates example.zig"
 else fail "generates example.zig"; fi
 
 if grep -q "pub fn print" .orh-cache/generated/console_bridge.zig && \
-   grep -q "console_bridge.zig" .orh-cache/generated/console.zig; then
+   grep -q "console_bridge\")" .orh-cache/generated/console.zig; then
     pass "sidecar preserved"
 else
     fail "sidecar preserved"

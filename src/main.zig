@@ -1184,7 +1184,19 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
             }
             const binary_name2 = if (project_name.len > 0) project_name else mod.name;
             last_binary_name = binary_name2;
-            const passed = try runner.runTests(mod.name, binary_name2);
+            // Collect bridge module names for test build.zig
+            var test_bridge_mods = std.ArrayListUnmanaged([]const u8){};
+            defer test_bridge_mods.deinit(allocator);
+            {
+                var bmod_it = mod_resolver.modules.iterator();
+                while (bmod_it.next()) |bmod_entry| {
+                    const bmod = bmod_entry.value_ptr;
+                    if (bmod.has_bridges) {
+                        try test_bridge_mods.append(allocator, bmod.name);
+                    }
+                }
+            }
+            const passed = try runner.runTests(mod.name, binary_name2, test_bridge_mods.items);
             if (!passed) any_failed = true;
         }
         return if (!any_failed) try allocator.dupe(u8, last_binary_name) else null;
@@ -1357,6 +1369,20 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
             });
         }
 
+        // Collect non-root modules with bridges for named module registration
+        var extra_bridge_mods = std.ArrayListUnmanaged([]const u8){};
+        defer extra_bridge_mods.deinit(allocator);
+        {
+            var bmod_it = mod_resolver.modules.iterator();
+            while (bmod_it.next()) |bmod_entry| {
+                const bmod = bmod_entry.value_ptr;
+                if (bmod.is_root) continue;
+                if (bmod.has_bridges) {
+                    try extra_bridge_mods.append(allocator, bmod.name);
+                }
+            }
+        }
+
         for (cli.targets.items) |build_target| {
             const target_str = build_target.toZigTriple();
 
@@ -1367,7 +1393,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
             }
 
             const use_subfolder = cli.targets.items.len > 1;
-            const built = try runner.buildAll(target_str, opt_str, multi_targets.items);
+            const built = try runner.buildAll(target_str, opt_str, multi_targets.items, extra_bridge_mods.items);
             if (!built) return null;
 
             // Move artifacts to target subfolder if multi-target
@@ -1465,7 +1491,24 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
 
             const binary_name = if (project_name.len > 0) project_name else mod.name;
 
-            try runner.generateBuildZig(mod.name, build_type, binary_name, project_version, link_libs.items);
+            // Collect all modules with bridges for named module registration
+            var bridge_mods = std.ArrayListUnmanaged([]const u8){};
+            defer bridge_mods.deinit(allocator);
+            if (mod.has_bridges) {
+                try bridge_mods.append(allocator, mod.name);
+            }
+            {
+                var bmod_it = mod_resolver.modules.iterator();
+                while (bmod_it.next()) |bmod_entry| {
+                    const bmod = bmod_entry.value_ptr;
+                    if (bmod.is_root) continue;
+                    if (bmod.has_bridges) {
+                        try bridge_mods.append(allocator, bmod.name);
+                    }
+                }
+            }
+
+            try runner.generateBuildZig(mod.name, build_type, binary_name, project_version, link_libs.items, bridge_mods.items);
 
             for (cli.targets.items) |build_target| {
                 const target_str = build_target.toZigTriple();
