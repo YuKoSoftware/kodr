@@ -463,14 +463,11 @@ pub const CodeGen = struct {
             return;
         }
 
-        // Check if the imported module is a lib target — if so, use build-system
-        // module name (no .zig extension) since it's provided via addImport in build.zig
-        const is_lib = if (self.module_builds) |mb| blk: {
-            const bt = mb.get(imp.path) orelse break :blk false;
-            break :blk bt == .static or bt == .dynamic;
-        } else false;
-
-        const ext = if (is_lib) "" else ".zig";
+        // All inter-module imports use named module imports (no .zig extension).
+        // Every Orhon module is registered as a named module in the generated build.zig
+        // via createModule + addImport. This prevents Zig's "file exists in two modules"
+        // error when multiple targets import the same module.
+        const ext = "";
 
         // Track import aliases for str and collections
         if (std.mem.eql(u8, imp.path, "str")) {

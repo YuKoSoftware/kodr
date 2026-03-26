@@ -213,6 +213,31 @@ Multiple `#linkC` directives are allowed if a module wraps more than one C libra
 
 ---
 
+## Cross-Bridge Imports in Sidecars
+
+When a `.zig` sidecar needs types or functions from another module's bridge sidecar,
+use the **named module import** — the module name without the `.zig` extension:
+
+```zig
+// tamga_vk3d.zig — uses a type from another bridge
+const sdl3 = @import("tamga_sdl3_bridge");  // named module — correct
+// NOT: @import("tamga_sdl3_bridge.zig")    // file path — breaks build
+```
+
+The compiler registers each bridge sidecar as a named Zig module in the build graph
+and wires cross-bridge dependencies via `addImport`. Named imports resolve through
+the build system; file-path imports cause "file exists in two modules" errors.
+
+**File-path `@import` is fine for helper files** that belong to the same bridge:
+
+```zig
+const helpers = @import("vk_helpers.zig");  // internal file — correct
+```
+
+The rule: use named imports for other bridges, file-path imports for your own files.
+
+---
+
 ## Module Pairing
 
 One `.zig` sidecar per module. A module can span multiple `.orh` files (all declaring

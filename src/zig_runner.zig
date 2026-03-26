@@ -325,7 +325,7 @@ pub const ZigRunner = struct {
     /// Run all test blocks in the generated Zig project
     pub fn runTests(self: *ZigRunner, module_name: []const u8, project_name: []const u8, bridge_modules: []const []const u8) !bool {
         // Generate build.zig with test step included
-        try self.generateBuildZigWithTests(module_name, "exe", project_name, null, &.{}, bridge_modules);
+        try self.generateBuildZigWithTests(module_name, "exe", project_name, null, &.{}, bridge_modules, &.{});
 
         var args: std.ArrayListUnmanaged([]const u8) = .{};
         defer args.deinit(self.allocator);
@@ -355,8 +355,9 @@ pub const ZigRunner = struct {
         project_version: ?[3]u64,
         link_libs: []const []const u8,
         bridge_modules: []const []const u8,
+        shared_modules: []const []const u8,
     ) !void {
-        return self.generateBuildZigWithTests(module_name, build_type, project_name, project_version, link_libs, bridge_modules);
+        return self.generateBuildZigWithTests(module_name, build_type, project_name, project_version, link_libs, bridge_modules, shared_modules);
     }
 
     fn generateBuildZigWithTests(
@@ -367,8 +368,9 @@ pub const ZigRunner = struct {
         project_version: ?[3]u64,
         link_libs: []const []const u8,
         bridge_modules: []const []const u8,
+        shared_modules: []const []const u8,
     ) !void {
-        const content = try buildZigContent(self.allocator, module_name, build_type, project_name, project_version, link_libs, bridge_modules);
+        const content = try buildZigContent(self.allocator, module_name, build_type, project_name, project_version, link_libs, bridge_modules, shared_modules);
         defer self.allocator.free(content);
         try cache.writeGeneratedZig("build", content, self.allocator);
     }
@@ -434,6 +436,7 @@ pub fn buildZigContent(
     project_version: ?[3]u64,
     link_libs: []const []const u8,
     bridge_modules: []const []const u8,
+    shared_modules: []const []const u8,
 ) ![]u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     errdefer buf.deinit(allocator);
@@ -473,26 +476,35 @@ pub fn buildZigContent(
         try buf.appendSlice(allocator, bridge_chunk);
     }
 
-    // Apply #linkC to bridge modules (in single-target, linkC is associated with the root)
-    if (bridge_modules.len > 0 and link_libs.len > 0) {
-        // In single-target builds, link_libs go on the first bridge module (the root's bridge)
-        // since the root module is the one declaring #linkC.
+    // #linkC is applied to the artifact (lib/exe), not the bridge module.
+    // Build.Module doesn't have linkSystemLibrary/linkLibC — only Step.Compile does.
+
+    // Shared module creation — non-root, non-lib modules that are imported
+    // by the root. Named modules prevent "file exists in two modules" in
+    // multi-target builds and ensure @import("mod") resolves correctly.
+    for (shared_modules) |smod_name| {
+        const smod_chunk = try std.fmt.allocPrint(allocator,
+            \\    const mod_{s} = b.createModule(.{{
+            \\        .root_source_file = b.path("{s}.zig"),
+            \\        .target = target,
+            \\        .optimize = optimize,
+            \\    }});
+            \\    mod_{s}.addImport("_orhon_str", str_mod);
+            \\    mod_{s}.addImport("_orhon_collections", coll_mod);
+            \\
+        , .{ smod_name, smod_name, smod_name, smod_name });
+        defer allocator.free(smod_chunk);
+        try buf.appendSlice(allocator, smod_chunk);
+
+        // Wire bridge import for this shared module if it has one
         for (bridge_modules) |bmod_name| {
-            if (std.mem.eql(u8, bmod_name, module_name)) {
-                for (link_libs) |lib_name| {
-                    const link_chunk = try std.fmt.allocPrint(allocator,
-                        \\    bridge_{s}.linkSystemLibrary("{s}", .{{}});
-                        \\
-                    , .{ bmod_name, lib_name });
-                    defer allocator.free(link_chunk);
-                    try buf.appendSlice(allocator, link_chunk);
-                }
-                const libc_chunk = try std.fmt.allocPrint(allocator,
-                    \\    bridge_{s}.linkLibC();
+            if (std.mem.eql(u8, bmod_name, smod_name)) {
+                const smod_bridge = try std.fmt.allocPrint(allocator,
+                    \\    mod_{s}.addImport("{s}_bridge", bridge_{s});
                     \\
-                , .{bmod_name});
-                defer allocator.free(libc_chunk);
-                try buf.appendSlice(allocator, libc_chunk);
+                , .{ smod_name, smod_name, smod_name });
+                defer allocator.free(smod_bridge);
+                try buf.appendSlice(allocator, smod_bridge);
                 break;
             }
         }
@@ -536,6 +548,16 @@ pub fn buildZigContent(
             defer allocator.free(bridge_import);
             try buf.appendSlice(allocator, bridge_import);
         }
+
+        for (shared_modules) |smod_name| {
+            const smod_import = try std.fmt.allocPrint(allocator,
+                \\    exe.root_module.addImport("{s}", mod_{s});
+                \\
+            , .{ smod_name, smod_name });
+            defer allocator.free(smod_import);
+            try buf.appendSlice(allocator, smod_import);
+        }
+
     } else if (std.mem.eql(u8, build_type, "static")) {
         const lib_chunk = try std.fmt.allocPrint(allocator,
             \\    const lib = b.addLibrary(.{{
@@ -563,6 +585,16 @@ pub fn buildZigContent(
             defer allocator.free(bridge_import);
             try buf.appendSlice(allocator, bridge_import);
         }
+
+        for (shared_modules) |smod_name| {
+            const smod_import = try std.fmt.allocPrint(allocator,
+                \\    lib.root_module.addImport("{s}", mod_{s});
+                \\
+            , .{ smod_name, smod_name });
+            defer allocator.free(smod_import);
+            try buf.appendSlice(allocator, smod_import);
+        }
+
     } else if (std.mem.eql(u8, build_type, "dynamic")) {
         const lib_chunk = try std.fmt.allocPrint(allocator,
             \\    const lib = b.addLibrary(.{{
@@ -590,10 +622,21 @@ pub fn buildZigContent(
             defer allocator.free(bridge_import);
             try buf.appendSlice(allocator, bridge_import);
         }
+
+        for (shared_modules) |smod_name| {
+            const smod_import = try std.fmt.allocPrint(allocator,
+                \\    lib.root_module.addImport("{s}", mod_{s});
+                \\
+            , .{ smod_name, smod_name });
+            defer allocator.free(smod_import);
+            try buf.appendSlice(allocator, smod_import);
+        }
+
     }
 
-    // Emit C library linking: goes on bridge module if bridges exist, otherwise on artifact
-    if (bridge_modules.len == 0) {
+    // Apply #linkC to the artifact (lib/exe). linkSystemLibrary/linkLibC are
+    // methods on Step.Compile, not on Build.Module, so they go here.
+    {
         const artifact_name: []const u8 = if (std.mem.eql(u8, build_type, "exe")) "exe" else "lib";
         try emitLinkLibs(&buf, allocator, link_libs, artifact_name);
     }
@@ -627,10 +670,18 @@ pub fn buildZigContent(
         try buf.appendSlice(allocator, test_bridge);
     }
 
-    // Link C libraries for tests too (only when no bridge modules handle it)
-    if (bridge_modules.len == 0) {
-        try emitLinkLibs(&buf, allocator, link_libs, "unit_tests");
+    // Add shared module imports to test target
+    for (shared_modules) |smod_name| {
+        const test_mod = try std.fmt.allocPrint(allocator,
+            \\    unit_tests.root_module.addImport("{s}", mod_{s});
+            \\
+        , .{ smod_name, smod_name });
+        defer allocator.free(test_mod);
+        try buf.appendSlice(allocator, test_mod);
     }
+
+    // Link C libraries for tests too
+    try emitLinkLibs(&buf, allocator, link_libs, "unit_tests");
 
     try buf.appendSlice(allocator,
         \\}
@@ -640,7 +691,7 @@ pub fn buildZigContent(
     return buf.toOwnedSlice(allocator);
 }
 
-/// Emit linkSystemLibrary + linkLibC calls for an artifact.
+/// Emit linkSystemLibrary + linkLibC calls for a Step.Compile artifact.
 fn emitLinkLibs(
     buf: *std.ArrayListUnmanaged(u8),
     allocator: std.mem.Allocator,
@@ -650,7 +701,7 @@ fn emitLinkLibs(
     if (link_libs.len == 0) return;
     for (link_libs) |lib_name| {
         const chunk = try std.fmt.allocPrint(allocator,
-            \\    {s}.root_module.linkSystemLibrary("{s}", .{{}});
+            \\    {s}.linkSystemLibrary("{s}");
             \\
         , .{ artifact_name, lib_name });
         defer allocator.free(chunk);
@@ -670,6 +721,7 @@ pub const MultiTarget = struct {
     project_name: []const u8,
     build_type: []const u8, // "exe", "static", "dynamic"
     lib_imports: []const []const u8, // names of imported lib modules (for linking)
+    mod_imports: []const []const u8 = &.{}, // names of non-lib imported modules (for named module refs)
     version: ?[3]u64 = null,
     link_libs: []const []const u8 = &.{}, // C libraries from #linkC metadata
     has_bridges: bool = false, // module has bridge declarations needing named Zig modules
@@ -820,24 +872,40 @@ pub fn buildZigContentMulti(
         }
     }
 
-    // Apply #linkC to bridge modules (not to lib/exe targets)
+    // #linkC is applied to lib/exe artifacts below, not to bridge modules.
+    // Build.Module doesn't have linkSystemLibrary/linkLibC — only Step.Compile does.
+
+    // Shared module creation — non-root, non-lib modules that are imported by
+    // multiple targets need named modules to avoid "file exists in two modules".
+    var shared_set = std.StringHashMapUnmanaged(void){};
+    defer shared_set.deinit(allocator);
     for (targets) |t| {
-        if (!t.has_bridges) continue;
-        for (t.link_libs) |lib_name| {
-            const link_chunk = try std.fmt.allocPrint(allocator,
-                \\    bridge_{s}.linkSystemLibrary("{s}", .{{}});
-                \\
-            , .{ t.module_name, lib_name });
-            defer allocator.free(link_chunk);
-            try buf.appendSlice(allocator, link_chunk);
-        }
-        if (t.link_libs.len > 0) {
-            const libc_chunk = try std.fmt.allocPrint(allocator,
-                \\    bridge_{s}.linkLibC();
-                \\
-            , .{t.module_name});
-            defer allocator.free(libc_chunk);
-            try buf.appendSlice(allocator, libc_chunk);
+        for (t.mod_imports) |mod_name| {
+            if (!shared_set.contains(mod_name) and !lib_targets.contains(mod_name)) {
+                try shared_set.put(allocator, mod_name, {});
+                const shared_chunk = try std.fmt.allocPrint(allocator,
+                    \\    const mod_{s} = b.createModule(.{{
+                    \\        .root_source_file = b.path("{s}.zig"),
+                    \\        .target = target,
+                    \\        .optimize = optimize,
+                    \\    }});
+                    \\    mod_{s}.addImport("_orhon_str", str_mod);
+                    \\    mod_{s}.addImport("_orhon_collections", coll_mod);
+                    \\
+                , .{ mod_name, mod_name, mod_name, mod_name });
+                defer allocator.free(shared_chunk);
+                try buf.appendSlice(allocator, shared_chunk);
+
+                // If this shared module has a bridge, wire it
+                if (bridge_set.contains(mod_name)) {
+                    const smod_bridge = try std.fmt.allocPrint(allocator,
+                        \\    mod_{s}.addImport("{s}_bridge", bridge_{s});
+                        \\
+                    , .{ mod_name, mod_name, mod_name });
+                    defer allocator.free(smod_bridge);
+                    try buf.appendSlice(allocator, smod_bridge);
+                }
+            }
         }
     }
 
@@ -905,12 +973,58 @@ pub fn buildZigContentMulti(
             }
         }
 
+        // Add shared (non-lib) module imports
+        for (t.mod_imports) |mod_name| {
+            if (shared_set.contains(mod_name)) {
+                const mod_import = try std.fmt.allocPrint(allocator,
+                    \\    lib_{s}.root_module.addImport("{s}", mod_{s});
+                    \\
+                , .{ t.module_name, mod_name, mod_name });
+                defer allocator.free(mod_import);
+                try buf.appendSlice(allocator, mod_import);
+            }
+        }
+
+        // Apply #linkC to this lib artifact
+        if (t.link_libs.len > 0) {
+            const lib_art_name = try std.fmt.allocPrint(allocator, "lib_{s}", .{t.module_name});
+            defer allocator.free(lib_art_name);
+            try emitLinkLibs(&buf, allocator, t.link_libs, lib_art_name);
+        }
+
         const install_chunk = try std.fmt.allocPrint(allocator,
             \\    b.installArtifact(lib_{s});
             \\
         , .{t.module_name});
         defer allocator.free(install_chunk);
         try buf.appendSlice(allocator, install_chunk);
+    }
+
+    // Wire lib modules into bridge modules so sidecars can @import("lib_name").
+    // This must come after Pass 1 since lib_* variables are declared there.
+    for (targets) |t| {
+        if (!t.has_bridges) continue;
+        for (t.lib_imports) |dep_name| {
+            if (lib_targets.contains(dep_name)) {
+                const b2l_chunk = try std.fmt.allocPrint(allocator,
+                    \\    bridge_{s}.addImport("{s}", lib_{s}.root_module);
+                    \\
+                , .{ t.module_name, dep_name, dep_name });
+                defer allocator.free(b2l_chunk);
+                try buf.appendSlice(allocator, b2l_chunk);
+            }
+        }
+        // Also wire shared modules into bridge modules
+        for (t.mod_imports) |mod_name| {
+            if (shared_set.contains(mod_name)) {
+                const b2m_chunk = try std.fmt.allocPrint(allocator,
+                    \\    bridge_{s}.addImport("{s}", mod_{s});
+                    \\
+                , .{ t.module_name, mod_name, mod_name });
+                defer allocator.free(b2m_chunk);
+                try buf.appendSlice(allocator, b2m_chunk);
+            }
+        }
     }
 
     // Pass 2: emit all exe targets, linking against libs
@@ -982,6 +1096,25 @@ pub fn buildZigContentMulti(
             }
         }
 
+        // Add shared (non-lib) module imports
+        for (t.mod_imports) |mod_name| {
+            if (shared_set.contains(mod_name)) {
+                const mod_import = try std.fmt.allocPrint(allocator,
+                    \\    exe_{s}.root_module.addImport("{s}", mod_{s});
+                    \\
+                , .{ t.module_name, mod_name, mod_name });
+                defer allocator.free(mod_import);
+                try buf.appendSlice(allocator, mod_import);
+            }
+        }
+
+        // Apply #linkC to this exe artifact
+        if (t.link_libs.len > 0) {
+            const exe_art_name = try std.fmt.allocPrint(allocator, "exe_{s}", .{t.module_name});
+            defer allocator.free(exe_art_name);
+            try emitLinkLibs(&buf, allocator, t.link_libs, exe_art_name);
+        }
+
         const install_chunk = try std.fmt.allocPrint(allocator,
             \\    b.installArtifact(exe_{s});
             \\
@@ -1039,6 +1172,18 @@ pub fn buildZigContentMulti(
                 , .{ bmod_name, bmod_name });
                 defer allocator.free(extra_test);
                 try buf.appendSlice(allocator, extra_test);
+            }
+
+            // Add shared module imports to test target
+            for (t.mod_imports) |mod_name| {
+                if (shared_set.contains(mod_name)) {
+                    const test_mod = try std.fmt.allocPrint(allocator,
+                        \\    unit_tests.root_module.addImport("{s}", mod_{s});
+                        \\
+                    , .{ mod_name, mod_name });
+                    defer allocator.free(test_mod);
+                    try buf.appendSlice(allocator, test_mod);
+                }
             }
 
             try buf.appendSlice(allocator,
@@ -1118,7 +1263,7 @@ test "zig runner - find zig path format" {
 
 test "buildZigContent - exe" {
     const alloc = std.testing.allocator;
-    const content = try buildZigContent(alloc, "main", "exe", "myapp", null, &.{}, &.{});
+    const content = try buildZigContent(alloc, "main", "exe", "myapp", null, &.{}, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") != null);
@@ -1132,7 +1277,7 @@ test "buildZigContent - exe" {
 
 test "buildZigContent - static" {
     const alloc = std.testing.allocator;
-    const content = try buildZigContent(alloc, "mylib", "static", "mylib", null, &.{}, &.{});
+    const content = try buildZigContent(alloc, "mylib", "static", "mylib", null, &.{}, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") != null);
@@ -1146,7 +1291,7 @@ test "buildZigContent - static" {
 
 test "buildZigContent - dynamic" {
     const alloc = std.testing.allocator;
-    const content = try buildZigContent(alloc, "mylib", "dynamic", "mylib", null, &.{}, &.{});
+    const content = try buildZigContent(alloc, "mylib", "dynamic", "mylib", null, &.{}, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") != null);
@@ -1158,7 +1303,7 @@ test "buildZigContent - dynamic" {
 
 test "buildZigContent - project name in exe artifact" {
     const alloc = std.testing.allocator;
-    const content = try buildZigContent(alloc, "main", "exe", "calculator", null, &.{}, &.{});
+    const content = try buildZigContent(alloc, "main", "exe", "calculator", null, &.{}, &.{}, &.{});
     defer alloc.free(content);
     try std.testing.expect(std.mem.indexOf(u8, content, "\"calculator\"") != null);
 }
@@ -1166,7 +1311,7 @@ test "buildZigContent - project name in exe artifact" {
 test "buildZigContent - linkC emits linkSystemLibrary and linkLibC" {
     const alloc = std.testing.allocator;
     const libs = [_][]const u8{"SDL3"};
-    const content = try buildZigContent(alloc, "main", "exe", "myapp", null, &libs, &.{});
+    const content = try buildZigContent(alloc, "main", "exe", "myapp", null, &libs, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "linkSystemLibrary(\"SDL3\"") != null);
@@ -1175,7 +1320,7 @@ test "buildZigContent - linkC emits linkSystemLibrary and linkLibC" {
 
 test "buildZigContent - no linkC means no linkLibC" {
     const alloc = std.testing.allocator;
-    const content = try buildZigContent(alloc, "main", "exe", "myapp", null, &.{}, &.{});
+    const content = try buildZigContent(alloc, "main", "exe", "myapp", null, &.{}, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "linkSystemLibrary") == null);
@@ -1278,11 +1423,11 @@ test "buildZigContentMulti - bridge modules registered as named modules" {
     try std.testing.expect(std.mem.indexOf(u8, content, "bridge_main") == null);
     // Bridge-to-bridge wiring
     try std.testing.expect(std.mem.indexOf(u8, content, "bridge_tamga_vk3d.addImport(\"tamga_sdl3_bridge\"") != null);
-    // linkSystemLibrary on bridge, not on lib
-    try std.testing.expect(std.mem.indexOf(u8, content, "bridge_tamga_sdl3.linkSystemLibrary(\"SDL3\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, content, "bridge_tamga_vk3d.linkSystemLibrary(\"vulkan\"") != null);
-    // Bridge linkLibC
-    try std.testing.expect(std.mem.indexOf(u8, content, "bridge_tamga_sdl3.linkLibC()") != null);
+    // linkSystemLibrary on lib artifact, not on bridge module
+    try std.testing.expect(std.mem.indexOf(u8, content, "lib_tamga_sdl3.linkSystemLibrary(\"SDL3\")") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "lib_tamga_vk3d.linkSystemLibrary(\"vulkan\")") != null);
+    // linkLibC on lib artifact
+    try std.testing.expect(std.mem.indexOf(u8, content, "lib_tamga_sdl3.linkLibC()") != null);
     // Lib targets get bridge addImport
     try std.testing.expect(std.mem.indexOf(u8, content, "lib_tamga_sdl3.root_module.addImport(\"tamga_sdl3_bridge\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "lib_tamga_vk3d.root_module.addImport(\"tamga_vk3d_bridge\"") != null);

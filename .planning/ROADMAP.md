@@ -109,4 +109,4 @@ Plans:
 | 8-11 | v0.11 | All | Complete | 2026-03-25 |
 | 12-14 | v0.12 | All | Complete | 2026-03-25 |
 | 15-18 | v0.13 | 5/5 | Complete | 2026-03-26 |
-| 19-20 | v0.14 | 0/2 | In Progress | — |
+| 19-20 | v0.14 | 1/2 | In Progress | — |

@@ -67,6 +67,14 @@ I/O sites (console, tui, fs, system) intentionally retained.
 
 Use Zig's built-in `std.testing.fuzz` to fuzz the lexer and parser.
 
+### Bridge Module Import Scoping
+
+Named bridge modules are currently added as imports to all targets in the generated
+`build.zig`, not just the target that owns the bridge. Functionally safe — codegen only
+emits `@import` for a module's own bridge — but the extra `addImport` entries are
+unnecessary. Tighten so each target only receives its own bridge import if the build
+graph gets large enough for this to matter.
+
 ---
 
 ## Architecture

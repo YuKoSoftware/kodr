@@ -29,7 +29,7 @@ else
     fail "imports std"
 fi
 
-if grep -q 'const console = @import("console.zig")' "$MAIN_ZIG"; then
+if grep -q 'const console = @import("console")' "$MAIN_ZIG"; then
     pass "imports console"
 else
     fail "imports console"

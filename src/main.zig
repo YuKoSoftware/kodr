@@ -1237,6 +1237,11 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
         for (link_lib_lists.items) |li| allocator.free(li);
         link_lib_lists.deinit(allocator);
     }
+    var mod_import_lists = std.ArrayListUnmanaged([]const []const u8){};
+    defer {
+        for (mod_import_lists.items) |li| allocator.free(li);
+        mod_import_lists.deinit(allocator);
+    }
 
     var exe_binary_name: ?[]const u8 = null; // tracked for `orhon run`
 
@@ -1295,20 +1300,29 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
             // lib import multiple times (which would emit duplicate addImport calls).
             var lib_imports = std.ArrayListUnmanaged([]const u8){};
             defer lib_imports.deinit(allocator);
-            var seen_lib_imports = std.StringHashMapUnmanaged(void){};
-            defer seen_lib_imports.deinit(allocator);
+            var mod_imports = std.ArrayListUnmanaged([]const u8){};
+            defer mod_imports.deinit(allocator);
+            var seen_imports = std.StringHashMapUnmanaged(void){};
+            defer seen_imports.deinit(allocator);
             for (mod.imports) |imp_name| {
+                if (seen_imports.contains(imp_name)) continue;
+                try seen_imports.put(allocator, imp_name, {});
                 if (module_builds.get(imp_name)) |bt| {
                     if (bt == .static or bt == .dynamic) {
-                        if (!seen_lib_imports.contains(imp_name)) {
-                            try seen_lib_imports.put(allocator, imp_name, {});
-                            try lib_imports.append(allocator, imp_name);
-                        }
+                        try lib_imports.append(allocator, imp_name);
+                    }
+                } else {
+                    // Non-lib, non-root module — needs named module registration
+                    const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
+                    if (!dep_mod.is_root) {
+                        try mod_imports.append(allocator, imp_name);
                     }
                 }
             }
             const lib_slice = try allocator.dupe([]const u8, lib_imports.items);
             try lib_import_lists.append(allocator, lib_slice);
+            const mod_slice = try allocator.dupe([]const u8, mod_imports.items);
+            try mod_import_lists.append(allocator, mod_slice);
 
             // Collect #linkC metadata from this module and its imported modules
             var mt_link_libs: std.ArrayListUnmanaged([]const u8) = .{};
@@ -1363,6 +1377,7 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
                 .project_name = binary_name,
                 .build_type = build_type,
                 .lib_imports = lib_slice,
+                .mod_imports = mod_slice,
                 .version = mt_version,
                 .link_libs = link_slice,
                 .has_bridges = mod.has_bridges,
@@ -1508,7 +1523,19 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
                 }
             }
 
-            try runner.generateBuildZig(mod.name, build_type, binary_name, project_version, link_libs.items, bridge_mods.items);
+            // Collect shared (non-root, non-lib) modules imported by this root
+            var shared_mods = std.ArrayListUnmanaged([]const u8){};
+            defer shared_mods.deinit(allocator);
+            for (mod.imports) |imp_name| {
+                const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
+                if (dep_mod.is_root) continue;
+                if (module_builds.get(imp_name)) |bt| {
+                    if (bt == .static or bt == .dynamic) continue;
+                }
+                try shared_mods.append(allocator, imp_name);
+            }
+
+            try runner.generateBuildZig(mod.name, build_type, binary_name, project_version, link_libs.items, bridge_mods.items, shared_mods.items);
 
             for (cli.targets.items) |build_target| {
                 const target_str = build_target.toZigTriple();
