@@ -8,6 +8,7 @@ const errors = @import("errors.zig");
 const module = @import("module.zig");
 const builtins = @import("builtins.zig");
 const types = @import("types.zig");
+const K = @import("constants.zig");
 
 /// A function signature
 pub const FuncSig = struct {
@@ -134,6 +135,12 @@ pub const DeclTable = struct {
                self.types.contains(name);
     }
 };
+
+/// Returns true if the type annotation is the `type` keyword — indicating a type alias declaration.
+fn isTypeAlias(type_annotation: ?*parser.Node) bool {
+    const ta = type_annotation orelse return false;
+    return ta.* == .type_named and std.mem.eql(u8, ta.type_named, K.Type.TYPE);
+}
 
 /// The declaration collector
 pub const DeclCollector = struct {
@@ -372,6 +379,12 @@ pub const DeclCollector = struct {
     }
 
     fn collectVar(self: *DeclCollector, v: parser.VarDecl, is_const: bool, is_compt: bool, loc: ?errors.SourceLoc) anyerror!void {
+        // Type alias: const Name: type = T — register in types map, not vars
+        if (is_const and isTypeAlias(v.type_annotation)) {
+            try self.table.types.put(v.name, v.name);
+            return;
+        }
+
         const sig = VarSig{
             .name = v.name,
             .type_ = if (v.type_annotation) |t| try types.resolveTypeNode(self.table.typeAllocator(), t) else null,
@@ -713,4 +726,23 @@ fn isReservedTypeName(name: []const u8) bool {
     if (types.isPrimitiveName(name)) return true;
     if (std.mem.eql(u8, name, "Error")) return true;
     return builtins.isBuiltinType(name);
+}
+
+test "isTypeAlias - detects type keyword annotation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Test 1: type annotation "type" → is type alias
+    const type_node = try a.create(parser.Node);
+    type_node.* = .{ .type_named = "type" };
+    try std.testing.expect(isTypeAlias(type_node));
+
+    // Test 2: no type annotation → not a type alias
+    try std.testing.expect(!isTypeAlias(null));
+
+    // Test 3: type annotation "i32" → not a type alias
+    const i32_node = try a.create(parser.Node);
+    i32_node.* = .{ .type_named = "i32" };
+    try std.testing.expect(!isTypeAlias(i32_node));
 }

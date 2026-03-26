@@ -253,6 +253,18 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Emit a type-name path (a.b.c) from a MIR field_access chain without semantic transforms.
+    /// Used only for `is` type-check RHS in MIR-path codegen.
+    fn emitTypeMirPath(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        if (m.kind == .field_access and m.children.len > 0) {
+            try self.emitTypeMirPath(m.children[0]);
+            try self.emit(".");
+            try self.emit(m.name orelse "");
+        } else {
+            try self.emit(m.name orelse "");
+        }
+    }
+
     /// Flush hoisted pre-statement declarations (interpolation temp vars) to main output.
     /// Must be called before emitting the statement that references the hoisted vars.
     fn flushPreStmts(self: *CodeGen) !void {
@@ -1276,6 +1288,12 @@ pub const CodeGen = struct {
         try self.emitFmt("; _ = &{s};", .{v.name});
     }
 
+    /// Returns true if the type annotation is the `type` keyword — indicating a type alias declaration.
+    fn isTypeAlias(type_annotation: ?*parser.Node) bool {
+        const ta = type_annotation orelse return false;
+        return ta.* == .type_named and std.mem.eql(u8, ta.type_named, K.Type.TYPE);
+    }
+
     fn generateCompt(self: *CodeGen, v: parser.VarDecl) anyerror!void {
         // Top-level const is already comptime in Zig, so just emit const.
         if (v.is_pub) try self.emit("pub ");
@@ -1291,6 +1309,16 @@ pub const CodeGen = struct {
     fn generateTopLevelDeclMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
         const name = m.name orelse return;
         if (m.is_bridge) return self.generateBridgeReExport(name, m.is_pub);
+
+        // Type alias: const Name: type = T → const Name = ZigType;
+        // Must precede is_compt check — type aliases are also is_const.
+        if (m.is_const and isTypeAlias(m.type_annotation)) {
+            if (m.is_pub) try self.emit("pub ");
+            try self.emitFmt("const {s} = ", .{name});
+            try self.emit(try self.typeToZig(m.value().ast));
+            try self.emit(";\n");
+            return;
+        }
 
         if (m.is_compt) {
             // Top-level const is already comptime in Zig, so just emit const.
@@ -1378,6 +1406,14 @@ pub const CodeGen = struct {
         switch (m.kind) {
             .var_decl => {
                 const var_name = m.name orelse return;
+                // Type alias in function body: const Name: type = T
+                // Must precede is_compt check. No _ = &name; suffix — type aliases are types, not values.
+                if (m.is_const and isTypeAlias(m.type_annotation)) {
+                    try self.emitFmt("const {s} = ", .{var_name});
+                    try self.emit(try self.typeToZig(m.value().ast));
+                    try self.emit(";");
+                    return;
+                }
                 if (m.is_compt) {
                     try self.emitFmt("const {s}: {s} = ", .{
                         var_name,
@@ -2111,6 +2147,15 @@ pub const CodeGen = struct {
                         try self.emit("(@TypeOf(");
                         try self.generateExprMir(val_mir);
                         try self.emitFmt(") {s} {s})", .{ cmp, zig_rhs });
+                        return;
+                    }
+                    // Qualified type check: `val is module.Type` per D-07
+                    if (rhs_mir.kind == .field_access) {
+                        try self.emit("(@TypeOf(");
+                        try self.generateExprMir(val_mir);
+                        try self.emitFmt(") {s} ", .{cmp});
+                        try self.emitTypeMirPath(rhs_mir);
+                        try self.emit(")");
                         return;
                     }
                 }
