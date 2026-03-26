@@ -68,6 +68,10 @@ Recent decisions affecting current work:
 
 None yet.
 
+### Roadmap Evolution
+
+- Phase 21 added: Flexible Allocators — collections accept optional allocator, 3 usage modes, default changed to SMP
+
 ### Blockers/Concerns
 
 None yet.

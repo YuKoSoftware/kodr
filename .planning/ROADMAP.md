@@ -109,4 +109,13 @@ Plans:
 | 8-11 | v0.11 | All | Complete | 2026-03-25 |
 | 12-14 | v0.12 | All | Complete | 2026-03-25 |
 | 15-18 | v0.13 | 5/5 | Complete | 2026-03-26 |
-| 19-20 | v0.14 | 1/2 | In Progress | — |
+| 19-21 | v0.14 | 1/3 | In Progress | — |
+
+### Phase 21: Flexible Allocators
+**Goal**: Collections accept optional allocator parameter — 3 modes: default SMP, inline instantiation, external variable. Users can build custom allocators via bridge. Default allocator changed from page_allocator to SMP.
+**Requirements**: TBD
+**Depends on:** Phase 20
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 21 to break down)
