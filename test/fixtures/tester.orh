@@ -1447,3 +1447,34 @@ pub func test_error_void_fail() i32 {
     }
     return 0
 }
+
+// ─── Bug fix: cast(EnumType, int) → @enumFromInt ─────────────
+
+pub func test_cast_to_enum() i32 {
+    const raw: u8 = 1
+    const c: Color = cast(Color, raw)
+    match(c) {
+        Green => { return 1 }
+        else  => { return 0 }
+    }
+    return 0
+}
+
+// ─── Bug fix: (null | A | B | C) → ?(union(enum){...}) ───────
+
+pub func test_null_multi_union() i32 {
+    const val: (null | i32 | bool) = 42
+    if(val is null) {
+        return 0
+    }
+    return 1
+}
+
+// ─── Bug fix: ZeroField() → ZeroField{} ──────────────────────
+
+pub struct ZeroField {}
+
+pub func test_empty_struct_construct() i32 {
+    const z: ZeroField = ZeroField()
+    return 1
+}

@@ -201,6 +201,18 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// Check if an AST node refers to a declared enum type name.
+    /// Used by cast() codegen to decide between @intCast and @enumFromInt.
+    fn isEnumTypeName(self: *const CodeGen, node: *parser.Node) bool {
+        const decls = self.decls orelse return false;
+        const name = switch (node.*) {
+            .type_named => |n| n,
+            .identifier => |n| n,
+            else => return false,
+        };
+        return decls.enums.contains(name);
+    }
+
     pub fn deinit(self: *CodeGen) void {
         for (self.type_strings.items) |s| self.allocator.free(s);
         self.type_strings.deinit(self.allocator);
@@ -1902,6 +1914,18 @@ pub const CodeGen = struct {
 
                     if (is_self_generic) {
                         try self.emit("@This()");
+                    } else if (c.args.len == 0 and c.callee.* == .identifier) {
+                        // Zero-arg call on a struct type → TypeName{} (not TypeName())
+                        const callee_n = c.callee.identifier;
+                        const is_struct_type = if (self.decls) |d| d.structs.contains(callee_n) else false;
+                        if (is_struct_type) {
+                            try self.emitFmt("{s}{{}}", .{callee_n});
+                        } else {
+                            try self.generateExpr(c.callee);
+                            try self.emit("(");
+                            try self.fillDefaultArgs(c);
+                            try self.emit(")");
+                        }
                     } else {
                         // Positional arguments → regular function call
                         try self.generateExpr(c.callee);
@@ -2355,6 +2379,17 @@ pub const CodeGen = struct {
 
                     if (is_self_generic_mir) {
                         try self.emit("@This()");
+                    } else if (call_args.len == 0 and callee_is_ident) {
+                        // Zero-arg call on a struct type → TypeName{} (not TypeName())
+                        const is_struct_type = if (self.decls) |d| d.structs.contains(callee_name) else false;
+                        if (is_struct_type) {
+                            try self.emitFmt("{s}{{}}", .{callee_name});
+                        } else {
+                            try self.generateExprMir(callee_mir);
+                            try self.emit("(");
+                            try self.fillDefaultArgsMir(callee_mir, 0);
+                            try self.emit(")");
+                        }
                     } else {
                         try self.generateExprMir(callee_mir);
                         try self.emit("(");
@@ -3363,9 +3398,12 @@ pub const CodeGen = struct {
             if (args.len >= 2) {
                 const target_type = try self.typeToZig(args[0].ast);
                 const target_is_float = target_type.len > 0 and target_type[0] == 'f';
+                const target_is_enum = self.isEnumTypeName(args[0].ast);
                 const source_is_float_literal = args[1].literal_kind == .float;
                 try self.emitFmt("@as({s}, ", .{target_type});
-                if (target_is_float and source_is_float_literal) {
+                if (target_is_enum) {
+                    try self.emit("@enumFromInt(");
+                } else if (target_is_float and source_is_float_literal) {
                     try self.emit("@floatCast(");
                 } else if (target_is_float) {
                     try self.emit("@floatFromInt(");
@@ -3648,6 +3686,7 @@ pub const CodeGen = struct {
             try self.emit(")");
         } else if (std.mem.eql(u8, cf.name, "cast")) {
             // cast(T, x) → Zig cast depending on target and source types:
+            //   enum target:  @as(T, @enumFromInt(x))
             //   int target,   float source literal: @as(T, @intFromFloat(x))
             //   int target,   other source:          @as(T, @intCast(x))
             //   float target, float source:          @as(T, @floatCast(x))
@@ -3655,9 +3694,12 @@ pub const CodeGen = struct {
             if (cf.args.len >= 2) {
                 const target_type = try self.typeToZig(cf.args[0]);
                 const target_is_float = target_type.len > 0 and target_type[0] == 'f';
+                const target_is_enum = self.isEnumTypeName(cf.args[0]);
                 const source_is_float_literal = cf.args[1].* == .float_literal;
                 try self.emitFmt("@as({s}, ", .{target_type});
-                if (target_is_float and source_is_float_literal) {
+                if (target_is_enum) {
+                    try self.emit("@enumFromInt(");
+                } else if (target_is_float and source_is_float_literal) {
                     // float literal to float type — direct cast
                     try self.emit("@floatCast(");
                 } else if (target_is_float) {
@@ -3853,21 +3895,46 @@ pub const CodeGen = struct {
             .type_union => |u| blk: {
                 var has_error = false;
                 var has_null = false;
+                var non_special_count: usize = 0;
                 for (u) |t| {
-                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) has_error = true;
-                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) has_null = true;
+                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) {
+                        has_error = true;
+                    } else if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) {
+                        has_null = true;
+                    } else {
+                        non_special_count += 1;
+                    }
                 }
                 if (has_error or has_null) {
-                    // Native Zig: (Error | T) → anyerror!T, (null | T) → ?T
-                    for (u) |t| {
-                        if (t.* == .type_named and
-                            !std.mem.eql(u8, t.type_named, K.Type.ERROR) and
-                            !std.mem.eql(u8, t.type_named, K.Type.NULL))
-                        {
-                            const inner = try self.typeToZig(t);
-                            if (has_error) break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
-                            if (has_null) break :blk try self.allocTypeStr("?{s}", .{inner});
+                    if (non_special_count == 1) {
+                        // Native Zig two-member union: (Error | T) → anyerror!T, (null | T) → ?T
+                        for (u) |t| {
+                            if (t.* == .type_named and
+                                !std.mem.eql(u8, t.type_named, K.Type.ERROR) and
+                                !std.mem.eql(u8, t.type_named, K.Type.NULL))
+                            {
+                                const inner = try self.typeToZig(t);
+                                if (has_error) break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
+                                if (has_null) break :blk try self.allocTypeStr("?{s}", .{inner});
+                            }
                         }
+                    } else {
+                        // Multiple non-special types: (null | A | B | C) → ?(union(enum) { _A: A, _B: B, _C: C })
+                        // (Error | A | B | C) → anyerror!(union(enum) { _A: A, _B: B, _C: C })
+                        var inner_buf = std.ArrayListUnmanaged(u8){};
+                        defer inner_buf.deinit(self.allocator);
+                        try inner_buf.appendSlice(self.allocator, "union(enum) { ");
+                        for (u) |t| {
+                            if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) continue;
+                            if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) continue;
+                            const zig_type = try self.typeToZig(t);
+                            const type_name = if (t.* == .type_named) t.type_named else zig_type;
+                            try inner_buf.writer(self.allocator).print("_{s}: {s}, ", .{ type_name, zig_type });
+                        }
+                        try inner_buf.appendSlice(self.allocator, "}");
+                        const inner = try self.allocTypeStr("{s}", .{inner_buf.items});
+                        if (has_error) break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
+                        if (has_null) break :blk try self.allocTypeStr("?{s}", .{inner});
                     }
                 }
                 // Arbitrary union: (i32 | f32 | String) → union(enum) { _i32: i32, _f32: f32, _String: []const u8 }

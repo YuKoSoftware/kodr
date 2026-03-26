@@ -114,6 +114,8 @@ param
 
 param_name
     <- IDENTIFIER / 'var' / 'const'
+     / 'cast' / 'copy' / 'move' / 'swap' / 'assert'
+     / 'size' / 'align' / 'typename' / 'typeid' / 'typeof'
 
 compt_decl
     <- 'compt' func_decl

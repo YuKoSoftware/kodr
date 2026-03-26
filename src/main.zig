@@ -1273,13 +1273,20 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
                 }
             }
 
-            // Find which of this module's imports are lib targets
+            // Find which of this module's imports are lib targets — deduplicate to
+            // prevent multiple .orh files in the same module from adding the same
+            // lib import multiple times (which would emit duplicate addImport calls).
             var lib_imports = std.ArrayListUnmanaged([]const u8){};
             defer lib_imports.deinit(allocator);
+            var seen_lib_imports = std.StringHashMapUnmanaged(void){};
+            defer seen_lib_imports.deinit(allocator);
             for (mod.imports) |imp_name| {
                 if (module_builds.get(imp_name)) |bt| {
                     if (bt == .static or bt == .dynamic) {
-                        try lib_imports.append(allocator, imp_name);
+                        if (!seen_lib_imports.contains(imp_name)) {
+                            try seen_lib_imports.put(allocator, imp_name, {});
+                            try lib_imports.append(allocator, imp_name);
+                        }
                     }
                 }
             }

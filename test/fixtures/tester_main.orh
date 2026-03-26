@@ -647,5 +647,26 @@ func main() void {
         console.println("FAIL error_void_fail")
     }
 
+    // Test: cast(EnumType, int) → @enumFromInt
+    if(tester.test_cast_to_enum() == 1) {
+        console.println("PASS cast_to_enum")
+    } else {
+        console.println("FAIL cast_to_enum")
+    }
+
+    // Test: (null | A | B | C) → ?(union(enum){...})
+    if(tester.test_null_multi_union() == 1) {
+        console.println("PASS null_multi_union")
+    } else {
+        console.println("FAIL null_multi_union")
+    }
+
+    // Test: ZeroField() → ZeroField{} (empty struct construction)
+    if(tester.test_empty_struct_construct() == 1) {
+        console.println("PASS empty_struct_construct")
+    } else {
+        console.println("FAIL empty_struct_construct")
+    }
+
     console.println("TESTER:DONE")
 }
