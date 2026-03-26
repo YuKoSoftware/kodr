@@ -116,7 +116,7 @@ Plans:
   3. Union-of-structs dispatch works across module boundaries
 **Plans**: 1 plan
 Plans:
-- [ ] 16-01-PLAN.md — Grammar, builder, codegen for qualified is + tests
+- [x] 16-01-PLAN.md — Grammar, builder, codegen for qualified is + tests
 
 ### Phase 17: Unit Type Support
 **Goal**: `Unit` is recognized as a builtin type, enabling `(Error | Unit)` for void returns
@@ -152,6 +152,6 @@ Plans:
 | 13. Bug Fixes | v0.12 | 1/1 | Complete    | 2026-03-25 |
 | 14. Gate | v0.12 | 0/TBD | Complete    | 2026-03-25 |
 | 15. Enum Explicit Values | v0.13 | 2/2 | Complete    | 2026-03-26 |
-| 16. `is` Operator Qualified Types | v0.13 | 0/1 | In Progress | — |
+| 16. `is` Operator Qualified Types | v0.13 | 1/1 | Complete   | 2026-03-26 |
 | 17. Unit Type Support | v0.13 | 0/TBD | Pending | — |
 | 18. Type Alias Syntax | v0.13 | 0/TBD | Pending | — |

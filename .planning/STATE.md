@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.13
 milestone_name: Tamga Compatibility
-status: Ready to plan
-stopped_at: Phase 16 context gathered
-last_updated: "2026-03-26T05:15:30.548Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-03-26T05:44:53.498Z"
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 4
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 15 — enum-explicit-values
+**Current focus:** Phase 16 — is-operator-qualified-types
 
 ## Current Position
 
-Phase: 16
-Plan: Not started
+Phase: 16 (is-operator-qualified-types) — EXECUTING
+Plan: 1 of 1
 
 ## Performance Metrics
 
@@ -57,6 +57,8 @@ Recent decisions affecting current work:
 - [Phase 15-enum-explicit-values]: Ordered PEG choice enforces mutual exclusion for enum values vs fields
 - [Phase 15-enum-explicit-values]: Reuse MirNode.literal for enum discriminant — no new MirNode fields needed
 - [Phase 15]: Negative fixture matches 'error' pattern — exact parse wording varies, failure signal is sufficient
+- [Phase 16-is-operator-qualified-types]: Cross-module is tests placed in tester_main.orh — Zig-generated tester.zig cannot self-reference module name tester
+- [Phase 16-is-operator-qualified-types]: emitTypePath/emitTypeMirPath helpers emit type paths without semantic transforms to avoid corrupting type names
 
 ### Pending Todos
 
@@ -68,6 +70,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T05:15:30.543Z
-Stopped at: Phase 16 context gathered
-Resume file: .planning/phases/16-is-operator-qualified-types/16-CONTEXT.md
+Last session: 2026-03-26T05:44:53.495Z
+Stopped at: Completed 16-01-PLAN.md
+Resume file: None
