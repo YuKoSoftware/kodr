@@ -159,4 +159,4 @@ Plans:
 | 15. Enum Explicit Values | v0.13 | 2/2 | Complete    | 2026-03-26 |
 | 16. `is` Operator Qualified Types | v0.13 | 1/1 | Complete    | 2026-03-26 |
 | 17. Unit Type Support | v0.13 | 1/1 | Complete    | 2026-03-26 |
-| 18. Type Alias Syntax | v0.13 | 1/1 | Complete   | 2026-03-26 |
+| 18. Type Alias Syntax | v0.13 | 1/1 | Complete    | 2026-03-26 |
