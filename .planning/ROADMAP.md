@@ -129,13 +129,14 @@ Plans:
 **Plans**: TBD
 
 ### Phase 18: Type Alias Syntax
-**Goal**: `pub type Alias = T` declarations supported, generating Zig `pub const Alias = Type`
+**Goal**: `const Alias: type = T` declarations supported, generating Zig `const Alias = Type`
 **Depends on**: Phase 17
 **Requirements**: TAMGA-04
 **Success Criteria** (what must be TRUE):
-  1. `pub type Alias = SomeType` parses and compiles
-  2. Codegen emits `pub const Alias = SomeType` in Zig
-  3. Aliases work with all type forms (primitives, generics, pointers, structs)
+  1. `const Speed: type = i32` parses and compiles
+  2. `pub const Callback: type = func(i32) void` parses and compiles
+  3. Codegen emits `const Speed = i32` in Zig
+  4. Aliases work with all type forms (primitives, generics, pointers, structs)
 **Plans**: TBD
 
 ## Progress
@@ -152,6 +153,6 @@ Plans:
 | 13. Bug Fixes | v0.12 | 1/1 | Complete    | 2026-03-25 |
 | 14. Gate | v0.12 | 0/TBD | Complete    | 2026-03-25 |
 | 15. Enum Explicit Values | v0.13 | 2/2 | Complete    | 2026-03-26 |
-| 16. `is` Operator Qualified Types | v0.13 | 1/1 | Complete   | 2026-03-26 |
+| 16. `is` Operator Qualified Types | v0.13 | 1/1 | Complete    | 2026-03-26 |
 | 17. Unit Type Support | v0.13 | 0/TBD | Pending | — |
 | 18. Type Alias Syntax | v0.13 | 0/TBD | Pending | — |
