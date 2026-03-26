@@ -610,10 +610,12 @@ pub const CodeGen = struct {
         };
     }
 
-    /// Emit a re-export for a bridge declaration from the paired sidecar .zig file.
+    /// Emit a re-export for a bridge declaration from the named bridge module.
+    /// Bridge .zig files are registered as named Zig modules in the build graph,
+    /// so we import by module name (no .zig extension).
     fn generateBridgeReExport(self: *CodeGen, name: []const u8, is_pub: bool) anyerror!void {
         const vis = if (is_pub) "pub " else "";
-        try self.emitLineFmt("{s}const {s} = @import(\"{s}_bridge.zig\").{s};", .{ vis, name, self.module_name, name });
+        try self.emitLineFmt("{s}const {s} = @import(\"{s}_bridge\").{s};", .{ vis, name, self.module_name, name });
     }
 
     /// MIR-path function codegen — reads all data from MirNode.

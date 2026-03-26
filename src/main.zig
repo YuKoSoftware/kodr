@@ -1214,11 +1214,16 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
     var root_count: usize = 0;
     var multi_targets = std.ArrayListUnmanaged(zig_runner.MultiTarget){};
     defer multi_targets.deinit(allocator);
-    // Temporary storage for lib_imports slices
+    // Temporary storage for lib_imports and link_libs slices
     var lib_import_lists = std.ArrayListUnmanaged([]const []const u8){};
     defer {
         for (lib_import_lists.items) |li| allocator.free(li);
         lib_import_lists.deinit(allocator);
+    }
+    var link_lib_lists = std.ArrayListUnmanaged([]const []const u8){};
+    defer {
+        for (link_lib_lists.items) |li| allocator.free(li);
+        link_lib_lists.deinit(allocator);
     }
 
     var exe_binary_name: ?[]const u8 = null; // tracked for `orhon run`
@@ -1293,12 +1298,62 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
             const lib_slice = try allocator.dupe([]const u8, lib_imports.items);
             try lib_import_lists.append(allocator, lib_slice);
 
+            // Collect #linkC metadata from this module and its imported modules
+            var mt_link_libs: std.ArrayListUnmanaged([]const u8) = .{};
+            defer mt_link_libs.deinit(allocator);
+            if (mod.ast) |ast| {
+                for (ast.program.metadata) |meta| {
+                    if (std.mem.eql(u8, meta.metadata.field, "linkC")) {
+                        if (meta.metadata.value.* == .string_literal) {
+                            const raw = meta.metadata.value.string_literal;
+                            const lib_name = if (raw.len >= 2 and raw[0] == '"')
+                                raw[1 .. raw.len - 1]
+                            else
+                                raw;
+                            try mt_link_libs.append(allocator, lib_name);
+                        }
+                    }
+                }
+            }
+            // Also collect #linkC from non-root modules imported by this root module
+            for (mod.imports) |imp_name| {
+                const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
+                if (dep_mod.is_root) continue;
+                if (dep_mod.ast) |ast| {
+                    for (ast.program.metadata) |meta| {
+                        if (std.mem.eql(u8, meta.metadata.field, "linkC")) {
+                            if (meta.metadata.value.* == .string_literal) {
+                                const raw = meta.metadata.value.string_literal;
+                                const lib_name = if (raw.len >= 2 and raw[0] == '"')
+                                    raw[1 .. raw.len - 1]
+                                else
+                                    raw;
+                                var already_listed = false;
+                                for (mt_link_libs.items) |existing| {
+                                    if (std.mem.eql(u8, existing, lib_name)) {
+                                        already_listed = true;
+                                        break;
+                                    }
+                                }
+                                if (!already_listed) {
+                                    try mt_link_libs.append(allocator, lib_name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            const link_slice = try allocator.dupe([]const u8, mt_link_libs.items);
+            try link_lib_lists.append(allocator, link_slice);
+
             try multi_targets.append(allocator, .{
                 .module_name = mod.name,
                 .project_name = binary_name,
                 .build_type = build_type,
                 .lib_imports = lib_slice,
                 .version = mt_version,
+                .link_libs = link_slice,
+                .has_bridges = mod.has_bridges,
             });
         }
 

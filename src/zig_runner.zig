@@ -587,6 +587,8 @@ pub const MultiTarget = struct {
     build_type: []const u8, // "exe", "static", "dynamic"
     lib_imports: []const []const u8, // names of imported lib modules (for linking)
     version: ?[3]u64 = null,
+    link_libs: []const []const u8 = &.{}, // C libraries from #linkC metadata
+    has_bridges: bool = false, // module has bridge declarations needing named Zig modules
 };
 
 /// Build a unified build.zig for multiple targets.
