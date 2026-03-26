@@ -141,7 +141,7 @@ Plans:
   4. Aliases work with all type forms (primitives, generics, pointers, structs)
 **Plans**: 1 plan
 Plans:
-- [ ] 18-01-PLAN.md — Declarations routing, codegen emission, example module + tests
+- [x] 18-01-PLAN.md — Declarations routing, codegen emission, example module + tests
 
 ## Progress
 
@@ -159,4 +159,4 @@ Plans:
 | 15. Enum Explicit Values | v0.13 | 2/2 | Complete    | 2026-03-26 |
 | 16. `is` Operator Qualified Types | v0.13 | 1/1 | Complete    | 2026-03-26 |
 | 17. Unit Type Support | v0.13 | 1/1 | Complete    | 2026-03-26 |
-| 18. Type Alias Syntax | v0.13 | 0/1 | Pending | — |
+| 18. Type Alias Syntax | v0.13 | 1/1 | Complete   | 2026-03-26 |

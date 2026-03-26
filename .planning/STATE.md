@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.13
 milestone_name: Tamga Compatibility
-status: Ready to plan
-stopped_at: Phase 18 context gathered
-last_updated: "2026-03-26T07:40:04.673Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 18-type-alias-syntax/18-01-PLAN.md
+last_updated: "2026-03-26T08:25:03.031Z"
 progress:
   total_phases: 7
-  completed_phases: 5
-  total_plans: 6
-  completed_plans: 6
+  completed_phases: 6
+  total_plans: 7
+  completed_plans: 7
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 17 — unit-type-support
+**Current focus:** Phase 18 — type-alias-syntax
 
 ## Current Position
 
-Phase: 18
-Plan: Not started
+Phase: 18 (type-alias-syntax) — EXECUTING
+Plan: 1 of 1
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Recent decisions affecting current work:
 - [Phase 16-is-operator-qualified-types]: Cross-module is tests placed in tester_main.orh — Zig-generated tester.zig cannot self-reference module name tester
 - [Phase 16-is-operator-qualified-types]: emitTypePath/emitTypeMirPath helpers emit type paths without semantic transforms to avoid corrupting type names
 - [Phase 17-unit-type-support]: No compiler changes needed — (Error | void) already fully supported; phase adds test coverage only
+- [Phase 18-type-alias-syntax]: Type aliases reuse const_decl grammar with ':type' annotation; routed to DeclTable.types; RT.inferred used in resolver for alias names
 
 ### Pending Todos
 
@@ -71,6 +72,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T07:40:04.671Z
-Stopped at: Phase 18 context gathered
-Resume file: .planning/phases/18-type-alias-syntax/18-CONTEXT.md
+Last session: 2026-03-26T08:25:03.028Z
+Stopped at: Completed 18-type-alias-syntax/18-01-PLAN.md
+Resume file: None
