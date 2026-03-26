@@ -239,6 +239,20 @@ pub const CodeGen = struct {
         try self.emit("\n");
     }
 
+    /// Emit a type-name path (a.b.c) from a field_expr chain without semantic transforms.
+    /// Used only for `is` type-check RHS where the node is a type name, not a runtime value.
+    fn emitTypePath(self: *CodeGen, node: *parser.Node) anyerror!void {
+        switch (node.*) {
+            .identifier => |name| try self.emit(name),
+            .field_expr => |f| {
+                try self.emitTypePath(f.object);
+                try self.emit(".");
+                try self.emit(f.field);
+            },
+            else => try self.generateExpr(node), // fallback
+        }
+    }
+
     /// Flush hoisted pre-statement declarations (interpolation temp vars) to main output.
     /// Must be called before emitting the statement that references the hoisted vars.
     fn flushPreStmts(self: *CodeGen) !void {
@@ -1667,6 +1681,15 @@ pub const CodeGen = struct {
                         try self.emit("(@TypeOf(");
                         try self.generateExpr(val_node);
                         try self.emitFmt(") {s} {s})", .{ cmp, zig_rhs });
+                        return;
+                    }
+                    // Qualified type check: `val is module.Type` per D-07
+                    if (b.right.* == .field_expr) {
+                        try self.emit("(@TypeOf(");
+                        try self.generateExpr(val_node);
+                        try self.emitFmt(") {s} ", .{cmp});
+                        try self.emitTypePath(b.right);
+                        try self.emit(")");
                         return;
                     }
                 }
