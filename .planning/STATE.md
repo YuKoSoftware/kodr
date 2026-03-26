@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: milestone
-status: Phase 19 complete, Phase 20 remaining
-stopped_at: Phase 21 context gathered
-last_updated: "2026-03-26T20:36:08.294Z"
-last_activity: "2026-03-26 - Completed quick task 260326-izf: Remove the #bitsize metadata and mechanics"
+status: Ready to execute
+stopped_at: Completed 21-01-PLAN.md
+last_updated: "2026-03-26T21:16:07.844Z"
+last_activity: 2026-03-26
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 3
+  completed_plans: 2
 ---
 
 # Project State
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 20 — Tamga Build Verification
+**Current focus:** Phase 21 — flexible-allocators
 
 ## Current Position
 
-Phase: 19 complete, 20 next
-Plan: Phase 20 not yet planned
+Phase: 21 (flexible-allocators) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -63,6 +63,9 @@ Recent decisions affecting current work:
 - [Phase 17-unit-type-support]: No compiler changes needed — (Error | void) already fully supported; phase adds test coverage only
 - [Phase 18-type-alias-syntax]: Type aliases reuse const_decl grammar with ':type' annotation; routed to DeclTable.types; RT.inferred used in resolver for alias names
 - [Phase 19]: Bridge modules registered via Zig build system createModule/addImport instead of file-path imports
+- [Phase 21]: Qualified type syntax (module.Type) validated at module level — resolver skips dotted names to avoid cross-module lookup
+- [Phase 21]: Bridge modules not in root shared_modules get mod_{name} created and wired transitively to support deep import chains
+- [Phase 21]: scoped_type PEG rule builder produces type_named(module.Type) — simple string concatenation, codegen-transparent
 
 ### Pending Todos
 
@@ -82,10 +85,11 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260326-izf | Remove the #bitsize metadata and mechanics | 2026-03-26 | 1ae6882 | [260326-izf-remove-the-bitsize-metadata-and-mechanic](./quick/260326-izf-remove-the-bitsize-metadata-and-mechanic/) |
 | Phase 19 P01 | 18min | 2 tasks | 4 files |
+| Phase 21 P01 | 30 | 2 tasks | 9 files |
 
 ## Session Continuity
 
-Last activity: 2026-03-26 - Completed quick task 260326-izf: Remove the #bitsize metadata and mechanics
-Last session: 2026-03-26T20:36:08.289Z
-Stopped at: Phase 21 context gathered
-Resume file: .planning/phases/21-flexible-allocators/21-CONTEXT.md
+Last activity: 2026-03-26
+Last session: 2026-03-26T21:16:07.842Z
+Stopped at: Completed 21-01-PLAN.md
+Resume file: None
