@@ -51,7 +51,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 ### Active
 
 - ✓ Enum variants with explicit integer values (`A = 4` in typed enums) — v0.13 Phase 15
-- [ ] `is` operator with module-qualified types (`ev is mod.Type`) — v0.13 Phase 16
+- ✓ `is` operator with module-qualified types (`ev is mod.Type`) — v0.13 Phase 16
 - [ ] `Unit` type recognized in return position (`Error | Unit`) — v0.13 Phase 17
 - [ ] `pub type Alias = T` type alias syntax — v0.13 Phase 18
 
