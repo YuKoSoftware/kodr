@@ -56,7 +56,6 @@ pub const TypeResolver = struct {
     allocator: std.mem.Allocator,
     bindings: std.ArrayListUnmanaged(TypeBinding),
     type_map: std.AutoHashMapUnmanaged(*parser.Node, RT),
-    bitsize: ?u16 = null, // from #bitsize metadata
     locs: ?*const parser.LocMap = null,
     file_offsets: []const module.FileOffset = &.{},
     loop_depth: u32 = 0, // track nesting depth for break/continue validation
@@ -118,23 +117,6 @@ pub const TypeResolver = struct {
     /// Resolve types in a program AST
     pub fn resolve(self: *TypeResolver, ast: *parser.Node) !void {
         if (ast.* != .program) return;
-
-        // Extract #bitsize from metadata
-        for (ast.program.metadata) |meta| {
-            if (std.mem.eql(u8, meta.metadata.field, "bitsize")) {
-                if (meta.metadata.value.* == .int_literal) {
-                    const val = std.fmt.parseInt(u16, meta.metadata.value.int_literal, 10) catch 0;
-                    if (val == 32 or val == 64) {
-                        self.bitsize = val;
-                    } else if (val != 0) {
-                        try self.reporter.report(.{
-                            .message = "#bitsize must be 32 or 64",
-                            .loc = self.nodeLoc(meta),
-                        });
-                    }
-                }
-            }
-        }
 
         var scope = Scope.init(self.allocator, null);
         defer scope.deinit();
@@ -314,7 +296,7 @@ pub const TypeResolver = struct {
                         val_type.primitive == .float_literal))
                     {
                         try self.reporter.report(.{
-                            .message = "numeric literal requires explicit type or #bitsize",
+                            .message = "numeric literal requires explicit type",
                             .loc = self.nodeLoc(node),
                         });
                     }
@@ -353,7 +335,7 @@ pub const TypeResolver = struct {
                             val_type.primitive == .float_literal))
                         {
                             try self.reporter.report(.{
-                                .message = "numeric literal requires explicit type or #bitsize",
+                                .message = "numeric literal requires explicit type",
                                 .loc = self.nodeLoc(node),
                             });
                         }
@@ -501,16 +483,8 @@ pub const TypeResolver = struct {
 
     fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anyerror!RT {
         return switch (node.*) {
-            .int_literal => if (self.bitsize) |bs| switch (bs) {
-                32 => RT{ .primitive = .i32 },
-                64 => RT{ .primitive = .i64 },
-                else => RT{ .primitive = .numeric_literal },
-            } else RT{ .primitive = .numeric_literal },
-            .float_literal => if (self.bitsize) |bs| switch (bs) {
-                32 => RT{ .primitive = .f32 },
-                64 => RT{ .primitive = .f64 },
-                else => RT{ .primitive = .float_literal },
-            } else RT{ .primitive = .float_literal },
+            .int_literal => RT{ .primitive = .numeric_literal },
+            .float_literal => RT{ .primitive = .float_literal },
             .string_literal => RT{ .primitive = .string },
             .interpolated_string => |interp| {
                 // Resolve inner expressions so they appear in type_map
@@ -1084,87 +1058,7 @@ test "resolver init" {
     try std.testing.expect(!reporter.hasErrors());
 }
 
-test "resolver - bitsize resolves numeric literals" {
-    const alloc = std.testing.allocator;
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const a = arena.allocator();
-
-    const bitsize_val = try a.create(parser.Node);
-    bitsize_val.* = .{ .int_literal = "32" };
-    const meta_node = try a.create(parser.Node);
-    meta_node.* = .{ .metadata = .{ .field = "bitsize", .value = bitsize_val } };
-
-    const int_lit = try a.create(parser.Node);
-    int_lit.* = .{ .int_literal = "42" };
-    const var_decl = try a.create(parser.Node);
-    var_decl.* = .{ .var_decl = .{
-        .name = "x",
-        .type_annotation = null,
-        .value = int_lit,
-        .is_pub = false,
-    } };
-
-    const float_lit = try a.create(parser.Node);
-    float_lit.* = .{ .float_literal = "3.14" };
-    const float_decl = try a.create(parser.Node);
-    float_decl.* = .{ .var_decl = .{
-        .name = "f",
-        .type_annotation = null,
-        .value = float_lit,
-        .is_pub = false,
-    } };
-
-    const body = try a.create(parser.Node);
-    const stmts = try a.alloc(*parser.Node, 2);
-    stmts[0] = var_decl;
-    stmts[1] = float_decl;
-    body.* = .{ .block = .{ .statements = stmts } };
-
-    const ret_type = try a.create(parser.Node);
-    ret_type.* = .{ .type_named = "void" };
-    const func_node = try a.create(parser.Node);
-    func_node.* = .{ .func_decl = .{
-        .name = "main",
-        .params = &.{},
-        .return_type = ret_type,
-        .body = body,
-        .is_pub = false,
-        .is_bridge = false,
-        .is_compt = false,
-        .is_thread = false,
-    } };
-
-    const module_node = try a.create(parser.Node);
-    module_node.* = .{ .module_decl = .{ .name = "main" } };
-    const meta_slice = try a.alloc(*parser.Node, 1);
-    meta_slice[0] = meta_node;
-    const top_level = try a.alloc(*parser.Node, 1);
-    top_level[0] = func_node;
-
-    const program = try a.create(parser.Node);
-    program.* = .{ .program = .{
-        .module = module_node,
-        .metadata = meta_slice,
-        .imports = &.{},
-        .top_level = top_level,
-    } };
-
-    var decl_table = declarations.DeclTable.init(alloc);
-    defer decl_table.deinit();
-    var reporter = errors.Reporter.init(alloc, .debug);
-    defer reporter.deinit();
-
-    var type_resolver = TypeResolver.init(alloc, &decl_table, &reporter);
-    defer type_resolver.deinit();
-
-    try type_resolver.resolve(program);
-
-    try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expectEqual(@as(u16, 32), type_resolver.bitsize.?);
-}
-
-test "resolver - no bitsize errors on untyped literal" {
+test "resolver - untyped numeric literal requires explicit type" {
     const alloc = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -1223,7 +1117,6 @@ test "resolver - no bitsize errors on untyped literal" {
     try type_resolver.resolve(program);
 
     try std.testing.expect(reporter.hasErrors());
-    try std.testing.expect(type_resolver.bitsize == null);
 }
 
 test "resolver - function return type resolves" {
@@ -1321,7 +1214,6 @@ test "resolver - explicit type annotation preferred" {
 
     var resolver = TypeResolver.init(alloc, &decl_table, &reporter);
     defer resolver.deinit();
-    resolver.bitsize = 32;
 
     var scope = Scope.init(alloc, null);
     defer scope.deinit();
@@ -1521,7 +1413,6 @@ test "resolver - array literal infers element type" {
     defer reporter.deinit();
     var resolver = TypeResolver.init(alloc, &decl_table, &reporter);
     defer resolver.deinit();
-    resolver.bitsize = 32;
     var scope = Scope.init(alloc, null);
     defer scope.deinit();
 
@@ -1529,7 +1420,7 @@ test "resolver - array literal infers element type" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    // [1, 2, 3] → should resolve to i32 (with bitsize=32)
+    // [1, 2] — bare int literals are numeric_literal without explicit type
     const e1 = try a.create(parser.Node);
     e1.* = .{ .int_literal = "1" };
     const e2 = try a.create(parser.Node);
@@ -1541,7 +1432,7 @@ test "resolver - array literal infers element type" {
     arr.* = .{ .array_literal = elems };
 
     const result = try resolver.resolveExpr(arr, &scope);
-    try std.testing.expectEqualStrings("i32", result.name());
+    try std.testing.expectEqualStrings("numeric_literal", result.name());
 }
 
 test "resolver - match exhaustiveness with many arms" {
