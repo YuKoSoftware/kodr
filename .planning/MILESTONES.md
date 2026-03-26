@@ -1,5 +1,20 @@
 # Milestones
 
+## v0.13 Tamga Compatibility (Shipped: 2026-03-26)
+
+**Phases completed:** 7 phases, 7 plans, 12 tasks
+
+**Key accomplishments:**
+
+- Parser fuzz test using std.testing.fuzz added to src/peg.zig; standalone harness extended to 5 strategies; COMPILER.md documents complete fuzz infrastructure
+- Eliminated intermittent test race via std.testing.tmpDir, removed dead ziglib testbed, confirmed 5/5 clean runs and 123/123 test passes
+- Full pipeline wired for `pub enum(u32) Scancode { A = 4, B = 5 }` — PEG grammar, AST, builder, MIR, and codegen all updated in 5 files, ~30 lines changed.
+- Grammar, builder, and codegen changes enabling `ev is module.Type` cross-module type checks, emitting `@TypeOf(val) == mod.Type` Zig via new emitTypePath/emitTypeMirPath helpers; all 243 tests pass.
+- End-to-end runtime test coverage for `(Error | void)` — codegen correctly emits `anyerror!void`, bare return produces void success, error path produces error; example module updated as living language manual
+- 1. [Rule 1 - Bug] Return type mismatch for variables typed with module-level aliases
+
+---
+
 ## v0.11 Language Simplification (Shipped: 2026-03-25)
 
 **Phases completed:** 4 phases, 5 plans, 5 tasks

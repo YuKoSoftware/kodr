@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.13
 milestone_name: Tamga Compatibility
-status: Milestone complete
+status: v0.13 milestone complete
 stopped_at: Completed 18-type-alias-syntax/18-01-PLAN.md
-last_updated: "2026-03-26T08:30:51.428Z"
+last_updated: "2026-03-26T09:14:18.242Z"
 progress:
   total_phases: 7
   completed_phases: 6

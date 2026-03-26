@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.11.0.
+Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.10.2.
 
 ## Core Value
 
@@ -29,17 +29,17 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ Stdlib bridge modules (collections, strings, allocators, I/O, etc.) — existing
 - ✓ LSP language server — existing
 - ✓ Fuzz testing harness — existing
-- ✓ Cross-module const & argument passing in codegen — Phase 1
-- ✓ Qualified generic type validation across modules — Phase 1
-- ✓ Const struct by-value passing without false move errors — Phase 1
-- ✓ Working `orhon test` command with correct output — Phase 1
-- ✓ String interpolation temp buffer cleanup via MIR defer injection — Phase 2
-- ✓ OOM error propagation in codegen (no more `catch unreachable` on allocPrint) — Phase 2
-- ✓ Stdlib `catch {}` sweep: 103 instances classified and fixed/documented — Phase 2
-- ✓ `Ptr(T).cast(addr)` method-style pointer constructors — Phase 2
-- ✓ LSP per-request arena memory (no unbounded growth) — Phase 3
-- ✓ LSP header buffer hardening (4096 bytes, truncation detection) — Phase 3
-- ✓ LSP content-length guard (64 MiB cap, rejects oversized payloads) — Phase 3
+- ✓ Cross-module const & argument passing in codegen — v0.10 Phase 1
+- ✓ Qualified generic type validation across modules — v0.10 Phase 1
+- ✓ Const struct by-value passing without false move errors — v0.10 Phase 1
+- ✓ Working `orhon test` command with correct output — v0.10 Phase 1
+- ✓ String interpolation temp buffer cleanup via MIR defer injection — v0.10 Phase 2
+- ✓ OOM error propagation in codegen (no more `catch unreachable` on allocPrint) — v0.10 Phase 2
+- ✓ Stdlib `catch {}` sweep: 103 instances classified and fixed/documented — v0.10 Phase 2
+- ✓ `Ptr(T).cast(addr)` method-style pointer constructors — v0.10 Phase 2
+- ✓ LSP per-request arena memory (no unbounded growth) — v0.10 Phase 3
+- ✓ LSP header buffer hardening (4096 bytes, truncation detection) — v0.10 Phase 3
+- ✓ LSP content-length guard (64 MiB cap, rejects oversized payloads) — v0.10 Phase 3
 - ✓ Const auto-borrow — `const` non-primitives auto-pass as `const &` at call sites — v0.11 Phase 8
 - ✓ Ptr syntax simplification — type annotation + `&` replaces `.cast()` — v0.11 Phase 9
 - ✓ Tamga companion project updated for v0.11 syntax changes — v0.11 Phase 10
@@ -47,13 +47,14 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ Fuzz testing for lexer and parser — v0.12 Phase 12
 - ✓ Tester module cross-module codegen fix — v0.12 Phase 13
 - ✓ Intermittent unit test failure fix — v0.12 Phase 13
-
-### Active
-
 - ✓ Enum variants with explicit integer values (`A = 4` in typed enums) — v0.13 Phase 15
 - ✓ `is` operator with module-qualified types (`ev is mod.Type`) — v0.13 Phase 16
 - ✓ `void` accepted in error unions (`Error | void`) — v0.13 Phase 17
 - ✓ `const Alias: type = T` type alias syntax — v0.13 Phase 18
+
+### Active
+
+(No active requirements — planning next milestone)
 
 ### Out of Scope
 
@@ -62,24 +63,16 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - MIR optimization and caching (SSA, inlining, DCE) — deferred (optimization)
 - MIR residual AST accesses — architectural cleanup deferred
 - PEG syntax doc generator — deferred
-- New language features — this milestone is quality-focused, not feature-focused
-- Architecture refactors — deferred to future milestone
 
-## Current Milestone: v0.13 Tamga Compatibility
+## Current State
 
-**Goal:** Fix 4 compiler gaps discovered while building the Tamga framework — parser and codegen changes to support real-world usage patterns.
+**Version:** v0.10.2
+**Tests:** 248 across 11 stages
+**Milestones shipped:** v0.10, v0.11, v0.12, v0.13
 
-**Target features:**
-- Enum variants with explicit integer values
-- `is` operator with module-qualified types
-- `Unit` type in return position
-- `pub type Alias = T` type alias syntax
+v0.13 shipped 4 compiler features discovered while building the Tamga game framework: enum explicit values, qualified `is` operator, void in error unions, and type alias syntax. All Tamga-blocking compiler gaps are now resolved.
 
 **Previous:** v0.12 Quality & Polish — shipped 2026-03-25
-
-## Context
-
-v0.11 shipped two breaking semantic changes: const auto-borrow (const values auto-pass as `const &` at call sites, eliminating silent deep copies) and ptr syntax simplification (type annotation + `&` replaces verbose `.cast()` syntax). All fixtures, Tamga companion project, and docs updated. 240/240 tests pass. 35 files changed, 2812 insertions, 256 deletions.
 
 ## Constraints
 
@@ -99,6 +92,8 @@ v0.11 shipped two breaking semantic changes: const auto-borrow (const values aut
 | Const auto-borrow via MIR annotation | Re-derive const-ness from AST, avoid coupling to ownership checker | ✓ v0.11 Phase 8 — clean separation |
 | Type-directed pointer coercion | Type annotation carries safety level, no need for `.cast()` syntax | ✓ v0.11 Phase 9 — simpler language surface |
 | Breaking changes before wider adoption | No known external users, clean slate opportunity | ✓ v0.11 — both changes landed cleanly |
+| `const Alias: type = T` for type aliases | Reuse existing const declaration, not new `pub type` keyword | ✓ v0.13 Phase 18 — consistent with `name: Type = value` pattern |
+| Transparent (structural) type aliases | Speed == i32, not a distinct nominal type | ✓ v0.13 Phase 18 — simple, no special type comparisons needed |
 
 ## Evolution
 
@@ -118,4 +113,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-25 — v0.13 milestone created from Tamga bugs*
+*Last updated: 2026-03-26 after v0.13 milestone*
