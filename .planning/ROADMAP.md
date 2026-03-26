@@ -6,6 +6,7 @@
 - ✅ **v0.11 Language Simplification** - Phases 8-11 (shipped 2026-03-25)
 - ✅ **v0.12 Quality & Polish** - Phases 12-14 (shipped 2026-03-25)
 - ✅ **v0.13 Tamga Compatibility** - Phases 15-18 (shipped 2026-03-26)
+- **v0.14 Build System** - Phases 19-20
 
 ## Phases
 
@@ -88,6 +89,18 @@
 
 </details>
 
+### Phase 19: Bridge Modules as Named Zig Modules
+**Goal**: Bridge .zig files compile as named Zig modules in the build graph — eliminating file-path @import and cross-module "file exists in two modules" errors
+**Requirements**: [REQ-19]
+**Plans:** 1 plan
+Plans:
+- [ ] 19-01-PLAN.md — Named bridge modules in build.zig + codegen import fix
+
+### Phase 20: Tamga Build Verification
+**Goal**: Tamga framework builds end-to-end with the new bridge module system — no workarounds needed
+**Requirements**: [REQ-20]
+**Plans**: Not started
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -96,3 +109,4 @@
 | 8-11 | v0.11 | All | Complete | 2026-03-25 |
 | 12-14 | v0.12 | All | Complete | 2026-03-25 |
 | 15-18 | v0.13 | 5/5 | Complete | 2026-03-26 |
+| 19-20 | v0.14 | 0/2 | In Progress | — |
