@@ -8,6 +8,7 @@ module allocator
 
 pub bridge struct SMP {
     bridge func create() SMP
+    bridge func allocator(self: &SMP) void
     bridge func deinit(self: &SMP) void
 }
 
@@ -15,6 +16,7 @@ pub bridge struct SMP {
 
 pub bridge struct Arena {
     bridge func create() Arena
+    bridge func allocator(self: &Arena) void
     bridge func freeAll(self: &Arena) void
     bridge func deinit(self: &Arena) void
 }
@@ -23,4 +25,5 @@ pub bridge struct Arena {
 
 pub bridge struct Page {
     bridge func create() Page
+    bridge func allocator(self: &Page) void
 }

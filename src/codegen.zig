@@ -1563,7 +1563,7 @@ pub const CodeGen = struct {
             },
             .injected_defer => {
                 if (m.injected_name) |name| {
-                    try self.emitFmt("defer std.heap.page_allocator.free({s});", .{name});
+                    try self.emitFmt("defer std.heap.smp_allocator.free({s});", .{name});
                 }
             },
             // Bare expression as statement — discard return value
@@ -1839,13 +1839,20 @@ pub const CodeGen = struct {
                 if (c.callee.* == .field_expr) {
                     const method = c.callee.field_expr.field;
                     const obj = c.callee.field_expr.object;
-                    if (std.mem.eql(u8, method, "new") and c.args.len == 0) {
+                    if (std.mem.eql(u8, method, "new")) {
                         const is_type_node = obj.* == .collection_expr or
                             obj.* == .type_primitive or obj.* == .type_named or
                             obj.* == .type_generic;
                         if (is_type_node) {
-                            try self.emit(".{}");
-                            return;
+                            if (c.args.len == 0) {
+                                try self.emit(".{}");
+                                return;
+                            } else if (c.args.len == 1) {
+                                try self.emit(".{ .alloc = ");
+                                try self.generateExpr(c.args[0]);
+                                try self.emit(" }");
+                                return;
+                            }
                         }
                     }
                 }
@@ -2307,12 +2314,19 @@ pub const CodeGen = struct {
                 // .identifier (not .type_expr), so there's no false-positive risk.
                 if (callee_is_field) {
                     const method = callee_mir.name orelse "";
-                    if (std.mem.eql(u8, method, "new") and call_args.len == 0) {
+                    if (std.mem.eql(u8, method, "new")) {
                         if (callee_mir.children.len > 0) {
                             const obj_mir = callee_mir.children[0];
                             if (obj_mir.kind == .type_expr or obj_mir.kind == .collection) {
-                                try self.emit(".{}");
-                                return;
+                                if (call_args.len == 0) {
+                                    try self.emit(".{}");
+                                    return;
+                                } else if (call_args.len == 1) {
+                                    try self.emit(".{ .alloc = ");
+                                    try self.generateExprMir(call_args[0]);
+                                    try self.emit(" }");
+                                    return;
+                                }
                             }
                         }
                     }
@@ -2785,7 +2799,7 @@ pub const CodeGen = struct {
         try self.pre_stmts.appendSlice(self.allocator, indent_str);
         try self.pre_stmts.appendSlice(self.allocator, "const ");
         try self.pre_stmts.appendSlice(self.allocator, var_name);
-        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.page_allocator, \"");
+        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.smp_allocator, \"");
 
         // Build format string into pre_stmts
         for (interp.parts) |part| {
@@ -2835,9 +2849,9 @@ pub const CodeGen = struct {
         } else {
             try self.pre_stmts.appendSlice(self.allocator, "}) catch unreachable;\n");
         }
-        // Append: <indent>defer std.heap.page_allocator.free(_interp_N);
+        // Append: <indent>defer std.heap.smp_allocator.free(_interp_N);
         try self.pre_stmts.appendSlice(self.allocator, indent_str);
-        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.page_allocator.free(");
+        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.smp_allocator.free(");
         try self.pre_stmts.appendSlice(self.allocator, var_name);
         try self.pre_stmts.appendSlice(self.allocator, ");\n");
 
@@ -3208,7 +3222,7 @@ pub const CodeGen = struct {
     /// wraps this in `const _orhon_interp_N = ...;` with a sibling injected_defer node,
     /// so no pre_stmts hoisting is needed here.
     fn generateInterpolatedStringMirInline(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void {
-        try self.emit("std.fmt.allocPrint(std.heap.page_allocator, \"");
+        try self.emit("std.fmt.allocPrint(std.heap.smp_allocator, \"");
         var expr_idx: usize = 0;
         // Build format string
         for (parts) |part| {
@@ -3275,7 +3289,7 @@ pub const CodeGen = struct {
         try self.pre_stmts.appendSlice(self.allocator, indent_str);
         try self.pre_stmts.appendSlice(self.allocator, "const ");
         try self.pre_stmts.appendSlice(self.allocator, var_name);
-        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.page_allocator, \"");
+        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.smp_allocator, \"");
 
         // Build format string into pre_stmts
         var expr_idx: usize = 0;
@@ -3321,9 +3335,9 @@ pub const CodeGen = struct {
         } else {
             try self.pre_stmts.appendSlice(self.allocator, "}) catch unreachable;\n");
         }
-        // Append: <indent>defer std.heap.page_allocator.free(_interp_N);
+        // Append: <indent>defer std.heap.smp_allocator.free(_interp_N);
         try self.pre_stmts.appendSlice(self.allocator, indent_str);
-        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.page_allocator.free(");
+        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.smp_allocator.free(");
         try self.pre_stmts.appendSlice(self.allocator, var_name);
         try self.pre_stmts.appendSlice(self.allocator, ");\n");
 

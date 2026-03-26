@@ -1,26 +1,22 @@
 // collections.zig — generic data structures sidecar for std::collections
 // Provides List(T), Map(K, V), Set(T) as Zig generic type functions.
-// Structs self-initialize with .{} and default to page_allocator.
+// Structs self-initialize with .{} and default to the global SMP allocator.
 //
 // OOM policy: mutations return early on OOM; iteration builders return partial results.
 // Use allocator-aware Zig collections directly for hard guarantees.
 
 const std = @import("std");
 
-const default_alloc = std.heap.page_allocator;
+var _default_smp: std.heap.GeneralPurposeAllocator(.{}) = .{};
 
 // ── List(T) — dynamic array ──
 
 pub fn List(comptime T: type) type {
     return struct {
         inner: std.ArrayListUnmanaged(T) = .{},
-        alloc: std.mem.Allocator = default_alloc,
+        alloc: std.mem.Allocator = _default_smp.allocator(),
 
         const Self = @This();
-
-        pub fn new() Self {
-            return .{};
-        }
 
         pub fn add(self: *Self, item: T) void {
             self.inner.append(self.alloc, item) catch return; // OOM: cannot add item
@@ -68,13 +64,9 @@ pub fn Map(comptime K: type, comptime V: type) type {
 
     return struct {
         inner: std.HashMapUnmanaged(K, V, Context, 80) = .{},
-        alloc: std.mem.Allocator = default_alloc,
+        alloc: std.mem.Allocator = _default_smp.allocator(),
 
         const Self = @This();
-
-        pub fn new() Self {
-            return .{};
-        }
 
         pub fn put(self: *Self, key: K, value: V) void {
             self.inner.put(self.alloc, key, value) catch return; // OOM: cannot put entry
@@ -127,13 +119,9 @@ pub fn Set(comptime T: type) type {
 
     return struct {
         inner: std.HashMapUnmanaged(T, void, Context, 80) = .{},
-        alloc: std.mem.Allocator = default_alloc,
+        alloc: std.mem.Allocator = _default_smp.allocator(),
 
         const Self = @This();
-
-        pub fn new() Self {
-            return .{};
-        }
 
         pub fn add(self: *Self, item: T) void {
             self.inner.put(self.alloc, item, {}) catch return; // OOM: cannot add item
