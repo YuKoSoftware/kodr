@@ -116,6 +116,16 @@ func go_north() Direction {
     return d
 }
 
+// Typed enum with explicit integer values
+
+/// SDL3 scancode subset — explicit integer assignments
+pub enum(u32) Scancode {
+    A = 4
+    B = 5
+    C = 6
+    Space = 44
+}
+
 // ─── Functions ───────────────────────────────────────────────────────────────
 
 func add(a: i32, b: i32) i32 {

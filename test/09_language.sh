@@ -35,6 +35,12 @@ else
     fail "struct fields"
 fi
 
+if grep -q "= 4" "$GEN_EXAMPLE" && grep -q "= 44" "$GEN_EXAMPLE"; then
+    pass "enum explicit values in generated code"
+else
+    fail "enum explicit values in generated code"
+fi
+
 BINOUT=$(./bin/langtest 2>&1 || true)
 if echo "$BINOUT" | grep -q "hello orhon"; then pass "langtest binary runs"
 else fail "langtest binary runs" "$BINOUT"; fi

@@ -450,6 +450,7 @@ run_fixture neg_struct_dup fail_structs.orh "duplicate field" "fixture: catches 
 
 # enum errors
 run_fixture neg_enum_dup fail_enums.orh "duplicate variant" "fixture: catches duplicate enum variant"
+run_fixture neg_enum_val fail_enum_value.orh "error" "fixture: rejects tagged union with explicit value"
 
 # function errors (first error in file: default before required)
 run_fixture neg_func fail_functions.orh "defaults.*must.*after\|required.*param" "fixture: catches default before required param"

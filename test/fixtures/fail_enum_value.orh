@@ -1,0 +1,10 @@
+module fail_enum_value
+
+// Tagged union variant cannot have explicit discriminant
+enum(u8) Bad {
+    Foo(i32) = 4
+}
+
+pub func main() void {
+    return
+}
