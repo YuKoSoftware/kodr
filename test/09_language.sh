@@ -104,4 +104,7 @@ else fail "null → == null codegen"; fi
 if grep -qF '.?' "$GEN_TESTER" 2>/dev/null; then pass "value → .? codegen"
 else fail "value → .? codegen"; fi
 
+if grep -q "@TypeOf" "$GEN_TESTER" 2>/dev/null; then pass "qualified is → @TypeOf codegen"
+else fail "qualified is → @TypeOf codegen"; fi
+
 report_results

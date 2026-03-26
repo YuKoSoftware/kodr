@@ -1414,3 +1414,11 @@ pub func test_const_copy() f64 {
     pt2.x = 10.0
     return pt2.x + pt.x
 }
+
+// ─── Cross-module qualified is check ─────────────────────────
+
+// Exported struct for cross-module is test (used in tester_main.orh)
+
+pub struct IsTestType {
+    val: i32
+}

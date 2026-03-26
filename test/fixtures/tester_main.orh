@@ -618,5 +618,21 @@ func main() void {
         console.println("FAIL const_copy")
     }
 
+    // Cross-module qualified is check — tests grammar/builder/codegen for is module.Type
+    const iso = tester.IsTestType(val: 42)
+    if(iso is tester.IsTestType) {
+        console.println("PASS is_qualified")
+    } else {
+        console.println("FAIL is_qualified")
+    }
+
+    // is not with a type that differs — i32 literal is not tester.IsTestType
+    const iso_n: i32 = 99
+    if(iso_n is not tester.IsTestType) {
+        console.println("PASS is_not_qualified")
+    } else {
+        console.println("FAIL is_not_qualified")
+    }
+
     console.println("TESTER:DONE")
 }
