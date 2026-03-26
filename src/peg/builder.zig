@@ -1240,17 +1240,40 @@ fn buildCompareExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
             const negated = is_pos + 1 < cap.end_pos and ctx.tokens[is_pos + 1].kind == .kw_not;
             const cmp_op: []const u8 = if (negated) "!=" else "==";
 
-            // Find the type name (last identifier or null keyword)
+            // Find the type name (last identifier, dotted path, or null keyword)
             var rhs: *Node = try ctx.newNode(.{ .identifier = "unknown" });
             var j = if (negated) is_pos + 2 else is_pos + 1;
+            // Scan for dotted identifier path: IDENTIFIER ('.' IDENTIFIER)* per D-01
+            var idents = std.ArrayListUnmanaged([]const u8){};
+            defer idents.deinit(ctx.alloc());
             while (j < cap.end_pos) : (j += 1) {
                 if (ctx.tokens[j].kind == .identifier) {
-                    rhs = try ctx.newNode(.{ .identifier = ctx.tokens[j].text });
-                    break;
+                    idents.append(ctx.alloc(), ctx.tokens[j].text) catch {};
+                    // Peek ahead: dot followed by identifier → continue collecting
+                    if (j + 2 < cap.end_pos and
+                        ctx.tokens[j + 1].kind == .dot and
+                        ctx.tokens[j + 2].kind == .identifier)
+                    {
+                        j += 1; // skip dot; loop increment lands on next identifier
+                    } else {
+                        break;
+                    }
                 } else if (ctx.tokens[j].kind == .kw_null) {
                     rhs = try ctx.newNode(.{ .null_literal = {} });
                     break;
                 }
+            }
+            // Build AST node from collected identifiers
+            if (idents.items.len == 1) {
+                // Single identifier — per D-04, no regression
+                rhs = try ctx.newNode(.{ .identifier = idents.items[0] });
+            } else if (idents.items.len > 1) {
+                // Dotted path — per D-05, build left-to-right field_expr chain
+                var chain: *Node = try ctx.newNode(.{ .identifier = idents.items[0] });
+                for (idents.items[1..]) |name| {
+                    chain = try ctx.newNode(.{ .field_expr = .{ .object = chain, .field = name } });
+                }
+                rhs = chain;
             }
             return ctx.newNode(.{ .binary_expr = .{ .op = cmp_op, .left = type_call, .right = rhs } });
         }

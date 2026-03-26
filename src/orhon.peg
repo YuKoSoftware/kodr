@@ -313,7 +313,7 @@ not_expr
 # Level 8 — Comparison (non-associative)
 compare_expr
     <- bitor_expr compare_op bitor_expr
-     / bitor_expr 'is' 'not'? (IDENTIFIER / 'null')
+     / bitor_expr 'is' 'not'? (IDENTIFIER ('.' IDENTIFIER)* / 'null')
      / bitor_expr
 
 compare_op
