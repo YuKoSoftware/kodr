@@ -20,10 +20,10 @@
 
 ### C Import Unification
 
-- [ ] **CIMP-01**: `#cimport "lib"` directive replaces `#linkC`, `#cInclude`, `#csource`, `#linkCpp`
-- [ ] **CIMP-02**: Required block syntax `#cimport "lib" { include: "...", source: "..." }` — block is mandatory per D-06 (include: always required, bare form invalid)
-- [ ] **CIMP-03**: Duplicate `#cimport` for same library across project produces compile error
-- [ ] **CIMP-04**: Old directives (#linkC, #cInclude, #csource, #linkCpp) removed or deprecated
+- [x] **CIMP-01**: `#cimport "lib"` directive replaces `#linkC`, `#cInclude`, `#csource`, `#linkCpp`
+- [x] **CIMP-02**: Required block syntax `#cimport "lib" { include: "...", source: "..." }` — block is mandatory per D-06 (include: always required, bare form invalid)
+- [x] **CIMP-03**: Duplicate `#cimport` for same library across project produces compile error
+- [x] **CIMP-04**: Old directives (#linkC, #cInclude, #csource, #linkCpp) removed or deprecated
 - [ ] **CIMP-05**: Tamga framework migrated to `#cimport` syntax
 - [ ] **CIMP-06**: Example module and docs updated with `#cimport` usage
 
@@ -60,10 +60,10 @@
 | GUARD-01 | Phase 23 | Complete |
 | GUARD-02 | Phase 23 | Complete |
 | GUARD-03 | Phase 23 | Complete |
-| CIMP-01 | Phase 24 | Pending |
-| CIMP-02 | Phase 24 | Pending |
-| CIMP-03 | Phase 24 | Pending |
-| CIMP-04 | Phase 24 | Pending |
+| CIMP-01 | Phase 24 | Complete |
+| CIMP-02 | Phase 24 | Complete |
+| CIMP-03 | Phase 24 | Complete |
+| CIMP-04 | Phase 24 | Complete |
 | CIMP-05 | Phase 24 | Pending |
 | CIMP-06 | Phase 24 | Pending |
 

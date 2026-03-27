@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.15
 milestone_name: Language Ergonomics
-status: verifying
-stopped_at: Phase 24 plans verified
-last_updated: "2026-03-27T18:34:56.798Z"
+status: executing
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-03-27T19:01:11.628Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 23 — pattern-guards
+**Current focus:** Phase 24 — cimport-unification
 
 ## Current Position
 
-Phase: 24
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 24 (cimport-unification) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-03-27
 
 Progress: [░░░░░░░░░░] 0%
@@ -61,6 +61,9 @@ Recent decisions affecting current work:
 - [Phase 23-pattern-guards]: Labeled Zig block chosen for guard desugaring: if (_g0: { const x = _m; break :_g0 guard; }) — correctly chains with else-if without leaking scope
 - [Phase 23-pattern-guards]: mirContainsIdentifier used at codegen time to conditionally emit '_ = x' suppressor, avoiding both unused-local-constant and pointless-discard Zig errors
 - [Phase 23-pattern-guards]: Parenthesized Patterns reference table added as quick lookup (optional vs required) rather than prose paragraphs — easier to scan
+- [Phase 24-cimport-unification]: Hard remove old directives: #linkC/#cInclude/#csource/#linkCpp are parse errors immediately (D-01)
+- [Phase 24-cimport-unification]: Mandatory block: include: key always required, bare #cimport 'lib' form is invalid (D-06)
+- [Phase 24-cimport-unification]: One per project: duplicate #cimport for same lib name is compile error with both module names (D-08)
 
 ### Pending Todos
 
@@ -73,5 +76,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-27
-Stopped at: Phase 24 plans verified
-Resume file: .planning/phases/24-cimport-unification/24-01-PLAN.md
+Stopped at: Completed 24-01-PLAN.md
+Resume file: None

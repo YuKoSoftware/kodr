@@ -150,7 +150,7 @@ Plans:
   5. The Tamga framework builds successfully using `#cimport` with zero legacy directives remaining
 **Plans**: 2 plans
 Plans:
-- [ ] 24-01-PLAN.md — Implement #cimport across compiler pipeline (grammar, parser, builder, declarations, main.zig, zig_runner, tests)
+- [x] 24-01-PLAN.md — Implement #cimport across compiler pipeline (grammar, parser, builder, declarations, main.zig, zig_runner, tests)
 - [ ] 24-02-PLAN.md — Tamga migration, documentation update, and human verification
 
 ## Progress
@@ -164,4 +164,4 @@ Plans:
 | 19-21 | v0.14 | 6/6 | Complete | 2026-03-27 |
 | 22. `throw` Statement | v0.15 | 2/2 | Complete    | 2026-03-27 |
 | 23. Pattern Guards | v0.15 | 2/2 | Complete    | 2026-03-27 |
-| 24. `#cimport` Unification | v0.15 | 0/? | Not started | - |
+| 24. `#cimport` Unification | v0.15 | 1/2 | In Progress|  |
