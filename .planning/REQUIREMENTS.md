@@ -14,8 +14,8 @@
 
 ### Pattern Guards
 
-- [ ] **GUARD-01**: Match arms accept `(x if x > 0)` parenthesized guard syntax — arm only matches when guard is true
-- [ ] **GUARD-02**: Guard expression can reference the bound variable and outer scope
+- [x] **GUARD-01**: Match arms accept `(x if x > 0)` parenthesized guard syntax — arm only matches when guard is true
+- [x] **GUARD-02**: Guard expression can reference the bound variable and outer scope
 - [ ] **GUARD-03**: Example module and docs updated with pattern guard usage
 
 ### C Import Unification
@@ -57,8 +57,8 @@
 | ERR-02 | Phase 22 | Complete |
 | ERR-03 | Phase 22 | Complete |
 | ERR-04 | Phase 22 | Complete |
-| GUARD-01 | Phase 23 | Pending |
-| GUARD-02 | Phase 23 | Pending |
+| GUARD-01 | Phase 23 | Complete |
+| GUARD-02 | Phase 23 | Complete |
 | GUARD-03 | Phase 23 | Pending |
 | CIMP-01 | Phase 24 | Pending |
 | CIMP-02 | Phase 24 | Pending |
