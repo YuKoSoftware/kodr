@@ -7,6 +7,7 @@
 - ✅ **v0.12 Quality & Polish** - Phases 12-14 (shipped 2026-03-25)
 - ✅ **v0.13 Tamga Compatibility** - Phases 15-18 (shipped 2026-03-26)
 - ✅ **v0.14 Build System** - Phases 19-21 (shipped 2026-03-27)
+- 🚧 **v0.15 Language Ergonomics** - Phases 22-24 (in progress)
 
 ## Phases
 
@@ -100,6 +101,49 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
 
 </details>
 
+### 🚧 v0.15 Language Ergonomics (In Progress)
+
+**Milestone Goal:** Reduce boilerplate and clean up C interop directives — make Orhon code more concise and the bridge system simpler.
+
+- [ ] **Phase 22: `throw` Statement** - Error propagation with automatic type narrowing
+- [ ] **Phase 23: Pattern Guards** - Conditional match arms with `case x if expr` syntax
+- [ ] **Phase 24: `#cimport` Unification** - One directive per C library replaces four separate ones
+
+## Phase Details
+
+### Phase 22: `throw` Statement
+**Goal**: Orhon programs can use `throw x` to propagate errors and automatically narrow the type of `x` to its value type
+**Depends on**: Phase 21 (previous milestone complete)
+**Requirements**: ERR-01, ERR-02, ERR-03, ERR-04
+**Success Criteria** (what must be TRUE):
+  1. `throw x` in a function returning `(Error | T)` returns early with the error and `x` narrows to type `T` after the statement
+  2. Code following `throw x` can use `x` directly as type `T` without `.value` unwrapping
+  3. Using `throw` in a function that returns a non-error type produces a compile error with a clear message
+  4. The example module demonstrates `throw` usage and compiles successfully
+**Plans**: TBD
+
+### Phase 23: Pattern Guards
+**Goal**: Match arms accept an optional `if` guard expression so arms only fire when both the pattern and the guard are true
+**Depends on**: Phase 22
+**Requirements**: GUARD-01, GUARD-02, GUARD-03
+**Success Criteria** (what must be TRUE):
+  1. A match arm written as `case x if x > 0` only executes when the pattern matches and the guard evaluates to true
+  2. The guard expression can reference the bound variable and variables from the enclosing scope
+  3. The example module demonstrates pattern guards and compiles successfully
+**Plans**: TBD
+
+### Phase 24: `#cimport` Unification
+**Goal**: A single `#cimport "lib"` directive replaces the four separate `#linkC`, `#cInclude`, `#csource`, and `#linkCpp` directives, and the Tamga framework is migrated to use it
+**Depends on**: Phase 23
+**Requirements**: CIMP-01, CIMP-02, CIMP-03, CIMP-04, CIMP-05, CIMP-06
+**Success Criteria** (what must be TRUE):
+  1. `#cimport "lib"` compiles a bridge that links the named C library with no additional directives needed
+  2. The optional block form `#cimport "lib" { include: "...", source: "..." }` overrides include path and source file as needed
+  3. Using `#cimport` for the same library twice in the same project produces a compile error
+  4. The old `#linkC`, `#cInclude`, `#csource`, `#linkCpp` directives are removed or emit a clear deprecation error
+  5. The Tamga framework builds successfully using `#cimport` with zero legacy directives remaining
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -109,3 +153,6 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
 | 12-14 | v0.12 | All | Complete | 2026-03-25 |
 | 15-18 | v0.13 | 5/5 | Complete | 2026-03-26 |
 | 19-21 | v0.14 | 6/6 | Complete | 2026-03-27 |
+| 22. `throw` Statement | v0.15 | 0/? | Not started | - |
+| 23. Pattern Guards | v0.15 | 0/? | Not started | - |
+| 24. `#cimport` Unification | v0.15 | 0/? | Not started | - |

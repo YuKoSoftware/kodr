@@ -53,25 +53,25 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ERR-01 | — | Pending |
-| ERR-02 | — | Pending |
-| ERR-03 | — | Pending |
-| ERR-04 | — | Pending |
-| GUARD-01 | — | Pending |
-| GUARD-02 | — | Pending |
-| GUARD-03 | — | Pending |
-| CIMP-01 | — | Pending |
-| CIMP-02 | — | Pending |
-| CIMP-03 | — | Pending |
-| CIMP-04 | — | Pending |
-| CIMP-05 | — | Pending |
-| CIMP-06 | — | Pending |
+| ERR-01 | Phase 22 | Pending |
+| ERR-02 | Phase 22 | Pending |
+| ERR-03 | Phase 22 | Pending |
+| ERR-04 | Phase 22 | Pending |
+| GUARD-01 | Phase 23 | Pending |
+| GUARD-02 | Phase 23 | Pending |
+| GUARD-03 | Phase 23 | Pending |
+| CIMP-01 | Phase 24 | Pending |
+| CIMP-02 | Phase 24 | Pending |
+| CIMP-03 | Phase 24 | Pending |
+| CIMP-04 | Phase 24 | Pending |
+| CIMP-05 | Phase 24 | Pending |
+| CIMP-06 | Phase 24 | Pending |
 
 **Coverage:**
 - v1 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 (pending roadmap)
+- Mapped to phases: 13
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 after initial definition*
+*Last updated: 2026-03-27 — traceability updated after roadmap creation*
