@@ -120,7 +120,10 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
   2. Code following `throw x` can use `x` directly as type `T` without `.value` unwrapping
   3. Using `throw` in a function that returns a non-error type produces a compile error with a clear message
   4. The example module demonstrates `throw` usage and compiles successfully
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
+- [ ] 22-02-PLAN.md -- Tests, example module, and docs for throw
 
 ### Phase 23: Pattern Guards
 **Goal**: Match arms accept an optional `if` guard expression so arms only fire when both the pattern and the guard are true
@@ -130,7 +133,10 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
   1. A match arm written as `case x if x > 0` only executes when the pattern matches and the guard evaluates to true
   2. The guard expression can reference the bound variable and variables from the enclosing scope
   3. The example module demonstrates pattern guards and compiles successfully
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
+- [ ] 22-02-PLAN.md -- Tests, example module, and docs for throw
 
 ### Phase 24: `#cimport` Unification
 **Goal**: A single `#cimport "lib"` directive replaces the four separate `#linkC`, `#cInclude`, `#csource`, and `#linkCpp` directives, and the Tamga framework is migrated to use it
@@ -142,7 +148,10 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
   3. Using `#cimport` for the same library twice in the same project produces a compile error
   4. The old `#linkC`, `#cInclude`, `#csource`, `#linkCpp` directives are removed or emit a clear deprecation error
   5. The Tamga framework builds successfully using `#cimport` with zero legacy directives remaining
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
+- [ ] 22-02-PLAN.md -- Tests, example module, and docs for throw
 
 ## Progress
 
