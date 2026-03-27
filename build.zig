@@ -1,13 +1,14 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
-pub const version = std.SemanticVersion{ .major = 0, .minor = 10, .patch = 8 };
+pub const version = std.SemanticVersion.parse(zon.version) catch unreachable;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Version string for runtime use
-    const version_str = std.fmt.comptimePrint("{d}.{d}.{d}", .{ version.major, version.minor, version.patch });
+    // Version string — read directly from build.zig.zon (single source of truth)
+    const version_str: []const u8 = zon.version;
 
     // Main orhon compiler executable
     const root_module = b.createModule(.{
