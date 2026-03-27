@@ -130,13 +130,13 @@ Plans:
 **Depends on**: Phase 22
 **Requirements**: GUARD-01, GUARD-02, GUARD-03
 **Success Criteria** (what must be TRUE):
-  1. A match arm written as `case x if x > 0` only executes when the pattern matches and the guard evaluates to true
+  1. A match arm written as `(x if x > 0)` only executes when the pattern matches and the guard evaluates to true
   2. The guard expression can reference the bound variable and variables from the enclosing scope
   3. The example module demonstrates pattern guards and compiles successfully
 **Plans**: 2 plans
 Plans:
-- [x] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
-- [ ] 22-02-PLAN.md -- Tests, example module, and docs for throw
+- [ ] 23-01-PLAN.md -- Implement guards across compiler pipeline (grammar, builder, AST, resolver, MIR, codegen)
+- [ ] 23-02-PLAN.md -- Documentation update for pattern guards
 
 ### Phase 24: `#cimport` Unification
 **Goal**: A single `#cimport "lib"` directive replaces the four separate `#linkC`, `#cInclude`, `#csource`, and `#linkCpp` directives, and the Tamga framework is migrated to use it
@@ -150,8 +150,8 @@ Plans:
   5. The Tamga framework builds successfully using `#cimport` with zero legacy directives remaining
 **Plans**: 2 plans
 Plans:
-- [ ] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
-- [ ] 22-02-PLAN.md -- Tests, example module, and docs for throw
+- [ ] 24-01-PLAN.md — [To be planned]
+- [ ] 24-02-PLAN.md — [To be planned]
 
 ## Progress
 
@@ -163,5 +163,5 @@ Plans:
 | 15-18 | v0.13 | 5/5 | Complete | 2026-03-26 |
 | 19-21 | v0.14 | 6/6 | Complete | 2026-03-27 |
 | 22. `throw` Statement | v0.15 | 2/2 | Complete    | 2026-03-27 |
-| 23. Pattern Guards | v0.15 | 0/? | Not started | - |
+| 23. Pattern Guards | v0.15 | 0/2 | Planning | - |
 | 24. `#cimport` Unification | v0.15 | 0/? | Not started | - |
