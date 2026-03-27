@@ -10,11 +10,11 @@
 - [x] **ERR-01**: `throw x` propagates error from `(Error | T)` and returns early from enclosing function
 - [x] **ERR-02**: After `throw x`, variable `x` narrows to value type `T` (no `.value` needed)
 - [x] **ERR-03**: `throw` in a function that doesn't return an error type produces compile error
-- [ ] **ERR-04**: Example module and docs updated with `throw` usage
+- [x] **ERR-04**: Example module and docs updated with `throw` usage
 
 ### Pattern Guards
 
-- [ ] **GUARD-01**: Match arms accept `case x if expr` guard syntax — arm only matches when guard is true
+- [ ] **GUARD-01**: Match arms accept `(x if x > 0)` parenthesized guard syntax — arm only matches when guard is true
 - [ ] **GUARD-02**: Guard expression can reference the bound variable and outer scope
 - [ ] **GUARD-03**: Example module and docs updated with pattern guard usage
 
@@ -56,7 +56,7 @@
 | ERR-01 | Phase 22 | Complete |
 | ERR-02 | Phase 22 | Complete |
 | ERR-03 | Phase 22 | Complete |
-| ERR-04 | Phase 22 | Pending |
+| ERR-04 | Phase 22 | Complete |
 | GUARD-01 | Phase 23 | Pending |
 | GUARD-02 | Phase 23 | Pending |
 | GUARD-03 | Phase 23 | Pending |
@@ -74,4 +74,4 @@
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 — traceability updated after roadmap creation*
+*Last updated: 2026-03-27 — GUARD-01 text updated to match locked decision syntax*
