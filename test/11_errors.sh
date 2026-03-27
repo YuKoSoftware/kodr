@@ -469,4 +469,16 @@ else
     fail "rejects old Ptr(T).cast() syntax" "$NEG_OUT"
 fi
 
+# throw in void function
+cd "$TESTDIR"
+mkdir -p neg_throw/src
+cp "$FIXTURES/fail_throw.orh" neg_throw/src/main.orh
+cd neg_throw
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "throw\|error"; then
+    pass "rejects throw in void function"
+else
+    fail "rejects throw in void function" "$NEG_OUT"
+fi
+
 report_results

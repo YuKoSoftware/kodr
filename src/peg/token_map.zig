@@ -48,6 +48,7 @@ pub const LITERAL_MAP = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "bridge", .kw_bridge },
     .{ "is", .kw_is },
     .{ "cast", .kw_cast },
+    .{ "throw", .kw_throw },
     .{ "copy", .kw_copy },
     .{ "move", .kw_move },
     .{ "swap", .kw_swap },

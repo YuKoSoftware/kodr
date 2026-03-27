@@ -74,7 +74,7 @@ func check_and_report(value: i32) i32 {
 
 // throw propagates the error and narrows the type
 func divide_with_throw(a: i32, b: i32) (Error | i32) {
-    var result = safe_divide(a, b)
+    const result = safe_divide(a, b)
     throw result
     return result
 }

@@ -44,6 +44,12 @@ fi
 if grep -q "const Speed = i32" "$GEN_EXAMPLE"; then pass "type alias generates const = type"
 else fail "type alias generates const = type"; fi
 
+if grep -q "|_err| return _err" "$GEN_EXAMPLE"; then pass "throw generates error propagation pattern"
+else fail "throw generates error propagation pattern"; fi
+
+if grep -q "catch unreachable" "$GEN_EXAMPLE"; then pass "throw narrowing uses catch unreachable"
+else fail "throw narrowing uses catch unreachable"; fi
+
 BINOUT=$(./bin/langtest 2>&1 || true)
 if echo "$BINOUT" | grep -q "hello orhon"; then pass "langtest binary runs"
 else fail "langtest binary runs" "$BINOUT"; fi
