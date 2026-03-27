@@ -1,5 +1,20 @@
 # Milestones
 
+## v0.15 Language Ergonomics (Shipped: 2026-03-27)
+
+**Phases completed:** 3 phases, 6 plans, 12 tasks
+
+**Key accomplishments:**
+
+- `throw x` keyword implemented across all 7 compiler passes: lexer token, PEG grammar, AST builder, propagation validation, MIR lowering, and Zig codegen with error narrowing.
+- throw feature verified end-to-end: example module compiles, codegen pattern checked, negative tests catch invalid usage, docs document the syntax and semantics.
+- Guard syntax `(x if x > 0) => { ... }` implemented across all six compiler passes: PEG grammar, AST builder, resolver (child scope + else enforcement), MIR annotator/lowerer, and codegen (if/else chain desugaring); existing bare range patterns migrated to parenthesized form.
+- Control flow spec updated with Pattern Guards subsection, parenthesized pattern reference table, and else-requirement documentation matching the implemented guard syntax from Plan 01.
+- Unified C library import directive: `#cimport "lib" { include: "h" }` replaces four old directives across grammar, parser, builder, declarations, main.zig collection, and zig_runner build generation
+- Tamga's three bridge modules migrated to #cimport = { name: "lib", include: "h" } syntax; example module and docs updated — zero legacy directives remain in any project file
+
+---
+
 ## v0.14 Build System (Shipped: 2026-03-27)
 
 **Phases completed:** 17 phases, 27 plans, 38 tasks

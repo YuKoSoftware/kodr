@@ -4,7 +4,7 @@ milestone: v0.15
 milestone_name: Language Ergonomics
 status: completed
 stopped_at: Completed 24-02-PLAN.md — Phase 24 complete, v0.15 milestone complete
-last_updated: "2026-03-27T19:45:11.493Z"
+last_updated: "2026-03-27T19:48:59.976Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 3

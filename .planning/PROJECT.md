@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.14.
+Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.15.
 
 ## Core Value
 
@@ -55,21 +55,21 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ Bridge .zig files as named Zig modules (createModule/addImport) — v0.14 Phase 19
 - ✓ Flexible allocators — .new(alloc) with 3 modes (default SMP, inline, external) — v0.14 Phase 21
 - ✓ String interpolation uses SMP allocator — v0.14 Phase 21
+- ✓ `throw` statement for error propagation (propagate + type narrowing) — v0.15 Phase 22
+- ✓ Pattern guards in match (`(x if x > 0)` parenthesized guard syntax) — v0.15 Phase 23
+- ✓ `#cimport` unified C import directive (`#cimport = { name: "...", include: "..." }`) — v0.15 Phase 24
 
 ### Active
 
-- [x] `throw` statement for error propagation (propagate + type narrowing) — v0.15 Phase 22
-- [x] Pattern guards in match (`(x if x > 0)` parenthesized guard syntax) — v0.15 Phase 23
-- [x] `#cimport` unified C import directive (`#cimport = { name: "...", include: "..." }`) — v0.15 Phase 24
+(None — next milestone requirements TBD via `/gsd:new-milestone`)
 
-## Current Milestone: v0.15 Language Ergonomics
+## Current State
 
-**Goal:** Reduce boilerplate and clean up C interop directives -- make Orhon code more concise and the bridge system simpler.
+**Version:** v0.15 (shipped 2026-03-27)
+**Tests:** 260 across 11 stages
+**Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14, v0.15
 
-**Target features:**
-- `throw` statement -- `throw result` propagates error and narrows type to value
-- Pattern guards in match -- `case x if x > 0` conditional arms
-- `#cimport` unified directive -- one directive per C library replaces 4 separate ones
+v0.15 Language Ergonomics complete — `throw` statement, pattern guards, and `#cimport` unification all shipped. Tamga framework fully migrated. 260 tests pass.
 
 ### Out of Scope
 
@@ -78,18 +78,6 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - MIR optimization and caching (SSA, inlining, DCE) — deferred (optimization)
 - MIR residual AST accesses — architectural cleanup deferred
 - PEG syntax doc generator — deferred
-
-## Current State
-
-**Version:** v0.15 (in progress)
-**Tests:** 259 across 11 stages
-**Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14
-
-Phase 23 complete — Pattern guards: `(x if x > 0) => { body }` guards in match arms. Parenthesized patterns for ranges and bindings. Guard expressions access bound variable and enclosing scope. Else required when guards present. 259 tests pass.
-
-**Previous:** Phase 22 — `throw` statement for error propagation and type narrowing.
-
-**Previous:** v0.13 Tamga Compatibility — shipped 2026-03-26
 
 ## Constraints
 
@@ -116,6 +104,10 @@ Phase 23 complete — Pattern guards: `(x if x > 0) => { body }` guards in match
 | Named bridge modules via build system | createModule/addImport eliminates file-path imports and duplicate module errors | ✓ v0.14 Phase 19 — cross-bridge imports work |
 | Shared cImport wrapper modules | Derive module name from header stem + _c suffix | ✓ v0.14 Phase 20 — predictable, no extra metadata |
 | struct_methods qualified keys | 'StructName.method' keys avoid cross-bridge method name collisions | ✓ v0.14 Phase 20 — clean collision avoidance |
+| `throw` not `try` for error propagation | Less noisy, less hidden control flow than try-prefix | ✓ v0.15 Phase 22 — clean statement form |
+| Parenthesized guard syntax `(x if expr)` | Parens contain the compound construct, consistent with syntax containment rule | ✓ v0.15 Phase 23 — clean, explicit |
+| `#cimport = { name, include, source }` syntax | Consistent with `#key = value` metadata pattern | ✓ v0.15 Phase 24 — visual consistency |
+| Hard remove of old C directives | Only consumer is Tamga (controlled), no deprecation period needed | ✓ v0.15 Phase 24 — clean break |
 
 ## Evolution
 
@@ -135,4 +127,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after Phase 22 (throw statement)*
+*Last updated: 2026-03-27 after v0.15 Language Ergonomics milestone*
