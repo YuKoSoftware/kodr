@@ -185,14 +185,14 @@ C interop goes through `.zig` bridge files. The `.orh` file exposes a clean Orho
 the `.zig` file handles all C details internally.
 
 Use `#cimport` in the anchor file to declare C library dependencies. The block must
-always include an `include:` key specifying the C header. The compiler generates the
-correct `linkSystemLibrary` + `linkLibC` calls and a shared `@cImport` wrapper module
+always include `name:` and `include:` keys. The compiler generates the correct
+`linkSystemLibrary` + `linkLibC` calls and a shared `@cImport` wrapper module
 in the build system.
 
 ```
 // sdl.orh — clean Orhon interface
 module sdl
-#cimport "SDL3" { include: "SDL3/SDL.h" }
+#cimport = { name: "SDL3", include: "SDL3/SDL.h" }
 
 pub bridge func init() void
 pub bridge func quit() void
@@ -216,6 +216,7 @@ pub fn quit() void {
 
 The `#cimport` block uses colon-suffix keys with comma separators:
 
+- `name:` — library name for linking and deduplication (required)
 - `include:` — C header path (required)
 - `source:` — C/C++ source file to compile (optional)
 
@@ -223,7 +224,7 @@ Unknown keys produce a compile error.
 
 ```
 // Source-only library (no system lib linked)
-#cimport "vma" { include: "vk_mem_alloc.h", source: "../../src/vma_impl.cpp" }
+#cimport = { name: "vma", include: "vk_mem_alloc.h", source: "../../src/vma_impl.cpp" }
 ```
 
 When `source:` is present, the compiler skips `linkSystemLibrary` — the library name
@@ -239,10 +240,10 @@ Other modules access the library's C types by importing the owning bridge module
 // tamga_vk3d.orh — gets SDL types via import, not re-declaring #cimport
 module tamga_vk3d
 import tamga_sdl3
-#cimport "vulkan" { include: "vulkan/vulkan.h" }
+#cimport = { name: "vulkan", include: "vulkan/vulkan.h" }
 ```
 
-Declaring `#cimport "SDL3"` in both `tamga_sdl3` and `tamga_vk3d` is a compile error.
+Declaring `#cimport` with `name: "SDL3"` in both `tamga_sdl3` and `tamga_vk3d` is a compile error.
 
 ---
 

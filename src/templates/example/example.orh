@@ -52,10 +52,10 @@ compt func double(n: i32) i32 {
 // --- C Library Import (#cimport) -------------------------------------------
 
 // bridge modules that call C code use #cimport to declare the C library dependency.
-// The block must include an include: key for the C header. source: is optional.
+// The block must include name: and include: keys. source: is optional.
 //
-//   #cimport "SDL3" { include: "SDL3/SDL.h" }
-//   #cimport "vma" { include: "vk_mem_alloc.h", source: "vma_impl.cpp" }
+//   #cimport = { name: "SDL3", include: "SDL3/SDL.h" }
+//   #cimport = { name: "vma", include: "vk_mem_alloc.h", source: "vma_impl.cpp" }
 //
 // Each C library can only be declared once across the entire project.
 // Other modules access C types by importing the owning bridge module.

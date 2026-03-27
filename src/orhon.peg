@@ -49,7 +49,7 @@ metadata
 
 metadata_body
     <- 'dep' expr expr?                         # #dep "path" Version?
-     / 'cimport' expr cimport_block             # #cimport "lib" { include: "...", source?: "..." }
+     / 'cimport' '=' cimport_block               # #cimport = { name: "lib", include: "...", source?: "..." }
      / IDENTIFIER '=' expr                      # #field = value
 
 cimport_block

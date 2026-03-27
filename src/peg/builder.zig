@@ -438,30 +438,29 @@ fn buildImport(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 
 fn buildMetadata(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     // metadata <- '#' metadata_body NL
-    // metadata_body <- 'dep' expr expr? / 'cimport' expr cimport_block / IDENTIFIER '=' expr
+    // metadata_body <- 'dep' expr expr? / 'cimport' '=' cimport_block / IDENTIFIER '=' expr
     const field_pos = cap.start_pos + 1; // after #
     const field = tokenText(ctx, field_pos);
 
-    // Handle #cimport "lib" { include: "...", source?: "..." }
+    // Handle #cimport = { name: "lib", include: "...", source?: "..." }
     if (std.mem.eql(u8, field, "cimport")) {
         // Capture tree structure (from capture.zig evalRuleRef):
-        //   children[0] = CaptureNode(rule="expr") — lib name string
-        //   children[1] = CaptureNode(rule="cimport_block") — block wrapper
+        //   children[0] = CaptureNode(rule="cimport_block") — block wrapper
         //     children[N] = CaptureNode(rule="cimport_entry") — each entry
         //       children[0] = CaptureNode(rule="IDENTIFIER") — key
         //       children[1] = CaptureNode(rule="expr") — value
-        if (cap.children.len < 2) {
+        if (cap.children.len < 1) {
             // Grammar requires cimport_block — this should not happen in practice
             const dummy = try ctx.newNode(.{ .identifier = field });
             return ctx.newNode(.{ .metadata = .{ .field = field, .value = dummy } });
         }
-        const lib_name_node = try buildNode(ctx, &cap.children[0]);
 
+        var lib_name_val: ?[]const u8 = null;
         var include_val: ?[]const u8 = null;
         var source_val: ?[]const u8 = null;
 
         // Navigate into cimport_block wrapper to get cimport_entry children
-        const block_cap = &cap.children[1];
+        const block_cap = &cap.children[0];
         for (block_cap.children) |*entry_cap| {
             // Each cimport_entry has children: [IDENTIFIER, expr]
             if (entry_cap.children.len >= 2) {
@@ -473,24 +472,34 @@ fn buildMetadata(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
                         raw[1 .. raw.len - 1]
                     else
                         raw;
-                    if (std.mem.eql(u8, key, "include")) {
+                    if (std.mem.eql(u8, key, "name")) {
+                        lib_name_val = raw;
+                    } else if (std.mem.eql(u8, key, "include")) {
                         include_val = unquoted;
                     } else if (std.mem.eql(u8, key, "source")) {
                         source_val = unquoted;
                     } else {
                         // D-05: Unknown key — compile error
                         const msg = try std.fmt.allocPrint(ctx.alloc(),
-                            "unknown #cimport key '{s}' — only 'include' and 'source' are allowed", .{key});
+                            "unknown #cimport key '{s}' — only 'name', 'include', and 'source' are allowed", .{key});
                         ctx.reportError(msg, entry_cap.children[0].start_pos);
                     }
                 }
             }
         }
 
-        // D-06: include: is always required
+        // name: is always required
+        if (lib_name_val == null) {
+            ctx.reportError("#cimport requires 'name:' key", cap.start_pos);
+        }
+
+        // include: is always required (D-06)
         if (include_val == null) {
             ctx.reportError("#cimport requires 'include:' key", cap.start_pos);
         }
+
+        // Build a string_literal node for the lib name value
+        const lib_name_node = try ctx.newNode(.{ .string_literal = if (lib_name_val) |n| n else "" });
 
         return ctx.newNode(.{ .metadata = .{
             .field = "cimport",
