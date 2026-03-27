@@ -1,5 +1,40 @@
 # Milestones
 
+## v0.14 Build System (Shipped: 2026-03-27)
+
+**Phases completed:** 17 phases, 27 plans, 38 tasks
+
+**Key accomplishments:**
+
+- Commit:
+- Cross-module struct method calls with const & parameters now emit &arg in generated Zig, and qualified generic types like math.Vec2(f64) are validated against the referenced module's DeclTable at Orhon compile time.
+- Replaced `catch unreachable` with `catch |err| return err` in both interpolation codegen functions, preventing OOM panics, with a source-level regression test.
+- Files:
+- ptr_cast_expr grammar rule added — Ptr(T).cast(addr) and RawPtr(T).cast(addr) produce ptr_expr AST nodes; tester and example module migrated to new syntax
+- readMessage hardened with 4096-byte header buffer, HeaderTooLong truncation detection, and 64 MiB content-length cap preventing OOM from malicious payloads
+- Per-request ArenaAllocator in runAnalysis bulk-frees all intermediate pass objects after each analysis cycle, plus unit tests that caught and fixed an ArrayList backing buffer leak
+- 1. [Rule 1 - Bug] Incorrect MIR kind check — .collection vs .type_expr
+- One-liner:
+- 1. [Rule 1 - Bug] `catch return error.OutOfMemory` incompatible with generated return type
+- Data-loss OOM sites in collections.zig and stream.zig replaced with explicit catch return/break patterns; fire-and-forget I/O sites retain catch {} (the only valid Zig 0.15 error discard syntax)
+- 1. [Rule 1 - Bug] Separate inline variant required for temp_var path
+- RawPtr/VolatilePtr demos, typeOf() function, #bitsize docs, and include vs import added to example module — covering all previously missing language features
+- PEG builder string interpolation wired end-to-end: @{expr} in .orh strings now produces interpolated_string AST nodes, MIR hoists allocPrint temp vars, codegen emits correct Zig — ./testall.sh 236/236 pass
+- Parser fuzz test using std.testing.fuzz added to src/peg.zig; standalone harness extended to 5 strategies; COMPILER.md documents complete fuzz infrastructure
+- Eliminated intermittent test race via std.testing.tmpDir, removed dead ziglib testbed, confirmed 5/5 clean runs and 123/123 test passes
+- Full pipeline wired for `pub enum(u32) Scancode { A = 4, B = 5 }` — PEG grammar, AST, builder, MIR, and codegen all updated in 5 files, ~30 lines changed.
+- Grammar, builder, and codegen changes enabling `ev is module.Type` cross-module type checks, emitting `@TypeOf(val) == mod.Type` Zig via new emitTypePath/emitTypeMirPath helpers; all 243 tests pass.
+- End-to-end runtime test coverage for `(Error | void)` — codegen correctly emits `anyerror!void`, bare return produces void success, error path produces error; example module updated as living language manual
+- 1. [Rule 1 - Bug] Return type mismatch for variables typed with module-level aliases
+- Bridge .zig sidecar files registered as named Zig modules via createModule/addImport, eliminating file-path imports and cross-module duplicate module errors
+- One-liner:
+- Shared @cImport wrapper module generation (#cInclude) and C/C++ source compilation (#csource) added to the Orhon build system for Tamga's Vulkan/VMA modules
+- All 9 Tamga workarounds removed and Tamga framework builds clean end-to-end with zero errors — Phase 20 complete
+- Task 1:
+- Task 1:
+
+---
+
 ## v0.13 Tamga Compatibility (Shipped: 2026-03-26)
 
 **Phases completed:** 7 phases, 7 plans, 12 tasks

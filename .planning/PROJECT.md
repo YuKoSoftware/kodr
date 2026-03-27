@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.10.2.
+Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.14.
 
 ## Core Value
 
@@ -52,6 +52,9 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ `void` accepted in error unions (`Error | void`) — v0.13 Phase 17
 - ✓ `const Alias: type = T` type alias syntax — v0.13 Phase 18
 - ✓ Tamga build verification — 9 compiler bugs fixed (null union, elif, enumFromInt, zero-field struct, bridge borrow, shared cImport, #csource) — v0.14 Phase 20
+- ✓ Bridge .zig files as named Zig modules (createModule/addImport) — v0.14 Phase 19
+- ✓ Flexible allocators — .new(alloc) with 3 modes (default SMP, inline, external) — v0.14 Phase 21
+- ✓ String interpolation uses SMP allocator — v0.14 Phase 21
 
 ### Active
 
@@ -67,11 +70,12 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 
 ## Current State
 
-**Version:** v0.10.5
+**Version:** v0.14
 **Tests:** 253 across 11 stages
-**Milestones shipped:** v0.10, v0.11, v0.12, v0.13
+**Codebase:** 32,675 LOC Zig
+**Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14
 
-Phase 21 complete — Flexible allocators: collections accept optional allocator via `.new(alloc)`, three usage modes (default SMP, inline, external variable), default changed from page_allocator to SMP. Bridge `.allocator()` methods declared. 3 compiler fixes shipped (scoped type builder, qualified name resolver, transitive bridge wiring).
+v0.14 shipped: Named Zig modules for bridge files, 9 Tamga compiler bugs fixed, flexible allocator system with 3 modes and SMP default. Tamga framework builds end-to-end with zero workarounds. 21 phases, 27 plans completed across 5 milestones.
 
 **Previous:** v0.13 Tamga Compatibility — shipped 2026-03-26
 
@@ -97,6 +101,9 @@ Phase 21 complete — Flexible allocators: collections accept optional allocator
 | Transparent (structural) type aliases | Speed == i32, not a distinct nominal type | ✓ v0.13 Phase 18 — simple, no special type comparisons needed |
 | Allocator via .new(alloc), not generic param | Keeps generics pure (types only), allocator is runtime struct field | ✓ v0.14 Phase 21 — clean, Zig-idiomatic |
 | SMP as default allocator, not page_allocator | SMP (GeneralPurposeAllocator) optimized for general use | ✓ v0.14 Phase 21 — correct default |
+| Named bridge modules via build system | createModule/addImport eliminates file-path imports and duplicate module errors | ✓ v0.14 Phase 19 — cross-bridge imports work |
+| Shared cImport wrapper modules | Derive module name from header stem + _c suffix | ✓ v0.14 Phase 20 — predictable, no extra metadata |
+| struct_methods qualified keys | 'StructName.method' keys avoid cross-bridge method name collisions | ✓ v0.14 Phase 20 — clean collision avoidance |
 
 ## Evolution
 
@@ -116,4 +123,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 after Phase 21 (Flexible Allocators)*
+*Last updated: 2026-03-27 after v0.14 milestone*
