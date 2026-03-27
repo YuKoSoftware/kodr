@@ -228,6 +228,7 @@ statement
         / const_decl
         / compt_decl
         / return_stmt
+        / throw_stmt
         / if_stmt
         / while_stmt
         / for_stmt
@@ -239,6 +240,9 @@ statement
 
 return_stmt
     <- 'return' (!NL !'}' !EOF expr)? TERM
+
+throw_stmt
+    <- 'throw' IDENTIFIER TERM
 
 if_stmt
     <- 'if' '(' expr ')' block elif_chain?
@@ -582,7 +586,7 @@ _               <- ([ \t\n] / '//' (!'\n' .)* '\n')*
 # ============================================================
 # KEYWORDS (reserved — cannot be used as identifiers)
 # ============================================================
-# func var const if else elif for while return import include
+# func var const if else elif for while return throw import include
 # pub match struct enum bitfield defer thread null void compt
 # any module test and or not main as break continue true false
 # bridge is cast copy move swap assert size align typename

@@ -149,6 +149,7 @@ fn buildNode(ctx: *BuildContext, cap: *const CaptureNode) anyerror!*Node {
     if (std.mem.eql(u8, rule, "match_arm")) return buildMatchArm(ctx, cap);
     if (std.mem.eql(u8, rule, "break_stmt")) return ctx.newNode(.{ .break_stmt = {} });
     if (std.mem.eql(u8, rule, "continue_stmt")) return ctx.newNode(.{ .continue_stmt = {} });
+    if (std.mem.eql(u8, rule, "throw_stmt")) return buildThrowStmt(ctx, cap);
     if (std.mem.eql(u8, rule, "param")) return buildParam(ctx, cap);
     if (std.mem.eql(u8, rule, "struct_decl")) return buildStructDecl(ctx, cap);
     if (std.mem.eql(u8, rule, "enum_decl")) return buildEnumDecl(ctx, cap);
@@ -933,6 +934,16 @@ fn buildReturn(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
         value = try buildNode(ctx, e);
     }
     return ctx.newNode(.{ .return_stmt = .{ .value = value } });
+}
+
+fn buildThrowStmt(ctx: *BuildContext, cap: *const CaptureNode) anyerror!*Node {
+    var i = cap.start_pos;
+    while (i < cap.end_pos and i < ctx.tokens.len) : (i += 1) {
+        if (ctx.tokens[i].kind == .identifier) {
+            return ctx.newNodeAt(.{ .throw_stmt = .{ .variable = ctx.tokens[i].text } }, i);
+        }
+    }
+    return error.InvalidCapture;
 }
 
 fn buildIf(ctx: *BuildContext, cap: *const CaptureNode) !*Node {

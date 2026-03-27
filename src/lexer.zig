@@ -60,6 +60,7 @@ pub const TokenKind = enum {
     kw_typename,
     kw_typeid,
     kw_typeof,
+    kw_throw,
     kw_type,
 
     // Punctuation
@@ -165,6 +166,7 @@ const KEYWORDS = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "typename", .kw_typename },
     .{ "typeid",   .kw_typeid },
     .{ "typeOf",   .kw_typeof },
+    .{ "throw",    .kw_throw },
     .{ "type",     .kw_type },
 });
 
