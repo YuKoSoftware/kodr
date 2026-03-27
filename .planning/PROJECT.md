@@ -60,7 +60,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 
 - [x] `throw` statement for error propagation (propagate + type narrowing) — v0.15 Phase 22
 - [x] Pattern guards in match (`(x if x > 0)` parenthesized guard syntax) — v0.15 Phase 23
-- [ ] `#cimport` unified C import directive (replaces #linkC, #cInclude, #csource, #linkCpp)
+- [x] `#cimport` unified C import directive (`#cimport = { name: "...", include: "..." }`) — v0.15 Phase 24
 
 ## Current Milestone: v0.15 Language Ergonomics
 
