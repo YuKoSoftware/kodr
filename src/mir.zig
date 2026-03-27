@@ -350,6 +350,10 @@ pub const MirAnnotator = struct {
                 try self.annotateNode(m.value);
                 for (m.arms) |arm| {
                     if (arm.* == .match_arm) {
+                        try self.annotateNode(arm.match_arm.pattern);
+                        if (arm.match_arm.guard) |g| {
+                            try self.annotateNode(g);
+                        }
                         try self.annotateNode(arm.match_arm.body);
                     }
                 }
@@ -887,6 +891,14 @@ pub const MirNode = struct {
     pub fn pattern(self: *const MirNode) *MirNode {
         return self.children[0];
     }
+
+    /// Guard expression for match_arm.
+    /// Returns children[1] when children.len == 3 (layout: [pattern, guard, body]),
+    /// null when children.len == 2 (layout: [pattern, body]).
+    pub fn guard(self: *const MirNode) ?*MirNode {
+        if (self.children.len == 3) return self.children[1];
+        return null;
+    }
 };
 
 /// Disambiguates the 6 literal types collapsed into MirKind.literal.
@@ -1121,6 +1133,9 @@ pub const MirLowerer = struct {
             .match_arm => |m| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
                 try children.append(self.allocator, try self.lowerNode(m.pattern));
+                if (m.guard) |g| {
+                    try children.append(self.allocator, try self.lowerNode(g));
+                }
                 try children.append(self.allocator, try self.lowerNode(m.body));
                 mir_node.children = try children.toOwnedSlice(self.allocator);
             },

@@ -272,7 +272,12 @@ match_arm
 
 match_pattern
     <- 'else'
-     / expr                                     # includes range_expr (1..10)
+     / parenthesized_pattern
+     / expr                                     # bare literal, identifier, enum variant
+
+parenthesized_pattern
+    <- '(' _ IDENTIFIER _ 'if' _ expr _ ')'    # guarded binding: (x if x > 0)
+     / '(' _ expr _ ')'                         # parenthesized value or range: (1..10)
 
 break_stmt
     <- 'break' TERM

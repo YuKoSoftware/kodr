@@ -1534,7 +1534,7 @@ test "resolver - match exhaustiveness with many arms" {
         const body = try a.create(parser.Node);
         body.* = .{ .int_literal = "0" };
         const arm = try a.create(parser.Node);
-        arm.* = .{ .match_arm = .{ .pattern = pat, .body = body } };
+        arm.* = .{ .match_arm = .{ .pattern = pat, .guard = null, .body = body } };
         arms[i] = arm;
     }
 

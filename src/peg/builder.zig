@@ -1040,10 +1040,31 @@ fn buildMatch(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     return ctx.newNode(.{ .match_stmt = .{ .value = value, .arms = arms } });
 }
 
-fn buildMatchArm(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    const pattern = if (cap.findChild("match_pattern")) |mp| try buildNode(ctx, mp) else return error.NoPattern;
+fn buildMatchArm(ctx: *BuildContext, cap: *const CaptureNode) anyerror!*Node {
+    const mp_cap = cap.findChild("match_pattern") orelse return error.NoPattern;
     const body = if (cap.findChild("block")) |b| try buildNode(ctx, b) else return error.NoBlock;
-    return ctx.newNode(.{ .match_arm = .{ .pattern = pattern, .body = body } });
+
+    // Check if match_pattern contains a parenthesized_pattern
+    if (mp_cap.findChild("parenthesized_pattern")) |pp| {
+        // Check if this is a guarded pattern: (IDENTIFIER if expr)
+        // The guarded form has an IDENTIFIER child and 'if' separating it from the guard expr
+        const ident_cap = pp.findChild("IDENTIFIER");
+        if (ident_cap != null) {
+            // Guarded pattern: (x if guard_expr) — pattern is the bound identifier
+            const pattern = try buildNode(ctx, ident_cap.?);
+            // The expr child of the parenthesized_pattern is the guard expression
+            const guard = if (pp.findChild("expr")) |e| try buildNode(ctx, e) else return error.NoGuardExpr;
+            return ctx.newNode(.{ .match_arm = .{ .pattern = pattern, .guard = guard, .body = body } });
+        }
+        // Non-guarded parenthesized pattern: (1..10) or (42)
+        // Build the inner expr as the pattern
+        const pattern = if (pp.findChild("expr")) |e| try buildNode(ctx, e) else return error.NoPattern;
+        return ctx.newNode(.{ .match_arm = .{ .pattern = pattern, .guard = null, .body = body } });
+    }
+
+    // Plain pattern (bare literal, identifier, or 'else')
+    const pattern = try buildNode(ctx, mp_cap);
+    return ctx.newNode(.{ .match_arm = .{ .pattern = pattern, .guard = null, .body = body } });
 }
 
 fn buildExprOrAssignment(ctx: *BuildContext, cap: *const CaptureNode) !*Node {

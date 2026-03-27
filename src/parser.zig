@@ -288,6 +288,7 @@ pub const MatchStmt = struct {
 
 pub const MatchArm = struct {
     pattern: *Node,
+    guard: ?*Node,
     body: *Node,
 };
 

@@ -937,7 +937,7 @@ test "ownership - match arm merging is conservative" {
     const pat1 = try a.create(parser.Node);
     pat1.* = .{ .int_literal = "1" };
     const arm1 = try a.create(parser.Node);
-    arm1.* = .{ .match_arm = .{ .pattern = pat1, .body = body1 } };
+    arm1.* = .{ .match_arm = .{ .pattern = pat1, .guard = null, .body = body1 } };
 
     // Arm 2: empty block (doesn't move data)
     const body2 = try a.create(parser.Node);
@@ -945,7 +945,7 @@ test "ownership - match arm merging is conservative" {
     const pat2 = try a.create(parser.Node);
     pat2.* = .{ .int_literal = "2" };
     const arm2 = try a.create(parser.Node);
-    arm2.* = .{ .match_arm = .{ .pattern = pat2, .body = body2 } };
+    arm2.* = .{ .match_arm = .{ .pattern = pat2, .guard = null, .body = body2 } };
 
     const arms = try a.alloc(*parser.Node, 2);
     arms[0] = arm1;
