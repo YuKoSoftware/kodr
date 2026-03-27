@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.15
 milestone_name: Language Ergonomics
-status: executing
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-03-27T14:35:51.343Z"
+status: verifying
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-03-27T14:44:13.133Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 
 Phase: 22 (throw-statement) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-03-27
 
 Progress: [░░░░░░░░░░] 0%
@@ -55,6 +55,8 @@ Recent decisions affecting current work:
 - `#cimport` replaces 4 directives — one per C library, block syntax for overrides
 - [Phase 22-throw-statement]: throw operates on named variables only (IDENTIFIER), not expressions — simpler grammar and clear semantics
 - [Phase 22-throw-statement]: error_narrowed and null_narrowed reset per-function — prevents cross-function narrowing leaks
+- [Phase 22-throw-statement]: Use const (not var) for result in divide_with_throw — throw does not reassign the variable
+- [Phase 22-throw-statement]: token_map.zig LITERAL_MAP: every new keyword token must have a string-to-TokenKind entry
 
 ### Pending Todos
 
@@ -67,5 +69,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-27
-Stopped at: Completed 22-01-PLAN.md
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None

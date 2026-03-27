@@ -105,7 +105,7 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
 
 **Milestone Goal:** Reduce boilerplate and clean up C interop directives — make Orhon code more concise and the bridge system simpler.
 
-- [ ] **Phase 22: `throw` Statement** - Error propagation with automatic type narrowing
+- [x] **Phase 22: `throw` Statement** - Error propagation with automatic type narrowing (completed 2026-03-27)
 - [ ] **Phase 23: Pattern Guards** - Conditional match arms with `case x if expr` syntax
 - [ ] **Phase 24: `#cimport` Unification** - One directive per C library replaces four separate ones
 
@@ -123,7 +123,7 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
 **Plans**: 2 plans
 Plans:
 - [x] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
-- [ ] 22-02-PLAN.md -- Tests, example module, and docs for throw
+- [x] 22-02-PLAN.md -- Tests, example module, and docs for throw
 
 ### Phase 23: Pattern Guards
 **Goal**: Match arms accept an optional `if` guard expression so arms only fire when both the pattern and the guard are true
@@ -135,7 +135,7 @@ Plans:
   3. The example module demonstrates pattern guards and compiles successfully
 **Plans**: 2 plans
 Plans:
-- [ ] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
+- [x] 22-01-PLAN.md -- Implement throw across compiler pipeline (lexer, PEG, builder, propagation, MIR, codegen)
 - [ ] 22-02-PLAN.md -- Tests, example module, and docs for throw
 
 ### Phase 24: `#cimport` Unification
@@ -162,6 +162,6 @@ Plans:
 | 12-14 | v0.12 | All | Complete | 2026-03-25 |
 | 15-18 | v0.13 | 5/5 | Complete | 2026-03-26 |
 | 19-21 | v0.14 | 6/6 | Complete | 2026-03-27 |
-| 22. `throw` Statement | v0.15 | 1/2 | In Progress|  |
+| 22. `throw` Statement | v0.15 | 2/2 | Complete   | 2026-03-27 |
 | 23. Pattern Guards | v0.15 | 0/? | Not started | - |
 | 24. `#cimport` Unification | v0.15 | 0/? | Not started | - |
