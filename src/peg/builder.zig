@@ -399,8 +399,8 @@ fn buildModuleDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 
 fn buildImport(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     // import_decl <- 'import' import_path ('as' IDENTIFIER)? NL
-    //             / 'include' import_path NL
-    const is_include = ctx.tokens[cap.start_pos].kind == .kw_include;
+    //             / 'use' import_path NL
+    const is_include = ctx.tokens[cap.start_pos].kind == .kw_use;
     var path: []const u8 = "";
     var scope: ?[]const u8 = null;
     var alias: ?[]const u8 = null;
@@ -444,46 +444,53 @@ fn buildMetadata(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 
     // Handle #cimport = { name: "lib", include: "...", source?: "..." }
     if (std.mem.eql(u8, field, "cimport")) {
-        // Capture tree structure (from capture.zig evalRuleRef):
-        //   children[0] = CaptureNode(rule="cimport_block") — block wrapper
-        //     children[N] = CaptureNode(rule="cimport_entry") — each entry
-        //       children[0] = CaptureNode(rule="IDENTIFIER") — key
-        //       children[1] = CaptureNode(rule="expr") — value
-        if (cap.children.len < 1) {
-            // Grammar requires cimport_block — this should not happen in practice
+        // Capture tree structure:
+        //   metadata_cap.children[0]            = metadata_body_cap
+        //   metadata_body_cap.children[0]        = cimport_block_cap
+        //   cimport_block_cap.children           = [_, cimport_entry, _, cimport_entry, ...]
+        //   cimport_entry.children               = [cimport_key_cap, _after_colon, expr_cap]
+        //   cimport_key_cap.start_pos            = token position of key ("name", "include", "source")
+        //   expr_cap                             = the string literal value
+
+        // Navigate: metadata_cap -> metadata_body_cap -> cimport_block_cap
+        const metadata_body_cap = if (cap.children.len >= 1) &cap.children[0] else {
             const dummy = try ctx.newNode(.{ .identifier = field });
             return ctx.newNode(.{ .metadata = .{ .field = field, .value = dummy } });
-        }
+        };
+        const block_cap = if (metadata_body_cap.children.len >= 1) &metadata_body_cap.children[0] else {
+            const dummy = try ctx.newNode(.{ .identifier = field });
+            return ctx.newNode(.{ .metadata = .{ .field = field, .value = dummy } });
+        };
 
         var lib_name_val: ?[]const u8 = null;
         var include_val: ?[]const u8 = null;
         var source_val: ?[]const u8 = null;
 
-        // Navigate into cimport_block wrapper to get cimport_entry children
-        const block_cap = &cap.children[0];
-        for (block_cap.children) |*entry_cap| {
-            // Each cimport_entry has children: [IDENTIFIER, expr]
-            if (entry_cap.children.len >= 2) {
-                const key = tokenText(ctx, entry_cap.children[0].start_pos);
-                const val_node = try buildNode(ctx, &entry_cap.children[1]);
-                if (val_node.* == .string_literal) {
-                    const raw = val_node.string_literal;
-                    const unquoted = if (raw.len >= 2 and raw[0] == '"')
-                        raw[1 .. raw.len - 1]
-                    else
-                        raw;
-                    if (std.mem.eql(u8, key, "name")) {
-                        lib_name_val = raw;
-                    } else if (std.mem.eql(u8, key, "include")) {
-                        include_val = unquoted;
-                    } else if (std.mem.eql(u8, key, "source")) {
-                        source_val = unquoted;
-                    } else {
-                        // D-05: Unknown key — compile error
-                        const msg = try std.fmt.allocPrint(ctx.alloc(),
-                            "unknown #cimport key '{s}' — only 'name', 'include', and 'source' are allowed", .{key});
-                        ctx.reportError(msg, entry_cap.children[0].start_pos);
-                    }
+        // Iterate cimport_block children and process cimport_entry nodes
+        for (block_cap.children) |*child| {
+            const child_rule = child.rule orelse continue;
+            if (!std.mem.eql(u8, child_rule, "cimport_entry")) continue;
+            // cimport_entry children: [cimport_key_cap, _after_colon, expr_cap]
+            if (child.children.len < 3) continue;
+            const key = tokenText(ctx, child.children[0].start_pos);
+            const val_node = try buildNode(ctx, &child.children[2]);
+            if (val_node.* == .string_literal) {
+                const raw = val_node.string_literal;
+                const unquoted = if (raw.len >= 2 and raw[0] == '"')
+                    raw[1 .. raw.len - 1]
+                else
+                    raw;
+                if (std.mem.eql(u8, key, "name")) {
+                    lib_name_val = raw;
+                } else if (std.mem.eql(u8, key, "include")) {
+                    include_val = unquoted;
+                } else if (std.mem.eql(u8, key, "source")) {
+                    source_val = unquoted;
+                } else {
+                    // D-05: Unknown key — compile error
+                    const msg = try std.fmt.allocPrint(ctx.alloc(),
+                        "unknown #cimport key '{s}' — only 'name', 'include', and 'source' are allowed", .{key});
+                    ctx.reportError(msg, child.children[0].start_pos);
                 }
             }
         }
