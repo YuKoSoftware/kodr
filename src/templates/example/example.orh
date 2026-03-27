@@ -49,6 +49,19 @@ compt func double(n: i32) i32 {
 // The compiler pairs the .orh file with a same-name .zig sidecar,
 // re-exporting the Zig implementation through the Orhon type system.
 
+// --- C Library Import (#cimport) -------------------------------------------
+
+// bridge modules that call C code use #cimport to declare the C library dependency.
+// The block must include an include: key for the C header. source: is optional.
+//
+//   #cimport "SDL3" { include: "SDL3/SDL.h" }
+//   #cimport "vma" { include: "vk_mem_alloc.h", source: "vma_impl.cpp" }
+//
+// Each C library can only be declared once across the entire project.
+// Other modules access C types by importing the owning bridge module.
+// When source: is present, the library is compiled from source (no system link).
+// C++ linking is auto-detected from .cpp/.cc/.cxx file extensions.
+
 // ─── Defer ───────────────────────────────────────────────────────────────────
 
 // defer executes a statement when the current scope exits.

@@ -184,13 +184,15 @@ pub fn find(key: []const u8) ?[]const u8 {
 C interop goes through `.zig` bridge files. The `.orh` file exposes a clean Orhon API,
 the `.zig` file handles all C details internally.
 
-Use `#linkC` in the anchor file to declare C library dependencies. The compiler
-generates the correct `linkSystemLibrary` + `linkLibC` calls in the build system.
+Use `#cimport` in the anchor file to declare C library dependencies. The block must
+always include an `include:` key specifying the C header. The compiler generates the
+correct `linkSystemLibrary` + `linkLibC` calls and a shared `@cImport` wrapper module
+in the build system.
 
 ```
 // sdl.orh — clean Orhon interface
 module sdl
-#linkC "SDL3"
+#cimport "SDL3" { include: "SDL3/SDL.h" }
 
 pub bridge func init() void
 pub bridge func quit() void
@@ -198,7 +200,8 @@ pub bridge func quit() void
 
 ```zig
 // sdl.zig — Zig handles all C interop
-const c = @cImport(@cInclude("SDL3/SDL.h"));
+// The compiler generates a shared @cImport module; import it:
+const c = @import("SDL_c").c;
 
 pub fn init() void {
     _ = c.SDL_Init(c.SDL_INIT_VIDEO);
@@ -209,7 +212,37 @@ pub fn quit() void {
 }
 ```
 
-Multiple `#linkC` directives are allowed if a module wraps more than one C library.
+### Block Syntax
+
+The `#cimport` block uses colon-suffix keys with comma separators:
+
+- `include:` — C header path (required)
+- `source:` — C/C++ source file to compile (optional)
+
+Unknown keys produce a compile error.
+
+```
+// Source-only library (no system lib linked)
+#cimport "vma" { include: "vk_mem_alloc.h", source: "../../src/vma_impl.cpp" }
+```
+
+When `source:` is present, the compiler skips `linkSystemLibrary` — the library name
+is used only for project-wide identity and deduplication. C++ linking is auto-detected
+from `.cpp`, `.cc`, or `.cxx` file extensions.
+
+### One Library Per Project
+
+Each C library can only be declared with `#cimport` once across the entire project.
+Other modules access the library's C types by importing the owning bridge module:
+
+```
+// tamga_vk3d.orh — gets SDL types via import, not re-declaring #cimport
+module tamga_vk3d
+import tamga_sdl3
+#cimport "vulkan" { include: "vulkan/vulkan.h" }
+```
+
+Declaring `#cimport "SDL3"` in both `tamga_sdl3` and `tamga_vk3d` is a compile error.
 
 ---
 
