@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.15
 milestone_name: Language Ergonomics
-status: executing
-stopped_at: Completed 24-01-PLAN.md
-last_updated: "2026-03-27T19:01:11.628Z"
+status: verifying
+stopped_at: "Completed 24-02-PLAN.md — awaiting Task 3 checkpoint:human-verify"
+last_updated: "2026-03-27T19:07:25.738Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 
 Phase: 24 (cimport-unification) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-03-27
 
 Progress: [░░░░░░░░░░] 0%
@@ -64,6 +64,8 @@ Recent decisions affecting current work:
 - [Phase 24-cimport-unification]: Hard remove old directives: #linkC/#cInclude/#csource/#linkCpp are parse errors immediately (D-01)
 - [Phase 24-cimport-unification]: Mandatory block: include: key always required, bare #cimport 'lib' form is invalid (D-06)
 - [Phase 24-cimport-unification]: One per project: duplicate #cimport for same lib name is compile error with both module names (D-08)
+- [Phase 24-cimport-unification]: VK3D SDL removal: #linkC 'SDL3' dropped; SDL types flow transitively via import tamga_sdl3 (D-09)
+- [Phase 24-cimport-unification]: VMA source-only: 'vma' name for identity; source: skips linkSystemLibrary; .cpp triggers C++ linking
 
 ### Pending Todos
 
@@ -76,5 +78,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-27
-Stopped at: Completed 24-01-PLAN.md
+Stopped at: Completed 24-02-PLAN.md — awaiting Task 3 checkpoint:human-verify
 Resume file: None

@@ -107,7 +107,7 @@ See: [milestones/v0.14-ROADMAP.md](milestones/v0.14-ROADMAP.md)
 
 - [x] **Phase 22: `throw` Statement** - Error propagation with automatic type narrowing (completed 2026-03-27)
 - [x] **Phase 23: Pattern Guards** - Conditional match arms with `case x if expr` syntax (completed 2026-03-27)
-- [ ] **Phase 24: `#cimport` Unification** - One directive per C library replaces four separate ones
+- [x] **Phase 24: `#cimport` Unification** - One directive per C library replaces four separate ones (completed 2026-03-27)
 
 ## Phase Details
 
@@ -151,7 +151,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 24-01-PLAN.md — Implement #cimport across compiler pipeline (grammar, parser, builder, declarations, main.zig, zig_runner, tests)
-- [ ] 24-02-PLAN.md — Tamga migration, documentation update, and human verification
+- [x] 24-02-PLAN.md — Tamga migration, documentation update, and human verification
 
 ## Progress
 
@@ -164,4 +164,4 @@ Plans:
 | 19-21 | v0.14 | 6/6 | Complete | 2026-03-27 |
 | 22. `throw` Statement | v0.15 | 2/2 | Complete    | 2026-03-27 |
 | 23. Pattern Guards | v0.15 | 2/2 | Complete    | 2026-03-27 |
-| 24. `#cimport` Unification | v0.15 | 1/2 | In Progress|  |
+| 24. `#cimport` Unification | v0.15 | 2/2 | Complete   | 2026-03-27 |
