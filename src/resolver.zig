@@ -579,12 +579,20 @@ pub const TypeResolver = struct {
                         // Static or instance method on a bridge struct.
                         // obj_id may be the struct type name (static: Renderer.create())
                         // or a variable whose type is a struct (instance: r.draw(m)).
-                        const struct_name: []const u8 = if (self.decls.structs.contains(obj_id))
-                            obj_id
-                        else if (scope.lookup(obj_id)) |var_type|
-                            if (var_type == .named) var_type.named else ""
-                        else
-                            "";
+                        const struct_name: []const u8 = blk: {
+                            if (self.decls.structs.contains(obj_id)) break :blk obj_id;
+                            if (scope.lookup(obj_id)) |var_type| {
+                                // Unwrap error_union and null_union to get the underlying named type
+                                if (var_type == .named) break :blk var_type.named;
+                                if (var_type == .error_union) {
+                                    if (var_type.error_union.* == .named) break :blk var_type.error_union.named;
+                                }
+                                if (var_type == .null_union) {
+                                    if (var_type.null_union.* == .named) break :blk var_type.null_union.named;
+                                }
+                            }
+                            break :blk "";
+                        };
                         if (struct_name.len > 0) {
                             // Build "StructName.method" key and look in struct_methods
                             const key = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ struct_name, fe.field }) catch "";
@@ -596,6 +604,26 @@ pub const TypeResolver = struct {
                                     if (ad.get(obj_id)) |mod_decls| {
                                         if (mod_decls.struct_methods.get(key)) |sig| return sig.return_type;
                                     }
+                                    var it = ad.iterator();
+                                    while (it.next()) |entry| {
+                                        if (entry.value_ptr.*.struct_methods.get(key)) |sig| return sig.return_type;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Cross-module static method: module.Type.method(args) — e.g. tamga_vk3d.Renderer.create()
+                    // callee is field_expr{object: field_expr{object: module_id, field: TypeName}, field: method}
+                    if (fe.object.* == .field_expr) {
+                        const inner = fe.object.field_expr;
+                        if (inner.object.* == .identifier) {
+                            const type_name = inner.field;
+                            const method_name = fe.field;
+                            const key = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ type_name, method_name }) catch "";
+                            defer if (key.len > 0) self.allocator.free(key);
+                            if (key.len > 0) {
+                                if (self.decls.struct_methods.get(key)) |sig| return sig.return_type;
+                                if (self.all_decls) |ad| {
                                     var it = ad.iterator();
                                     while (it.next()) |entry| {
                                         if (entry.value_ptr.*.struct_methods.get(key)) |sig| return sig.return_type;
@@ -622,6 +650,12 @@ pub const TypeResolver = struct {
 
             .field_expr => |f| {
                 const obj_type = try self.resolveExpr(f.object, scope);
+                // .value on (Error | T) or (null | T) unwraps to the inner type.
+                // This lets the resolver track variables assigned via `var x = result.value`.
+                if (std.mem.eql(u8, f.field, "value")) {
+                    if (obj_type == .error_union) return obj_type.error_union.*;
+                    if (obj_type == .null_union) return obj_type.null_union.*;
+                }
                 const obj_name = obj_type.name();
                 if (self.decls.structs.get(obj_name)) |sig| {
                     for (sig.fields) |field| {
