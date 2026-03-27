@@ -680,5 +680,19 @@ func main() void {
         console.println("FAIL empty_struct_construct")
     }
 
+    // Test: match guards — (x if cond) arms
+    if(tester.match_guard(5) == 1 and tester.match_guard(0 - 3) == 0 - 1 and tester.match_guard(0) == 0) {
+        console.println("PASS match_guard")
+    } else {
+        console.println("FAIL match_guard")
+    }
+
+    // Test: match guard with enclosing scope variable
+    if(tester.match_guard_scope(10, 5) == 1 and tester.match_guard_scope(3, 5) == 0 and tester.match_guard_scope(5, 5) == 0) {
+        console.println("PASS match_guard_scope")
+    } else {
+        console.println("FAIL match_guard_scope")
+    }
+
     console.println("TESTER:DONE")
 }

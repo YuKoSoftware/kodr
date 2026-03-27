@@ -456,6 +456,7 @@ run_fixture neg_scope fail_scope.orh "module-level.*var.*not allowed\|already de
 
 # match errors
 run_fixture neg_match fail_match.orh "not a member" "fixture: catches invalid match arm"
+run_fixture neg_match_guard fail_match_guard.orh "match with guards requires" "fixture: catches guarded match without else"
 
 # old ptr syntax rejected
 cd "$TESTDIR"

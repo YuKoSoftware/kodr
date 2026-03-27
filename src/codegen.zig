@@ -1427,6 +1427,17 @@ pub const CodeGen = struct {
         try self.emit("}");
     }
 
+    /// Emit the body statements of a block node, already inside an outer `{`.
+    /// Caller must manage indentation and surrounding braces.
+    fn generateBodyStatements(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        for (m.children) |child| {
+            try self.flushPreStmts();
+            try self.emitIndent();
+            try self.generateStatementMir(child);
+            try self.emit("\n");
+        }
+    }
+
     /// MIR-path statement dispatch — switches on MirKind, reads type info from MirNode.
     /// All handlers use MirNode tree directly — no AST fallthrough.
     fn generateStatementMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
@@ -3002,6 +3013,134 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Returns true if any MirNode in the subtree is an identifier with the given name.
+    fn mirContainsIdentifier(m: *mir.MirNode, name: []const u8) bool {
+        if (m.kind == .identifier and std.mem.eql(u8, m.name orelse "", name)) return true;
+        for (m.children) |child| {
+            if (mirContainsIdentifier(child, name)) return true;
+        }
+        return false;
+    }
+
+    /// Returns true if any arm in the match has a guard expression.
+    fn hasGuardedArm(arms: []*mir.MirNode) bool {
+        for (arms) |arm_mir| {
+            if (arm_mir.guard() != null) return true;
+        }
+        return false;
+    }
+
+    /// Guarded match — emits as a scoped if/else chain with a temp variable.
+    /// Used when any arm has a guard expression (Zig switch cannot express guards).
+    ///
+    /// For guarded binding `(x if x > 0)`, emits:
+    ///   if (_g0: { const x = _m; break :_g0 x > 0; }) { const x = _m; body }
+    ///
+    /// The labeled block lets the guard expression reference the bound variable while
+    /// still producing a bool for the outer if. The `else if` chain then correctly
+    /// short-circuits: only the first matching guard fires its body.
+    fn generateGuardedMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+        // Emit wrapper block with temp var: const _m = <match_value>;
+        try self.emitIndent();
+        try self.emit("{\n");
+        self.indent += 1;
+        try self.emitIndent();
+        try self.emit("const _m = ");
+        try self.generateExprMir(m.value());
+        try self.emit(";\n");
+
+        var first = true;
+        var else_arm: ?*mir.MirNode = null;
+        var guard_counter: usize = 0;
+
+        for (m.matchArms()) |arm_mir| {
+            const pat_m = arm_mir.pattern();
+            const pat_name = pat_m.name orelse "";
+
+            // Collect else arm — emit last
+            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
+                else_arm = arm_mir;
+                continue;
+            }
+
+            try self.emitIndent();
+            if (!first) {
+                try self.emit(" else ");
+            }
+
+            if (arm_mir.guard()) |guard_node| {
+                // Guarded binding: (x if guard_expr) => body
+                //
+                // Desugar to a labeled comptime block so the guard can reference the
+                // bound variable, while the outer if-else chain still works correctly.
+                //
+                // if (_g0: { const x = _m; break :_g0 x > 0; }) {
+                //     const x = _m;
+                //     body
+                // }
+                //
+                // This is correct for chained else-if: only the first matching guard
+                // fires. The labeled block evaluates to bool, so Zig treats it as a
+                // normal boolean condition for the if expression.
+                try self.emitFmt("if (_g{d}: {{ const {s} = _m; break :_g{d} ", .{ guard_counter, pat_name, guard_counter });
+                try self.generateExprMir(guard_node);
+                try self.emit("; }) {\n");
+                self.indent += 1;
+                try self.emitIndent();
+                // Bind the guard variable so body statements can reference it.
+                // If the body doesn't reference the variable, suppress with _ = x to
+                // avoid "unused local constant" from Zig. If the body does reference it,
+                // suppress the "pointless discard" by omitting _ = x.
+                const body_uses_var = mirContainsIdentifier(arm_mir.body(), pat_name);
+                if (body_uses_var) {
+                    try self.emitFmt("const {s} = _m;\n", .{pat_name});
+                } else {
+                    try self.emitFmt("const {s} = _m; _ = {s};\n", .{ pat_name, pat_name });
+                }
+                try self.generateBodyStatements(arm_mir.body());
+                self.indent -= 1;
+                try self.emitIndent();
+                try self.emit("}");
+                guard_counter += 1;
+            } else if (pat_m.kind == .binary and std.mem.eql(u8, pat_m.op orelse "", "..")) {
+                // Range pattern: (1..10)
+                try self.emit("if (_m >= ");
+                try self.generateExprMir(pat_m.lhs());
+                try self.emit(" and _m <= ");
+                try self.generateExprMir(pat_m.rhs());
+                try self.emit(") ");
+                try self.generateBlockMir(arm_mir.body());
+            } else if (pat_m.literal_kind == .string) {
+                // String pattern
+                try self.emit("if (std.mem.eql(u8, _m, ");
+                try self.generateExprMir(pat_m);
+                try self.emit(")) ");
+                try self.generateBlockMir(arm_mir.body());
+            } else {
+                // Plain value: integer, enum variant, etc.
+                try self.emit("if (_m == ");
+                try self.generateExprMir(pat_m);
+                try self.emit(") ");
+                try self.generateBlockMir(arm_mir.body());
+            }
+
+            first = false;
+        }
+
+        // Emit else arm last
+        if (else_arm) |ea| {
+            if (!first) {
+                try self.emit(" else ");
+            }
+            try self.generateBlockMir(ea.body());
+        }
+
+        try self.emit("\n");
+        self.indent -= 1;
+        try self.emitIndent();
+        try self.emit("}");
+    }
+
     /// MIR-path match codegen — dispatches to string, type, or regular switch.
     fn generateMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
         // String match — Zig has no string switch, desugar to if/else chain
@@ -3031,7 +3170,12 @@ pub const CodeGen = struct {
             break :blk false;
         };
 
-        if (is_string_match) {
+        // Check for guarded arms — must use if/else chain (Zig switch cannot express guards)
+        const has_guard = hasGuardedArm(m.matchArms());
+
+        if (has_guard) {
+            try self.generateGuardedMatchMir(m);
+        } else if (is_string_match) {
             try self.generateStringMatchMir(m);
         } else if (is_type_match) {
             try self.generateTypeMatchMir(m, is_null_union);

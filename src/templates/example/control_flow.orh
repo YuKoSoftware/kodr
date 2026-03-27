@@ -91,8 +91,8 @@ func with_cleanup() i32 {
 
 func match_range(n: i32) i32 {
     match(n) {
-        1..3 => { return 1 }
-        4..6 => { return 2 }
+        (1..3) => { return 1 }
+        (4..6) => { return 2 }
         else => { return 0 }
     }
 }
@@ -193,4 +193,22 @@ test "match string" {
 
 test "indexed sum" {
     assert(indexed_sum() == 63)
+}
+
+// ─── Match Guards ────────────────────────────────────────────────────────────
+
+// match arms can have guards — the arm fires only when the guard is true
+
+func match_guard_example(n: i32) i32 {
+    match(n) {
+        (x if x > 0)  => { return x }
+        (x if x < 0)  => { return 0 - x }
+        else           => { return 0 }
+    }
+}
+
+test "match guard" {
+    assert(match_guard_example(5) == 5)
+    assert(match_guard_example(0 - 3) == 3)
+    assert(match_guard_example(0) == 0)
 }

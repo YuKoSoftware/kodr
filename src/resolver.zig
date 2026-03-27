@@ -424,9 +424,11 @@ pub const TypeResolver = struct {
             .match_stmt => |m| {
                 const match_type = try self.resolveExpr(m.value, scope);
                 var has_else = false;
+                var has_guard = false;
                 for (m.arms) |arm| {
                     if (arm.* == .match_arm) {
-                        const pat = arm.match_arm.pattern;
+                        const ma = arm.match_arm;
+                        const pat = ma.pattern;
                         // Check for else arm
                         if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "else")) {
                             has_else = true;
@@ -436,8 +438,27 @@ pub const TypeResolver = struct {
                             try self.validateMatchArm(pat.identifier, match_type, arm);
                         }
                         _ = try self.resolveExpr(pat, scope);
-                        try self.resolveNode(arm.match_arm.body, scope);
+                        // Resolve guard expression in a child scope that includes the bound
+                        // variable. The bound variable (e.g. 'x' in '(x if x > 0)') has
+                        // the same type as the match value. Without this child scope,
+                        // resolving 'x > 0' would fail because 'x' is not in the enclosing scope.
+                        if (ma.guard) |g| {
+                            has_guard = true;
+                            var guard_scope = Scope.init(self.allocator, scope);
+                            defer guard_scope.deinit();
+                            if (pat.* == .identifier) {
+                                try guard_scope.define(pat.identifier, match_type);
+                            }
+                            _ = try self.resolveExpr(g, &guard_scope);
+                        }
+                        try self.resolveNode(ma.body, scope);
                     }
+                }
+                // Guards require else arm for exhaustiveness — guards don't guarantee coverage
+                if (has_guard and !has_else) {
+                    const msg = try std.fmt.allocPrint(self.allocator, "match with guards requires an 'else' arm", .{});
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                 }
                 // Check exhaustiveness for union matches
                 if (!has_else) {
