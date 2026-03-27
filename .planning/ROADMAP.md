@@ -164,4 +164,4 @@ Plans:
 | 19-21 | v0.14 | 6/6 | Complete | 2026-03-27 |
 | 22. `throw` Statement | v0.15 | 2/2 | Complete    | 2026-03-27 |
 | 23. Pattern Guards | v0.15 | 2/2 | Complete    | 2026-03-27 |
-| 24. `#cimport` Unification | v0.15 | 2/2 | Complete   | 2026-03-27 |
+| 24. `#cimport` Unification | v0.15 | 2/2 | Complete    | 2026-03-27 |
