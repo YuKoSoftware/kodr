@@ -58,7 +58,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 
 ### Active
 
-- [ ] `throw` statement for error propagation (propagate + type narrowing)
+- [x] `throw` statement for error propagation (propagate + type narrowing) — v0.15 Phase 22
 - [ ] Pattern guards in match (`case x if x > 0`)
 - [ ] `#cimport` unified C import directive (replaces #linkC, #cInclude, #csource, #linkCpp)
 
@@ -81,12 +81,11 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 
 ## Current State
 
-**Version:** v0.14
-**Tests:** 253 across 11 stages
-**Codebase:** 32,675 LOC Zig
+**Version:** v0.15 (in progress)
+**Tests:** 256 across 11 stages
 **Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14
 
-v0.14 shipped: Named Zig modules for bridge files, 9 Tamga compiler bugs fixed, flexible allocator system with 3 modes and SMP default. Tamga framework builds end-to-end with zero workarounds. 21 phases, 27 plans completed across 5 milestones.
+Phase 22 complete — `throw` statement: `throw x` propagates error from `(Error | T)` and narrows `x` to `T`. Full pipeline: lexer, PEG grammar, builder, propagation validation, MIR, codegen. 256 tests pass.
 
 **Previous:** v0.13 Tamga Compatibility — shipped 2026-03-26
 
@@ -134,4 +133,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 — v0.15 Language Ergonomics milestone started*
+*Last updated: 2026-03-27 after Phase 22 (throw statement)*
