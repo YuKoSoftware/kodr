@@ -171,17 +171,16 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 
 ---
 
-## Tamga — Companion Project (read-only)
+## Tamga — Companion Project
 
-Location: `/home/yunus/Projects/Orhon/tamga/`
+Location: `/home/yunus/Projects/orhon/tamga_framework/`
 
 A game/multimedia framework written in pure Orhon that doubles as a real-world
-stress test for the compiler. **Do not modify any files in this project.**
+stress test for the compiler.
 
 Its primary value to us: bugs discovered while building the framework are logged
-in `docs/bugs.txt` and language design feedback in `docs/ideas.txt`. Read these
-files to understand what compiler issues need fixing, then fix them here in the
-compiler codebase.
+in `docs/bugs.md` and language design feedback in `docs/ideas.md`. Read these
+files to understand what compiler issues need fixing.
 
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
