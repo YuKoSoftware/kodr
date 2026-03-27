@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: milestone
-status: Ready to execute
-stopped_at: "Completed 20-tamga-build-verification plan 02 (bugs 8, 9 fixed: shared cImport modules and #csource directive)"
-last_updated: "2026-03-27T07:56:41.072Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 20-tamga-build-verification plan 03 (all 9 Tamga workarounds removed, end-to-end build verified)
+last_updated: "2026-03-27T10:51:36.285Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -72,6 +72,7 @@ Recent decisions affecting current work:
 - [Phase 20-tamga-build-verification]: Use #cInclude metadata (separate from #linkC) to specify shared @cImport header — clean separation of library linking vs type import
 - [Phase 20-tamga-build-verification]: Derive shared cImport module name from header stem + _c suffix (e.g., vulkan/vulkan.h -> vulkan_c) — predictable, no extra metadata
 - [Phase 20-tamga-build-verification]: #linkCpp is a flag (no argument) for explicit C++ linking; .cpp/.cc extensions in #csource also auto-enable it
+- [Phase 20-tamga-build-verification]: Fix Bug 7 directly in tamga_vma.zig sidecar (pub export fn) — not via compiler-side string post-processing; sidecars must be correct Zig source
 
 ### Pending Todos
 
@@ -95,10 +96,11 @@ None yet.
 | Phase 21 P02 | 10 | 1 tasks | 2 files |
 | Phase 20-tamga-build-verification P01 | 180 | 3 tasks | 5 files |
 | Phase 20-tamga-build-verification P02 | 45 | 2 tasks | 3 files |
+| Phase 20-tamga-build-verification P03 | 30 | 2 tasks | 9 files |
 
 ## Session Continuity
 
 Last activity: 2026-03-27
-Last session: 2026-03-27T07:56:41.067Z
-Stopped at: Completed 20-tamga-build-verification plan 02 (bugs 8, 9 fixed: shared cImport modules and #csource directive)
+Last session: 2026-03-27T10:51:36.283Z
+Stopped at: Completed 20-tamga-build-verification plan 03 (all 9 Tamga workarounds removed, end-to-end build verified)
 Resume file: None
