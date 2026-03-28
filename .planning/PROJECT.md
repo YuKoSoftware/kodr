@@ -62,6 +62,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ Cross-module `is` tagged union check, Async(T) compile error, negative literal parsing — v0.16 Phase 26
 - ✓ Build system: sidecar pub-fixup loop, cimport include paths, linkSystemLibrary — v0.16 Phase 27
 - ✓ Cross-compilation target fix, -fast cache cleanup, Async(T) removal, TODO.md cleanup — v0.16 Phase 28
+- ✓ Codegen split — monolithic codegen.zig (4354 lines) into 5 focused files, all under 1200 lines — v0.17 Phase 29
 
 ### Active
 
@@ -84,7 +85,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 **Tests:** 262 across 11 stages
 **Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14, v0.15, v0.16
 
-v0.16 Bug Fixes complete — all 13 known bugs fixed. Zero workarounds remaining. 262 tests pass.
+v0.17 in progress — codegen split complete (Phase 29). Error quality and PEG error messages next. 262 tests pass.
 
 ### Out of Scope
 
@@ -126,6 +127,7 @@ v0.16 Bug Fixes complete — all 13 known bugs fixed. Zero workarounds remaining
 | `is_bridge` flag on FuncSig | Prevents incorrect const auto-borrow on bridge calls | ✓ v0.16 Phase 25 — clean bridge/non-bridge separation |
 | Sidecar pub fixup via read-modify-write | Prepend `pub ` to export fn when missing, scanner advances past needle | ✓ v0.16 Phase 25 — no infinite loop |
 | Remove Async(T) entirely | Dead language construct, never implemented — clean removal over deprecation | ✓ v0.16 Phase 28 — no dead code |
+| 5-file codegen split (not 3-4) | Match/compiler-func section was larger than estimated; 5 files keeps all under 1200 lines | ✓ v0.17 Phase 29 — better than planned |
 
 ## Evolution
 
@@ -145,4 +147,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after v0.17 milestone started*
+*Last updated: 2026-03-28 after Phase 29 (codegen split) complete*
