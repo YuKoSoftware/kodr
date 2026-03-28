@@ -252,7 +252,7 @@ pub const ThreadSafetyChecker = struct {
             .identifier => |name| {
                 if (self.moved_to_thread.get(name)) |thread_name| {
                     const msg = try std.fmt.allocPrint(self.allocator,
-                        "use of '{s}' after it was moved into thread '{s}'",
+                        "use of '{s}' after it was moved into thread '{s}' — shared mutable state requires synchronization",
                         .{ name, thread_name });
                     defer self.allocator.free(msg);
                     try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(node) });

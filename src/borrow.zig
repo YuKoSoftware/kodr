@@ -273,12 +273,12 @@ pub const BorrowChecker = struct {
             const loc = if (self.current_node) |cn| self.ctx.nodeLoc(cn) else null;
             if (field) |f| {
                 const msg = try std.fmt.allocPrint(self.allocator,
-                    "cannot use '{s}.{s}' while it is mutably borrowed", .{ name, f });
+                    "cannot use '{s}.{s}' while it is mutably borrowed — consider borrowing with const &", .{ name, f });
                 defer self.allocator.free(msg);
                 try self.ctx.reporter.report(.{ .message = msg, .loc = loc });
             } else {
                 const msg = try std.fmt.allocPrint(self.allocator,
-                    "cannot use '{s}' while it is mutably borrowed", .{name});
+                    "cannot use '{s}' while it is mutably borrowed — consider borrowing with const &", .{name});
                 defer self.allocator.free(msg);
                 try self.ctx.reporter.report(.{ .message = msg, .loc = loc });
             }
@@ -296,12 +296,17 @@ pub const BorrowChecker = struct {
             if (is_mutable or existing.is_mutable) {
                 const loc = if (self.current_node) |cn| self.ctx.nodeLoc(cn) else null;
                 const label = borrowLabel(variable, field);
+                const hint: []const u8 = if (!is_mutable)
+                    " — consider borrowing with const &"
+                else
+                    "";
                 const msg = try std.fmt.allocPrint(self.allocator,
-                    "cannot borrow '{s}' as {s}: already borrowed as {s}",
+                    "cannot borrow '{s}' as {s}: already borrowed as {s}{s}",
                     .{
                         label,
                         if (is_mutable) "mutable" else "immutable",
                         if (existing.is_mutable) "mutable" else "immutable",
+                        hint,
                     });
                 defer self.allocator.free(msg);
                 try self.ctx.reporter.report(.{ .message = msg, .loc = loc });
