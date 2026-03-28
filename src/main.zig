@@ -1115,14 +1115,18 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
                 var result = std.ArrayListUnmanaged(u8){};
                 defer result.deinit(allocator);
                 var pos: usize = 0;
-                while (std.mem.indexOfPos(u8, content, pos, "export fn")) |idx| {
+                const needle = "export fn";
+                while (std.mem.indexOfPos(u8, content, pos, needle)) |idx| {
                     // Check if already preceded by "pub "
                     const already_pub = idx >= 4 and std.mem.eql(u8, content[idx - 4 .. idx], "pub ");
+                    // Append content up to (but not including) this occurrence
                     try result.appendSlice(allocator, content[pos..idx]);
                     if (!already_pub) {
                         try result.appendSlice(allocator, "pub ");
                     }
-                    pos = idx;
+                    // Append "export fn" itself and advance past it
+                    try result.appendSlice(allocator, needle);
+                    pos = idx + needle.len;
                 }
                 try result.appendSlice(allocator, content[pos..]);
                 // Write modified sidecar

@@ -128,4 +128,64 @@ else fail "static-link: .a exists"; fi
 if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "static-link: no memory leaks"
 else fail "static-link: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')"; fi
 
+section "Multi-file module with Zig sidecar"
+
+# BLD-01: A module with multiple .orh files AND a Zig sidecar must build
+# without 'file exists in two modules' error in the generated build.zig.
+
+cd "$TESTDIR"
+mkdir -p sidecarmod/src
+cd "$TESTDIR/sidecarmod"
+
+# Anchor file — declares the static lib with a bridge function
+cat > src/mylib.orh <<'ORHON'
+module mylib
+#name  = "mylib"
+#build = static
+
+pub bridge func addC(a: i32, b: i32) i32
+
+pub func triple(n: i32) i32 {
+    return n * 3
+}
+ORHON
+
+# Second file in the same module — makes it a multi-file module
+cat > src/extras.orh <<'ORHON'
+module mylib
+
+pub func double(n: i32) i32 {
+    return n + n
+}
+ORHON
+
+# Zig sidecar implementing the bridge function
+cat > src/mylib.zig <<'ZIG'
+pub export fn addC(a: i32, b: i32) i32 {
+    return a + b;
+}
+ZIG
+
+# Exe that imports the multi-file+sidecar lib
+cat > src/main.orh <<'ORHON'
+module main
+#name  = "sidecarmod"
+#build = exe
+import mylib
+
+func main() void {
+    const _t: i32 = mylib.triple(4)
+    const _d: i32 = mylib.double(5)
+}
+ORHON
+
+OUTPUT=$(timeout 90 "$ORHON" build 2>&1 || true)
+# Check for BLD-01: no "file exists in two modules" error
+if echo "$OUTPUT" | grep -q "file exists in"; then fail "multi-file sidecar: no file-exists conflict" "$OUTPUT"
+elif echo "$OUTPUT" | grep -q "Built:.*sidecarmod\|Built:.*libmylib"; then pass "multi-file sidecar: builds without conflict"
+else fail "multi-file sidecar: builds without conflict" "$OUTPUT"; fi
+
+if ! echo "$OUTPUT" | grep -q "^error(gpa)"; then pass "multi-file sidecar: no memory leaks"
+else fail "multi-file sidecar: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')"; fi
+
 report_results
