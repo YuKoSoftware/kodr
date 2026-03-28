@@ -7,39 +7,38 @@ Research sources: `.planning/research/` (compiler-techniques, zig-ecosystem, lan
 
 ## Bugs
 
-### Codegen — multi-type null union collapses to optional
+### ~~Codegen — multi-type null union collapses to optional~~ — fixed v0.14 Phase 20
 
-`(null | A | B | C)` generates `?A` instead of a proper tagged union with null.
-Tamga workaround: `NoEvent` sentinel struct instead of null in event unions.
+~~`(null | A | B | C)` generates `?A` instead of a proper tagged union with null.~~
+Fixed: generates `?union(enum) { ... }` for multi-type null unions.
 
-### Codegen — `cast(EnumType, int)` emits `@intCast` instead of `@enumFromInt`
+### ~~Codegen — `cast(EnumType, int)` emits `@intCast` instead of `@enumFromInt`~~ — fixed v0.14 Phase 20
 
-Cannot cast raw integers to enum variants. Tamga workaround: stores raw `u32`/`u8`
-fields instead of enum types for SDL scancodes and mouse buttons.
+~~Cannot cast raw integers to enum variants.~~ Fixed: codegen emits `@enumFromInt`.
 
-### Codegen — empty struct construction generates invalid Zig
+### ~~Codegen — empty struct construction generates invalid Zig~~ — fixed v0.14 Phase 20
 
-`TypeName()` for a zero-field struct emits `TypeName()` in Zig (invalid).
-Tamga workaround: dummy `pub empty: bool` field on `NoEvent`.
+~~`TypeName()` for a zero-field struct emits `TypeName()` in Zig.~~ Fixed: emits `TypeName{}`.
 
 ### Build — multi-file module with Zig sidecar: "file exists in two modules"
 
 Build fails when a module has multiple `.orh` files and a `.zig` sidecar.
 Pre-existing issue, confirmed before Tamga VMA work.
 
-### Parser — `size` is a reserved keyword in bridge func parameters
+### ~~Parser — `size` is a reserved keyword in bridge func parameters~~ — fixed (PEG grammar)
 
-Cannot use `size` as a parameter name. Tamga workaround: renamed to `byte_size`.
+~~Cannot use `size` as a parameter name.~~ Fixed: `param_name` rule in PEG grammar
+allows `size` and other builtin keywords in parameter position.
 
-### Codegen — `const &BridgeStruct` passes by value instead of by pointer
+### ~~Codegen — `const &BridgeStruct` passes by value instead of by pointer~~ — fixed v0.16 Phase 25
 
-Bridge struct parameters typed as `const &` generate by-value passing in Zig.
-Tamga workaround: pass small bridge structs by value.
+~~Bridge struct parameters typed as `const &` generate by-value passing in Zig.~~
+Fixed: `is_bridge` flag on FuncSig guards const auto-borrow for bridge calls.
 
-### Codegen — sidecar `export fn` should emit `pub export fn`
+### ~~Codegen — sidecar `export fn` should emit `pub export fn`~~ — fixed v0.16 Phase 25
 
-Bridge functions in a module's sidecar `.zig` are not accessible from generated
-Orhon code because `export fn` lacks `pub`.
+~~Bridge functions in a module's sidecar `.zig` are not accessible.~~ Fixed:
+sidecar copy now does read-modify-write to prepend `pub` to all `export fn`.
 
 ### ~~Codegen — cross-module struct ref-passing~~ — fixed v0.10 Phase 4
 
@@ -101,45 +100,6 @@ I/O sites (console, tui, fs, system) intentionally retained.
 ## Core — Language Ergonomics
 
 These are the highest-impact language changes. Every user benefits immediately.
-
-### `throw` statement for error propagation
-
-The single biggest ergonomic improvement. Eliminates verbose error-check-and-return
-boilerplate. A statement (not expression modifier) that propagates an error union
-and narrows the variable to its value type.
-
-```
-// Current (verbose)
-var result: (Error | i32) = divide(10, 0)
-if(result is Error) { return result.Error }
-var value: i32 = result.value
-
-// With throw (concise, explicit)
-var result = divide(10, 0)
-throw result
-// result is now i32 — error case propagated, type narrowed
-```
-
-**Design:** `throw` is a statement, not an expression prefix like Zig's `try`.
-You don't sprinkle a keyword on every call — you explicitly propagate after the
-call. This allows work between the call and the propagation (logging, cleanup).
-
-**Rules:**
-- `throw x` where `x: (Error | T)` — propagates error, narrows `x` to `T`
-- The enclosing function must return an error type — compile error otherwise
-- After `throw`, the variable is usable as the value type without `.value`
-
-**Codegen:** `throw result` → `if (result) |_| {} else |err| return err;`
-followed by type narrowing so subsequent uses emit the unwrapped value.
-
-**Why not `try`:** `try` requires prefixing every error-returning call (noisy).
-`throw` is a standalone statement — one per error-returning block, not one per call.
-More explicit, more readable, more Orhon-like.
-
-### Pattern guards in match
-
-`case x if x > 0` — conditional match arms. Currently requires nested `if` inside
-match body. Small feature, big ergonomic win. Standard in Rust, Scala, Gleam, Swift.
 
 ### Non-lexical lifetimes (NLL)
 
@@ -278,17 +238,6 @@ graph gets large enough for this to matter.
 
 ## Core — Build System
 
-### C/C++ source compilation in modules
-
-No mechanism to compile `.c`/`.cpp` files as part of a module build. Tamga VMA requires
-manually patching the generated `build.zig` after every build to add `vma_impl.cpp`.
-
-In Zig 0.15, the pattern is `exe.root_module.addCSourceFiles(.{ .files = &.{"file.cpp"},
-.flags = &.{"-std=c++17"} })`. Needs an Orhon directive like `#cSources "file.c"`.
-
-Unblocks: any project that wraps C/C++ libraries (game engines, system bindings).
-Without this, users must maintain manual build scripts alongside Orhon.
-
 ### Thread cancellation mechanism
 
 `.cancel()` sets a flag, but the mechanism for checking it inside the thread body is TBD.
@@ -352,13 +301,14 @@ Simpler than DWARF manipulation but gives users `.orh`-level debugging.
 Ordered by how much they expand what Orhon programs can express and unblock downstream
 features.
 
-### Traits (minimal)
+### Blueprints (abstract structs — Orhon's traits)
 
 The missing type system foundation. Unlocks constrained generics, `#derive`, and
-library patterns. Keep it simple:
+library patterns. Uses `blueprint` keyword — an abstract struct containing only
+definitions, no implementation. Keep it simple:
 
 ```
-trait Drawable {
+blueprint Drawable {
     func draw(self: const &Self) void
 }
 
@@ -372,7 +322,12 @@ func render(item: any where Drawable) void {
 ```
 
 **Rules:** methods only, explicit `impl`, no inheritance, no associated types in v1.
-Composition via requiring multiple traits. No trait objects initially.
+Composition via requiring multiple blueprints. No blueprint objects initially.
+
+**Open question:** Can `compt` type introspection complement or reduce the scope
+needed? Zig uses comptime + `@hasDecl` for structural generics without traits.
+Investigate whether extending compt is a simpler path before full blueprint
+implementation.
 
 Unblocks: generic constraints (already in TODO), `#derive`, numerous library patterns.
 
@@ -580,6 +535,22 @@ understand the philosophy. Gleam, Roc, and Zig all do this well.
 ---
 
 ## Done
+
+### `throw` statement for error propagation ✓
+
+**Done in v0.15 Phase 22.** `throw x` propagates error and narrows the variable
+to its value type. Statement form (not expression prefix like Zig's `try`).
+
+### Pattern guards in match ✓
+
+**Done in v0.15 Phase 23.** `(x if x > 0) => { ... }` — parenthesized guard
+syntax in match arms. Guards desugar to Zig labeled blocks with if/else chains.
+
+### C/C++ source compilation in modules ✓
+
+**Done in v0.15 Phase 24.** `#cimport = { name: "vma", include: "vk_mem_alloc.h",
+source: "vma_impl.cpp" }` — the `source:` field compiles `.c`/`.cpp` files.
+Auto-detects C++ from extension and applies `linkLibCpp()`.
 
 ### Runtime Library Removal ✓
 
