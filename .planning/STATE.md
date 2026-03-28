@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.16
 milestone_name: Bug Fixes
 status: verifying
-stopped_at: Completed 25-01-PLAN.md
-last_updated: "2026-03-28T09:21:01.739Z"
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-03-28T09:45:28.197Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
   percent: 0
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 25 — Bridge Codegen Fixes
+**Current focus:** Phase 26 — Codegen Correctness & Parser
 
 ## Current Position
 
-Phase: 26
-Plan: Not started
+Phase: 26 (Codegen Correctness & Parser) — EXECUTING
+Plan: 1 of 1
 Status: Phase complete — ready for verification
 Last activity: 2026-03-28
 
@@ -56,6 +56,7 @@ Recent decisions affecting current work:
 - v0.14: Named bridge modules via build system — createModule/addImport eliminates duplicate module errors
 - [Phase 25-bridge-codegen-fixes]: Add is_bridge to FuncSig to prevent incorrect const auto-borrow on bridge calls (v0.16 Phase 25)
 - [Phase 25-bridge-codegen-fixes]: Sidecar pub fixup via read-modify-write scan: prepend 'pub ' to export fn when missing (v0.16 Phase 25)
+- [Phase 26-codegen-correctness-parser]: Unary '-' placed before '&' in PEG unary_expr rule; cross-module is uses tagged union tag comparison for arbitrary_union; Async(T) reports error via reporter
 
 ### Pending Todos
 
@@ -68,5 +69,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-28
-Stopped at: Completed 25-01-PLAN.md
+Stopped at: Completed 26-01-PLAN.md
 Resume file: None

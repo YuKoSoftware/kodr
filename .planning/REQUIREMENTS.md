@@ -12,12 +12,12 @@ Requirements for v0.16 Bug Fixes milestone. Each maps to roadmap phases.
 - [x] **CGN-01**: `const &BridgeStruct` parameter emits pointer pass (`&arg`) instead of by-value
 - [x] **CGN-02**: Bridge struct value params in error-union functions stay by-value (no silent `*const` promotion)
 - [x] **CGN-03**: Sidecar `export fn` generates `pub export fn` so bridge functions are accessible
-- [ ] **CGN-04**: Cross-module `is` operator emits tagged union check instead of `@TypeOf` comparison
-- [ ] **CGN-05**: `Async(T)` reports compile error instead of silently mapping to `void`
+- [x] **CGN-04**: Cross-module `is` operator emits tagged union check instead of `@TypeOf` comparison
+- [x] **CGN-05**: `Async(T)` reports compile error instead of silently mapping to `void`
 
 ### Parser
 
-- [ ] **PRS-01**: Negative float/int literals accepted as function call arguments (`-0.5`, `-1`)
+- [x] **PRS-01**: Negative float/int literals accepted as function call arguments (`-0.5`, `-1`)
 
 ### Build System
 
@@ -52,9 +52,9 @@ None deferred — all known bugs included in v0.16.
 | CGN-01 | Phase 25 | Complete |
 | CGN-02 | Phase 25 | Complete |
 | CGN-03 | Phase 25 | Complete |
-| CGN-04 | Phase 26 | Pending |
-| CGN-05 | Phase 26 | Pending |
-| PRS-01 | Phase 26 | Pending |
+| CGN-04 | Phase 26 | Complete |
+| CGN-05 | Phase 26 | Complete |
+| PRS-01 | Phase 26 | Complete |
 | BLD-01 | Phase 27 | Pending |
 | BLD-02 | Phase 27 | Pending |
 | BLD-03 | Phase 27 | Pending |
