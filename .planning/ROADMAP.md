@@ -104,7 +104,9 @@ Plans:
   2. A `#cimport` bridge file resolves module-relative header paths correctly (no "file not found" at Zig compile time)
   3. `#cimport source:` generates a `linkSystemLibrary` call in the Zig build script for the owning module
   4. All 260 tests continue to pass
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 27-01-PLAN.md — Fix sidecar dedup, cimport include paths, and linkSystemLibrary for source:
 
 ### Phase 28: Cross-Compile, Cache & Docs
 **Goal**: Cross-compilation targets pass valid step names to Zig, `-fast` builds stay clean, and TODO.md reflects current bug status
@@ -130,5 +132,5 @@ Plans:
 | 22-24 | v0.15 | 6/6 | Complete | 2026-03-27 |
 | 25. Bridge Codegen Fixes | v0.16 | 1/1 | Complete    | 2026-03-28 |
 | 26. Codegen Correctness & Parser | v0.16 | 1/1 | Complete    | 2026-03-28 |
-| 27. C Interop & Multi-Module Build | v0.16 | 0/? | Not started | - |
+| 27. C Interop & Multi-Module Build | v0.16 | 0/1 | Not started | - |
 | 28. Cross-Compile, Cache & Docs | v0.16 | 0/? | Not started | - |
