@@ -86,7 +86,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 **Tests:** 266 across 11 stages
 **Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14, v0.15, v0.16
 
-v0.17 in progress — codegen split (Phase 29) and error quality (Phase 30) complete. PEG error messages and 5 module splits next. 266 tests pass.
+v0.17 in progress — codegen split (Phase 29), error quality (Phase 30), and PEG error messages (Phase 31) complete. 5 module splits next. 266 tests pass.
 
 ### Out of Scope
 
@@ -148,4 +148,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after Phase 29 (codegen split) complete*
+*Last updated: 2026-03-28 after Phase 31 (PEG error messages) complete*
