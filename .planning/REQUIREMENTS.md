@@ -30,6 +30,7 @@ Requirements for v0.16 Bug Fixes milestone. Each maps to roadmap phases.
 ### Documentation
 
 - [ ] **DOC-01**: TODO.md updated — mark 4 fixed bugs as fixed (cast_to_enum, null_multi_union, empty_struct, size keyword)
+- [ ] **CLN-01**: Remove `Async(T)` from grammar and codegen — unimplemented, dead weight
 
 ## Future Requirements
 
@@ -61,10 +62,11 @@ None deferred — all known bugs included in v0.16.
 | BLD-04 | Phase 28 | Pending |
 | BLD-05 | Phase 28 | Pending |
 | DOC-01 | Phase 28 | Pending |
+| CLN-01 | Phase 28 | Pending |
 
 **Coverage:**
-- v0.16 requirements: 12 total
-- Mapped to phases: 12
+- v0.16 requirements: 13 total
+- Mapped to phases: 13
 - Unmapped: 0
 
 ---

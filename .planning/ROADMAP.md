@@ -109,11 +109,12 @@ Plans:
 ### Phase 28: Cross-Compile, Cache & Docs
 **Goal**: Cross-compilation targets pass valid step names to Zig, `-fast` builds stay clean, and TODO.md reflects current bug status
 **Depends on**: Phase 27
-**Requirements**: BLD-04, BLD-05, DOC-01
+**Requirements**: BLD-04, BLD-05, DOC-01, CLN-01
 **Success Criteria** (what must be TRUE):
   1. `orhon build -win_x64` passes a valid step name to the Zig build system without garbling
   2. `orhon build -fast` does not leak any files into the project `bin/` directory
   3. TODO.md marks `cast_to_enum`, `null_multi_union`, `empty_struct`, and `size` keyword bugs as fixed
+  4. `Async(T)` removed from grammar and codegen — no dead language constructs
   4. All 260 tests continue to pass
 **Plans**: TBD
 
