@@ -1101,13 +1101,34 @@ fn runPipeline(allocator: std.mem.Allocator, cli: *CliArgs, reporter: *errors.Re
 
         // ── Bridge Sidecar Copy ─────────────────────────────────
         // Validation already happened during module resolution (pass 3).
-        // Here we just copy the validated sidecar to the generated dir.
+        // Here we copy the validated sidecar to the generated dir, fixing up any
+        // `export fn` that lacks `pub` visibility so @import can resolve the symbol.
         if (mod_ptr.has_bridges) {
             if (mod_ptr.sidecar_path) |sidecar_src| {
                 try cache.ensureGeneratedDir();
                 const sidecar_dst = try std.fmt.allocPrint(allocator, "{s}/{s}_bridge.zig", .{ cache.GENERATED_DIR, mod_name });
                 defer allocator.free(sidecar_dst);
-                try std.fs.cwd().copyFile(sidecar_src, std.fs.cwd(), sidecar_dst, .{});
+                // Read sidecar content
+                const content = try std.fs.cwd().readFileAlloc(allocator, sidecar_src, 1024 * 1024);
+                defer allocator.free(content);
+                // Ensure all `export fn` have pub visibility
+                var result = std.ArrayListUnmanaged(u8){};
+                defer result.deinit(allocator);
+                var pos: usize = 0;
+                while (std.mem.indexOfPos(u8, content, pos, "export fn")) |idx| {
+                    // Check if already preceded by "pub "
+                    const already_pub = idx >= 4 and std.mem.eql(u8, content[idx - 4 .. idx], "pub ");
+                    try result.appendSlice(allocator, content[pos..idx]);
+                    if (!already_pub) {
+                        try result.appendSlice(allocator, "pub ");
+                    }
+                    pos = idx;
+                }
+                try result.appendSlice(allocator, content[pos..]);
+                // Write modified sidecar
+                const dst_file = try std.fs.cwd().createFile(sidecar_dst, .{});
+                defer dst_file.close();
+                try dst_file.writeAll(result.items);
             }
         }
         if (reporter.hasErrors()) return null;
