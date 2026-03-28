@@ -132,5 +132,5 @@ Plans:
 | 22-24 | v0.15 | 6/6 | Complete | 2026-03-27 |
 | 25. Bridge Codegen Fixes | v0.16 | 1/1 | Complete    | 2026-03-28 |
 | 26. Codegen Correctness & Parser | v0.16 | 1/1 | Complete    | 2026-03-28 |
-| 27. C Interop & Multi-Module Build | v0.16 | 1/1 | Complete   | 2026-03-28 |
+| 27. C Interop & Multi-Module Build | v0.16 | 1/1 | Complete    | 2026-03-28 |
 | 28. Cross-Compile, Cache & Docs | v0.16 | 0/? | Not started | - |
