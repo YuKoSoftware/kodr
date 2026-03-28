@@ -11,6 +11,10 @@ const errors = @import("errors.zig");
 const K = @import("constants.zig");
 const module = @import("module.zig");
 const RT = @import("types.zig").ResolvedType;
+const decls_impl = @import("codegen_decls.zig");
+const stmts_impl = @import("codegen_stmts.zig");
+const exprs_impl = @import("codegen_exprs.zig");
+const match_impl = @import("codegen_match.zig");
 
 /// The Zig code generator
 pub const CodeGen = struct {
@@ -73,7 +77,7 @@ pub const CodeGen = struct {
 
     /// Get the union member types for an arb union node from MIR annotations.
     /// Returns null if the node is not an arb union or not in the node_map.
-    fn getUnionMembers(self: *const CodeGen, node: *parser.Node) ?[]const RT {
+    pub fn getUnionMembers(self: *const CodeGen, node: *parser.Node) ?[]const RT {
         if (self.getNodeInfo(node)) |info| {
             if (info.resolved_type == .union_type) return info.resolved_type.union_type;
         }
@@ -81,14 +85,14 @@ pub const CodeGen = struct {
     }
 
     /// Check if a function parameter should be promoted to *const T for const auto-borrow.
-    fn isPromotedParam(self: *const CodeGen, func_name: []const u8, param_idx: usize) bool {
+    pub fn isPromotedParam(self: *const CodeGen, func_name: []const u8, param_idx: usize) bool {
         const crp = self.const_ref_params orelse return false;
         const param_set = crp.get(func_name) orelse return false;
         return param_set.contains(param_idx);
     }
 
     /// Get the TypeClass of the current function's return type from MIR.
-    fn funcReturnTypeClass(self: *const CodeGen) mir.TypeClass {
+    pub fn funcReturnTypeClass(self: *const CodeGen) mir.TypeClass {
         if (self.current_func_mir) |m| return m.type_class;
         if (self.current_func_node) |fn_node| {
             if (self.getNodeInfo(fn_node)) |info| return info.type_class;
@@ -97,7 +101,7 @@ pub const CodeGen = struct {
     }
 
     /// Get the union members of the current function's return type from MIR.
-    fn funcReturnMembers(self: *const CodeGen) ?[]const RT {
+    pub fn funcReturnMembers(self: *const CodeGen) ?[]const RT {
         if (self.current_func_mir) |m| {
             if (m.resolved_type == .union_type) return m.resolved_type.union_type;
         }
@@ -110,7 +114,7 @@ pub const CodeGen = struct {
     }
 
     /// Name-based union member lookup via MIR var_types (fallback).
-    fn getVarUnionMembers(self: *const CodeGen, name: []const u8) ?[]const RT {
+    pub fn getVarUnionMembers(self: *const CodeGen, name: []const u8) ?[]const RT {
         if (self.var_types) |vt| {
             if (vt.get(name)) |info| {
                 if (info.resolved_type == .union_type) return info.resolved_type.union_type;
@@ -122,7 +126,7 @@ pub const CodeGen = struct {
     /// Sanitize an error message string literal into a Zig error name.
     /// Strips quotes, replaces spaces/non-identifier chars with underscores.
     /// "division by zero" → error.division_by_zero
-    fn sanitizeErrorName(self: *CodeGen, msg: []const u8) ![]const u8 {
+    pub fn sanitizeErrorName(self: *CodeGen, msg: []const u8) ![]const u8 {
         // Strip surrounding quotes if present
         const raw = if (msg.len >= 2 and msg[0] == '"' and msg[msg.len - 1] == '"')
             msg[1 .. msg.len - 1]
@@ -146,7 +150,7 @@ pub const CodeGen = struct {
     }
 
     /// If a node is typed as a bitfield, return the bitfield name. Uses MIR + decls.
-    fn getBitfieldName(self: *const CodeGen, node: *parser.Node) ?[]const u8 {
+    pub fn getBitfieldName(self: *const CodeGen, node: *parser.Node) ?[]const u8 {
         const d = self.decls orelse return null;
         if (self.getNodeInfo(node)) |info| {
             if (info.resolved_type == .named) {
@@ -179,7 +183,7 @@ pub const CodeGen = struct {
         };
     }
 
-    fn nodeLoc(self: *const CodeGen, node: *parser.Node) ?errors.SourceLoc {
+    pub fn nodeLoc(self: *const CodeGen, node: *parser.Node) ?errors.SourceLoc {
         if (self.locs) |l| {
             if (l.get(node)) |loc| {
                 const resolved = module.resolveFileLoc(self.file_offsets, loc.line);
@@ -190,7 +194,7 @@ pub const CodeGen = struct {
     }
 
     /// Check if a name is an enum variant in any declared enum
-    fn isEnumVariant(self: *const CodeGen, name: []const u8) bool {
+    pub fn isEnumVariant(self: *const CodeGen, name: []const u8) bool {
         const decls = self.decls orelse return false;
         var it = decls.enums.iterator();
         while (it.next()) |entry| {
@@ -203,7 +207,7 @@ pub const CodeGen = struct {
 
     /// Check if an AST node refers to a declared enum type name.
     /// Used by cast() codegen to decide between @intCast and @enumFromInt.
-    fn isEnumTypeName(self: *const CodeGen, node: *parser.Node) bool {
+    pub fn isEnumTypeName(self: *const CodeGen, node: *parser.Node) bool {
         const decls = self.decls orelse return false;
         const name = switch (node.*) {
             .type_named => |n| n,
@@ -228,24 +232,24 @@ pub const CodeGen = struct {
         return self.output.items;
     }
 
-    fn emit(self: *CodeGen, s: []const u8) !void {
+    pub fn emit(self: *CodeGen, s: []const u8) !void {
         try self.output.appendSlice(self.allocator, s);
     }
 
-    fn emitFmt(self: *CodeGen, comptime fmt: []const u8, args: anytype) !void {
+    pub fn emitFmt(self: *CodeGen, comptime fmt: []const u8, args: anytype) !void {
         const s = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(s);
         try self.output.appendSlice(self.allocator, s);
     }
 
-    fn emitIndent(self: *CodeGen) !void {
+    pub fn emitIndent(self: *CodeGen) !void {
         var i: usize = 0;
         while (i < self.indent) : (i += 1) {
             try self.emit("    ");
         }
     }
 
-    fn emitLine(self: *CodeGen, s: []const u8) !void {
+    pub fn emitLine(self: *CodeGen, s: []const u8) !void {
         try self.emitIndent();
         try self.emit(s);
         try self.emit("\n");
@@ -253,7 +257,7 @@ pub const CodeGen = struct {
 
     /// Emit a type-name path (a.b.c) from a field_expr chain without semantic transforms.
     /// Used only for `is` type-check RHS where the node is a type name, not a runtime value.
-    fn emitTypePath(self: *CodeGen, node: *parser.Node) anyerror!void {
+    pub fn emitTypePath(self: *CodeGen, node: *parser.Node) anyerror!void {
         switch (node.*) {
             .identifier => |name| try self.emit(name),
             .field_expr => |f| {
@@ -267,7 +271,7 @@ pub const CodeGen = struct {
 
     /// Emit a type-name path (a.b.c) from a MIR field_access chain without semantic transforms.
     /// Used only for `is` type-check RHS in MIR-path codegen.
-    fn emitTypeMirPath(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+    pub fn emitTypeMirPath(self: *CodeGen, m: *mir.MirNode) anyerror!void {
         if (m.kind == .field_access and m.children.len > 0) {
             try self.emitTypeMirPath(m.children[0]);
             try self.emit(".");
@@ -279,13 +283,13 @@ pub const CodeGen = struct {
 
     /// Flush hoisted pre-statement declarations (interpolation temp vars) to main output.
     /// Must be called before emitting the statement that references the hoisted vars.
-    fn flushPreStmts(self: *CodeGen) !void {
+    pub fn flushPreStmts(self: *CodeGen) !void {
         if (self.pre_stmts.items.len == 0) return;
         try self.output.appendSlice(self.allocator, self.pre_stmts.items);
         self.pre_stmts.clearRetainingCapacity();
     }
 
-    fn emitLineFmt(self: *CodeGen, comptime fmt: []const u8, args: anytype) !void {
+    pub fn emitLineFmt(self: *CodeGen, comptime fmt: []const u8, args: anytype) !void {
         try self.emitIndent();
         try self.emitFmt(fmt, args);
         try self.emit("\n");
@@ -339,26 +343,13 @@ pub const CodeGen = struct {
         }
     }
 
-    /// Extract the value type from a (Error | T) or (null | T) union type annotation.
-    /// Returns null if not a recognized union or no non-Error/non-null type found.
-    fn extractValueType(node: *parser.Node) ?*parser.Node {
-        if (node.* != .type_union) return null;
-        for (node.type_union) |t| {
-            if (t.* == .type_named and
-                (std.mem.eql(u8, t.type_named, K.Type.ERROR) or std.mem.eql(u8, t.type_named, K.Type.NULL)))
-                continue;
-            return t;
-        }
-        return null;
-    }
-
     /// Generate a Zig union tag name from an Orhon type name: i32 → _i32
-    fn unionTagName(self: *CodeGen, orhon_name: []const u8) ![]const u8 {
+    pub fn unionTagName(self: *CodeGen, orhon_name: []const u8) ![]const u8 {
         return try self.allocTypeStr("_{s}", .{orhon_name});
     }
 
     /// Check if an expression is known to be a string (literal, interpolation, or MIR-typed)
-    fn isStringExpr(self: *const CodeGen, node: *parser.Node) bool {
+    pub fn isStringExpr(self: *const CodeGen, node: *parser.Node) bool {
         return switch (node.*) {
             .string_literal, .interpolated_string => true,
             else => self.getTypeClass(node) == .string,
@@ -366,83 +357,26 @@ pub const CodeGen = struct {
     }
 
     /// Wrap a value for an arbitrary union: 42 → .{ ._i32 = 42 }
-    fn generateArbitraryUnionWrappedExpr(self: *CodeGen, value: *parser.Node, members_rt: ?[]const RT) anyerror!void {
-        const tag = inferArbitraryUnionTag(value, members_rt);
-        if (tag) |t| {
-            try self.emitFmt(".{{ ._{s} = ", .{t});
-            try self.generateExpr(value);
-            try self.emit(" }");
-        } else {
-            try self.generateExpr(value);
-        }
-    }
+    pub fn generateArbitraryUnionWrappedExpr(self: *CodeGen, value: *parser.Node, members_rt: ?[]const RT) anyerror!void { return exprs_impl.generateArbitraryUnionWrappedExpr(self, value, members_rt); }
 
     /// Infer which union tag a value belongs to based on its literal type.
-    fn inferArbitraryUnionTag(value: *parser.Node, members_rt: ?[]const RT) ?[]const u8 {
-        return switch (value.*) {
-            .int_literal => findMemberByKind(members_rt, .int) orelse "i32",
-            .float_literal => findMemberByKind(members_rt, .float) orelse "f32",
-            .string_literal => findMemberByKind(members_rt, .string) orelse "String",
-            .bool_literal => findMemberByKind(members_rt, .bool_) orelse "bool",
-            else => null,
-        };
-    }
+    pub fn inferArbitraryUnionTag(value: *parser.Node, members_rt: ?[]const RT) ?[]const u8 { return exprs_impl.inferArbitraryUnionTag(value, members_rt); }
 
     const TypeKind = enum { int, float, string, bool_ };
 
-    fn matchesKind(n: []const u8, kind: TypeKind) bool {
-        return switch (kind) {
-            .int => std.mem.eql(u8, n, "i8") or std.mem.eql(u8, n, "i16") or
-                std.mem.eql(u8, n, "i32") or std.mem.eql(u8, n, "i64") or
-                std.mem.eql(u8, n, "u8") or std.mem.eql(u8, n, "u16") or
-                std.mem.eql(u8, n, "u32") or std.mem.eql(u8, n, "u64") or
-                std.mem.eql(u8, n, "usize"),
-            .float => std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64"),
-            .string => std.mem.eql(u8, n, "String"),
-            .bool_ => std.mem.eql(u8, n, "bool"),
-        };
-    }
+    pub fn matchesKind(n: []const u8, kind: TypeKind) bool { return exprs_impl.matchesKind(n, kind); }
 
     /// Search union members (MIR resolved types) for a type matching the given kind.
-    fn findMemberByKind(members_rt: ?[]const RT, kind: TypeKind) ?[]const u8 {
-        const members = members_rt orelse return null;
-        for (members) |m| {
-            const n = m.name();
-            if (matchesKind(n, kind)) return n;
-        }
-        return null;
-    }
+    pub fn findMemberByKind(members_rt: ?[]const RT, kind: TypeKind) ?[]const u8 { return exprs_impl.findMemberByKind(members_rt, kind); }
 
     /// MIR-path: wrap a MirNode expression in an arbitrary union tag.
-    fn generateArbitraryUnionWrappedExprMir(self: *CodeGen, m: *mir.MirNode, members_rt: ?[]const RT) anyerror!void {
-        if (m.coercion) |_| {
-            try self.generateCoercedExprMir(m);
-            return;
-        }
-        const tag = inferArbitraryUnionTagMir(m, members_rt);
-        if (tag) |t| {
-            try self.emitFmt(".{{ ._{s} = ", .{t});
-            try self.generateExprMir(m);
-            try self.emit(" }");
-        } else {
-            try self.generateExprMir(m);
-        }
-    }
+    pub fn generateArbitraryUnionWrappedExprMir(self: *CodeGen, m: *mir.MirNode, members_rt: ?[]const RT) anyerror!void { return exprs_impl.generateArbitraryUnionWrappedExprMir(self, m, members_rt); }
 
     /// Infer union tag from MirNode literal_kind.
-    fn inferArbitraryUnionTagMir(m: *const mir.MirNode, members_rt: ?[]const RT) ?[]const u8 {
-        const lk = m.literal_kind orelse return null;
-        return switch (lk) {
-            .int => findMemberByKind(members_rt, .int) orelse "i32",
-            .float => findMemberByKind(members_rt, .float) orelse "f32",
-            .string => findMemberByKind(members_rt, .string) orelse "String",
-            .bool_lit => findMemberByKind(members_rt, .bool_) orelse "bool",
-            else => null,
-        };
-    }
+    pub fn inferArbitraryUnionTagMir(m: *const mir.MirNode, members_rt: ?[]const RT) ?[]const u8 { return exprs_impl.inferArbitraryUnionTagMir(m, members_rt); }
 
     /// Check if an identifier is a declared Error constant
-    fn isErrorConstant(self: *const CodeGen, name: []const u8) bool {
+    pub fn isErrorConstant(self: *const CodeGen, name: []const u8) bool {
         if (self.decls) |decls| {
             if (decls.vars.get(name)) |v| {
                 if (v.type_) |t| {
@@ -453,7 +387,7 @@ pub const CodeGen = struct {
         return false;
     }
 
-    fn generateImport(self: *CodeGen, node: *parser.Node) anyerror!void {
+    pub fn generateImport(self: *CodeGen, node: *parser.Node) anyerror!void {
         if (node.* != .import_decl) return;
         const imp = node.import_decl;
 
@@ -523,7 +457,7 @@ pub const CodeGen = struct {
 
     /// MIR-path top-level dispatch — switches on MirKind.
     /// Struct/enum use MirNode children; func/var/test still read AST with MIR context.
-    fn generateTopLevelMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
+    pub fn generateTopLevelMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
         switch (m.kind) {
             .func => {
                 const prev = self.current_func_mir;
@@ -548,3535 +482,182 @@ pub const CodeGen = struct {
     /// Walk a node tree and collect all variable names that appear as the
     /// LHS of an assignment (simple, compound, field, or index). Stops at
     /// nested func_decl boundaries so inner functions don't pollute the outer set.
-    fn collectAssigned(node: *parser.Node, set: *std.StringHashMapUnmanaged(void), alloc: std.mem.Allocator) anyerror!void {
-        switch (node.*) {
-            .assignment => |a| {
-                if (getRootIdent(a.left)) |name| try set.put(alloc, name, {});
-                try collectAssigned(a.right, set, alloc);
-            },
-            .call_expr => |c| {
-                // Method call on a receiver: foo.method(args) — treat the receiver as
-                // potentially mutated so we don't promote it to const incorrectly.
-                if (c.callee.* == .field_expr) {
-                    if (getRootIdent(c.callee.field_expr.object)) |name| {
-                        try set.put(alloc, name, {});
-                    }
-                }
-                for (c.args) |arg| try collectAssigned(arg, set, alloc);
-            },
-            .block => |b| {
-                for (b.statements) |s| try collectAssigned(s, set, alloc);
-            },
-            .func_decl => {}, // nested function — own scope, don't descend
-            .if_stmt => |i| {
-                try collectAssigned(i.condition, set, alloc);
-                try collectAssigned(i.then_block, set, alloc);
-                if (i.else_block) |e| try collectAssigned(e, set, alloc);
-            },
-            .while_stmt => |w| {
-                try collectAssigned(w.condition, set, alloc);
-                if (w.continue_expr) |c| try collectAssigned(c, set, alloc);
-                try collectAssigned(w.body, set, alloc);
-            },
-            .for_stmt => |f| try collectAssigned(f.body, set, alloc),
-            .slice_expr => |s| {
-                // Slice base must stay `var` so the slice type is []T not *const [N]T
-                if (s.object.* == .identifier)
-                    try set.put(alloc, s.object.identifier, {});
-                try collectAssigned(s.low, set, alloc);
-                try collectAssigned(s.high, set, alloc);
-            },
-            .var_decl => |v| try collectAssigned(v.value, set, alloc),
-            .const_decl => |v| try collectAssigned(v.value, set, alloc),
-            .match_stmt => |m| {
-                for (m.arms) |arm| {
-                    if (arm.* == .match_arm) try collectAssigned(arm.match_arm.body, set, alloc);
-                }
-            },
-            .defer_stmt => |d| try collectAssigned(d.body, set, alloc),
-            else => {},
-        }
-    }
+    pub fn collectAssigned(node: *parser.Node, set: *std.StringHashMapUnmanaged(void), alloc: std.mem.Allocator) anyerror!void { return decls_impl.collectAssigned(node, set, alloc); }
 
-    fn getRootIdent(node: *parser.Node) ?[]const u8 {
-        return switch (node.*) {
-            .identifier => |name| name,
-            .field_expr => |f| getRootIdent(f.object),
-            .index_expr => |i| getRootIdent(i.object),
-            else => null,
-        };
-    }
+    pub fn getRootIdent(node: *parser.Node) ?[]const u8 { return decls_impl.getRootIdent(node); }
 
     /// Emit a re-export for a bridge declaration from the named bridge module.
     /// Bridge .zig files are registered as named Zig modules in the build graph,
     /// so we import by module name (no .zig extension).
-    fn generateBridgeReExport(self: *CodeGen, name: []const u8, is_pub: bool) anyerror!void {
-        const vis = if (is_pub) "pub " else "";
-        try self.emitLineFmt("{s}const {s} = @import(\"{s}_bridge\").{s};", .{ vis, name, self.module_name, name });
-    }
+    pub fn generateBridgeReExport(self: *CodeGen, name: []const u8, is_pub: bool) anyerror!void { return decls_impl.generateBridgeReExport(self, name, is_pub); }
 
     /// MIR-path function codegen — reads all data from MirNode.
-    fn generateFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const func_name = m.name orelse return;
-
-        // Thread function — generate body + spawn wrapper
-        if (m.is_thread) return self.generateThreadFuncMir(m);
-
-        // bridge func — re-export from paired sidecar file
-        if (m.is_bridge) return self.generateBridgeReExport(func_name, m.is_pub);
-
-        // Body-less declaration — skip codegen.
-        // Never skip main (it can legitimately have an empty body).
-        const body_m = m.body();
-        if (body_m.kind == .block and body_m.children.len == 0 and
-            !m.is_bridge and !std.mem.eql(u8, func_name, "main")) return;
-
-        // Track current function for MIR return type queries
-        const prev_func_node = self.current_func_node;
-        self.current_func_node = m.ast;
-        const prev_reassigned_vars = self.reassigned_vars;
-        self.reassigned_vars = .{};
-        try collectAssignedMir(m.body(), &self.reassigned_vars, self.allocator);
-        const prev_error_narrowed = self.error_narrowed;
-        self.error_narrowed = .{};
-        const prev_null_narrowed = self.null_narrowed;
-        self.null_narrowed = .{};
-        defer {
-            self.current_func_node = prev_func_node;
-            self.reassigned_vars.deinit(self.allocator);
-            self.reassigned_vars = prev_reassigned_vars;
-            self.error_narrowed.deinit(self.allocator);
-            self.error_narrowed = prev_error_narrowed;
-            self.null_narrowed.deinit(self.allocator);
-            self.null_narrowed = prev_null_narrowed;
-        }
-
-        const ret_type = m.return_type orelse return;
-
-        // pub modifier
-        if (m.is_pub or std.mem.eql(u8, func_name, "main")) try self.emit("pub ");
-
-        const returns_type = ret_type.* == .type_named and
-            std.mem.eql(u8, ret_type.type_named, K.Type.TYPE);
-        const is_type_generic = m.is_compt and returns_type;
-
-        if (m.is_compt and !is_type_generic) {
-            try self.emitFmt("inline fn {s}(", .{func_name});
-        } else {
-            try self.emitFmt("fn {s}(", .{func_name});
-        }
-
-        // Parameters
-        var first_any_param: ?[]const u8 = null;
-        for (m.params(), 0..) |param_m, i| {
-            if (i > 0) try self.emit(", ");
-            const pname = param_m.name orelse continue;
-            const pta = param_m.type_annotation orelse continue;
-            const is_any = pta.* == .type_named and
-                std.mem.eql(u8, pta.type_named, K.Type.ANY);
-            const is_type_param = pta.* == .type_named and
-                std.mem.eql(u8, pta.type_named, K.Type.TYPE);
-            if (is_any and first_any_param == null) first_any_param = pname;
-            if (is_type_param) {
-                try self.emitFmt("comptime {s}: type", .{pname});
-            } else if (is_type_generic and is_any) {
-                try self.emitFmt("comptime {s}: type", .{pname});
-            } else if (is_any) {
-                try self.emitFmt("{s}: anytype", .{pname});
-            } else {
-                const zig_type = try self.typeToZig(pta);
-                if (self.isPromotedParam(func_name, i)) {
-                    try self.emitFmt("{s}: *const {s}", .{ pname, zig_type });
-                } else {
-                    try self.emitFmt("{s}: {s}", .{ pname, zig_type });
-                }
-            }
-        }
-
-        try self.emit(") ");
-
-        // Return type
-        const return_is_any = ret_type.* == .type_named and
-            std.mem.eql(u8, ret_type.type_named, K.Type.ANY);
-        if (return_is_any) {
-            if (first_any_param) |pname| {
-                try self.emitFmt("@TypeOf({s})", .{pname});
-            } else {
-                try self.emit("anyopaque");
-            }
-        } else {
-            try self.emit(try self.typeToZig(ret_type));
-        }
-        try self.emit(" ");
-
-        // Body
-        try self.generateBlockMir(body_m);
-        try self.emit("\n");
-    }
+    pub fn generateFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateFuncMir(self, m); }
 
     /// MIR-path thread function codegen.
-    fn generateThreadFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const func_name = m.name orelse return;
-        const ret_type = m.return_type orelse return;
-
-        // Extract inner type T from Handle(T) return type
-        const inner_type = if (ret_type.* == .type_generic and
-            std.mem.eql(u8, ret_type.type_generic.name, "Handle") and
-            ret_type.type_generic.args.len > 0)
-            ret_type.type_generic.args[0]
-        else
-            ret_type;
-
-        const inner_zig = try self.typeToZig(inner_type);
-        const handle_zig = try self.typeToZig(ret_type);
-
-        // Body function
-        {
-            const prev_func_node = self.current_func_node;
-            self.current_func_node = m.ast;
-            const prev_assigned = self.reassigned_vars;
-            self.reassigned_vars = .{};
-            try collectAssignedMir(m.body(), &self.reassigned_vars, self.allocator);
-            defer {
-                self.current_func_node = prev_func_node;
-                self.reassigned_vars.deinit(self.allocator);
-                self.reassigned_vars = prev_assigned;
-            }
-
-            try self.emitFmt("fn _{s}_body(", .{func_name});
-            for (m.params(), 0..) |param_m, i| {
-                if (i > 0) try self.emit(", ");
-                const pname = param_m.name orelse continue;
-                const pta = param_m.type_annotation orelse continue;
-                try self.emitFmt("{s}: {s}", .{ pname, try self.typeToZig(pta) });
-            }
-            try self.emitFmt(") {s} ", .{inner_zig});
-            try self.generateBlockMir(m.body());
-            try self.emit("\n\n");
-        }
-
-        // Spawn wrapper
-        if (m.is_pub) try self.emit("pub ");
-        try self.emitFmt("fn {s}(", .{func_name});
-        for (m.params(), 0..) |param_m, i| {
-            if (i > 0) try self.emit(", ");
-            const pname = param_m.name orelse continue;
-            const pta = param_m.type_annotation orelse continue;
-            try self.emitFmt("{s}: {s}", .{ pname, try self.typeToZig(pta) });
-        }
-        try self.emitFmt(") {s} ", .{handle_zig});
-        try self.emit("{\n");
-        self.indent += 1;
-
-        try self.emitIndent();
-        try self.emitFmt("const _state = std.heap.page_allocator.create({s}.SharedState) catch @panic(\"Out of memory: thread state allocation\");\n", .{handle_zig});
-        try self.emitIndent();
-        try self.emit("_state.* = .{};\n");
-
-        try self.emitIndent();
-        try self.emitFmt("return .{{ .thread = std.Thread.spawn(.{{}}, struct {{ fn run(_s: *{s}.SharedState", .{handle_zig});
-        for (m.params()) |param_m| {
-            const pname = param_m.name orelse continue;
-            const pta = param_m.type_annotation orelse continue;
-            try self.emitFmt(", _{s}: {s}", .{ pname, try self.typeToZig(pta) });
-        }
-        try self.emit(") void { ");
-
-        const is_void = std.mem.eql(u8, inner_zig, "void");
-        if (!is_void) try self.emit("_s.result = ");
-        try self.emitFmt("_{s}_body(", .{func_name});
-        for (m.params(), 0..) |param_m, i| {
-            if (i > 0) try self.emit(", ");
-            const pname = param_m.name orelse continue;
-            try self.emitFmt("_{s}", .{pname});
-        }
-        try self.emit("); _s.completed.store(true, .release); } }.run, .{ _state");
-        for (m.params()) |param_m| {
-            const pname = param_m.name orelse continue;
-            try self.emitFmt(", {s}", .{pname});
-        }
-        try self.emit(" }) catch |e| @panic(@errorName(e)), .state = _state };\n");
-
-        self.indent -= 1;
-        try self.emitIndent();
-        try self.emit("}\n");
-    }
+    pub fn generateThreadFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateThreadFuncMir(self, m); }
 
     /// MIR-path collectAssigned — traverses MirNode tree.
-    fn collectAssignedMir(m: *mir.MirNode, set: *std.StringHashMapUnmanaged(void), alloc: std.mem.Allocator) anyerror!void {
-        switch (m.kind) {
-            .assignment => {
-                if (getRootIdentMir(m.lhs())) |name| try set.put(alloc, name, {});
-                try collectAssignedMir(m.rhs(), set, alloc);
-            },
-            .call => {
-                const callee_m = m.getCallee();
-                if (callee_m.kind == .field_access) {
-                    if (callee_m.children.len > 0) {
-                        if (getRootIdentMir(callee_m.children[0])) |name| {
-                            try set.put(alloc, name, {});
-                        }
-                    }
-                }
-                for (m.callArgs()) |arg| try collectAssignedMir(arg, set, alloc);
-            },
-            .block => {
-                for (m.children) |child| try collectAssignedMir(child, set, alloc);
-            },
-            .func => {}, // nested function — own scope
-            .if_stmt => {
-                try collectAssignedMir(m.condition(), set, alloc);
-                if (m.children.len > 1) try collectAssignedMir(m.thenBlock(), set, alloc);
-                if (m.elseBlock()) |e| try collectAssignedMir(e, set, alloc);
-            },
-            .while_stmt => {
-                try collectAssignedMir(m.condition(), set, alloc);
-                try collectAssignedMir(m.children[1], set, alloc);
-                if (m.children.len > 2) try collectAssignedMir(m.children[2], set, alloc);
-            },
-            .for_stmt => try collectAssignedMir(m.body(), set, alloc),
-            .slice => {
-                if (m.children.len > 0 and m.children[0].kind == .identifier) {
-                    if (m.children[0].name) |name| try set.put(alloc, name, {});
-                }
-                if (m.children.len > 1) try collectAssignedMir(m.children[1], set, alloc);
-                if (m.children.len > 2) try collectAssignedMir(m.children[2], set, alloc);
-            },
-            .var_decl => {
-                if (m.children.len > 0) try collectAssignedMir(m.value(), set, alloc);
-            },
-            .match_stmt => {
-                for (m.matchArms()) |arm_mir| {
-                    try collectAssignedMir(arm_mir.body(), set, alloc);
-                }
-            },
-            .defer_stmt => try collectAssignedMir(m.body(), set, alloc),
-            else => {},
-        }
-    }
+    pub fn collectAssignedMir(m: *mir.MirNode, set: *std.StringHashMapUnmanaged(void), alloc: std.mem.Allocator) anyerror!void { return decls_impl.collectAssignedMir(m, set, alloc); }
 
-    fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 {
-        return switch (m.kind) {
-            .identifier => m.name,
-            .field_access => if (m.children.len > 0) getRootIdentMir(m.children[0]) else null,
-            .index => if (m.children.len > 0) getRootIdentMir(m.children[0]) else null,
-            else => null,
-        };
-    }
+    pub fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 { return decls_impl.getRootIdentMir(m); }
 
-    fn generateFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void {
-        // Thread function — generate body + spawn wrapper
-        if (f.is_thread) return self.generateThreadFunc(node, f);
-
-        // bridge func — re-export from paired sidecar file
-        if (f.is_bridge) return self.generateBridgeReExport(f.name, f.is_pub);
-
-        // Body-less declaration (interface file import) — skip codegen.
-        // Never skip main (it can legitimately have an empty body).
-        if (f.body.* == .block and f.body.block.statements.len == 0 and
-            !f.is_bridge and !std.mem.eql(u8, f.name, "main")) return;
-
-        // Track current function for MIR return type queries
-        const prev_func_node = self.current_func_node;
-        self.current_func_node = node;
-        // Clear per-function tracking maps — each function has its own scope
-        const prev_reassigned_vars = self.reassigned_vars;
-        self.reassigned_vars = .{};
-        try collectAssigned(f.body, &self.reassigned_vars, self.allocator);
-        const prev_error_narrowed = self.error_narrowed;
-        self.error_narrowed = .{};
-        const prev_null_narrowed = self.null_narrowed;
-        self.null_narrowed = .{};
-        defer {
-            self.current_func_node = prev_func_node;
-            self.reassigned_vars.deinit(self.allocator);
-            self.reassigned_vars = prev_reassigned_vars;
-            self.error_narrowed.deinit(self.allocator);
-            self.error_narrowed = prev_error_narrowed;
-            self.null_narrowed.deinit(self.allocator);
-            self.null_narrowed = prev_null_narrowed;
-        }
-
-        // pub modifier — always pub for main (Zig requires pub fn main for exe entry)
-        if (f.is_pub or std.mem.eql(u8, f.name, "main")) try self.emit("pub ");
-
-        // compt func + `type` return → generic type fn with `comptime T: type` params
-        // compt func + other return  → inline fn with `anytype` params
-        // regular func               → fn (anytype params handled in loop below)
-        const returns_type = f.return_type.* == .type_named and
-            std.mem.eql(u8, f.return_type.type_named, K.Type.TYPE);
-        const is_type_generic = f.is_compt and returns_type;
-
-        if (f.is_compt and !is_type_generic) {
-            try self.emitFmt("inline fn {s}(", .{f.name});
-        } else {
-            try self.emitFmt("fn {s}(", .{f.name});
-        }
-
-        // Parameters — track first `any` param name for return type inference
-        var first_any_param: ?[]const u8 = null;
-        for (f.params, 0..) |param, i| {
-            if (i > 0) try self.emit(", ");
-            if (param.* == .param) {
-                const is_any = param.param.type_annotation.* == .type_named and
-                    std.mem.eql(u8, param.param.type_annotation.type_named, K.Type.ANY);
-                const is_type_param = param.param.type_annotation.* == .type_named and
-                    std.mem.eql(u8, param.param.type_annotation.type_named, K.Type.TYPE);
-                if (is_any and first_any_param == null) first_any_param = param.param.name;
-                if (is_type_param) {
-                    // `T: type` → `comptime T: type`
-                    try self.emitFmt("comptime {s}: type", .{param.param.name});
-                } else if (is_type_generic and is_any) {
-                    // `compt func F(T: any) type` → `fn F(comptime T: type)`
-                    try self.emitFmt("comptime {s}: type", .{param.param.name});
-                } else if (is_any) {
-                    // generic value param → anytype
-                    try self.emitFmt("{s}: anytype", .{param.param.name});
-                } else {
-                    try self.emitFmt("{s}: {s}", .{
-                        param.param.name,
-                        try self.typeToZig(param.param.type_annotation),
-                    });
-                    // Default params handled at call site, not in Zig signature
-                }
-            }
-        }
-
-        try self.emit(") ");
-
-        // Return type — `any` return becomes @TypeOf(first_any_param)
-        const return_is_any = f.return_type.* == .type_named and
-            std.mem.eql(u8, f.return_type.type_named, K.Type.ANY);
-        if (return_is_any) {
-            if (first_any_param) |pname| {
-                try self.emitFmt("@TypeOf({s})", .{pname});
-            } else {
-                try self.emit("anyopaque"); // fallback: no any param found
-            }
-        } else {
-            try self.emit(try self.typeToZig(f.return_type));
-        }
-        try self.emit(" ");
-
-        // Body — MIR block path
-        const func_mir = self.current_func_mir orelse return error.CompileError;
-        try self.generateBlockMir(func_mir.body());
-        try self.emit("\n");
-    }
+    pub fn generateFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void { return decls_impl.generateFunc(self, node, f); }
 
     /// Generate a thread function: body function + spawn wrapper.
     /// `thread worker(n: i32) Handle(i32) { return n * 2 }` generates:
     ///   fn _worker_body(n: i32) i32 { return (n * 2); }
     ///   fn worker(n: i32) _OrhonHandle(i32) { ... spawn ... }
-    fn generateThreadFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void {
-        // Extract inner type T from Handle(T) return type
-        const inner_type = if (f.return_type.* == .type_generic and
-            std.mem.eql(u8, f.return_type.type_generic.name, "Handle") and
-            f.return_type.type_generic.args.len > 0)
-            f.return_type.type_generic.args[0]
-        else
-            f.return_type;
-
-        const inner_zig = try self.typeToZig(inner_type);
-        const handle_zig = try self.typeToZig(f.return_type);
-
-        // ── Body function: fn _name_body(params) T { ... } ──
-        {
-            const prev_func_node = self.current_func_node;
-            self.current_func_node = node;
-            const prev_assigned = self.reassigned_vars;
-            self.reassigned_vars = .{};
-            try collectAssigned(f.body, &self.reassigned_vars, self.allocator);
-            defer {
-                self.current_func_node = prev_func_node;
-                self.reassigned_vars.deinit(self.allocator);
-                self.reassigned_vars = prev_assigned;
-            }
-
-            try self.emitFmt("fn _{s}_body(", .{f.name});
-            for (f.params, 0..) |param, i| {
-                if (i > 0) try self.emit(", ");
-                if (param.* == .param) {
-                    try self.emitFmt("{s}: {s}", .{
-                        param.param.name,
-                        try self.typeToZig(param.param.type_annotation),
-                    });
-                }
-            }
-            try self.emitFmt(") {s} ", .{inner_zig});
-            const func_mir = self.current_func_mir orelse return error.CompileError;
-            try self.generateBlockMir(func_mir.body());
-            try self.emit("\n\n");
-        }
-
-        // ── Spawn wrapper: fn name(params) _OrhonHandle(T) { ... } ──
-        if (f.is_pub) try self.emit("pub ");
-        try self.emitFmt("fn {s}(", .{f.name});
-        for (f.params, 0..) |param, i| {
-            if (i > 0) try self.emit(", ");
-            if (param.* == .param) {
-                try self.emitFmt("{s}: {s}", .{
-                    param.param.name,
-                    try self.typeToZig(param.param.type_annotation),
-                });
-            }
-        }
-        try self.emitFmt(") {s} ", .{handle_zig});
-        try self.emit("{\n");
-        self.indent += 1;
-
-        // Allocate shared state
-        try self.emitIndent();
-        try self.emitFmt("const _state = std.heap.page_allocator.create({s}.SharedState) catch @panic(\"Out of memory: thread state allocation\");\n", .{handle_zig});
-        try self.emitIndent();
-        try self.emit("_state.* = .{};\n");
-
-        // Spawn thread with body function
-        try self.emitIndent();
-        try self.emitFmt("return .{{ .thread = std.Thread.spawn(.{{}}, struct {{ fn run(_s: *{s}.SharedState", .{handle_zig});
-        for (f.params) |param| {
-            if (param.* == .param) {
-                try self.emitFmt(", _{s}: {s}", .{
-                    param.param.name,
-                    try self.typeToZig(param.param.type_annotation),
-                });
-            }
-        }
-        try self.emit(") void { ");
-
-        // Call body function with unwrapped params
-        const is_void = std.mem.eql(u8, inner_zig, "void");
-        if (!is_void) try self.emit("_s.result = ");
-        try self.emitFmt("_{s}_body(", .{f.name});
-        for (f.params, 0..) |param, i| {
-            if (i > 0) try self.emit(", ");
-            if (param.* == .param) {
-                try self.emitFmt("_{s}", .{param.param.name});
-            }
-        }
-        try self.emit("); _s.completed.store(true, .release); } }.run, .{ _state");
-        for (f.params) |param| {
-            if (param.* == .param) {
-                try self.emitFmt(", {s}", .{param.param.name});
-            }
-        }
-        try self.emit(" }) catch |e| @panic(@errorName(e)), .state = _state };\n");
-
-        self.indent -= 1;
-        try self.emitIndent();
-        try self.emit("}\n");
-    }
+    pub fn generateThreadFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void { return decls_impl.generateThreadFunc(self, node, f); }
 
     // ============================================================
     // STRUCTS
     // ============================================================
 
     /// MIR-path struct codegen — iterates MirNode children instead of AST members.
-    fn generateStructMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const struct_name = m.name orelse return;
-        if (m.is_bridge) return self.generateBridgeReExport(struct_name, m.is_pub);
-
-        const tp = m.type_params;
-        const is_generic = tp != null and tp.?.len > 0;
-
-        if (is_generic) {
-            if (m.is_pub) try self.emit("pub ");
-            try self.emitFmt("fn {s}(", .{struct_name});
-            for (tp.?, 0..) |param, i| {
-                if (i > 0) try self.emit(", ");
-                if (param.* == .param) {
-                    try self.emitFmt("comptime {s}: type", .{param.param.name});
-                }
-            }
-            try self.emit(") type {\n");
-            self.indent += 1;
-            try self.emitIndent();
-            try self.emit("return struct {\n");
-            self.indent += 1;
-            self.generic_struct_name = struct_name;
-        } else {
-            if (m.is_pub) try self.emit("pub ");
-            try self.emitFmt("const {s} = struct {{\n", .{struct_name});
-            self.indent += 1;
-        }
-
-        for (m.children) |child| {
-            switch (child.kind) {
-                .field_def => {
-                    const fname = child.name orelse continue;
-                    try self.emitIndent();
-                    try self.emitFmt("{s}: {s}", .{ fname, try self.typeToZig(child.type_annotation orelse continue) });
-                    if (child.default_value) |dv| {
-                        try self.emit(" = ");
-                        try self.generateExpr(dv);
-                    }
-                    try self.emit(",\n");
-                },
-                .func => {
-                    const prev = self.current_func_mir;
-                    self.current_func_mir = child;
-                    defer self.current_func_mir = prev;
-                    try self.generateFuncMir(child);
-                },
-                .var_decl => {
-                    const decl_kw: []const u8 = if (child.is_const) "const" else "var";
-                    const cname = child.name orelse continue;
-                    try self.emitIndent();
-                    try self.emitFmt("{s} {s}", .{ decl_kw, cname });
-                    if (child.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
-                    try self.emit(" = ");
-                    try self.generateExprMir(child.value());
-                    try self.emit(";\n");
-                },
-                else => {},
-            }
-        }
-
-        if (is_generic) {
-            self.generic_struct_name = null;
-            self.indent -= 1;
-            try self.emitIndent();
-            try self.emit("};\n");
-            self.indent -= 1;
-            try self.emit("}\n");
-        } else {
-            self.indent -= 1;
-            try self.emit("};\n");
-        }
-    }
+    pub fn generateStructMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateStructMir(self, m); }
 
     // ============================================================
     // ENUMS
     // ============================================================
 
     /// MIR-path enum codegen — iterates MirNode children instead of AST members.
-    fn generateEnumMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const enum_name = m.name orelse return;
-        if (m.is_pub) try self.emit("pub ");
-
-        const backing = try self.typeToZig(m.backing_type orelse return);
-
-        try self.emitFmt("const {s} = enum({s}) {{\n", .{ enum_name, backing });
-        self.indent += 1;
-
-        for (m.children) |child| {
-            switch (child.kind) {
-                .enum_variant_def => {
-                    const vname = child.name orelse continue;
-                    try self.emitIndent();
-                    if (child.literal) |lit| {
-                        try self.emitFmt("{s} = {s},\n", .{ vname, lit });
-                    } else {
-                        try self.emitFmt("{s},\n", .{vname});
-                    }
-                },
-                .func => {
-                    const prev = self.current_func_mir;
-                    self.current_func_mir = child;
-                    defer self.current_func_mir = prev;
-                    try self.generateFuncMir(child);
-                },
-                else => {},
-            }
-        }
-
-        self.indent -= 1;
-        try self.emit("};\n");
-    }
-
-    fn generateBitfield(self: *CodeGen, b: parser.BitfieldDecl) anyerror!void {
-        if (b.is_pub) try self.emit("pub ");
-        const backing = try self.typeToZig(b.backing_type);
-
-        try self.emitFmt("const {s} = struct {{\n", .{b.name});
-        self.indent += 1;
-
-        // Named flag constants — powers of 2
-        for (b.members, 0..) |flag_name, i| {
-            try self.emitIndent();
-            try self.emitFmt("pub const {s}: {s} = {d};\n", .{ flag_name, backing, @as(u64, 1) << @intCast(i) });
-        }
-
-        // value field
-        try self.emitIndent();
-        try self.emitFmt("value: {s} = 0,\n", .{backing});
-
-        // methods
-        try self.emitIndent();
-        try self.emitFmt("pub fn has(self: {s}, flag: {s}) bool {{ return (self.value & flag) != 0; }}\n", .{ b.name, backing });
-        try self.emitIndent();
-        try self.emitFmt("pub fn set(self: *{s}, flag: {s}) void {{ self.value |= flag; }}\n", .{ b.name, backing });
-        try self.emitIndent();
-        try self.emitFmt("pub fn clear(self: *{s}, flag: {s}) void {{ self.value &= ~flag; }}\n", .{ b.name, backing });
-        try self.emitIndent();
-        try self.emitFmt("pub fn toggle(self: *{s}, flag: {s}) void {{ self.value ^= flag; }}\n", .{ b.name, backing });
-
-        self.indent -= 1;
-        try self.emit("};\n");
-    }
-
-    /// MIR-path bitfield codegen.
-    fn generateBitfieldMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const bf_name = m.name orelse return;
-        if (m.is_pub) try self.emit("pub ");
-        const backing = try self.typeToZig(m.backing_type orelse return);
-
-        try self.emitFmt("const {s} = struct {{\n", .{bf_name});
-        self.indent += 1;
-
-        const members = m.bit_members orelse &.{};
-        for (members, 0..) |flag_name, i| {
-            try self.emitIndent();
-            try self.emitFmt("pub const {s}: {s} = {d};\n", .{ flag_name, backing, @as(u64, 1) << @intCast(i) });
-        }
-
-        try self.emitIndent();
-        try self.emitFmt("value: {s} = 0,\n", .{backing});
-
-        try self.emitIndent();
-        try self.emitFmt("pub fn has(self: {s}, flag: {s}) bool {{ return (self.value & flag) != 0; }}\n", .{ bf_name, backing });
-        try self.emitIndent();
-        try self.emitFmt("pub fn set(self: *{s}, flag: {s}) void {{ self.value |= flag; }}\n", .{ bf_name, backing });
-        try self.emitIndent();
-        try self.emitFmt("pub fn clear(self: *{s}, flag: {s}) void {{ self.value &= ~flag; }}\n", .{ bf_name, backing });
-        try self.emitIndent();
-        try self.emitFmt("pub fn toggle(self: *{s}, flag: {s}) void {{ self.value ^= flag; }}\n", .{ bf_name, backing });
-
-        self.indent -= 1;
-        try self.emit("};\n");
-    }
+    pub fn generateEnumMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateEnumMir(self, m); }
 
     // ============================================================
-    // VARIABLE DECLARATIONS
+    // BITFIELDS
     // ============================================================
 
-    fn generateConst(self: *CodeGen, node: *parser.Node, v: parser.VarDecl) anyerror!void {
-        if (v.is_bridge) return self.generateBridgeReExport(v.name, v.is_pub);
-        return self.generateDecl(node, v, "const");
-    }
+    pub fn generateBitfield(self: *CodeGen, b: parser.BitfieldDecl) anyerror!void { return decls_impl.generateBitfield(self, b); }
 
-    fn generateVar(self: *CodeGen, node: *parser.Node, v: parser.VarDecl) anyerror!void {
-        if (v.is_bridge) return self.generateBridgeReExport(v.name, v.is_pub);
-        return self.generateDecl(node, v, "var");
-    }
-
-    /// Shared codegen for var and const declarations
-    fn generateDecl(self: *CodeGen, node: *parser.Node, v: parser.VarDecl, decl_keyword: []const u8) anyerror!void {
-        if (v.is_pub) try self.emit("pub ");
-        try self.emitFmt("{s} {s}", .{ decl_keyword, v.name });
-        const tc = self.getTypeClass(node);
-        if (v.type_annotation) |t| {
-            try self.emitFmt(": {s}", .{try self.typeToZig(t)});
-        }
-        try self.emit(" = ");
-        if (tc == .arbitrary_union) {
-            try self.generateArbitraryUnionWrappedExpr(v.value, self.getUnionMembers(node));
-        } else {
-            // Native ?T and anyerror!T — Zig handles coercion, no wrapping needed
-            const did_coerce = blk: {
-                const t = v.type_annotation orelse break :blk false;
-                if (t.* != .type_generic) break :blk false;
-                if (t.type_generic.args.len == 0) break :blk false;
-                const n = t.type_generic.name;
-                if (!std.mem.eql(u8, n, "Ptr") and !std.mem.eql(u8, n, "RawPtr") and !std.mem.eql(u8, n, "VolatilePtr")) break :blk false;
-                try self.generatePtrCoercion(n, t.type_generic.args[0], v.value);
-                break :blk true;
-            };
-            if (!did_coerce) try self.generateExpr(v.value);
-        }
-        try self.emit(";\n");
-    }
-
-    /// Shared codegen for var/const declarations inside function blocks.
-    /// Handles type tracking, null unions, and type_ctx for overflow codegen.
-    fn generateStmtDecl(self: *CodeGen, node: *parser.Node, v: parser.VarDecl, decl_keyword: []const u8) anyerror!void {
-        const tc = self.getTypeClass(node);
-        try self.emitFmt("{s} {s}", .{ decl_keyword, v.name });
-        if (v.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
-        try self.emit(" = ");
-        if (tc == .arbitrary_union) {
-            try self.generateArbitraryUnionWrappedExpr(v.value, self.getUnionMembers(node));
-        } else {
-            // Native ?T and anyerror!T — Zig handles coercion, no wrapping needed
-            const prev_ctx = self.type_ctx;
-            self.type_ctx = v.type_annotation;
-            const did_coerce = blk: {
-                const t = v.type_annotation orelse break :blk false;
-                if (t.* != .type_generic) break :blk false;
-                if (t.type_generic.args.len == 0) break :blk false;
-                const n = t.type_generic.name;
-                if (!std.mem.eql(u8, n, "Ptr") and !std.mem.eql(u8, n, "RawPtr") and !std.mem.eql(u8, n, "VolatilePtr")) break :blk false;
-                try self.generatePtrCoercion(n, t.type_generic.args[0], v.value);
-                break :blk true;
-            };
-            if (!did_coerce) try self.generateExpr(v.value);
-            self.type_ctx = prev_ctx;
-        }
-        try self.emitFmt("; _ = &{s};", .{v.name});
-    }
-
-    /// Returns true if the type annotation is the `type` keyword — indicating a type alias declaration.
-    fn isTypeAlias(type_annotation: ?*parser.Node) bool {
-        const ta = type_annotation orelse return false;
-        return ta.* == .type_named and std.mem.eql(u8, ta.type_named, K.Type.TYPE);
-    }
-
-    fn generateCompt(self: *CodeGen, v: parser.VarDecl) anyerror!void {
-        // Top-level const is already comptime in Zig, so just emit const.
-        if (v.is_pub) try self.emit("pub ");
-        try self.emitFmt("const {s}: {s} = ", .{
-            v.name,
-            try self.typeToZig(v.type_annotation orelse return),
-        });
-        try self.generateExpr(v.value);
-        try self.emit(";\n");
-    }
-
-    /// MIR-path top-level var/const/compt declaration.
-    fn generateTopLevelDeclMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const name = m.name orelse return;
-        if (m.is_bridge) return self.generateBridgeReExport(name, m.is_pub);
-
-        // Type alias: const Name: type = T → const Name = ZigType;
-        // Must precede is_compt check — type aliases are also is_const.
-        if (m.is_const and isTypeAlias(m.type_annotation)) {
-            if (m.is_pub) try self.emit("pub ");
-            try self.emitFmt("const {s} = ", .{name});
-            try self.emit(try self.typeToZig(m.value().ast));
-            try self.emit(";\n");
-            return;
-        }
-
-        if (m.is_compt) {
-            // Top-level const is already comptime in Zig, so just emit const.
-            if (m.is_pub) try self.emit("pub ");
-            try self.emitFmt("const {s}: {s} = ", .{
-                name,
-                try self.typeToZig(m.type_annotation orelse return),
-            });
-            try self.generateExprMir(m.value());
-            try self.emit(";\n");
-            return;
-        }
-
-        const decl_keyword: []const u8 = if (m.is_const) "const" else "var";
-        if (m.is_pub) try self.emit("pub ");
-        try self.emitFmt("{s} {s}", .{ decl_keyword, name });
-        if (m.type_annotation) |t| {
-            try self.emitFmt(": {s}", .{try self.typeToZig(t)});
-        }
-        try self.emit(" = ");
-        if (m.type_class == .arbitrary_union) {
-            try self.generateCoercedExprMir(m.value());
-        } else if (m.value().kind == .type_expr) {
-            // Type in expression position = default constructor (.{})
-            try self.emit(".{}");
-        } else {
-            // Native ?T and anyerror!T — Zig handles coercion, no wrapping needed
-            const did_coerce = blk: {
-                const t = m.type_annotation orelse break :blk false;
-                if (t.* != .type_generic) break :blk false;
-                if (t.type_generic.args.len == 0) break :blk false;
-                const n = t.type_generic.name;
-                if (!std.mem.eql(u8, n, "Ptr") and !std.mem.eql(u8, n, "RawPtr") and !std.mem.eql(u8, n, "VolatilePtr")) break :blk false;
-                try self.generatePtrCoercionMir(n, t.type_generic.args[0], m.value());
-                break :blk true;
-            };
-            if (!did_coerce) try self.generateExprMir(m.value());
-        }
-        try self.emit(";\n");
-    }
+    pub fn generateBitfieldMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateBitfieldMir(self, m); }
 
     // ============================================================
-    // TESTS
+    // VAR / CONST DECLARATIONS
     // ============================================================
 
-    fn generateTestMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const description = m.name orelse return;
-        try self.emitFmt("test {s} ", .{description});
-        const prev_reassigned_vars = self.reassigned_vars;
-        self.reassigned_vars = .{};
-        try collectAssignedMir(m.body(), &self.reassigned_vars, self.allocator);
-        self.in_test_block = true;
-        try self.generateBlockMir(m.body());
-        self.in_test_block = false;
-        self.reassigned_vars.deinit(self.allocator);
-        self.reassigned_vars = prev_reassigned_vars;
-        try self.emit("\n");
-    }
+    pub fn generateConst(self: *CodeGen, node: *parser.Node, v: parser.VarDecl) anyerror!void { return decls_impl.generateConst(self, node, v); }
+
+    pub fn generateVar(self: *CodeGen, node: *parser.Node, v: parser.VarDecl) anyerror!void { return decls_impl.generateVar(self, node, v); }
+
+    pub fn generateDecl(self: *CodeGen, node: *parser.Node, v: parser.VarDecl, decl_keyword: []const u8) anyerror!void { return decls_impl.generateDecl(self, node, v, decl_keyword); }
+
+    pub fn generateStmtDecl(self: *CodeGen, node: *parser.Node, v: parser.VarDecl, decl_keyword: []const u8) anyerror!void { return decls_impl.generateStmtDecl(self, node, v, decl_keyword); }
+
+    pub fn isTypeAlias(type_annotation: ?*parser.Node) bool { return decls_impl.isTypeAlias(type_annotation); }
+
+    pub fn generateCompt(self: *CodeGen, v: parser.VarDecl) anyerror!void { return decls_impl.generateCompt(self, v); }
+
+    // ============================================================
+    // TOP-LEVEL DISPATCH
+    // ============================================================
+
+    pub fn generateTopLevelDeclMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateTopLevelDeclMir(self, m); }
+
+    pub fn generateTestMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateTestMir(self, m); }
 
     // ============================================================
     // BLOCKS AND STATEMENTS
     // ============================================================
 
-    /// MIR-path block generation — walks MirNode children instead of AST statements.
-    /// Handles injected temp_var/injected_defer nodes from MirLowerer.
-    fn generateBlockMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        try self.emit("{\n");
-        self.indent += 1;
+    pub fn generateBlockMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return stmts_impl.generateBlockMir(self, m); }
 
-        for (m.children) |child| {
-            try self.flushPreStmts();
-            try self.emitIndent();
-            try self.generateStatementMir(child);
-            try self.emit("\n");
-        }
+    pub fn generateBodyStatements(self: *CodeGen, m: *mir.MirNode) anyerror!void { return stmts_impl.generateBodyStatements(self, m); }
 
-        self.indent -= 1;
-        try self.emitIndent();
-        try self.emit("}");
-    }
+    pub fn generateStatementMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return stmts_impl.generateStatementMir(self, m); }
 
-    /// Emit the body statements of a block node, already inside an outer `{`.
-    /// Caller must manage indentation and surrounding braces.
-    fn generateBodyStatements(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        for (m.children) |child| {
-            try self.flushPreStmts();
-            try self.emitIndent();
-            try self.generateStatementMir(child);
-            try self.emit("\n");
-        }
-    }
-
-    /// MIR-path statement dispatch — switches on MirKind, reads type info from MirNode.
-    /// All handlers use MirNode tree directly — no AST fallthrough.
-    fn generateStatementMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        switch (m.kind) {
-            .var_decl => {
-                const var_name = m.name orelse return;
-                // Type alias in function body: const Name: type = T
-                // Must precede is_compt check. No _ = &name; suffix — type aliases are types, not values.
-                if (m.is_const and isTypeAlias(m.type_annotation)) {
-                    try self.emitFmt("const {s} = ", .{var_name});
-                    try self.emit(try self.typeToZig(m.value().ast));
-                    try self.emit(";");
-                    return;
-                }
-                if (m.is_compt) {
-                    try self.emitFmt("const {s}: {s} = ", .{
-                        var_name,
-                        try self.typeToZig(m.type_annotation orelse return),
-                    });
-                    try self.generateExprMir(m.value());
-                    try self.emit(";");
-                } else if (m.is_const) {
-                    try self.generateStmtDeclMir(m, "const");
-                } else {
-                    const is_handle = if (m.type_annotation) |ta|
-                        ta.* == .type_generic and std.mem.eql(u8, ta.type_generic.name, "Handle")
-                    else
-                        false;
-                    const is_mutated = is_handle or self.reassigned_vars.contains(var_name);
-                    const decl_keyword: []const u8 = if (is_mutated) "var" else "const";
-                    if (!is_mutated) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "'{s}' is declared as var but never reassigned — use const", .{var_name});
-                        defer self.allocator.free(msg);
-                        try self.reporter.warn(.{ .message = msg, .loc = self.nodeLoc(m.ast) });
-                    }
-                    try self.generateStmtDeclMir(m, decl_keyword);
-                }
-            },
-            .return_stmt => {
-                try self.emit("return");
-                if (m.children.len > 0) {
-                    const val_m = m.value();
-                    try self.emit(" ");
-                    // Use MIR coercion from child MirNode directly
-                    if (val_m.coercion) |c| {
-                        switch (c) {
-                            // Native ?T and anyerror!T — Zig handles coercion natively
-                            .null_wrap, .error_wrap => {
-                                try self.generateExprMir(val_m);
-                            },
-                            .arbitrary_union_wrap => {
-                                try self.generateArbitraryUnionWrappedExprMir(val_m, self.funcReturnMembers());
-                            },
-                            .array_to_slice, .value_to_const_ref => {
-                                try self.emit("&");
-                                try self.generateExprMir(val_m);
-                            },
-                            .optional_unwrap => {
-                                // Native ?T: unwrap → .?
-                                try self.generateExprMir(val_m);
-                                try self.emit(".?");
-                            },
-                        }
-                    } else {
-                        // Native ?T and anyerror!T — Zig coerces values automatically
-                        try self.generateExprMir(val_m);
-                    }
-                }
-                try self.emit(";");
-            },
-            .if_stmt => {
-                try self.emit("if (");
-                try self.generateExprMir(m.condition());
-                try self.emit(") ");
-                // Narrowing is pre-stamped on MirNode descendants — no map needed
-                if (m.children.len > 1) try self.generateBlockMir(m.thenBlock());
-                if (m.elseBlock()) |else_m| {
-                    try self.emit(" else ");
-                    if (else_m.kind == .if_stmt) {
-                        // elif — emit as else if without extra braces
-                        try self.generateStatementMir(else_m);
-                    } else {
-                        try self.generateBlockMir(else_m);
-                    }
-                }
-            },
-            .assignment => {
-                const assign_op = m.op orelse "=";
-                if (std.mem.eql(u8, assign_op, "/=")) {
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(" = @divTrunc(");
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(", ");
-                    try self.generateExprMir(m.rhs());
-                    try self.emit(");");
-                } else if (std.mem.eql(u8, assign_op, "=") and
-                    m.lhs().type_class == .null_union)
-                {
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(" = ");
-                    try self.generateCoercedExprMir(m.rhs());
-                    try self.emit(";");
-                } else if (std.mem.eql(u8, assign_op, "=") and
-                    m.lhs().type_class == .arbitrary_union)
-                {
-                    const members_rt = if (m.lhs().resolved_type == .union_type)
-                        m.lhs().resolved_type.union_type
-                    else if (m.lhs().kind == .identifier) self.getVarUnionMembers(m.lhs().name orelse "") else null;
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(" = ");
-                    try self.generateArbitraryUnionWrappedExprMir(m.rhs(), members_rt);
-                    try self.emit(";");
-                } else {
-                    try self.generateExprMir(m.lhs());
-                    try self.emitFmt(" {s} ", .{assign_op});
-                    try self.generateExprMir(m.rhs());
-                    try self.emit(";");
-                }
-            },
-            .destruct => try self.generateDestructMir(m),
-            .while_stmt => {
-                try self.emit("while (");
-                try self.generateExprMir(m.condition());
-                try self.emit(")");
-                if (m.children.len > 2) {
-                    const cont_m = m.children[2];
-                    try self.emit(" : (");
-                    try self.generateContinueExprMir(cont_m);
-                    try self.emit(")");
-                }
-                try self.emit(" ");
-                // Body is children[1]
-                try self.generateBlockMir(m.children[1]);
-            },
-            .for_stmt => try self.generateForMir(m),
-            .defer_stmt => {
-                try self.emit("defer ");
-                try self.generateBlockMir(m.body());
-            },
-            .match_stmt => try self.generateMatchMir(m),
-            .break_stmt => try self.emit("break;"),
-            .continue_stmt => try self.emit("continue;"),
-            .throw_stmt => {
-                const var_name = m.name orelse return;
-                try self.emitFmt("if ({s}) |_| {{}} else |_err| return _err;", .{var_name});
-                try self.error_narrowed.put(self.allocator, var_name, {});
-            },
-            .block => try self.generateBlockMir(m),
-            // Injected nodes from MirLowerer (interpolation hoisting)
-            .temp_var => {
-                if (m.injected_name) |name| {
-                    try self.emitFmt("const {s} = ", .{name});
-                    if (m.interp_parts) |parts| {
-                        // Use inline variant — temp_var already provides the const + sibling defer
-                        try self.generateInterpolatedStringMirInline(parts, m.children);
-                    }
-                    try self.emit(";");
-                }
-            },
-            .injected_defer => {
-                if (m.injected_name) |name| {
-                    try self.emitFmt("defer std.heap.smp_allocator.free({s});", .{name});
-                }
-            },
-            // Bare expression as statement — discard return value
-            else => {
-                if (m.kind == .call) try self.emit("_ = ");
-                try self.generateExprMir(m);
-                try self.emit(";");
-            },
-        }
-    }
-
-    /// MIR-path statement var/const declaration — uses m.type_class directly.
-    fn generateStmtDeclMir(self: *CodeGen, m: *mir.MirNode, decl_keyword: []const u8) anyerror!void {
-        const var_name = m.name orelse return;
-        const val_m = m.value(); // children[0] = value expression
-        try self.emitFmt("{s} {s}", .{ decl_keyword, var_name });
-        if (m.type_annotation) |t| try self.emitFmt(": {s}", .{try self.typeToZig(t)});
-        try self.emit(" = ");
-        if (m.type_class == .arbitrary_union) {
-            try self.generateCoercedExprMir(val_m);
-        } else if (val_m.kind == .type_expr) {
-            // Type in expression position = default constructor (.{})
-            try self.emit(".{}");
-        } else {
-            // Native ?T and anyerror!T — Zig handles coercion, no wrapping needed
-            const prev_ctx = self.type_ctx;
-            self.type_ctx = m.type_annotation;
-            const did_coerce = blk: {
-                const t = m.type_annotation orelse break :blk false;
-                if (t.* != .type_generic) break :blk false;
-                if (t.type_generic.args.len == 0) break :blk false;
-                const n = t.type_generic.name;
-                if (!std.mem.eql(u8, n, "Ptr") and !std.mem.eql(u8, n, "RawPtr") and !std.mem.eql(u8, n, "VolatilePtr")) break :blk false;
-                try self.generatePtrCoercionMir(n, t.type_generic.args[0], val_m);
-                break :blk true;
-            };
-            if (!did_coerce) try self.generateExprMir(val_m);
-            self.type_ctx = prev_ctx;
-        }
-        try self.emitFmt("; _ = &{s};", .{var_name});
-    }
+    pub fn generateStmtDeclMir(self: *CodeGen, m: *mir.MirNode, decl_keyword: []const u8) anyerror!void { return stmts_impl.generateStmtDeclMir(self, m, decl_keyword); }
 
     // ============================================================
-    // EXPRESSIONS
+    // EXPRESSIONS (AST path)
     // ============================================================
 
-    fn generateExpr(self: *CodeGen, node: *parser.Node) anyerror!void {
-        switch (node.*) {
-            .int_literal => |text| {
-                // Remove underscore separators for Zig (Zig uses _ too, so keep them)
-                try self.emit(text);
-            },
-            .float_literal => |text| try self.emit(text),
-            .string_literal => |text| try self.emit(text),
-            .interpolated_string => |interp| try self.generateInterpolatedString(interp),
-            .bool_literal => |b| try self.emit(if (b) "true" else "false"),
-            .null_literal => try self.emit("null"),
-            .error_literal => |msg| {
-                // Error("message") → error.sanitized_name (native Zig error)
-                const name = try self.sanitizeErrorName(msg);
-                try self.emitFmt("error.{s}", .{name});
-            },
-            .identifier => |name| {
-                if (self.isEnumVariant(name)) {
-                    try self.emitFmt(".{s}", .{name});
-                } else if (self.generic_struct_name) |gsn| {
-                    if (std.mem.eql(u8, name, gsn)) {
-                        try self.emit("@This()");
-                    } else {
-                        const mapped = builtins.primitiveToZig(name);
-                        try self.emit(mapped);
-                    }
-                } else {
-                    // Map type names used as values (e.g. generic type args)
-                    const mapped = builtins.primitiveToZig(name);
-                    try self.emit(mapped);
-                }
-            },
-            .type_named => {
-                // Type used as expression value (e.g. generic type arg in Ptr(i32, &x))
-                try self.emit(try self.typeToZig(node));
-            },
-            .borrow_expr => |inner| {
-                try self.emit("&");
-                try self.generateExpr(inner);
-            },
-            .array_literal => |items| {
-                try self.emit(".{");
-                for (items, 0..) |item, i| {
-                    if (i > 0) try self.emit(", ");
-                    try self.generateExpr(item);
-                }
-                try self.emit("}");
-            },
-            .tuple_literal => |t| {
-                try self.emit(".{");
-                if (t.is_named) {
-                    for (t.fields, 0..) |field, i| {
-                        if (i > 0) try self.emit(", ");
-                        try self.emitFmt(".{s} = ", .{t.field_names[i]});
-                        try self.generateExpr(field);
-                    }
-                } else {
-                    for (t.fields, 0..) |field, i| {
-                        if (i > 0) try self.emit(", ");
-                        try self.generateExpr(field);
-                    }
-                }
-                try self.emit("}");
-            },
-            .binary_expr => |b| {
-                // `x is Error`   → if(x) false else true  (anyerror!T check)
-                // `x is null`    → x == null    (?T check)
-                // `x is T`       → @TypeOf(x) == T  (comptime type check for `any` params)
-                // `x is not ...` → same but with !=
-                const is_eq = std.mem.eql(u8, b.op, "==");
-                const is_ne = std.mem.eql(u8, b.op, "!=");
-                if ((is_eq or is_ne) and
-                    b.left.* == .compiler_func and
-                    std.mem.eql(u8, b.left.compiler_func.name, K.Type.TYPE) and
-                    b.left.compiler_func.args.len > 0)
-                {
-                    const val_node = b.left.compiler_func.args[0];
-                    const cmp = if (is_eq) "==" else "!=";
-                    // null is a keyword, parsed as .null_literal not .identifier
-                    if (b.right.* == .null_literal) {
-                        // Record narrowing for `.value` resolution
-                        if (val_node.* == .identifier)
-                            try self.null_narrowed.put(self.allocator, val_node.identifier, {});
-                        // (null | T) → ?T: x is null → x == null
-                        try self.emit("(");
-                        try self.generateExpr(val_node);
-                        try self.emitFmt(" {s} null)", .{cmp});
-                        return;
-                    }
-                    if (b.right.* == .identifier) {
-                        const rhs = b.right.identifier;
-                        if (std.mem.eql(u8, rhs, K.Type.ERROR)) {
-                            // Record narrowing for `.value` resolution
-                            if (val_node.* == .identifier)
-                                try self.error_narrowed.put(self.allocator, val_node.identifier, {});
-                            // (Error | T) → anyerror!T: x is Error →
-                            //   if (x) |_| false else |_| true  (for ==)
-                            //   if (x) |_| true else |_| false  (for !=)
-                            const t_val = if (is_eq) "false" else "true";
-                            const f_val = if (is_eq) "true" else "false";
-                            try self.emit("(if (");
-                            try self.generateExpr(val_node);
-                            try self.emitFmt(") |_| {s} else |_| {s})", .{ t_val, f_val });
-                            return;
-                        }
-                        // Arbitrary union type check: `val is i32` → `val == ._i32`
-                        if (self.getTypeClass(val_node) == .arbitrary_union) {
-                            try self.emit("(");
-                            try self.generateExpr(val_node);
-                            try self.emitFmt(" {s} ._{s})", .{ cmp, rhs });
-                            return;
-                        }
-                        // General type check: `val is i32` → `@TypeOf(val) == i32`
-                        // Map Orhon type names to Zig (e.g. String → []const u8)
-                        const zig_rhs = builtins.primitiveToZig(rhs);
-                        try self.emit("(@TypeOf(");
-                        try self.generateExpr(val_node);
-                        try self.emitFmt(") {s} {s})", .{ cmp, zig_rhs });
-                        return;
-                    }
-                    // Qualified type check: `val is module.Type` per D-07
-                    if (b.right.* == .field_expr) {
-                        // If left side is a tagged union, emit union tag comparison
-                        if (self.getTypeClass(val_node) == .arbitrary_union) {
-                            const fe = b.right.field_expr;
-                            try self.emit("(");
-                            try self.generateExpr(val_node);
-                            try self.emitFmt(" {s} ._{s})", .{ cmp, fe.field });
-                            return;
-                        }
-                        // Non-union: comptime type check via @TypeOf
-                        try self.emit("(@TypeOf(");
-                        try self.generateExpr(val_node);
-                        try self.emitFmt(") {s} ", .{cmp});
-                        try self.emitTypePath(b.right);
-                        try self.emit(")");
-                        return;
-                    }
-                }
-                // Division on signed ints → @divTrunc in Zig
-                if (std.mem.eql(u8, b.op, "/")) {
-                    try self.emit("@divTrunc(");
-                    try self.generateExpr(b.left);
-                    try self.emit(", ");
-                    try self.generateExpr(b.right);
-                    try self.emit(")");
-                } else if (std.mem.eql(u8, b.op, "%")) {
-                    try self.emit("@mod(");
-                    try self.generateExpr(b.left);
-                    try self.emit(", ");
-                    try self.generateExpr(b.right);
-                    try self.emit(")");
-                } else if ((is_eq or is_ne) and (self.isStringExpr(b.left) or self.isStringExpr(b.right))) {
-                    // String ([]const u8) comparison → std.mem.eql
-                    if (is_ne) try self.emit("!");
-                    try self.emit("std.mem.eql(u8, ");
-                    try self.generateExpr(b.left);
-                    try self.emit(", ");
-                    try self.generateExpr(b.right);
-                    try self.emit(")");
-                } else {
-                    const op = opToZig(b.op);
-                    try self.emit("(");
-                    try self.generateExpr(b.left);
-                    try self.emitFmt(" {s} ", .{op});
-                    try self.generateExpr(b.right);
-                    try self.emit(")");
-                }
-            },
-            .unary_expr => |u| {
-                const op = opToZig(u.op);
-                try self.emitFmt("{s}(", .{op});
-                try self.generateExpr(u.operand);
-                try self.emit(")");
-            },
-            .call_expr => |c| {
-                // Version() is metadata-only — reject in expressions
-                if (c.callee.* == .identifier and std.mem.eql(u8, c.callee.identifier, "Version")) {
-                    try self.reporter.report(.{
-                        .message = "Version() can only be used in #version metadata",
-                        .loc = self.nodeLoc(node),
-                    });
-                    return;
-                }
-                // Handle(value) → just emit the value (wrapping done by spawn wrapper)
-                if (c.callee.* == .identifier and std.mem.eql(u8, c.callee.identifier, "Handle") and c.args.len == 1) {
-                    try self.generateExpr(c.args[0]);
-                    return;
-                }
-                // Bitfield constructor: Permissions(Read, Write) → Permissions{ .value = Permissions.Read | Permissions.Write }
-                if (c.callee.* == .identifier) {
-                    if (self.decls) |d| {
-                        if (d.bitfields.get(c.callee.identifier)) |_| {
-                            const bf_name = c.callee.identifier;
-                            try self.emitFmt("{s}{{ .value = ", .{bf_name});
-                            if (c.args.len == 0) {
-                                try self.emit("0");
-                            } else {
-                                for (c.args, 0..) |arg, i| {
-                                    if (i > 0) try self.emit(" | ");
-                                    if (arg.* == .identifier) {
-                                        try self.emitFmt("{s}.{s}", .{ bf_name, arg.identifier });
-                                    } else {
-                                        try self.generateExpr(arg);
-                                    }
-                                }
-                            }
-                            try self.emit(" }");
-                            return;
-                        }
-                    }
-                }
-                // Bitfield method: p.has(Read) → p.has(Permissions.Read) — qualify flag args
-                if (c.callee.* == .field_expr) {
-                    const obj = c.callee.field_expr.object;
-                    if (self.getBitfieldName(obj)) |bf_name| {
-                        try self.generateExpr(c.callee);
-                        try self.emit("(");
-                        for (c.args, 0..) |arg, i| {
-                            if (i > 0) try self.emit(", ");
-                            if (arg.* == .identifier) {
-                                try self.emitFmt("{s}.{s}", .{ bf_name, arg.identifier });
-                            } else {
-                                try self.generateExpr(arg);
-                            }
-                        }
-                        try self.emit(")");
-                        return;
-                    }
-                }
-                // Collection constructor: List(T).new(), Map(K,V).new(), Set(T).new() → .{}
-                // The collection_expr builder is transparent — List(i32) reduces to the
-                // element type_primitive (i32) in the AST. The object is either a
-                // collection_expr (if the builder is updated) or a type_primitive/type_named
-                // (due to transparency). User struct .new() uses identifier (not type node).
-                if (c.callee.* == .field_expr) {
-                    const method = c.callee.field_expr.field;
-                    const obj = c.callee.field_expr.object;
-                    if (std.mem.eql(u8, method, "new")) {
-                        const is_type_node = obj.* == .collection_expr or
-                            obj.* == .type_primitive or obj.* == .type_named or
-                            obj.* == .type_generic;
-                        if (is_type_node) {
-                            if (c.args.len == 0) {
-                                try self.emit(".{}");
-                                return;
-                            } else if (c.args.len == 1) {
-                                try self.emit(".{ .alloc = ");
-                                try self.generateExpr(c.args[0]);
-                                try self.emit(" }");
-                                return;
-                            }
-                        }
-                    }
-                }
-                // overflow/wrap/sat builtins
-                if (c.callee.* == .identifier and c.args.len == 1) {
-                    const callee_name = c.callee.identifier;
-                    if (std.mem.eql(u8, callee_name, "wrap")) {
-                        try self.generateWrappingExpr(c.args[0]);
-                        return;
-                    } else if (std.mem.eql(u8, callee_name, "sat")) {
-                        try self.generateSaturatingExpr(c.args[0]);
-                        return;
-                    } else if (std.mem.eql(u8, callee_name, "overflow")) {
-                        try self.generateOverflowExpr(c.args[0]);
-                        return;
-                    }
-                }
-                // ── String method rewriting ──
-                // s.method(args) → str.method(s, args) when s is a String
-                // x.toString()   → str.toString(x) for any type
-                // arr.join(sep)  → str.join(arr, sep) for array/slice join
-                if (c.callee.* == .field_expr) {
-                    const method = c.callee.field_expr.field;
-                    const obj = c.callee.field_expr.object;
-                    const is_handle = self.getTypeClass(obj) == .thread_handle;
-                    if (!is_handle and (self.isStringExpr(obj) or
-                        std.mem.eql(u8, method, "toString") or
-                        std.mem.eql(u8, method, "join")))
-                    {
-                        if (self.str_is_included) {
-                            try self.emitFmt("{s}(", .{method});
-                        } else {
-                            const prefix = self.str_import_alias orelse "str";
-                            try self.emitFmt("{s}.{s}(", .{ prefix, method });
-                        }
-                        try self.generateExpr(obj);
-                        for (c.args) |arg| {
-                            try self.emit(", ");
-                            try self.generateExpr(arg);
-                        }
-                        try self.emit(")");
-                        return;
-                    }
-                }
-                // ── Clean call generation — pure 1:1 translation ──
-                if (c.arg_names.len > 0) {
-                    // Named arguments → struct instantiation: Type{ .field = value, ... }
-                    try self.generateExpr(c.callee);
-                    try self.emit("{ ");
-                    for (c.args, 0..) |arg, i| {
-                        if (i > 0) try self.emit(", ");
-                        if (i < c.arg_names.len and c.arg_names[i].len > 0) {
-                            try self.emitFmt(".{s} = ", .{c.arg_names[i]});
-                        }
-                        try self.generateExpr(arg);
-                    }
-                    try self.emit(" }");
-                } else {
-                    // Inside a generic struct, Name(T) self-instantiation → just @This()
-                    // (skip the type args since @This() is already the instantiated type)
-                    const is_self_generic = if (self.generic_struct_name) |gsn|
-                        c.callee.* == .identifier and std.mem.eql(u8, c.callee.identifier, gsn)
-                    else
-                        false;
+    pub fn generateExpr(self: *CodeGen, node: *parser.Node) anyerror!void { return stmts_impl.generateExpr(self, node); }
 
-                    if (is_self_generic) {
-                        try self.emit("@This()");
-                    } else if (c.args.len == 0 and c.callee.* == .identifier) {
-                        // Zero-arg call on a struct type → TypeName{} (not TypeName())
-                        const callee_n = c.callee.identifier;
-                        const is_struct_type = if (self.decls) |d| d.structs.contains(callee_n) else false;
-                        if (is_struct_type) {
-                            try self.emitFmt("{s}{{}}", .{callee_n});
-                        } else {
-                            try self.generateExpr(c.callee);
-                            try self.emit("(");
-                            try self.fillDefaultArgs(c);
-                            try self.emit(")");
-                        }
-                    } else {
-                        // Positional arguments → regular function call
-                        try self.generateExpr(c.callee);
-                        try self.emit("(");
-                        for (c.args, 0..) |arg, i| {
-                            if (i > 0) try self.emit(", ");
-                            try self.generateExpr(arg);
-                        }
-                        // Fill in default args if caller passed fewer than the function expects
-                        try self.fillDefaultArgs(c);
-                        try self.emit(")");
-                    }
-                }
-            },
-            .field_expr => |f| {
-                // handle.value → handle.getValue() (thread Handle(T) — blocks + moves result)
-                if (std.mem.eql(u8, f.field, "value") and
-                    self.getTypeClass(f.object) == .thread_handle)
-                {
-                    try self.generateExpr(f.object);
-                    try self.emit(".getValue()");
-                // handle.done → handle.done() (thread Handle(T) — non-blocking check)
-                } else if (std.mem.eql(u8, f.field, "done") and
-                    self.getTypeClass(f.object) == .thread_handle)
-                {
-                    try self.generateExpr(f.object);
-                    try self.emit(".done()");
-                // ptr.value → ptr.* (safe Ptr(T) dereference)
-                } else if (std.mem.eql(u8, f.field, "value") and
-                    self.getTypeClass(f.object) == .safe_ptr)
-                {
-                    try self.generateExpr(f.object);
-                    try self.emit(".*");
-                // raw.value → raw[0] (RawPtr/VolatilePtr dereference)
-                } else if (std.mem.eql(u8, f.field, "value") and
-                    self.getTypeClass(f.object) == .raw_ptr)
-                {
-                    try self.generateExpr(f.object);
-                    try self.emit("[0]");
-                } else if (std.mem.eql(u8, f.field, K.Type.ERROR)) {
-                    // result.Error → @errorName(captured_err) (native Zig error name)
-                    if (f.object.* == .identifier) {
-                        if (self.error_capture_var.get(f.object.identifier)) |cap| {
-                            try self.emitFmt("@errorName({s})", .{cap});
-                        } else {
-                            // Fallback: use if/else pattern to capture the error value
-                            // `catch |_e| expr` returns T (not []const u8), so we use the if/else form
-                            try self.emit("(if (");
-                            try self.generateExpr(f.object);
-                            try self.emit(") |_| unreachable else |_e| @errorName(_e))");
-                        }
-                    } else {
-                        try self.emit("(if (");
-                        try self.generateExpr(f.object);
-                        try self.emit(") |_| unreachable else |_e| @errorName(_e))");
-                    }
-                } else if (std.mem.eql(u8, f.field, "value") and
-                    (self.getTypeClass(f.object) == .arbitrary_union or self.getTypeClass(f.object) == .null_union or self.getTypeClass(f.object) == .error_union))
-                {
-                    // .value unwrap — emit native Zig unwrap based on union kind
-                    const obj_tc = self.getTypeClass(f.object);
-                    if (obj_tc == .arbitrary_union) {
-                        try self.generateExpr(f.object);
-                        // Use MIR union members to find the value type
-                        if (f.object.* == .identifier) {
-                            if (self.getUnionMembers(f.object) orelse self.getVarUnionMembers(f.object.identifier)) |members| {
-                                for (members) |m| {
-                                    const n = m.name();
-                                    if (!std.mem.eql(u8, n, K.Type.ERROR) and !std.mem.eql(u8, n, K.Type.NULL)) {
-                                        try self.emitFmt("._{s}", .{n});
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    } else if (obj_tc == .null_union) {
-                        // (null | T) → ?T: result.value → result.?
-                        try self.generateExpr(f.object);
-                        try self.emit(".?");
-                    } else if (obj_tc == .error_union) {
-                        // (Error | T) → anyerror!T: result.value → result catch unreachable
-                        try self.generateExpr(f.object);
-                        try self.emit(" catch unreachable");
-                    }
-                } else if (self.getTypeClass(f.object) == .arbitrary_union and
-                    isResultValueField(f.field, self.decls))
-                {
-                    // Arbitrary union field access: result.i32 → result._i32
-                    try self.generateExpr(f.object);
-                    try self.emitFmt("._{s}", .{f.field});
-                } else if (isResultValueField(f.field, self.decls)) {
-                    // Check if the object is a null union variable
-                    if (self.getTypeClass(f.object) == .null_union) {
-                        // (null | T) → ?T: result.User → result.?
-                        try self.generateExpr(f.object);
-                        try self.emit(".?");
-                    } else {
-                        // (Error | T) → anyerror!T: result.value → result catch unreachable
-                        try self.generateExpr(f.object);
-                        try self.emit(" catch unreachable");
-                    }
-                } else if (std.mem.eql(u8, f.field, "value") and f.object.* == .identifier) {
-                    // Fallback `.value` unwrap using narrowing info from `is Error` / `is null` checks.
-                    if (self.error_narrowed.contains(f.object.identifier)) {
-                        try self.generateExpr(f.object);
-                        try self.emit(" catch unreachable");
-                    } else if (self.null_narrowed.contains(f.object.identifier)) {
-                        try self.generateExpr(f.object);
-                        try self.emit(".?");
-                    } else {
-                        try self.generateExpr(f.object);
-                        try self.emit(".value");
-                    }
-                } else {
-                    try self.generateExpr(f.object);
-                    try self.emitFmt(".{s}", .{f.field});
-                }
-            },
-            .index_expr => |i| {
-                try self.generateExpr(i.object);
-                try self.emit("[");
-                // Zig requires usize for indices — cast non-literal indices
-                const index_is_literal = i.index.* == .int_literal;
-                if (!index_is_literal) {
-                    try self.emit("@intCast(");
-                    try self.generateExpr(i.index);
-                    try self.emit(")");
-                } else {
-                    try self.generateExpr(i.index);
-                }
-                try self.emit("]");
-            },
-            .slice_expr => |s| {
-                try self.generateExpr(s.object);
-                try self.emit("[");
-                const low_is_literal = s.low.* == .int_literal;
-                if (!low_is_literal) {
-                    try self.emit("@intCast(");
-                    try self.generateExpr(s.low);
-                    try self.emit(")");
-                } else {
-                    try self.generateExpr(s.low);
-                }
-                try self.emit("..");
-                const high_is_literal = s.high.* == .int_literal;
-                if (!high_is_literal) {
-                    try self.emit("@intCast(");
-                    try self.generateExpr(s.high);
-                    try self.emit(")");
-                } else {
-                    try self.generateExpr(s.high);
-                }
-                try self.emit("]");
-            },
-            .compiler_func => |cf| {
-                try self.generateCompilerFunc(cf);
-            },
-            .range_expr => |r| {
-                try self.generateExpr(r.left);
-                try self.emit("..");
-                try self.generateExpr(r.right);
-            },
-            .collection_expr => |c| {
-                try self.generateCollectionExpr(c);
-            },
-            .struct_type => |fields| {
-                try self.emit("struct {\n");
-                self.indent += 1;
-                for (fields) |f| {
-                    if (f.* == .field_decl) {
-                        try self.emitIndent();
-                        try self.emitFmt("{s}: {s},\n", .{
-                            f.field_decl.name,
-                            try self.typeToZig(f.field_decl.type_annotation),
-                        });
-                    }
-                }
-                self.indent -= 1;
-                try self.emitIndent();
-                try self.emit("}");
-            },
-            else => {
-                const msg = try std.fmt.allocPrint(self.allocator, "internal codegen error: unhandled expression kind '{s}'", .{@tagName(node.*)});
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg });
-                return error.CompileError;
-            },
-        }
-    }
+    // ============================================================
+    // MIR EXPRESSIONS
+    // ============================================================
 
-    /// MIR-path expression dispatch — switches on MirKind, reads type info from MirNode.
-    /// All expression kinds handled via MirNode children — no AST-path fallthrough.
-    fn generateExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        switch (m.kind) {
-            .binary => {
-                const bin_op = m.op orelse "==";
-                const is_eq = std.mem.eql(u8, bin_op, "==");
-                const is_ne = std.mem.eql(u8, bin_op, "!=");
-                // `x is T` desugared form: @type(x) == T
-                const lhs_mir = m.lhs();
-                if ((is_eq or is_ne) and
-                    lhs_mir.kind == .compiler_fn and
-                    std.mem.eql(u8, lhs_mir.name orelse "", K.Type.TYPE) and
-                    lhs_mir.children.len > 0)
-                {
-                    // val_mir is the MirNode for the variable being type-checked
-                    const val_mir = lhs_mir.children[0];
-                    const cmp = if (is_eq) "==" else "!=";
-                    const rhs_mir = m.rhs();
-                    if (rhs_mir.literal_kind == .null_lit) {
-                        // Record narrowing for `.value` resolution
-                        if (val_mir.kind == .identifier)
-                            try self.null_narrowed.put(self.allocator, val_mir.name orelse "", {});
-                        // (null | T) → ?T: x is null → x == null
-                        try self.emit("(");
-                        try self.generateExprMir(val_mir);
-                        try self.emitFmt(" {s} null)", .{cmp});
-                        return;
-                    }
-                    if (rhs_mir.kind == .identifier) {
-                        const rhs = rhs_mir.name orelse "";
-                        if (std.mem.eql(u8, rhs, K.Type.ERROR)) {
-                            // Record narrowing for `.value` resolution
-                            if (val_mir.kind == .identifier)
-                                try self.error_narrowed.put(self.allocator, val_mir.name orelse "", {});
-                            // (Error | T) → anyerror!T: x is Error → if/else pattern
-                            const t_val = if (is_eq) "false" else "true";
-                            const f_val = if (is_eq) "true" else "false";
-                            try self.emit("(if (");
-                            try self.generateExprMir(val_mir);
-                            try self.emitFmt(") |_| {s} else |_| {s})", .{ t_val, f_val });
-                            return;
-                        }
-                        if (lhs_mir.type_class == .arbitrary_union or
-                            val_mir.type_class == .arbitrary_union)
-                        {
-                            try self.emit("(");
-                            try self.generateExprMir(val_mir);
-                            try self.emitFmt(" {s} ._{s})", .{ cmp, rhs });
-                            return;
-                        }
-                        const zig_rhs = builtins.primitiveToZig(rhs);
-                        try self.emit("(@TypeOf(");
-                        try self.generateExprMir(val_mir);
-                        try self.emitFmt(") {s} {s})", .{ cmp, zig_rhs });
-                        return;
-                    }
-                    // Qualified type check: `val is module.Type` per D-07
-                    if (rhs_mir.kind == .field_access) {
-                        // If left side is a tagged union, emit union tag comparison
-                        if (lhs_mir.type_class == .arbitrary_union or
-                            val_mir.type_class == .arbitrary_union)
-                        {
-                            const type_name = rhs_mir.name orelse "";
-                            try self.emit("(");
-                            try self.generateExprMir(val_mir);
-                            try self.emitFmt(" {s} ._{s})", .{ cmp, type_name });
-                            return;
-                        }
-                        // Non-union: comptime type check via @TypeOf
-                        try self.emit("(@TypeOf(");
-                        try self.generateExprMir(val_mir);
-                        try self.emitFmt(") {s} ", .{cmp});
-                        try self.emitTypeMirPath(rhs_mir);
-                        try self.emit(")");
-                        return;
-                    }
-                }
-                // Vector operand detection for arithmetic
-                const lhs_is_vec = mirIsVector(m.lhs());
-                const rhs_is_vec = mirIsVector(m.rhs());
-                const any_vec = lhs_is_vec or rhs_is_vec;
+    pub fn generateExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateExprMir(self, m); }
 
-                // Division → @divTrunc (skip for vectors — Zig @Vector supports native / and %)
-                if (!any_vec and std.mem.eql(u8, bin_op, "/")) {
-                    try self.emit("@divTrunc(");
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(", ");
-                    try self.generateExprMir(m.rhs());
-                    try self.emit(")");
-                } else if (!any_vec and std.mem.eql(u8, bin_op, "%")) {
-                    try self.emit("@mod(");
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(", ");
-                    try self.generateExprMir(m.rhs());
-                    try self.emit(")");
-                } else if ((is_eq or is_ne) and (mirIsString(m.lhs()) or mirIsString(m.rhs()))) {
-                    // String comparison → std.mem.eql
-                    if (is_ne) try self.emit("!");
-                    try self.emit("std.mem.eql(u8, ");
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(", ");
-                    try self.generateExprMir(m.rhs());
-                    try self.emit(")");
-                } else if (any_vec and lhs_is_vec != rhs_is_vec) {
-                    // Vector-scalar broadcast: wrap scalar side with @splat
-                    const op = opToZig(bin_op);
-                    try self.emit("(");
-                    if (lhs_is_vec) {
-                        try self.generateExprMir(m.lhs());
-                        try self.emitFmt(" {s} ", .{op});
-                        try self.emit("@as(@TypeOf(");
-                        try self.generateExprMir(m.lhs());
-                        try self.emit("), @splat(");
-                        try self.generateExprMir(m.rhs());
-                        try self.emit("))");
-                    } else {
-                        try self.emit("@as(@TypeOf(");
-                        try self.generateExprMir(m.rhs());
-                        try self.emit("), @splat(");
-                        try self.generateExprMir(m.lhs());
-                        try self.emit("))");
-                        try self.emitFmt(" {s} ", .{op});
-                        try self.generateExprMir(m.rhs());
-                    }
-                    try self.emit(")");
-                } else {
-                    const op = opToZig(bin_op);
-                    try self.emit("(");
-                    try self.generateExprMir(m.lhs());
-                    try self.emitFmt(" {s} ", .{op});
-                    try self.generateExprMir(m.rhs());
-                    try self.emit(")");
-                }
-            },
-            .call => {
-                const callee_mir = m.getCallee();
-                const callee_is_ident = callee_mir.kind == .identifier;
-                const callee_is_field = callee_mir.kind == .field_access;
-                const callee_name = callee_mir.name orelse "";
-                const call_args = m.callArgs();
-                // Version() rejection
-                if (callee_is_ident and std.mem.eql(u8, callee_name, "Version")) {
-                    try self.reporter.report(.{
-                        .message = "Version() can only be used in #version metadata",
-                        .loc = self.nodeLoc(m.ast),
-                    });
-                    return;
-                }
-                // Handle(value) → just emit the value
-                if (callee_is_ident and std.mem.eql(u8, callee_name, "Handle") and call_args.len == 1) {
-                    try self.generateExprMir(call_args[0]);
-                    return;
-                }
-                // Bitfield constructor
-                if (callee_is_ident) {
-                    if (self.decls) |d| {
-                        if (d.bitfields.get(callee_name)) |_| {
-                            try self.emitFmt("{s}{{ .value = ", .{callee_name});
-                            if (call_args.len == 0) {
-                                try self.emit("0");
-                            } else {
-                                for (call_args, 0..) |arg, i| {
-                                    if (i > 0) try self.emit(" | ");
-                                    if (arg.kind == .identifier) {
-                                        try self.emitFmt("{s}.{s}", .{ callee_name, arg.name orelse "" });
-                                    } else {
-                                        try self.generateExprMir(arg);
-                                    }
-                                }
-                            }
-                            try self.emit(" }");
-                            return;
-                        }
-                    }
-                }
-                // Bitfield method: p.has(Read) → p.has(Permissions.Read)
-                if (callee_is_field) {
-                    const obj_mir = callee_mir.children[0]; // field_access.children[0] = object
-                    if (mirGetBitfieldName(obj_mir, self.decls)) |bf_name| {
-                        try self.generateExprMir(callee_mir);
-                        try self.emit("(");
-                        for (call_args, 0..) |arg, i| {
-                            if (i > 0) try self.emit(", ");
-                            if (arg.kind == .identifier) {
-                                try self.emitFmt("{s}.{s}", .{ bf_name, arg.name orelse "" });
-                            } else {
-                                try self.generateExprMir(arg);
-                            }
-                        }
-                        try self.emit(")");
-                        return;
-                    }
-                }
-                // Collection constructor: List(T).new(), Map(K,V).new(), Set(T).new() → .{}
-                // The collection_expr builder is transparent — List(i32) reduces to the
-                // element type_primitive (i32) in the AST. So the callee's object has
-                // kind == .type_expr (a type in expression position), not .collection.
-                // Calling .new() with no args on a type in expression position always
-                // means "zero-initialize" — safe because user struct names parse as
-                // .identifier (not .type_expr), so there's no false-positive risk.
-                if (callee_is_field) {
-                    const method = callee_mir.name orelse "";
-                    if (std.mem.eql(u8, method, "new")) {
-                        if (callee_mir.children.len > 0) {
-                            const obj_mir = callee_mir.children[0];
-                            if (obj_mir.kind == .type_expr or obj_mir.kind == .collection) {
-                                if (call_args.len == 0) {
-                                    try self.emit(".{}");
-                                    return;
-                                } else if (call_args.len == 1) {
-                                    try self.emit(".{ .alloc = ");
-                                    try self.generateExprMir(call_args[0]);
-                                    try self.emit(" }");
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-                // overflow/wrap/sat builtins
-                if (callee_is_ident and call_args.len == 1) {
-                    const arg_m = call_args[0];
-                    if (std.mem.eql(u8, callee_name, "wrap")) {
-                        try self.generateWrappingExprMir(arg_m);
-                        return;
-                    } else if (std.mem.eql(u8, callee_name, "sat")) {
-                        try self.generateSaturatingExprMir(arg_m);
-                        return;
-                    } else if (std.mem.eql(u8, callee_name, "overflow")) {
-                        try self.generateOverflowExprMir(arg_m);
-                        return;
-                    }
-                }
-                // String method rewriting: s.method(args) → _str.method(s, args)
-                if (callee_is_field) {
-                    const method = callee_mir.name orelse "";
-                    const obj_mir = callee_mir.children[0]; // field_access.children[0] = object
-                    const is_handle = obj_mir.type_class == .thread_handle;
-                    if (!is_handle and (mirIsString(obj_mir) or
-                        std.mem.eql(u8, method, "toString") or
-                        std.mem.eql(u8, method, "join")))
-                    {
-                        if (self.str_is_included) {
-                            try self.emitFmt("{s}(", .{method});
-                        } else {
-                            const prefix = self.str_import_alias orelse "str";
-                            try self.emitFmt("{s}.{s}(", .{ prefix, method });
-                        }
-                        try self.generateExprMir(obj_mir);
-                        for (call_args) |arg| {
-                            try self.emit(", ");
-                            try self.generateExprMir(arg);
-                        }
-                        try self.emit(")");
-                        return;
-                    }
-                }
-                // Clean call generation
-                const call_arg_names = m.arg_names;
-                if (call_arg_names != null and call_arg_names.?.len > 0) {
-                    const an = call_arg_names.?;
-                    try self.generateExprMir(callee_mir);
-                    try self.emit("{ ");
-                    for (call_args, 0..) |arg, i| {
-                        if (i > 0) try self.emit(", ");
-                        if (i < an.len and an[i].len > 0) {
-                            try self.emitFmt(".{s} = ", .{an[i]});
-                        }
-                        try self.generateExprMir(arg);
-                    }
-                    try self.emit(" }");
-                } else {
-                    // Inside a generic struct, Name(T) self-instantiation → just @This()
-                    const is_self_generic_mir = if (self.generic_struct_name) |gsn|
-                        callee_is_ident and std.mem.eql(u8, callee_name, gsn)
-                    else
-                        false;
+    pub fn generateCoercedExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateCoercedExprMir(self, m); }
 
-                    if (is_self_generic_mir) {
-                        try self.emit("@This()");
-                    } else if (call_args.len == 0 and callee_is_ident) {
-                        // Zero-arg call on a struct type → TypeName{} (not TypeName())
-                        const is_struct_type = if (self.decls) |d| d.structs.contains(callee_name) else false;
-                        if (is_struct_type) {
-                            try self.emitFmt("{s}{{}}", .{callee_name});
-                        } else {
-                            try self.generateExprMir(callee_mir);
-                            try self.emit("(");
-                            try self.fillDefaultArgsMir(callee_mir, 0);
-                            try self.emit(")");
-                        }
-                    } else {
-                        try self.generateExprMir(callee_mir);
-                        try self.emit("(");
-                        for (call_args, 0..) |arg, i| {
-                            if (i > 0) try self.emit(", ");
-                            // Const auto-borrow: if param is promoted to *const T and
-                            // the arg has no coercion annotation (var caller), emit &arg.
-                            // Const callers are handled by value_to_const_ref in generateCoercedExprMir.
-                            if (arg.coercion == null and self.isPromotedParam(callee_name, i)) {
-                                try self.emit("&");
-                                try self.generateExprMir(arg);
-                            } else {
-                                try self.generateCoercedExprMir(arg);
-                            }
-                        }
-                        try self.fillDefaultArgsMir(callee_mir, call_args.len);
-                        try self.emit(")");
-                    }
-                }
-            },
-            .field_access => {
-                const field = m.name orelse "";
-                const obj_mir = m.children[0];
-                const obj_tc = obj_mir.type_class;
-                // handle.value → handle.getValue()
-                if (std.mem.eql(u8, field, "value") and obj_tc == .thread_handle) {
-                    try self.generateExprMir(obj_mir);
-                    try self.emit(".getValue()");
-                } else if (std.mem.eql(u8, field, "done") and obj_tc == .thread_handle) {
-                    try self.generateExprMir(obj_mir);
-                    try self.emit(".done()");
-                } else if (std.mem.eql(u8, field, "value") and obj_tc == .safe_ptr) {
-                    try self.generateExprMir(obj_mir);
-                    try self.emit(".*");
-                } else if (std.mem.eql(u8, field, "value") and obj_tc == .raw_ptr) {
-                    try self.generateExprMir(obj_mir);
-                    try self.emit("[0]");
-                } else if (std.mem.eql(u8, field, K.Type.ERROR)) {
-                    // result.Error → @errorName(captured_err) (native Zig error)
-                    if (obj_mir.kind == .identifier) {
-                        const obj_name = obj_mir.name orelse "";
-                        if (self.error_capture_var.get(obj_name)) |cap| {
-                            try self.emitFmt("@errorName({s})", .{cap});
-                        } else {
-                            // Use if/else pattern — `catch |_e| expr` returns T, not []const u8
-                            try self.emit("(if (");
-                            try self.generateExprMir(obj_mir);
-                            try self.emit(") |_| unreachable else |_e| @errorName(_e))");
-                        }
-                    } else {
-                        try self.emit("(if (");
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(") |_| unreachable else |_e| @errorName(_e))");
-                    }
-                } else if (std.mem.eql(u8, field, "value") and
-                    (obj_tc == .arbitrary_union or obj_tc == .null_union or obj_tc == .error_union))
-                {
-                    if (obj_tc == .arbitrary_union) {
-                        try self.generateExprMir(obj_mir);
-                        if (obj_mir.kind == .identifier) {
-                            if (obj_mir.narrowed_to) |narrowed| {
-                                try self.emitFmt("._{s}", .{narrowed});
-                            } else {
-                                const obj_name = obj_mir.name orelse "";
-                                const members_rt = if (obj_mir.resolved_type == .union_type) obj_mir.resolved_type.union_type else
-                                    if (self.getVarUnionMembers(obj_name)) |m2| m2 else null;
-                                if (members_rt) |members| {
-                                    for (members) |mem| {
-                                        const n = mem.name();
-                                        if (!std.mem.eql(u8, n, K.Type.ERROR) and !std.mem.eql(u8, n, K.Type.NULL)) {
-                                            try self.emitFmt("._{s}", .{n});
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else if (obj_tc == .null_union) {
-                        // (null | T) → ?T: result.value → result.?
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(".?");
-                    } else if (obj_tc == .error_union) {
-                        // (Error | T) → anyerror!T: result.value → result catch unreachable
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(" catch unreachable");
-                    }
-                } else if (obj_tc == .arbitrary_union and isResultValueField(field, self.decls)) {
-                    try self.generateExprMir(obj_mir);
-                    try self.emitFmt("._{s}", .{field});
-                } else if (isResultValueField(field, self.decls)) {
-                    if (obj_tc == .null_union) {
-                        // (null | T) → ?T: result.value → result.?
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(".?");
-                    } else {
-                        // (Error | T) → anyerror!T: result.value → result catch unreachable
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(" catch unreachable");
-                    }
-                } else if (std.mem.eql(u8, field, "value") and obj_mir.kind == .identifier) {
-                    // Fallback `.value` unwrap using narrowing info
-                    const obj_name = obj_mir.name orelse "";
-                    if (self.error_narrowed.contains(obj_name)) {
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(" catch unreachable");
-                    } else if (self.null_narrowed.contains(obj_name)) {
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(".?");
-                    } else {
-                        try self.generateExprMir(obj_mir);
-                        try self.emit(".value");
-                    }
-                } else {
-                    try self.generateExprMir(obj_mir);
-                    try self.emitFmt(".{s}", .{field});
-                }
-            },
-            .literal => {
-                const lk = m.literal_kind orelse return;
-                switch (lk) {
-                    .int, .float, .string => try self.emit(m.literal orelse return),
-                    .bool_lit => try self.emit(if (m.bool_val) "true" else "false"),
-                    .null_lit => try self.emit("null"),
-                    .error_lit => {
-                        // Error("message") → error.sanitized_name (native Zig error)
-                        const msg = m.literal orelse return;
-                        const name = try self.sanitizeErrorName(msg);
-                        try self.emitFmt("error.{s}", .{name});
-                    },
-                }
-            },
-            .identifier => {
-                const name = m.name orelse return;
-                if (self.isEnumVariant(name)) {
-                    try self.emitFmt(".{s}", .{name});
-                } else if (self.generic_struct_name) |gsn| {
-                    if (std.mem.eql(u8, name, gsn)) {
-                        try self.emit("@This()");
-                    } else {
-                        try self.emit(builtins.primitiveToZig(name));
-                    }
-                } else {
-                    try self.emit(builtins.primitiveToZig(name));
-                }
-            },
-            .unary => {
-                const op = opToZig(m.op orelse return);
-                try self.emitFmt("{s}(", .{op});
-                try self.generateExprMir(m.children[0]);
-                try self.emit(")");
-            },
-            .index => {
-                try self.generateExprMir(m.children[0]);
-                try self.emit("[");
-                const index_is_literal = m.children[1].literal_kind == .int;
-                if (!index_is_literal) {
-                    try self.emit("@intCast(");
-                    try self.generateExprMir(m.children[1]);
-                    try self.emit(")");
-                } else {
-                    try self.generateExprMir(m.children[1]);
-                }
-                try self.emit("]");
-            },
-            .slice => {
-                try self.generateExprMir(m.children[0]);
-                try self.emit("[");
-                if (m.children[1].literal_kind != .int) {
-                    try self.emit("@intCast(");
-                    try self.generateExprMir(m.children[1]);
-                    try self.emit(")");
-                } else {
-                    try self.generateExprMir(m.children[1]);
-                }
-                try self.emit("..");
-                if (m.children[2].literal_kind != .int) {
-                    try self.emit("@intCast(");
-                    try self.generateExprMir(m.children[2]);
-                    try self.emit(")");
-                } else {
-                    try self.generateExprMir(m.children[2]);
-                }
-                try self.emit("]");
-            },
-            .borrow => {
-                try self.emit("&");
-                try self.generateExprMir(m.children[0]);
-            },
-            .interpolation => {
-                // If the MIR lowerer hoisted this to a temp var, emit just the var name
-                if (m.injected_name) |var_name| {
-                    try self.emit(var_name);
-                } else if (m.interp_parts) |parts| {
-                    try self.generateInterpolatedStringMir(parts, m.children);
-                }
-            },
-            .collection => try self.generateCollectionExprMir(m),
-            .compiler_fn => try self.generateCompilerFuncMir(m),
-            .array_lit => {
-                try self.emit(".{");
-                for (m.children, 0..) |child, i| {
-                    if (i > 0) try self.emit(", ");
-                    try self.generateExprMir(child);
-                }
-                try self.emit("}");
-            },
-            .tuple_lit => {
-                try self.emit(".{");
-                if (m.is_named_tuple) {
-                    const fnames = m.field_names orelse &.{};
-                    for (m.children, 0..) |child, i| {
-                        if (i > 0) try self.emit(", ");
-                        if (i < fnames.len) try self.emitFmt(".{s} = ", .{fnames[i]});
-                        try self.generateExprMir(child);
-                    }
-                } else {
-                    for (m.children, 0..) |child, i| {
-                        if (i > 0) try self.emit(", ");
-                        try self.generateExprMir(child);
-                    }
-                }
-                try self.emit("}");
-            },
-            .type_expr => try self.generateExpr(m.ast), // type nodes are structural, no sub-expressions
-            .passthrough => try self.generateExpr(m.ast), // structural fallback
-            else => {},
-        }
-    }
+    pub fn mirIsString(m: *const mir.MirNode) bool { return exprs_impl.mirIsString(m); }
 
-    /// MIR-path coerced expression — reads coercion from MirNode directly.
-    fn generateCoercedExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const coercion = m.coercion orelse return self.generateExprMir(m);
-        switch (coercion) {
-            .array_to_slice => {
-                try self.emit("&");
-                try self.generateExprMir(m);
-            },
-            // Native ?T and anyerror!T — Zig handles coercion automatically
-            .null_wrap, .error_wrap => {
-                try self.generateExprMir(m);
-            },
-            .arbitrary_union_wrap => {
-                if (m.coerce_tag) |tag| {
-                    try self.emitFmt(".{{ ._{s} = ", .{tag});
-                    try self.generateExprMir(m);
-                    try self.emit(" }");
-                } else {
-                    try self.generateExprMir(m);
-                }
-            },
-            .optional_unwrap => {
-                // Native ?T: unwrap → .?
-                try self.generateExprMir(m);
-                try self.emit(".?");
-            },
-            .value_to_const_ref => {
-                // T → *const T: take address for const & parameter passing
-                try self.emit("&");
-                try self.generateExprMir(m);
-            },
-        }
-    }
+    pub fn mirIsVector(m: *const mir.MirNode) bool { return exprs_impl.mirIsVector(m); }
 
-    /// Check if a MirNode represents a string expression (via type_class or literal_kind).
-    fn mirIsString(m: *const mir.MirNode) bool {
-        return m.type_class == .string or m.literal_kind == .string or m.kind == .interpolation;
-    }
+    pub fn mirGetBitfieldName(m: *const mir.MirNode, decls_opt: ?*declarations.DeclTable) ?[]const u8 { return exprs_impl.mirGetBitfieldName(m, decls_opt); }
 
-    /// Check if a MirNode represents a SIMD Vector type.
-    fn mirIsVector(m: *const mir.MirNode) bool {
-        if (m.resolved_type == .generic) {
-            return std.mem.eql(u8, m.resolved_type.generic.name, "Vector");
-        }
-        return false;
-    }
+    pub fn generateContinueExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateContinueExprMir(self, m); }
 
-    /// Check if a MirNode is typed as a bitfield, return the bitfield name.
-    fn mirGetBitfieldName(m: *const mir.MirNode, decls_opt: ?*declarations.DeclTable) ?[]const u8 {
-        const d = decls_opt orelse return null;
-        if (m.resolved_type == .named) {
-            if (d.bitfields.contains(m.resolved_type.named)) return m.resolved_type.named;
-        }
-        return null;
-    }
+    pub fn generateContinueExpr(self: *CodeGen, node: *parser.Node) anyerror!void { return exprs_impl.generateContinueExpr(self, node); }
 
-    // Generate a while continue expression — same as assignment but no trailing semicolon.
-    /// MIR-path continue expression for while loops.
-    fn generateContinueExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        if (m.kind == .assignment) {
-            const assign_op = m.op orelse "=";
-            if (std.mem.eql(u8, assign_op, "/=")) {
-                try self.generateExprMir(m.lhs());
-                try self.emit(" = @divTrunc(");
-                try self.generateExprMir(m.lhs());
-                try self.emit(", ");
-                try self.generateExprMir(m.rhs());
-                try self.emit(")");
-            } else {
-                try self.generateExprMir(m.lhs());
-                try self.emitFmt(" {s} ", .{assign_op});
-                try self.generateExprMir(m.rhs());
-            }
-        } else {
-            try self.generateExprMir(m);
-        }
-    }
+    pub fn writeRangeExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.writeRangeExprMir(self, m); }
 
-    fn generateContinueExpr(self: *CodeGen, node: *parser.Node) anyerror!void {
-        if (node.* == .assignment) {
-            const a = node.assignment;
-            if (std.mem.eql(u8, a.op, "/=")) {
-                try self.generateExpr(a.left);
-                try self.emit(" = @divTrunc(");
-                try self.generateExpr(a.left);
-                try self.emit(", ");
-                try self.generateExpr(a.right);
-                try self.emit(")");
-            } else {
-                try self.generateExpr(a.left);
-                try self.emitFmt(" {s} ", .{a.op});
-                try self.generateExpr(a.right);
-            }
-        } else {
-            try self.generateExpr(node);
-        }
-    }
+    pub fn writeRangeExpr(self: *CodeGen, r: parser.BinaryOp) anyerror!void { return exprs_impl.writeRangeExpr(self, r); }
 
-    /// MIR-path range expression for for-loops.
-    fn writeRangeExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const left_is_literal = m.lhs().literal_kind == .int;
-        if (left_is_literal) {
-            try self.generateExprMir(m.lhs());
-        } else {
-            try self.emit("@intCast(");
-            try self.generateExprMir(m.lhs());
-            try self.emit(")");
-        }
-        try self.emit("..");
-        const right_is_literal = m.rhs().literal_kind == .int;
-        if (right_is_literal) {
-            try self.generateExprMir(m.rhs());
-        } else {
-            try self.emit("@intCast(");
-            try self.generateExprMir(m.rhs());
-            try self.emit(")");
-        }
-    }
+    pub fn generateInterpolatedString(self: *CodeGen, interp: parser.InterpolatedString) anyerror!void { return exprs_impl.generateInterpolatedString(self, interp); }
 
-    fn writeRangeExpr(self: *CodeGen, r: parser.BinaryOp) anyerror!void {
-        // Zig for-range endpoints must be usize. Cast non-literal values.
-        const left_is_literal = r.left.* == .int_literal;
-        if (left_is_literal) {
-            try self.generateExpr(r.left);
-        } else {
-            try self.emit("@intCast(");
-            try self.generateExpr(r.left);
-            try self.emit(")");
-        }
-        try self.emit("..");
-        const right_is_literal = r.right.* == .int_literal;
-        if (right_is_literal) {
-            try self.generateExpr(r.right);
-        } else {
-            try self.emit("@intCast(");
-            try self.generateExpr(r.right);
-            try self.emit(")");
-        }
-    }
+    pub fn generateForMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateForMir(self, m); }
 
-    /// Generate string interpolation using std.fmt.allocPrint.
-    /// Hoists the allocPrint call to a temp variable in pre_stmts, then emits only the
-    /// temp var name as the expression — avoiding a memory leak by pairing with defer free.
-    /// "hello @{name}, value @{x}!" →
-    ///   (hoisted) const _interp_0 = std.fmt.allocPrint(...) catch |err| return err;
-    ///   (hoisted) defer std.heap.page_allocator.free(_interp_0);
-    ///   (inline)  _interp_0
-    fn generateInterpolatedString(self: *CodeGen, interp: parser.InterpolatedString) anyerror!void {
-        const n = self.interp_count;
-        self.interp_count += 1;
+    pub fn generateDestructMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateDestructMir(self, m); }
 
-        // Build indent prefix for the hoisted lines
-        var indent_buf: [256]u8 = undefined;
-        var indent_len: usize = 0;
-        var i: usize = 0;
-        while (i < self.indent and indent_len + 4 <= indent_buf.len) : (i += 1) {
-            @memcpy(indent_buf[indent_len .. indent_len + 4], "    ");
-            indent_len += 4;
-        }
-        const indent_str = indent_buf[0..indent_len];
+    pub fn mirContainsIdentifier(m: *mir.MirNode, name: []const u8) bool { return match_impl.mirContainsIdentifier(m, name); }
 
-        // Append: <indent>const _interp_N = std.fmt.allocPrint(std.heap.page_allocator, "fmt", .{args}) catch |err| return err;
-        var name_buf: [32]u8 = undefined;
-        const var_name = std.fmt.bufPrint(&name_buf, "_interp_{d}", .{n}) catch "_interp";
-        try self.pre_stmts.appendSlice(self.allocator, indent_str);
-        try self.pre_stmts.appendSlice(self.allocator, "const ");
-        try self.pre_stmts.appendSlice(self.allocator, var_name);
-        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.smp_allocator, \"");
+    pub fn hasGuardedArm(arms: []*mir.MirNode) bool { return match_impl.hasGuardedArm(arms); }
 
-        // Build format string into pre_stmts
-        for (interp.parts) |part| {
-            switch (part) {
-                .literal => |text| {
-                    for (text) |ch| {
-                        switch (ch) {
-                            '{' => try self.pre_stmts.appendSlice(self.allocator, "{{"),
-                            '}' => try self.pre_stmts.appendSlice(self.allocator, "}}"),
-                            '\\' => try self.pre_stmts.appendSlice(self.allocator, "\\"),
-                            else => try self.pre_stmts.append(self.allocator, ch),
-                        }
-                    }
-                },
-                .expr => |node| {
-                    if (self.isStringExpr(node)) {
-                        try self.pre_stmts.appendSlice(self.allocator, "{s}");
-                    } else {
-                        try self.pre_stmts.appendSlice(self.allocator, "{}");
-                    }
-                },
-            }
-        }
-        try self.pre_stmts.appendSlice(self.allocator, "\", .{");
+    pub fn generateGuardedMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateGuardedMatchMir(self, m); }
 
-        // Build args tuple into pre_stmts — but the args are expressions from AST,
-        // so we temporarily redirect output to pre_stmts by swapping buffers.
-        const saved_output = self.output;
-        self.output = self.pre_stmts;
-        var first = true;
-        for (interp.parts) |part| {
-            switch (part) {
-                .literal => {},
-                .expr => |node| {
-                    if (!first) try self.emit(", ");
-                    try self.generateExpr(node);
-                    first = false;
-                },
-            }
-        }
-        self.pre_stmts = self.output;
-        self.output = saved_output;
+    pub fn generateMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateMatchMir(self, m); }
 
-        // Use error propagation only if the enclosing function has an error return type.
-        if (self.funcReturnTypeClass() == .error_union) {
-            try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
-        } else {
-            try self.pre_stmts.appendSlice(self.allocator, "}) catch unreachable;\n");
-        }
-        // Append: <indent>defer std.heap.smp_allocator.free(_interp_N);
-        try self.pre_stmts.appendSlice(self.allocator, indent_str);
-        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.smp_allocator.free(");
-        try self.pre_stmts.appendSlice(self.allocator, var_name);
-        try self.pre_stmts.appendSlice(self.allocator, ");\n");
+    pub fn generateTypeMatchMir(self: *CodeGen, m: *mir.MirNode, is_null_union: bool) anyerror!void { return match_impl.generateTypeMatchMir(self, m, is_null_union); }
 
-        // Emit just the temp var name as the expression
-        try self.emit(var_name);
-    }
+    pub fn generateStringMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateStringMatchMir(self, m); }
 
-    /// MIR-path for loop codegen.
-    fn generateForMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const caps = m.captures orelse &.{};
-        const idx_var = m.index_var;
-        const iter_m = m.iterable();
-        const is_range = iter_m.kind == .binary and std.mem.eql(u8, iter_m.op orelse "", "..");
-        const needs_cast = is_range or idx_var != null;
-        if (m.is_compt) try self.emit("inline ");
-        try self.emit("for (");
-        if (is_range) {
-            try self.writeRangeExprMir(iter_m);
-        } else {
-            try self.generateExprMir(iter_m);
-        }
-        if (idx_var != null) try self.emit(", 0..");
-        try self.emit(") |");
-        if (caps.len > 0) {
-            if (is_range) {
-                try self.emitFmt("_orhon_{s}", .{caps[0]});
-            } else {
-                try self.emit(caps[0]);
-            }
-        }
-        if (idx_var) |idx| {
-            try self.emitFmt(", _orhon_{s}", .{idx});
-        }
-        if (needs_cast) {
-            try self.emit("| {\n");
-            self.indent += 1;
-            if (is_range and caps.len > 0) {
-                try self.emitIndent();
-                try self.emitFmt("const {s}: i32 = @intCast(_orhon_{s});\n", .{ caps[0], caps[0] });
-            }
-            if (idx_var) |idx| {
-                try self.emitIndent();
-                try self.emitFmt("const {s}: i32 = @intCast(_orhon_{s});\n", .{ idx, idx });
-            }
-            for (m.body().children) |child| {
-                try self.emitIndent();
-                try self.generateStatementMir(child);
-                try self.emit("\n");
-            }
-            self.indent -= 1;
-            try self.emitIndent();
-            try self.emit("}");
-        } else {
-            try self.emit("| ");
-            try self.generateBlockMir(m.body());
-        }
-    }
+    pub fn generateInterpolatedStringMirInline(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void { return match_impl.generateInterpolatedStringMirInline(self, parts, expr_children); }
 
-    /// MIR-path destructuring codegen.
-    fn generateDestructMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const d_names = m.names orelse &.{};
-        const decl_keyword: []const u8 = if (m.is_const) "const" else "var";
-        const val_m = m.value();
-        // String split destructuring
-        if (d_names.len == 2 and val_m.kind == .call) {
-            const callee_m = val_m.getCallee();
-            if (callee_m.kind == .field_access) {
-                const method = callee_m.name orelse "";
-                if (std.mem.eql(u8, method, "split")) {
-                    const call_args = val_m.callArgs();
-                    const destruct_idx = self.destruct_counter;
-                    self.destruct_counter += 1;
-                    try self.emitFmt("const _orhon_sp{d}_delim = ", .{destruct_idx});
-                    if (call_args.len > 0) try self.generateExprMir(call_args[0]);
-                    try self.emit(";\n");
-                    try self.emitIndent();
-                    try self.emitFmt("const _orhon_sp{d}_pos = std.mem.indexOf(u8, ", .{destruct_idx});
-                    try self.generateExprMir(callee_m.children[0]);
-                    try self.emitFmt(", _orhon_sp{d}_delim);\n", .{destruct_idx});
-                    try self.emitIndent();
-                    try self.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d_names[0], destruct_idx });
-                    try self.generateExprMir(callee_m.children[0]);
-                    try self.emit("[0.._idx] else ");
-                    try self.generateExprMir(callee_m.children[0]);
-                    try self.emit(";\n");
-                    try self.emitIndent();
-                    try self.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d_names[1], destruct_idx });
-                    try self.generateExprMir(callee_m.children[0]);
-                    try self.emitFmt("[_idx + _orhon_sp{d}_delim.len..] else \"\";", .{destruct_idx});
-                    return;
-                }
-                if (std.mem.eql(u8, method, "splitAt") and val_m.callArgs().len == 1) {
-                    const destruct_idx = self.destruct_counter;
-                    self.destruct_counter += 1;
-                    try self.emitFmt("var _orhon_s{d}: usize = @intCast(", .{destruct_idx});
-                    try self.generateExprMir(val_m.callArgs()[0]);
-                    try self.emit(");\n");
-                    try self.emitIndent();
-                    try self.emitFmt("_ = &_orhon_s{d};\n", .{destruct_idx});
-                    try self.emitIndent();
-                    try self.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[0] });
-                    try self.generateExprMir(callee_m.children[0]);
-                    try self.emitFmt("[0.._orhon_s{d}];\n", .{destruct_idx});
-                    try self.emitIndent();
-                    try self.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[1] });
-                    try self.generateExprMir(callee_m.children[0]);
-                    try self.emitFmt("[_orhon_s{d}..];", .{destruct_idx});
-                    return;
-                }
-            }
-        }
-        // Normal tuple destructuring
-        const idx = self.destruct_counter;
-        self.destruct_counter += 1;
-        try self.emitFmt("const _orhon_d{d} = ", .{idx});
-        try self.generateExprMir(val_m);
-        try self.emit(";");
-        for (d_names) |name| {
-            try self.emit("\n");
-            try self.emitIndent();
-            try self.emitFmt("{s} {s} = _orhon_d{d}.{s};", .{ decl_keyword, name, idx, name });
-        }
-    }
+    pub fn generateInterpolatedStringMir(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void { return match_impl.generateInterpolatedStringMir(self, parts, expr_children); }
 
-    /// Returns true if any MirNode in the subtree is an identifier with the given name.
-    fn mirContainsIdentifier(m: *mir.MirNode, name: []const u8) bool {
-        if (m.kind == .identifier and std.mem.eql(u8, m.name orelse "", name)) return true;
-        for (m.children) |child| {
-            if (mirContainsIdentifier(child, name)) return true;
-        }
-        return false;
-    }
+    pub fn generateCollectionExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateCollectionExprMir(self, m); }
 
-    /// Returns true if any arm in the match has a guard expression.
-    fn hasGuardedArm(arms: []*mir.MirNode) bool {
-        for (arms) |arm_mir| {
-            if (arm_mir.guard() != null) return true;
-        }
-        return false;
-    }
+    pub fn generatePtrCoercionMir(self: *CodeGen, kind: []const u8, type_node: *parser.Node, val_m: *mir.MirNode) anyerror!void { return match_impl.generatePtrCoercionMir(self, kind, type_node, val_m); }
 
-    /// Guarded match — emits as a scoped if/else chain with a temp variable.
-    /// Used when any arm has a guard expression (Zig switch cannot express guards).
-    ///
-    /// For guarded binding `(x if x > 0)`, emits:
-    ///   if (_g0: { const x = _m; break :_g0 x > 0; }) { const x = _m; body }
-    ///
-    /// The labeled block lets the guard expression reference the bound variable while
-    /// still producing a bool for the outer if. The `else if` chain then correctly
-    /// short-circuits: only the first matching guard fires its body.
-    fn generateGuardedMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        // Emit wrapper block with temp var: const _m = <match_value>;
-        try self.emitIndent();
-        try self.emit("{\n");
-        self.indent += 1;
-        try self.emitIndent();
-        try self.emit("const _m = ");
-        try self.generateExprMir(m.value());
-        try self.emit(";\n");
+    pub fn generateCompilerFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateCompilerFuncMir(self, m); }
 
-        var first = true;
-        var else_arm: ?*mir.MirNode = null;
-        var guard_counter: usize = 0;
+    pub fn generateWrappingExpr(self: *CodeGen, arg: *parser.Node) anyerror!void { return match_impl.generateWrappingExpr(self, arg); }
 
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            const pat_name = pat_m.name orelse "";
+    pub fn generateSaturatingExpr(self: *CodeGen, arg: *parser.Node) anyerror!void { return match_impl.generateSaturatingExpr(self, arg); }
 
-            // Collect else arm — emit last
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-                else_arm = arm_mir;
-                continue;
-            }
+    pub fn generateOverflowExpr(self: *CodeGen, arg: *parser.Node) anyerror!void { return match_impl.generateOverflowExpr(self, arg); }
 
-            try self.emitIndent();
-            if (!first) {
-                try self.emit(" else ");
-            }
+    pub fn generateWrappingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateWrappingExprMir(self, m); }
 
-            if (arm_mir.guard()) |guard_node| {
-                // Guarded binding: (x if guard_expr) => body
-                //
-                // Desugar to a labeled comptime block so the guard can reference the
-                // bound variable, while the outer if-else chain still works correctly.
-                //
-                // if (_g0: { const x = _m; break :_g0 x > 0; }) {
-                //     const x = _m;
-                //     body
-                // }
-                //
-                // This is correct for chained else-if: only the first matching guard
-                // fires. The labeled block evaluates to bool, so Zig treats it as a
-                // normal boolean condition for the if expression.
-                try self.emitFmt("if (_g{d}: {{ const {s} = _m; break :_g{d} ", .{ guard_counter, pat_name, guard_counter });
-                try self.generateExprMir(guard_node);
-                try self.emit("; }) {\n");
-                self.indent += 1;
-                try self.emitIndent();
-                // Bind the guard variable so body statements can reference it.
-                // If the body doesn't reference the variable, suppress with _ = x to
-                // avoid "unused local constant" from Zig. If the body does reference it,
-                // suppress the "pointless discard" by omitting _ = x.
-                const body_uses_var = mirContainsIdentifier(arm_mir.body(), pat_name);
-                if (body_uses_var) {
-                    try self.emitFmt("const {s} = _m;\n", .{pat_name});
-                } else {
-                    try self.emitFmt("const {s} = _m; _ = {s};\n", .{ pat_name, pat_name });
-                }
-                try self.generateBodyStatements(arm_mir.body());
-                self.indent -= 1;
-                try self.emitIndent();
-                try self.emit("}");
-                guard_counter += 1;
-            } else if (pat_m.kind == .binary and std.mem.eql(u8, pat_m.op orelse "", "..")) {
-                // Range pattern: (1..10)
-                try self.emit("if (_m >= ");
-                try self.generateExprMir(pat_m.lhs());
-                try self.emit(" and _m <= ");
-                try self.generateExprMir(pat_m.rhs());
-                try self.emit(") ");
-                try self.generateBlockMir(arm_mir.body());
-            } else if (pat_m.literal_kind == .string) {
-                // String pattern
-                try self.emit("if (std.mem.eql(u8, _m, ");
-                try self.generateExprMir(pat_m);
-                try self.emit(")) ");
-                try self.generateBlockMir(arm_mir.body());
-            } else {
-                // Plain value: integer, enum variant, etc.
-                try self.emit("if (_m == ");
-                try self.generateExprMir(pat_m);
-                try self.emit(") ");
-                try self.generateBlockMir(arm_mir.body());
-            }
+    pub fn generateSaturatingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateSaturatingExprMir(self, m); }
 
-            first = false;
-        }
+    pub fn generateOverflowExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateOverflowExprMir(self, m); }
 
-        // Emit else arm last
-        if (else_arm) |ea| {
-            if (!first) {
-                try self.emit(" else ");
-            }
-            try self.generateBlockMir(ea.body());
-        }
+    pub fn fillDefaultArgsMir(self: *CodeGen, callee_mir: *const mir.MirNode, actual_arg_count: usize) anyerror!void { return match_impl.fillDefaultArgsMir(self, callee_mir, actual_arg_count); }
 
-        try self.emit("\n");
-        self.indent -= 1;
-        try self.emitIndent();
-        try self.emit("}");
-    }
+    pub fn generateCompilerFunc(self: *CodeGen, cf: parser.CompilerFunc) anyerror!void { return match_impl.generateCompilerFunc(self, cf); }
 
-    /// MIR-path match codegen — dispatches to string, type, or regular switch.
-    fn generateMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        // String match — Zig has no string switch, desugar to if/else chain
-        const is_string_match = blk: {
-            for (m.matchArms()) |arm_mir| {
-                if (arm_mir.pattern().literal_kind == .string) break :blk true;
-            }
-            break :blk false;
-        };
+    pub fn generatePtrCoercion(self: *CodeGen, kind: []const u8, type_node: *parser.Node, value: *parser.Node) anyerror!void { return match_impl.generatePtrCoercion(self, kind, type_node, value); }
 
-        // Type match — any arm is `Error`, `null`, or value is an arbitrary union
-        const is_type_match = blk: {
-            if (m.value().type_class == .arbitrary_union) break :blk true;
-            for (m.matchArms()) |arm_mir| {
-                const pat_m = arm_mir.pattern();
-                if (pat_m.literal_kind == .null_lit) break :blk true;
-                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR))
-                    break :blk true;
-            }
-            break :blk false;
-        };
+    pub fn fillDefaultArgs(self: *CodeGen, c: parser.CallExpr) anyerror!void { return match_impl.fillDefaultArgs(self, c); }
 
-        const is_null_union = blk: {
-            for (m.matchArms()) |arm_mir| {
-                if (arm_mir.pattern().literal_kind == .null_lit) break :blk true;
-            }
-            break :blk false;
-        };
-
-        // Check for guarded arms — must use if/else chain (Zig switch cannot express guards)
-        const has_guard = hasGuardedArm(m.matchArms());
-
-        if (has_guard) {
-            try self.generateGuardedMatchMir(m);
-        } else if (is_string_match) {
-            try self.generateStringMatchMir(m);
-        } else if (is_type_match) {
-            try self.generateTypeMatchMir(m, is_null_union);
-        } else {
-            // Regular switch
-            try self.emit("switch (");
-            const val_m = m.value();
-            if (val_m.kind == .identifier and std.mem.eql(u8, val_m.name orelse "", "self")) {
-                try self.emit("self.*");
-            } else {
-                try self.generateExprMir(val_m);
-            }
-            try self.emit(") {\n");
-            self.indent += 1;
-            var has_wildcard = false;
-            for (m.matchArms()) |arm_mir| {
-                const pat_m = arm_mir.pattern();
-                try self.emitIndent();
-                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", "else")) {
-                    has_wildcard = true;
-                    try self.emit("else");
-                } else if (pat_m.kind == .binary and std.mem.eql(u8, pat_m.op orelse "", "..")) {
-                    try self.generateExprMir(pat_m.lhs());
-                    try self.emit("...");
-                    try self.generateExprMir(pat_m.rhs());
-                } else {
-                    try self.generateExprMir(pat_m);
-                }
-                try self.emit(" => ");
-                try self.generateBlockMir(arm_mir.body());
-                try self.emit(",\n");
-            }
-            if (!has_wildcard) {
-                var is_enum_switch = false;
-                for (m.matchArms()) |arm_mir| {
-                    const pat_m = arm_mir.pattern();
-                    if (pat_m.kind == .identifier) {
-                        if (self.isEnumVariant(pat_m.name orelse "")) {
-                            is_enum_switch = true;
-                            break;
-                        }
-                    }
-                }
-                if (!is_enum_switch) {
-                    try self.emitIndent();
-                    try self.emit("else => {},\n");
-                }
-            }
-            self.indent -= 1;
-            try self.emitIndent();
-            try self.emit("}");
-        }
-    }
-
-    /// MIR-path type match (arbitrary/error/null union switch).
-    fn generateTypeMatchMir(self: *CodeGen, m: *mir.MirNode, is_null_union: bool) anyerror!void {
-        const is_arbitrary = blk: {
-            for (m.matchArms()) |arm_mir| {
-                const pat_m = arm_mir.pattern();
-                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR)) break :blk false;
-                if (pat_m.literal_kind == .null_lit) break :blk false;
-            }
-            break :blk true;
-        };
-
-        const is_error_union = blk: {
-            for (m.matchArms()) |arm_mir| {
-                const pat_m = arm_mir.pattern();
-                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR)) break :blk true;
-            }
-            break :blk false;
-        };
-
-        // For native ?T and anyerror!T, use if/else instead of switch
-        if (is_error_union) {
-            // match on anyerror!T → if (val) |_match_val| { ... } else |_match_err| { ... }
-            var value_arm: ?*mir.MirNode = null;
-            var error_arm: ?*mir.MirNode = null;
-            var else_arm: ?*mir.MirNode = null;
-            for (m.matchArms()) |arm_mir| {
-                const pat_m = arm_mir.pattern();
-                const pat_name = pat_m.name orelse "";
-                if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, K.Type.ERROR)) {
-                    error_arm = arm_mir;
-                } else if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-                    else_arm = arm_mir;
-                } else {
-                    value_arm = arm_mir;
-                }
-            }
-            try self.emit("if (");
-            try self.generateExprMir(m.value());
-            try self.emit(") |_match_val| ");
-            if (value_arm orelse else_arm) |arm| {
-                try self.generateBlockMir(arm.body());
-            } else {
-                try self.emit("{}");
-            }
-            try self.emit(" else |_match_err| ");
-            if (error_arm) |arm| {
-                try self.generateBlockMir(arm.body());
-            } else {
-                try self.emit("{}");
-            }
-            return;
-        }
-
-        if (is_null_union) {
-            // match on ?T → if (val) |_match_val| { ... } else { ... }
-            var value_arm: ?*mir.MirNode = null;
-            var null_arm: ?*mir.MirNode = null;
-            var else_arm: ?*mir.MirNode = null;
-            for (m.matchArms()) |arm_mir| {
-                const pat_m = arm_mir.pattern();
-                const pat_name = pat_m.name orelse "";
-                if (pat_m.literal_kind == .null_lit) {
-                    null_arm = arm_mir;
-                } else if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-                    else_arm = arm_mir;
-                } else {
-                    value_arm = arm_mir;
-                }
-            }
-            try self.emit("if (");
-            try self.generateExprMir(m.value());
-            try self.emit(") |_match_val| ");
-            if (value_arm orelse else_arm) |arm| {
-                try self.generateBlockMir(arm.body());
-            } else {
-                try self.emit("{}");
-            }
-            try self.emit(" else ");
-            if (null_arm) |arm| {
-                try self.generateBlockMir(arm.body());
-            } else {
-                try self.emit("{}");
-            }
-            return;
-        }
-
-        // Arbitrary union — keep as switch
-        try self.emit("switch (");
-        try self.generateExprMir(m.value());
-        try self.emit(") {\n");
-        self.indent += 1;
-
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            const pat_name = pat_m.name orelse "";
-            try self.emitIndent();
-
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-                try self.emit("else");
-            } else if (is_arbitrary and pat_m.kind == .identifier) {
-                try self.emitFmt("._{s}", .{pat_name});
-            }
-
-            try self.emit(" => ");
-            try self.generateBlockMir(arm_mir.body());
-            try self.emit(",\n");
-        }
-
-        self.indent -= 1;
-        try self.emitIndent();
-        try self.emit("}");
-    }
-
-    /// MIR-path string match — desugars to if/else chain.
-    fn generateStringMatchMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        var first = true;
-        var wildcard_arm: ?*mir.MirNode = null;
-
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", "else")) {
-                wildcard_arm = arm_mir;
-                continue;
-            }
-
-            if (first) {
-                try self.emit("if (std.mem.eql(u8, ");
-                first = false;
-            } else {
-                try self.emit(" else if (std.mem.eql(u8, ");
-            }
-
-            const val_m = m.value();
-            if (val_m.kind == .identifier and std.mem.eql(u8, val_m.name orelse "", "self")) {
-                try self.emit("self.*");
-            } else {
-                try self.generateExprMir(val_m);
-            }
-            try self.emit(", ");
-            try self.generateExprMir(pat_m);
-            try self.emit(")) ");
-            try self.generateBlockMir(arm_mir.body());
-        }
-
-        if (wildcard_arm) |wa| {
-            if (first) {
-                try self.generateBlockMir(wa.body());
-            } else {
-                try self.emit(" else ");
-                try self.generateBlockMir(wa.body());
-            }
-        } else if (!first) {
-            try self.emit(" else {}");
-        }
-    }
-
-    /// MIR-path interpolated string — inline variant used by temp_var statement handler.
-    /// Emits allocPrint directly to main output (no hoisting). The temp_var path already
-    /// wraps this in `const _orhon_interp_N = ...;` with a sibling injected_defer node,
-    /// so no pre_stmts hoisting is needed here.
-    fn generateInterpolatedStringMirInline(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void {
-        try self.emit("std.fmt.allocPrint(std.heap.smp_allocator, \"");
-        var expr_idx: usize = 0;
-        // Build format string
-        for (parts) |part| {
-            switch (part) {
-                .literal => |text| {
-                    for (text) |ch| {
-                        switch (ch) {
-                            '{' => try self.emit("{{"),
-                            '}' => try self.emit("}}"),
-                            '\\' => try self.emit("\\"),
-                            else => {
-                                const buf: [1]u8 = .{ch};
-                                try self.emit(&buf);
-                            },
-                        }
-                    }
-                },
-                .expr => {
-                    if (expr_idx < expr_children.len and mirIsString(expr_children[expr_idx])) {
-                        try self.emit("{s}");
-                    } else {
-                        try self.emit("{}");
-                    }
-                    expr_idx += 1;
-                },
-            }
-        }
-        try self.emit("\", .{");
-        // Build args tuple
-        var first = true;
-        for (expr_children) |child| {
-            if (!first) try self.emit(", ");
-            try self.generateExprMir(child);
-            first = false;
-        }
-        // Use error propagation only if the enclosing function has an error return type.
-        // Otherwise use unreachable — page_allocator OOM is extremely rare in practice.
-        if (self.funcReturnTypeClass() == .error_union) {
-            try self.emit("}) catch |err| return err");
-        } else {
-            try self.emit("}) catch unreachable");
-        }
-    }
-
-    /// MIR-path interpolated string — uses interp_parts for literals, children for exprs.
-    /// Hoists the allocPrint call to a temp variable in pre_stmts, then emits only the
-    /// temp var name — paired with defer free to avoid a memory leak.
-    fn generateInterpolatedStringMir(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void {
-        const n = self.interp_count;
-        self.interp_count += 1;
-
-        // Build indent prefix for hoisted lines
-        var indent_buf: [256]u8 = undefined;
-        var indent_len: usize = 0;
-        var i: usize = 0;
-        while (i < self.indent and indent_len + 4 <= indent_buf.len) : (i += 1) {
-            @memcpy(indent_buf[indent_len .. indent_len + 4], "    ");
-            indent_len += 4;
-        }
-        const indent_str = indent_buf[0..indent_len];
-
-        var name_buf: [32]u8 = undefined;
-        const var_name = std.fmt.bufPrint(&name_buf, "_interp_{d}", .{n}) catch "_interp";
-        try self.pre_stmts.appendSlice(self.allocator, indent_str);
-        try self.pre_stmts.appendSlice(self.allocator, "const ");
-        try self.pre_stmts.appendSlice(self.allocator, var_name);
-        try self.pre_stmts.appendSlice(self.allocator, " = std.fmt.allocPrint(std.heap.smp_allocator, \"");
-
-        // Build format string into pre_stmts
-        var expr_idx: usize = 0;
-        for (parts) |part| {
-            switch (part) {
-                .literal => |text| {
-                    for (text) |ch| {
-                        switch (ch) {
-                            '{' => try self.pre_stmts.appendSlice(self.allocator, "{{"),
-                            '}' => try self.pre_stmts.appendSlice(self.allocator, "}}"),
-                            '\\' => try self.pre_stmts.appendSlice(self.allocator, "\\"),
-                            else => try self.pre_stmts.append(self.allocator, ch),
-                        }
-                    }
-                },
-                .expr => {
-                    if (expr_idx < expr_children.len and mirIsString(expr_children[expr_idx])) {
-                        try self.pre_stmts.appendSlice(self.allocator, "{s}");
-                    } else {
-                        try self.pre_stmts.appendSlice(self.allocator, "{}");
-                    }
-                    expr_idx += 1;
-                },
-            }
-        }
-        try self.pre_stmts.appendSlice(self.allocator, "\", .{");
-
-        // Redirect output to pre_stmts to emit arg expressions
-        const saved_output = self.output;
-        self.output = self.pre_stmts;
-        var first = true;
-        for (expr_children) |child| {
-            if (!first) try self.emit(", ");
-            try self.generateExprMir(child);
-            first = false;
-        }
-        self.pre_stmts = self.output;
-        self.output = saved_output;
-
-        // Use error propagation only if the enclosing function has an error return type.
-        if (self.funcReturnTypeClass() == .error_union) {
-            try self.pre_stmts.appendSlice(self.allocator, "}) catch |err| return err;\n");
-        } else {
-            try self.pre_stmts.appendSlice(self.allocator, "}) catch unreachable;\n");
-        }
-        // Append: <indent>defer std.heap.smp_allocator.free(_interp_N);
-        try self.pre_stmts.appendSlice(self.allocator, indent_str);
-        try self.pre_stmts.appendSlice(self.allocator, "defer std.heap.smp_allocator.free(");
-        try self.pre_stmts.appendSlice(self.allocator, var_name);
-        try self.pre_stmts.appendSlice(self.allocator, ");\n");
-
-        // Emit just the temp var name as the expression
-        try self.emit(var_name);
-    }
-
-    /// MIR-path collection expr — all unmanaged collections zero-initialize.
-    fn generateCollectionExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        _ = m;
-        try self.emit(".{}");
-    }
-
-    /// Type-directed pointer coercion for the MIR path.
-    /// Called from generateTopLevelDeclMir and generateStmtDeclMir when type annotation is Ptr/RawPtr/VolatilePtr.
-    /// type_node is the first type argument (e.g. i32 from Ptr(i32)); val_m is the value MIR node.
-    fn generatePtrCoercionMir(self: *CodeGen, kind: []const u8, type_node: *parser.Node, val_m: *mir.MirNode) anyerror!void {
-        if (std.mem.eql(u8, kind, "Ptr")) {
-            // Ptr(T) + &x → &x  (safe const pointer)
-            try self.generateExprMir(val_m);
-        } else if (std.mem.eql(u8, kind, "RawPtr")) {
-            if (!self.warned_rawptr) {
-                std.debug.print("WARNING: RawPtr used — unsafe, no bounds checking\n", .{});
-                self.warned_rawptr = true;
-            }
-            const zig_type = try self.typeToZig(type_node);
-            if (val_m.kind == .borrow) {
-                // RawPtr(T) + &x → @as([*]T, @ptrCast(&x))
-                try self.emitFmt("@as([*]{s}, @ptrCast(", .{zig_type});
-                try self.generateExprMir(val_m);
-                try self.emit("))");
-            } else {
-                // RawPtr(T) + 0xB8000 → @as([*]T, @ptrFromInt(addr))
-                try self.emitFmt("@as([*]{s}, @ptrFromInt(", .{zig_type});
-                try self.generateExprMir(val_m);
-                try self.emit("))");
-            }
-        } else if (std.mem.eql(u8, kind, "VolatilePtr")) {
-            if (!self.warned_rawptr) {
-                std.debug.print("WARNING: VolatilePtr used — unsafe, hardware access only\n", .{});
-                self.warned_rawptr = true;
-            }
-            const zig_type = try self.typeToZig(type_node);
-            if (val_m.kind == .borrow) {
-                // VolatilePtr(T) + &x → @as(*volatile T, @ptrCast(&x))
-                try self.emitFmt("@as(*volatile {s}, @ptrCast(", .{zig_type});
-                try self.generateExprMir(val_m);
-                try self.emit("))");
-            } else {
-                // VolatilePtr(T) + 0xFF200000 → @as(*volatile T, @ptrFromInt(addr))
-                try self.emitFmt("@as(*volatile {s}, @ptrFromInt(", .{zig_type});
-                try self.generateExprMir(val_m);
-                try self.emit("))");
-            }
-        }
-    }
-
-    /// MIR-path compiler function (@typename, @cast, @size, etc.).
-    fn generateCompilerFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        const cf_name = m.name orelse return;
-        const args = m.children;
-        if (std.mem.eql(u8, cf_name, "typename")) {
-            try self.emit("@typeName(@TypeOf(");
-            if (args.len > 0) try self.generateExprMir(args[0]);
-            try self.emit("))");
-        } else if (std.mem.eql(u8, cf_name, "typeid")) {
-            try self.emit("@intFromPtr(@typeName(@TypeOf(");
-            if (args.len > 0) try self.generateExprMir(args[0]);
-            try self.emit(")).ptr)");
-        } else if (std.mem.eql(u8, cf_name, "cast")) {
-            if (args.len >= 2) {
-                const target_type = try self.typeToZig(args[0].ast);
-                const target_is_float = target_type.len > 0 and target_type[0] == 'f';
-                const target_is_enum = self.isEnumTypeName(args[0].ast);
-                const source_is_float_literal = args[1].literal_kind == .float;
-                try self.emitFmt("@as({s}, ", .{target_type});
-                if (target_is_enum) {
-                    try self.emit("@enumFromInt(");
-                } else if (target_is_float and source_is_float_literal) {
-                    try self.emit("@floatCast(");
-                } else if (target_is_float) {
-                    try self.emit("@floatFromInt(");
-                } else if (source_is_float_literal) {
-                    try self.emit("@intFromFloat(");
-                } else {
-                    try self.emit("@intCast(");
-                }
-                try self.generateExprMir(args[1]);
-                try self.emit("))");
-            } else if (args.len == 1) {
-                try self.emit("@intCast(");
-                try self.generateExprMir(args[0]);
-                try self.emit(")");
-            }
-        } else if (std.mem.eql(u8, cf_name, "size")) {
-            try self.emit("@sizeOf(");
-            if (args.len > 0) try self.generateExprMir(args[0]);
-            try self.emit(")");
-        } else if (std.mem.eql(u8, cf_name, "align")) {
-            try self.emit("@alignOf(");
-            if (args.len > 0) try self.generateExprMir(args[0]);
-            try self.emit(")");
-        } else if (std.mem.eql(u8, cf_name, "copy")) {
-            if (args.len > 0) try self.generateExprMir(args[0]);
-        } else if (std.mem.eql(u8, cf_name, "move")) {
-            if (args.len > 0) try self.generateExprMir(args[0]);
-        } else if (std.mem.eql(u8, cf_name, "assert")) {
-            if (self.in_test_block) {
-                try self.emit("try std.testing.expect(");
-            } else {
-                try self.emit("std.debug.assert(");
-            }
-            if (args.len > 0) try self.generateExprMir(args[0]);
-            try self.emit(")");
-        } else if (std.mem.eql(u8, cf_name, "swap")) {
-            if (args.len == 2) {
-                try self.emit("std.mem.swap(@TypeOf(");
-                try self.generateExprMir(args[0]);
-                try self.emit("), &");
-                try self.generateExprMir(args[0]);
-                try self.emit(", &");
-                try self.generateExprMir(args[1]);
-                try self.emit(")");
-            }
-        } else {
-            try self.emitFmt("/* unknown @{s} */", .{cf_name});
-        }
-    }
-
-    fn generateWrappingExpr(self: *CodeGen, arg: *parser.Node) anyerror!void {
-        if (arg.* == .binary_expr) {
-            const b = arg.binary_expr;
-            const wrap_op: ?[]const u8 =
-                if (std.mem.eql(u8, b.op, "+")) "+%"
-                else if (std.mem.eql(u8, b.op, "-")) "-%"
-                else if (std.mem.eql(u8, b.op, "*")) "*%"
-                else null;
-            if (wrap_op) |op| {
-                try self.generateExpr(b.left);
-                try self.emitFmt(" {s} ", .{op});
-                try self.generateExpr(b.right);
-                return;
-            }
-        }
-        try self.generateExpr(arg);
-    }
-
-    fn generateSaturatingExpr(self: *CodeGen, arg: *parser.Node) anyerror!void {
-        if (arg.* == .binary_expr) {
-            const b = arg.binary_expr;
-            const sat_op: ?[]const u8 =
-                if (std.mem.eql(u8, b.op, "+")) "+|"
-                else if (std.mem.eql(u8, b.op, "-")) "-|"
-                else if (std.mem.eql(u8, b.op, "*")) "*|"
-                else null;
-            if (sat_op) |op| {
-                try self.generateExpr(b.left);
-                try self.emitFmt(" {s} ", .{op});
-                try self.generateExpr(b.right);
-                return;
-            }
-        }
-        try self.generateExpr(arg);
-    }
-
-    fn generateOverflowExpr(self: *CodeGen, arg: *parser.Node) anyerror!void {
-        if (arg.* == .binary_expr) {
-            const b = arg.binary_expr;
-            const builtin_name: ?[]const u8 =
-                if (std.mem.eql(u8, b.op, "+")) "@addWithOverflow"
-                else if (std.mem.eql(u8, b.op, "-")) "@subWithOverflow"
-                else if (std.mem.eql(u8, b.op, "*")) "@mulWithOverflow"
-                else null;
-            if (builtin_name) |builtin| {
-                // overflow(a + b) → (blk: { const _ov = @addWithOverflow(a, b);
-                //   if (_ov[1] != 0) break :blk @as(anyerror!@TypeOf(a), error.overflow)
-                //   else break :blk @as(anyerror!@TypeOf(a), _ov[0]); })
-                // When operands are literals, @TypeOf gives comptime_int which Zig rejects.
-                // Use the concrete type from the enclosing decl's type_ctx if available.
-                const left_is_literal = b.left.* == .int_literal or b.left.* == .float_literal;
-                const type_str: ?[]const u8 = if (left_is_literal) blk: {
-                    if (self.type_ctx) |ctx| {
-                        if (extractValueType(ctx)) |vt| break :blk try self.typeToZig(vt);
-                    }
-                    break :blk null;
-                } else null;
-
-                try self.emit("(blk: { const _ov = ");
-                try self.emitFmt("{s}(", .{builtin});
-                if (type_str) |ts| {
-                    try self.emitFmt("@as({s}, ", .{ts});
-                    try self.generateExpr(b.left);
-                    try self.emit(")");
-                } else {
-                    try self.generateExpr(b.left);
-                }
-                try self.emit(", ");
-                try self.generateExpr(b.right);
-                if (type_str) |ts| {
-                    try self.emitFmt("); if (_ov[1] != 0) break :blk @as(anyerror!{s}, error.overflow) else break :blk @as(anyerror!{s}, _ov[0]); }})", .{ ts, ts });
-                } else {
-                    try self.emit("); if (_ov[1] != 0) break :blk @as(anyerror!@TypeOf(");
-                    try self.generateExpr(b.left);
-                    try self.emit("), error.overflow) else break :blk @as(anyerror!@TypeOf(");
-                    try self.generateExpr(b.left);
-                    try self.emit("), _ov[0]); })");
-                }
-                return;
-            }
-        }
-        try self.generateExpr(arg);
-    }
-
-    /// MIR-path wrapping arithmetic.
-    fn generateWrappingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        if (m.kind == .binary) {
-            const bin_op = m.op orelse "";
-            const wrap_op: ?[]const u8 =
-                if (std.mem.eql(u8, bin_op, "+")) "+%"
-                else if (std.mem.eql(u8, bin_op, "-")) "-%"
-                else if (std.mem.eql(u8, bin_op, "*")) "*%"
-                else null;
-            if (wrap_op) |op| {
-                try self.generateExprMir(m.lhs());
-                try self.emitFmt(" {s} ", .{op});
-                try self.generateExprMir(m.rhs());
-                return;
-            }
-        }
-        try self.generateExprMir(m);
-    }
-
-    /// MIR-path saturating arithmetic.
-    fn generateSaturatingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        if (m.kind == .binary) {
-            const bin_op = m.op orelse "";
-            const sat_op: ?[]const u8 =
-                if (std.mem.eql(u8, bin_op, "+")) "+|"
-                else if (std.mem.eql(u8, bin_op, "-")) "-|"
-                else if (std.mem.eql(u8, bin_op, "*")) "*|"
-                else null;
-            if (sat_op) |op| {
-                try self.generateExprMir(m.lhs());
-                try self.emitFmt(" {s} ", .{op});
-                try self.generateExprMir(m.rhs());
-                return;
-            }
-        }
-        try self.generateExprMir(m);
-    }
-
-    /// MIR-path overflow arithmetic.
-    fn generateOverflowExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void {
-        if (m.kind == .binary) {
-            const bin_op = m.op orelse "";
-            const builtin_name: ?[]const u8 =
-                if (std.mem.eql(u8, bin_op, "+")) "@addWithOverflow"
-                else if (std.mem.eql(u8, bin_op, "-")) "@subWithOverflow"
-                else if (std.mem.eql(u8, bin_op, "*")) "@mulWithOverflow"
-                else null;
-            if (builtin_name) |builtin| {
-                const left_is_literal = m.lhs().literal_kind == .int or m.lhs().literal_kind == .float;
-                const type_str: ?[]const u8 = if (left_is_literal) blk: {
-                    if (self.type_ctx) |ctx| {
-                        if (extractValueType(ctx)) |vt| break :blk try self.typeToZig(vt);
-                    }
-                    break :blk null;
-                } else null;
-
-                try self.emit("(blk: { const _ov = ");
-                try self.emitFmt("{s}(", .{builtin});
-                if (type_str) |ts| {
-                    try self.emitFmt("@as({s}, ", .{ts});
-                    try self.generateExprMir(m.lhs());
-                    try self.emit(")");
-                } else {
-                    try self.generateExprMir(m.lhs());
-                }
-                try self.emit(", ");
-                try self.generateExprMir(m.rhs());
-                if (type_str) |ts| {
-                    try self.emitFmt("); if (_ov[1] != 0) break :blk @as(anyerror!{s}, error.overflow) else break :blk @as(anyerror!{s}, _ov[0]); }})", .{ ts, ts });
-                } else {
-                    try self.emit("); if (_ov[1] != 0) break :blk @as(anyerror!@TypeOf(");
-                    try self.generateExprMir(m.lhs());
-                    try self.emit("), error.overflow) else break :blk @as(anyerror!@TypeOf(");
-                    try self.generateExprMir(m.lhs());
-                    try self.emit("), _ov[0]); })");
-                }
-                return;
-            }
-        }
-        try self.generateExprMir(m);
-    }
-
-    /// MIR-path fill default arguments.
-    fn fillDefaultArgsMir(self: *CodeGen, callee_mir: *const mir.MirNode, actual_arg_count: usize) anyerror!void {
-        // Resolve function name from callee MirNode
-        const func_name: []const u8 = if (callee_mir.kind == .identifier)
-            callee_mir.name orelse return
-        else if (callee_mir.kind == .field_access)
-            callee_mir.name orelse return
-        else
-            return;
-
-        var fsig: ?declarations.FuncSig = null;
-        if (self.decls) |d| {
-            fsig = d.funcs.get(func_name);
-        }
-        if (fsig == null) {
-            if (callee_mir.kind == .field_access) {
-                const obj = callee_mir.children[0];
-                const module_name = if (obj.kind == .identifier)
-                    obj.name
-                else if (obj.kind == .field_access and obj.children.len > 0 and obj.children[0].kind == .identifier)
-                    obj.children[0].name
-                else
-                    null;
-                if (module_name) |mn| {
-                    if (self.all_decls) |ad| {
-                        if (ad.get(mn)) |mod_decls| {
-                            fsig = mod_decls.funcs.get(func_name);
-                        }
-                    }
-                }
-            }
-        }
-
-        const sig = fsig orelse return;
-        if (actual_arg_count >= sig.param_nodes.len) return;
-        var wrote_any = actual_arg_count > 0;
-        for (sig.param_nodes[actual_arg_count..]) |p| {
-            if (p.* == .param) {
-                if (p.param.default_value) |dv| {
-                    if (wrote_any) try self.emit(", ");
-                    try self.generateExpr(dv);
-                    wrote_any = true;
-                }
-            }
-        }
-    }
-
-    fn generateCompilerFunc(self: *CodeGen, cf: parser.CompilerFunc) anyerror!void {
-        // Map Orhon compiler functions to Zig equivalents
-        if (std.mem.eql(u8, cf.name, "typename")) {
-            // typename(x) → @typeName(@TypeOf(x))
-            try self.emit("@typeName(@TypeOf(");
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-            try self.emit("))");
-        } else if (std.mem.eql(u8, cf.name, "typeid")) {
-            // typeid(x) → @intFromPtr(@typeName(@TypeOf(x)).ptr)
-            try self.emit("@intFromPtr(@typeName(@TypeOf(");
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-            try self.emit(")).ptr)");
-        } else if (std.mem.eql(u8, cf.name, "typeOf")) {
-            // typeOf(x) → @TypeOf(x)
-            try self.emit("@TypeOf(");
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-            try self.emit(")");
-        } else if (std.mem.eql(u8, cf.name, "cast")) {
-            // cast(T, x) → Zig cast depending on target and source types:
-            //   enum target:  @as(T, @enumFromInt(x))
-            //   int target,   float source literal: @as(T, @intFromFloat(x))
-            //   int target,   other source:          @as(T, @intCast(x))
-            //   float target, float source:          @as(T, @floatCast(x))
-            //   float target, other source:          @as(T, @floatFromInt(x))
-            if (cf.args.len >= 2) {
-                const target_type = try self.typeToZig(cf.args[0]);
-                const target_is_float = target_type.len > 0 and target_type[0] == 'f';
-                const target_is_enum = self.isEnumTypeName(cf.args[0]);
-                const source_is_float_literal = cf.args[1].* == .float_literal;
-                try self.emitFmt("@as({s}, ", .{target_type});
-                if (target_is_enum) {
-                    try self.emit("@enumFromInt(");
-                } else if (target_is_float and source_is_float_literal) {
-                    // float literal to float type — direct cast
-                    try self.emit("@floatCast(");
-                } else if (target_is_float) {
-                    try self.emit("@floatFromInt(");
-                } else if (source_is_float_literal) {
-                    try self.emit("@intFromFloat(");
-                } else {
-                    try self.emit("@intCast(");
-                }
-                try self.generateExpr(cf.args[1]);
-                try self.emit("))");
-            } else if (cf.args.len == 1) {
-                try self.emit("@intCast(");
-                try self.generateExpr(cf.args[0]);
-                try self.emit(")");
-            }
-        } else if (std.mem.eql(u8, cf.name, "size")) {
-            // size(T) → @sizeOf(T)
-            try self.emit("@sizeOf(");
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-            try self.emit(")");
-        } else if (std.mem.eql(u8, cf.name, "align")) {
-            // align(T) → @alignOf(T)
-            try self.emit("@alignOf(");
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-            try self.emit(")");
-        } else if (std.mem.eql(u8, cf.name, "copy")) {
-            // copy(x) — for non-primitives, generate a copy
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-        } else if (std.mem.eql(u8, cf.name, "move")) {
-            // move(x) — explicit move, same as value in Zig
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-        } else if (std.mem.eql(u8, cf.name, "assert")) {
-            if (self.in_test_block) {
-                try self.emit("try std.testing.expect(");
-            } else {
-                try self.emit("std.debug.assert(");
-            }
-            if (cf.args.len > 0) try self.generateExpr(cf.args[0]);
-            try self.emit(")");
-        } else if (std.mem.eql(u8, cf.name, "swap")) {
-            // swap(a, b) → std.mem.swap(@TypeOf(a), &a, &b)
-            if (cf.args.len == 2) {
-                try self.emit("std.mem.swap(@TypeOf(");
-                try self.generateExpr(cf.args[0]);
-                try self.emit("), &");
-                try self.generateExpr(cf.args[0]);
-                try self.emit(", &");
-                try self.generateExpr(cf.args[1]);
-                try self.emit(")");
-            }
-        } else {
-            try self.emitFmt("/* unknown @{s} */", .{cf.name});
-        }
-    }
-
-    /// Type-directed pointer coercion for the AST path.
-    /// Called from generateDecl and generateStmtDecl when type annotation is Ptr/RawPtr/VolatilePtr.
-    /// Emits the correct Zig for `const p: Ptr(T) = &x` style declarations.
-    fn generatePtrCoercion(self: *CodeGen, kind: []const u8, type_node: *parser.Node, value: *parser.Node) anyerror!void {
-        if (std.mem.eql(u8, kind, "Ptr")) {
-            // Ptr(T) + &x → &x  (safe const pointer)
-            try self.generateExpr(value);
-        } else if (std.mem.eql(u8, kind, "RawPtr")) {
-            if (!self.warned_rawptr) {
-                std.debug.print("WARNING: RawPtr used — unsafe, no bounds checking\n", .{});
-                self.warned_rawptr = true;
-            }
-            const zig_type = try self.typeToZig(type_node);
-            if (value.* == .borrow_expr) {
-                // RawPtr(T) + &x → @as([*]T, @ptrCast(&x))
-                try self.emitFmt("@as([*]{s}, @ptrCast(", .{zig_type});
-                try self.generateExpr(value);
-                try self.emit("))");
-            } else {
-                // RawPtr(T) + 0xB8000 → @as([*]T, @ptrFromInt(addr))
-                try self.emitFmt("@as([*]{s}, @ptrFromInt(", .{zig_type});
-                try self.generateExpr(value);
-                try self.emit("))");
-            }
-        } else if (std.mem.eql(u8, kind, "VolatilePtr")) {
-            if (!self.warned_rawptr) {
-                std.debug.print("WARNING: VolatilePtr used — unsafe, hardware access only\n", .{});
-                self.warned_rawptr = true;
-            }
-            const zig_type = try self.typeToZig(type_node);
-            if (value.* == .borrow_expr) {
-                // VolatilePtr(T) + &x → @as(*volatile T, @ptrCast(&x))
-                try self.emitFmt("@as(*volatile {s}, @ptrCast(", .{zig_type});
-                try self.generateExpr(value);
-                try self.emit("))");
-            } else {
-                // VolatilePtr(T) + 0xFF200000 → @as(*volatile T, @ptrFromInt(addr))
-                try self.emitFmt("@as(*volatile {s}, @ptrFromInt(", .{zig_type});
-                try self.generateExpr(value);
-                try self.emit("))");
-            }
-        }
-    }
-
-    /// Write the allocator argument for an allocating string method.
-    /// Last arg is allocator if it's a mem.* call, otherwise default to smp_allocator.
-    /// Fill in default argument values when a call provides fewer args than the function expects.
-    fn fillDefaultArgs(self: *CodeGen, c: parser.CallExpr) anyerror!void {
-        const func_name: []const u8 = if (c.callee.* == .identifier)
-            c.callee.identifier
-        else if (c.callee.* == .field_expr)
-            c.callee.field_expr.field
-        else
-            return;
-
-        // Look up function signature — first in current module, then imported modules
-        var fsig: ?declarations.FuncSig = null;
-        if (self.decls) |d| {
-            fsig = d.funcs.get(func_name);
-        }
-        if (fsig == null) {
-            // Cross-module call: module.func() — look up in imported module's decls
-            if (c.callee.* == .field_expr) {
-                const module_name = if (c.callee.field_expr.object.* == .identifier)
-                    c.callee.field_expr.object.identifier
-                else if (c.callee.field_expr.object.* == .field_expr)
-                    // module.Type.method — get the module name
-                    if (c.callee.field_expr.object.field_expr.object.* == .identifier)
-                        c.callee.field_expr.object.field_expr.object.identifier
-                    else
-                        null
-                else
-                    null;
-                if (module_name) |mn| {
-                    if (self.all_decls) |ad| {
-                        if (ad.get(mn)) |mod_decls| {
-                            fsig = mod_decls.funcs.get(func_name);
-                        }
-                    }
-                }
-            }
-        }
-
-        const sig = fsig orelse return;
-        if (c.args.len >= sig.param_nodes.len) return;
-        var wrote_any = c.args.len > 0;
-        for (sig.param_nodes[c.args.len..]) |p| {
-            if (p.* == .param) {
-                if (p.param.default_value) |dv| {
-                    if (wrote_any) try self.emit(", ");
-                    try self.generateExpr(dv);
-                    wrote_any = true;
-                }
-            }
-        }
-    }
-
-    /// Generate a shared-allocator collection expression (named alloc only).
-    /// Unmanaged API: emit .{} — allocator is passed to each method call, not stored.
-    /// Collections use the unmanaged API: .{} init, allocator passed to each method.
-    fn generateCollectionExpr(self: *CodeGen, c: parser.CollectionExpr) anyerror!void {
-        _ = c.alloc_arg; // allocator tracked at declaration level, not embedded in init
-        // All unmanaged collections zero-initialize: the type annotation carries the type.
-        try self.emit(".{}");
-    }
+    pub fn generateCollectionExpr(self: *CodeGen, c: parser.CollectionExpr) anyerror!void { return match_impl.generateCollectionExpr(self, c); }
 
     // ============================================================
     // TYPE TRANSLATION
     // ============================================================
 
     /// Allocate a type string and track it for cleanup
-    fn allocTypeStr(self: *CodeGen, comptime fmt: []const u8, args: anytype) ![]const u8 {
+    pub fn allocTypeStr(self: *CodeGen, comptime fmt: []const u8, args: anytype) ![]const u8 {
         const s = try std.fmt.allocPrint(self.allocator, fmt, args);
         try self.type_strings.append(self.allocator, s);
         return s;
     }
 
-    fn typeToZig(self: *CodeGen, node: *parser.Node) ![]const u8 {
+    pub fn typeToZig(self: *CodeGen, node: *parser.Node) anyerror![]const u8 {
         return switch (node.*) {
             .type_named => |name| {
                 if (std.mem.eql(u8, name, K.Type.ERROR)) return "anyerror";
@@ -4296,36 +877,39 @@ pub const CodeGen = struct {
     }
 };
 
-fn opToZig(op: []const u8) []const u8 {
-    if (std.mem.eql(u8, op, "and")) return "and";
-    if (std.mem.eql(u8, op, "or")) return "or";
-    if (std.mem.eql(u8, op, "not")) return "!";
-    return op; // most operators are the same in Zig
-}
+pub fn opToZig(op: []const u8) []const u8 { return match_impl.opToZig(op); }
 
 /// Check if a field name is a type name used for union value access (result.i32, result.User)
-fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) bool {
-    // Primitive type names — always valid as union payload access
-    const primitives = [_][]const u8{
-        "i8", "i16", "i32", "i64", "i128",
-        "u8", "u16", "u32", "u64", "u128",
-        "isize", "usize",
-        "f16", "bf16", "f32", "f64", "f128",
-        "bool", "String", "void",
-    };
-    for (primitives) |p| {
-        if (std.mem.eql(u8, name, p)) return true;
+pub fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) bool { return match_impl.isResultValueField(name, decls); }
+
+/// Extract the value type from a (Error | T) or (null | T) union type annotation.
+/// Returns null if not a recognized union or no non-Error/non-null type found.
+/// Available at file scope so helper modules (codegen_exprs.zig) can call codegen.extractValueType().
+pub fn extractValueType(node: *parser.Node) ?*parser.Node {
+    if (node.* != .type_union) return null;
+    for (node.type_union) |t| {
+        if (t.* == .type_named and
+            (std.mem.eql(u8, t.type_named, K.Type.ERROR) or std.mem.eql(u8, t.type_named, K.Type.NULL)))
+            continue;
+        return t;
     }
-    // Known user-defined types from the declaration table
-    if (decls) |d| {
-        if (d.structs.contains(name)) return true;
-        if (d.enums.contains(name)) return true;
-        if (d.bitfields.contains(name)) return true;
-    }
-    // Builtin types that can appear in unions
-    if (builtins.isBuiltinType(name)) return true;
-    return false;
+    return null;
 }
+
+/// File-scope isTypeAlias for helper modules.
+pub fn isTypeAlias(type_annotation: ?*parser.Node) bool { return decls_impl.isTypeAlias(type_annotation); }
+
+/// File-scope mirIsString for helper modules (codegen_match.zig needs this without importing exprs directly).
+pub fn mirIsString(m: *const mir.MirNode) bool { return exprs_impl.mirIsString(m); }
+
+/// File-scope mirIsVector for helper modules.
+pub fn mirIsVector(m: *const mir.MirNode) bool { return exprs_impl.mirIsVector(m); }
+
+/// File-scope mirGetBitfieldName for helper modules.
+pub fn mirGetBitfieldName(m: *const mir.MirNode, decls_opt: ?*declarations.DeclTable) ?[]const u8 { return exprs_impl.mirGetBitfieldName(m, decls_opt); }
+
+/// File-scope mirContainsIdentifier for helper modules (codegen_match.zig calls this recursively).
+pub fn mirContainsIdentifier(m: *mir.MirNode, name: []const u8) bool { return match_impl.mirContainsIdentifier(m, name); }
 
 test "codegen - type to zig" {
     const alloc = std.testing.allocator;

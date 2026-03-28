@@ -89,8 +89,10 @@ else fail "bare call discards return value"; fi
 # 'catch |err| return err' instead of 'catch unreachable'.
 
 CODEGEN_SRC="$REPO_DIR/src/codegen.zig"
+CODEGEN_EXPRS="$REPO_DIR/src/codegen_exprs.zig"
 
-INTERP_SAFE_COUNT=$(grep -c 'catch |err| return err' "$CODEGEN_SRC" 2>/dev/null || echo 0)
+# generateInterpolatedString and generateInterpolatedStringMir are now in codegen_exprs.zig
+INTERP_SAFE_COUNT=$(grep -c 'catch |err| return err' "$CODEGEN_EXPRS" 2>/dev/null || echo 0)
 if [ "$INTERP_SAFE_COUNT" -ge 2 ]; then
     pass "interpolation propagates OOM (no catch unreachable)"
 else
