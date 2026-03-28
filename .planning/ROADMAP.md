@@ -91,7 +91,9 @@ Plans:
   2. `Async(T)` in a type annotation produces a clear compile error instead of silently resolving to `void`
   3. `-0.5` and `-1` are accepted as function call arguments without a parse error
   4. All 260 tests continue to pass
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 26-01-PLAN.md — Fix unary negation, cross-module is operator, Async(T) error
 
 ### Phase 27: C Interop & Multi-Module Build
 **Goal**: Multi-file modules with Zig sidecars, `#cimport` include paths, and system library linking all work without errors
@@ -126,6 +128,6 @@ Plans:
 | 19-21 | v0.14 | 6/6 | Complete | 2026-03-27 |
 | 22-24 | v0.15 | 6/6 | Complete | 2026-03-27 |
 | 25. Bridge Codegen Fixes | v0.16 | 1/1 | Complete    | 2026-03-28 |
-| 26. Codegen Correctness & Parser | v0.16 | 0/? | Not started | - |
+| 26. Codegen Correctness & Parser | v0.16 | 0/1 | Not started | - |
 | 27. C Interop & Multi-Module Build | v0.16 | 0/? | Not started | - |
 | 28. Cross-Compile, Cache & Docs | v0.16 | 0/? | Not started | - |
