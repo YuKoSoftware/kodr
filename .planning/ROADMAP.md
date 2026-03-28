@@ -117,8 +117,11 @@ Plans:
   2. `orhon build -fast` does not leak any files into the project `bin/` directory
   3. TODO.md marks `cast_to_enum`, `null_multi_union`, `empty_struct`, and `size` keyword bugs as fixed
   4. `Async(T)` removed from grammar and codegen — no dead language constructs
-  4. All 260 tests continue to pass
-**Plans**: TBD
+  5. All 260 tests continue to pass
+**Plans**: 2 plans
+Plans:
+- [ ] 28-01-PLAN.md — Fix cross-compilation target flag use-after-free and -fast cache leak
+- [ ] 28-02-PLAN.md — Remove Async(T) from codegen and update TODO.md
 
 ## Progress
 
@@ -133,4 +136,4 @@ Plans:
 | 25. Bridge Codegen Fixes | v0.16 | 1/1 | Complete    | 2026-03-28 |
 | 26. Codegen Correctness & Parser | v0.16 | 1/1 | Complete    | 2026-03-28 |
 | 27. C Interop & Multi-Module Build | v0.16 | 1/1 | Complete    | 2026-03-28 |
-| 28. Cross-Compile, Cache & Docs | v0.16 | 0/? | Not started | - |
+| 28. Cross-Compile, Cache & Docs | v0.16 | 0/2 | Not started | - |
