@@ -17,4 +17,12 @@ func borrow_conflict() void {
     const r2: &Point = &p
 }
 
+// use while mutably borrowed suggests const &
+
+func use_while_borrowed() void {
+    var q: Point = Point(x: 3, y: 4)
+    const r: &Point = &q
+    const _ = q
+}
+
 func main() void { }

@@ -1,0 +1,16 @@
+module main
+
+#name    = "fail_did_you_mean"
+#version = Version(1, 0, 0)
+#build   = exe
+
+import std::console
+
+func greet(name: String) void {
+    console.println(name)
+}
+
+func main() void {
+    const message: String = "hello"
+    console.println(mesage)
+}

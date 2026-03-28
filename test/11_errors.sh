@@ -494,4 +494,54 @@ else
     fail "rejects old #linkC directive" "$NEG_OUT"
 fi
 
+# ── ERR quality tests ────────────────────────────────────────────
+
+# did you mean suggestion (ERR-01)
+cd "$TESTDIR"
+mkdir -p neg_did_you_mean/src
+cp "$FIXTURES/fail_did_you_mean.orh" neg_did_you_mean/src/main.orh
+cd neg_did_you_mean
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -q "did you mean"; then
+    pass "suggests 'did you mean' for typo identifier"
+else
+    fail "suggests 'did you mean' for typo identifier" "$NEG_OUT"
+fi
+
+# type mismatch display (ERR-02)
+cd "$TESTDIR"
+mkdir -p neg_type_display/src
+cp "$FIXTURES/fail_type_mismatch_display.orh" neg_type_display/src/main.orh
+cd neg_type_display
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -q "type mismatch.*expected bool"; then
+    pass "type mismatch shows expected vs got format"
+else
+    fail "type mismatch shows expected vs got format" "$NEG_OUT"
+fi
+
+# ownership fix hint (ERR-03)
+cd "$TESTDIR"
+mkdir -p neg_ownership_hint/src
+cp "$FIXTURES/fail_ownership.orh" neg_ownership_hint/src/main.orh
+cd neg_ownership_hint
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -q "consider using copy()"; then
+    pass "move-after-use suggests copy()"
+else
+    fail "move-after-use suggests copy()" "$NEG_OUT"
+fi
+
+# borrow fix hint (ERR-03)
+cd "$TESTDIR"
+mkdir -p neg_borrow_hint/src
+cp "$FIXTURES/fail_borrow.orh" neg_borrow_hint/src/main.orh
+cd neg_borrow_hint
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -q "consider borrowing with const"; then
+    pass "borrow violation suggests const &"
+else
+    fail "borrow violation suggests const &" "$NEG_OUT"
+fi
+
 report_results
