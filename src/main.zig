@@ -769,9 +769,22 @@ fn runAnalysis(allocator: std.mem.Allocator, cli: *const CliArgs) !void {
     } else {
         const err = engine.getError();
         std.debug.print("result: FAIL\n", .{});
-        std.debug.print("error at line {d}:{d} — unexpected '{s}' ({s})\n", .{
-            err.line, err.col, err.found, @tagName(err.found_kind),
-        });
+        if (err.expected_set.len > 1) {
+            const engine_mod2 = @import("peg/engine.zig");
+            std.debug.print("error at line {d}:{d} — expected ", .{ err.line, err.col });
+            for (err.expected_set, 0..) |kind, i| {
+                if (i > 0 and i < err.expected_set.len - 1) std.debug.print(", ", .{});
+                if (i > 0 and i == err.expected_set.len - 1) {
+                    if (err.expected_set.len > 2) std.debug.print(", or ", .{}) else std.debug.print(" or ", .{});
+                }
+                std.debug.print("'{s}'", .{engine_mod2.kindDisplayName(kind)});
+            }
+            std.debug.print("\n", .{});
+        } else {
+            std.debug.print("error at line {d}:{d} — unexpected '{s}' ({s})\n", .{
+                err.line, err.col, err.found, @tagName(err.found_kind),
+            });
+        }
         if (err.expected_rule.len > 0) {
             std.debug.print("while parsing: {s}\n", .{err.expected_rule});
         }
