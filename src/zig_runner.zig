@@ -73,11 +73,12 @@ pub const ZigRunner = struct {
         try args.append(self.allocator, self.zig_path);
         try args.append(self.allocator, "build");
 
+        var target_flag_alloc: ?[]const u8 = null;
         if (target.len > 0) {
-            const target_flag = try std.fmt.allocPrint(self.allocator, "-Dtarget={s}", .{target});
-            defer self.allocator.free(target_flag);
-            try args.append(self.allocator, target_flag);
+            target_flag_alloc = try std.fmt.allocPrint(self.allocator, "-Dtarget={s}", .{target});
+            try args.append(self.allocator, target_flag_alloc.?);
         }
+        defer if (target_flag_alloc) |tf| self.allocator.free(tf);
 
         if (std.mem.eql(u8, optimize, "fast")) {
             try args.append(self.allocator, "-Doptimize=ReleaseFast");
@@ -124,11 +125,19 @@ pub const ZigRunner = struct {
             std.debug.print("Built: {s}\n", .{dst_name});
         }
 
-        // Clean up generated zig-out
+        // Clean up generated zig-out and zig-cache
         const generated_zig_out = try std.fs.path.join(self.allocator,
             &.{ cache.GENERATED_DIR, "zig-out" });
         defer self.allocator.free(generated_zig_out);
         std.fs.cwd().deleteTree(generated_zig_out) catch {};
+
+        const generated_zig_cache = try std.fs.path.join(self.allocator,
+            &.{ cache.GENERATED_DIR, ".zig-cache" });
+        defer self.allocator.free(generated_zig_cache);
+        std.fs.cwd().deleteTree(generated_zig_cache) catch {};
+
+        std.fs.cwd().deleteTree("zig-cache") catch {};
+        std.fs.cwd().deleteTree(".zig-cache") catch {};
 
         return true;
     }
@@ -149,11 +158,12 @@ pub const ZigRunner = struct {
         try args.append(self.allocator, self.zig_path);
         try args.append(self.allocator, "build");
 
+        var target_flag_alloc: ?[]const u8 = null;
         if (target.len > 0) {
-            const target_flag = try std.fmt.allocPrint(self.allocator, "-Dtarget={s}", .{target});
-            defer self.allocator.free(target_flag);
-            try args.append(self.allocator, target_flag);
+            target_flag_alloc = try std.fmt.allocPrint(self.allocator, "-Dtarget={s}", .{target});
+            try args.append(self.allocator, target_flag_alloc.?);
         }
+        defer if (target_flag_alloc) |tf| self.allocator.free(tf);
 
         if (std.mem.eql(u8, optimize, "fast")) {
             try args.append(self.allocator, "-Doptimize=ReleaseFast");
@@ -199,11 +209,19 @@ pub const ZigRunner = struct {
 
         try std.fs.cwd().copyFile(src_bin, std.fs.cwd(), dst_name, .{});
 
-        // Remove generated zig-out — bin/ now has the only copy
+        // Remove generated zig-out and zig-cache — bin/ now has the only copy
         const generated_zig_out = try std.fs.path.join(self.allocator,
             &.{ cache.GENERATED_DIR, "zig-out" });
         defer self.allocator.free(generated_zig_out);
         std.fs.cwd().deleteTree(generated_zig_out) catch {};
+
+        const generated_zig_cache = try std.fs.path.join(self.allocator,
+            &.{ cache.GENERATED_DIR, ".zig-cache" });
+        defer self.allocator.free(generated_zig_cache);
+        std.fs.cwd().deleteTree(generated_zig_cache) catch {};
+
+        std.fs.cwd().deleteTree("zig-cache") catch {};
+        std.fs.cwd().deleteTree(".zig-cache") catch {};
 
         _ = module_name;
         if (is_lib) {
