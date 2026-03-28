@@ -1769,6 +1769,15 @@ pub const CodeGen = struct {
                     }
                     // Qualified type check: `val is module.Type` per D-07
                     if (b.right.* == .field_expr) {
+                        // If left side is a tagged union, emit union tag comparison
+                        if (self.getTypeClass(val_node) == .arbitrary_union) {
+                            const fe = b.right.field_expr;
+                            try self.emit("(");
+                            try self.generateExpr(val_node);
+                            try self.emitFmt(" {s} ._{s})", .{ cmp, fe.field });
+                            return;
+                        }
+                        // Non-union: comptime type check via @TypeOf
                         try self.emit("(@TypeOf(");
                         try self.generateExpr(val_node);
                         try self.emitFmt(") {s} ", .{cmp});
@@ -2218,6 +2227,17 @@ pub const CodeGen = struct {
                     }
                     // Qualified type check: `val is module.Type` per D-07
                     if (rhs_mir.kind == .field_access) {
+                        // If left side is a tagged union, emit union tag comparison
+                        if (lhs_mir.type_class == .arbitrary_union or
+                            val_mir.type_class == .arbitrary_union)
+                        {
+                            const type_name = rhs_mir.name orelse "";
+                            try self.emit("(");
+                            try self.generateExprMir(val_mir);
+                            try self.emitFmt(" {s} ._{s})", .{ cmp, type_name });
+                            return;
+                        }
+                        // Non-union: comptime type check via @TypeOf
                         try self.emit("(@TypeOf(");
                         try self.generateExprMir(val_mir);
                         try self.emitFmt(") {s} ", .{cmp});
@@ -4157,7 +4177,10 @@ pub const CodeGen = struct {
                 if (std.mem.eql(u8, g.name, "Thread")) {
                     break :blk "std.Thread"; // Thread handle type
                 } else if (std.mem.eql(u8, g.name, "Async")) {
-                    break :blk "void"; // Async not yet implemented
+                    const err_msg = try std.fmt.allocPrint(self.allocator, "Async(T) is not yet implemented — cannot use as a type", .{});
+                    defer self.allocator.free(err_msg);
+                    try self.reporter.report(.{ .message = err_msg });
+                    break :blk "void"; // fallback after error
                 } else if (std.mem.eql(u8, g.name, "Handle")) {
                     // Handle(T) → _OrhonHandle(zigT) (emitted as file-level helper)
                     if (g.args.len > 0) {
