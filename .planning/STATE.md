@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
 status: verifying
-stopped_at: Completed 30-error-quality 30-02-PLAN.md — ERR-03 ownership/borrow/thread hints + 4 integration tests
-last_updated: "2026-03-28T20:30:08.059Z"
+stopped_at: Phase 31 context gathered
+last_updated: "2026-03-28T20:43:35.545Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 8
@@ -77,5 +77,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-28
-Stopped at: Completed 30-error-quality 30-02-PLAN.md — ERR-03 ownership/borrow/thread hints + 4 integration tests
-Resume file: None
+Stopped at: Phase 31 context gathered
+Resume file: .planning/phases/31-peg-error-messages/31-CONTEXT.md
