@@ -49,24 +49,24 @@ None deferred — all known bugs included in v0.16.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CGN-01 | TBD | Pending |
-| CGN-02 | TBD | Pending |
-| CGN-03 | TBD | Pending |
-| CGN-04 | TBD | Pending |
-| CGN-05 | TBD | Pending |
-| PRS-01 | TBD | Pending |
-| BLD-01 | TBD | Pending |
-| BLD-02 | TBD | Pending |
-| BLD-03 | TBD | Pending |
-| BLD-04 | TBD | Pending |
-| BLD-05 | TBD | Pending |
-| DOC-01 | TBD | Pending |
+| CGN-01 | Phase 25 | Pending |
+| CGN-02 | Phase 25 | Pending |
+| CGN-03 | Phase 25 | Pending |
+| CGN-04 | Phase 26 | Pending |
+| CGN-05 | Phase 26 | Pending |
+| PRS-01 | Phase 26 | Pending |
+| BLD-01 | Phase 27 | Pending |
+| BLD-02 | Phase 27 | Pending |
+| BLD-03 | Phase 27 | Pending |
+| BLD-04 | Phase 28 | Pending |
+| BLD-05 | Phase 28 | Pending |
+| DOC-01 | Phase 28 | Pending |
 
 **Coverage:**
 - v0.16 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12
+- Mapped to phases: 12
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after initial definition*
+*Last updated: 2026-03-28 after roadmap creation — all 12 requirements mapped*
