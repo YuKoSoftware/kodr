@@ -14,6 +14,27 @@ const Token = lexer.Token;
 const TokenKind = lexer.TokenKind;
 
 // ============================================================
+// KIND DISPLAY NAME
+// ============================================================
+
+/// Return a human-readable display name for a token kind.
+/// Strips the "kw_" prefix from keywords, and provides readable names for
+/// special token kinds.
+pub fn kindDisplayName(kind: TokenKind) []const u8 {
+    const raw = @tagName(kind);
+    if (std.mem.startsWith(u8, raw, "kw_")) return raw[3..];
+    return switch (kind) {
+        .eof => "end of file",
+        .newline => "newline",
+        .identifier => "identifier",
+        .int_literal => "integer literal",
+        .float_literal => "float literal",
+        .string_literal => "string literal",
+        else => raw,
+    };
+}
+
+// ============================================================
 // MATCH RESULT
 // ============================================================
 
@@ -64,6 +85,7 @@ pub const ParseError = struct {
     found: []const u8, // token text at failure point
     found_kind: TokenKind,
     expected_rule: []const u8, // rule that was being attempted
+    expected_set: []const TokenKind, // all expected token kinds at furthest failure (deduplicated)
 };
 
 pub const Engine = struct {
@@ -74,7 +96,12 @@ pub const Engine = struct {
     // Error tracking — furthest failure position
     furthest_pos: usize = 0,
     furthest_rule: []const u8 = "",
-    furthest_expected: TokenKind = .eof,
+    // Raw accumulated expected tokens at furthest position (may have duplicates)
+    furthest_expected_buf: [64]TokenKind = undefined,
+    furthest_expected_len: u8 = 0,
+    // Deduplicated expected set — populated by getError()
+    expected_set_buf: [64]TokenKind = undefined,
+    expected_set_len: u8 = 0,
 
     pub fn init(grammar: *const Grammar, tokens: []const Token, allocator: std.mem.Allocator) Engine {
         return .{
@@ -90,11 +117,27 @@ pub const Engine = struct {
     }
 
     /// Get error info after a failed parse.
-    pub fn getError(self: *const Engine) ParseError {
+    /// Deduplicates the accumulated expected set and returns ParseError.
+    pub fn getError(self: *Engine) ParseError {
         const pos = @min(self.furthest_pos, if (self.tokens.len > 0) self.tokens.len - 1 else 0);
         const tok = if (pos < self.tokens.len) self.tokens[pos] else Token{
             .kind = .eof, .text = "", .line = 0, .col = 0,
         };
+
+        // Deduplicate furthest_expected into expected_set_buf
+        var count: u8 = 0;
+        for (self.furthest_expected_buf[0..self.furthest_expected_len]) |kind| {
+            var found = false;
+            for (self.expected_set_buf[0..count]) |existing| {
+                if (existing == kind) { found = true; break; }
+            }
+            if (!found) {
+                self.expected_set_buf[count] = kind;
+                count += 1;
+            }
+        }
+        self.expected_set_len = count;
+
         return .{
             .pos = pos,
             .line = tok.line,
@@ -102,6 +145,7 @@ pub const Engine = struct {
             .found = tok.text,
             .found_kind = tok.kind,
             .expected_rule = self.furthest_rule,
+            .expected_set = self.expected_set_buf[0..self.expected_set_len],
         };
     }
 
@@ -180,10 +224,22 @@ pub const Engine = struct {
     }
 
     fn trackFailure(self: *Engine, pos: usize, expected: TokenKind) void {
-        if (pos >= self.furthest_pos) {
+        if (pos > self.furthest_pos) {
+            // New furthest position — reset set
             self.furthest_pos = pos;
-            self.furthest_expected = expected;
+            self.furthest_expected_len = 0;
+            if (self.furthest_expected_len < 64) {
+                self.furthest_expected_buf[self.furthest_expected_len] = expected;
+                self.furthest_expected_len += 1;
+            }
+        } else if (pos == self.furthest_pos) {
+            // Same position — accumulate
+            if (self.furthest_expected_len < 64) {
+                self.furthest_expected_buf[self.furthest_expected_len] = expected;
+                self.furthest_expected_len += 1;
+            }
         }
+        // pos < furthest_pos: ignore
     }
 
     /// Evaluate a sequence: all elements must match in order
@@ -380,6 +436,82 @@ test "engine - negative lookahead" {
     var e2 = Engine.init(&g, &tokens2, alloc);
     defer e2.deinit();
     try std.testing.expect(!e2.matchAll("not_nl"));
+}
+
+test "engine - choice failure accumulates expected set" {
+    const alloc = std.testing.allocator;
+    const grammar_mod2 = @import("grammar.zig");
+
+    const src = "item\n    <- 'func' / 'struct' / 'enum'\n";
+    var g = try grammar_mod2.parseGrammar(src, alloc);
+    defer g.deinit();
+
+    const tokens = [_]Token{
+        .{ .kind = .identifier, .text = "foo", .line = 1, .col = 1 },
+        .{ .kind = .eof, .text = "", .line = 1, .col = 4 },
+    };
+    var engine = Engine.init(&g, &tokens, alloc);
+    defer engine.deinit();
+    _ = engine.matchRule("item", 0);
+    const err = engine.getError();
+    try std.testing.expectEqual(@as(usize, 3), err.expected_set.len);
+    var found_func = false;
+    var found_struct = false;
+    var found_enum = false;
+    for (err.expected_set) |kind| {
+        if (kind == .kw_func) found_func = true;
+        if (kind == .kw_struct) found_struct = true;
+        if (kind == .kw_enum) found_enum = true;
+    }
+    try std.testing.expect(found_func);
+    try std.testing.expect(found_struct);
+    try std.testing.expect(found_enum);
+}
+
+test "engine - expected set deduplication" {
+    const alloc = std.testing.allocator;
+    const grammar_mod2 = @import("grammar.zig");
+
+    const src = "item\n    <- 'func' / 'func'\n";
+    var g = try grammar_mod2.parseGrammar(src, alloc);
+    defer g.deinit();
+
+    const tokens = [_]Token{
+        .{ .kind = .identifier, .text = "foo", .line = 1, .col = 1 },
+        .{ .kind = .eof, .text = "", .line = 1, .col = 4 },
+    };
+    var engine = Engine.init(&g, &tokens, alloc);
+    defer engine.deinit();
+    _ = engine.matchRule("item", 0);
+    const err = engine.getError();
+    try std.testing.expectEqual(@as(usize, 1), err.expected_set.len);
+}
+
+test "engine - single token failure keeps len 1" {
+    const alloc = std.testing.allocator;
+    const grammar_mod2 = @import("grammar.zig");
+
+    const src = "item\n    <- 'func'\n";
+    var g = try grammar_mod2.parseGrammar(src, alloc);
+    defer g.deinit();
+
+    const tokens = [_]Token{
+        .{ .kind = .identifier, .text = "foo", .line = 1, .col = 1 },
+        .{ .kind = .eof, .text = "", .line = 1, .col = 4 },
+    };
+    var engine = Engine.init(&g, &tokens, alloc);
+    defer engine.deinit();
+    _ = engine.matchRule("item", 0);
+    const err = engine.getError();
+    try std.testing.expectEqual(@as(usize, 1), err.expected_set.len);
+    try std.testing.expectEqual(TokenKind.kw_func, err.expected_set[0]);
+}
+
+test "engine - kindDisplayName" {
+    try std.testing.expectEqualStrings("func", kindDisplayName(.kw_func));
+    try std.testing.expectEqualStrings("end of file", kindDisplayName(.eof));
+    try std.testing.expectEqualStrings("integer literal", kindDisplayName(.int_literal));
+    try std.testing.expectEqualStrings("identifier", kindDisplayName(.identifier));
 }
 
 test "engine - optional match" {
