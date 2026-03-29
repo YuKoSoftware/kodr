@@ -75,6 +75,7 @@ None.
 |---|-------------|------|--------|-----------|
 | 1 | Move 25 files into codegen/, lsp/, mir/, zig_runner/ subdirs + peg/orhon.peg | 2026-03-29 | 452647e | 260329-ndd |
 | 2 | Thread safety arg enforcement: move, freeze, reject mutable borrow | 2026-03-29 | f9c27d9, f40ff27 | 260329-ozf |
+| 3 | Incremental compilation: XxHash3 content hashing replaces mtime timestamps | 2026-03-29 | ac0e7ca, 2316409, ac7d897 | 260329-rnl |
 
 ### Blockers/Concerns
 
@@ -91,5 +92,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-29
-Stopped at: Completed quick task 260329-ozf: thread safety arg enforcement
+Stopped at: Completed quick task 260329-rnl: incremental compilation semantic hashing
 Resume file: None
