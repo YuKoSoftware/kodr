@@ -57,7 +57,7 @@ None.
 
 ### Quick Tasks Completed
 
-Archived with v0.17 milestone.
+- 260329-t2l: Remove dead types (VersionRule, Dependency) from BUILTIN_TYPES
 
 ### Blockers/Concerns
 
@@ -66,5 +66,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-29
-Stopped at: v0.17 milestone archived
+Stopped at: Completed quick-260329-t2l
 Resume file: None
