@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
 status: verifying
-stopped_at: Completed 35-01-PLAN.md
+stopped_at: Completed quick task 260329-ndd (directory reorganization)
 last_updated: "2026-03-29T12:06:33.401Z"
 last_activity: 2026-03-29
 progress:
@@ -73,6 +73,7 @@ None.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 1 | Move 25 files into codegen/, lsp/, mir/, zig_runner/ subdirs + peg/orhon.peg | 2026-03-29 | 452647e | 260329-ndd |
 
 ### Blockers/Concerns
 
