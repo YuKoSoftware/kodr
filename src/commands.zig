@@ -66,15 +66,19 @@ pub fn runAnalysis(allocator: std.mem.Allocator, cli: *const _cli.CliArgs) !void
     } else {
         const err = engine.getError();
         std.debug.print("result: FAIL\n", .{});
-        if (err.expected_set.len > 1) {
+        if (err.expected_set.count() > 1) {
             const engine_mod2 = @import("peg/engine.zig");
+            const total = err.expected_set.count();
             std.debug.print("error at line {d}:{d} — expected ", .{ err.line, err.col });
-            for (err.expected_set, 0..) |kind, i| {
-                if (i > 0 and i < err.expected_set.len - 1) std.debug.print(", ", .{});
-                if (i > 0 and i == err.expected_set.len - 1) {
-                    if (err.expected_set.len > 2) std.debug.print(", or ", .{}) else std.debug.print(" or ", .{});
+            var it = err.expected_set.iterator();
+            var i: usize = 0;
+            while (it.next()) |kind| {
+                if (i > 0 and i < total - 1) std.debug.print(", ", .{});
+                if (i > 0 and i == total - 1) {
+                    if (total > 2) std.debug.print(", or ", .{}) else std.debug.print(" or ", .{});
                 }
                 std.debug.print("'{s}'", .{engine_mod2.kindDisplayName(kind)});
+                i += 1;
             }
             std.debug.print("\n", .{});
         } else {

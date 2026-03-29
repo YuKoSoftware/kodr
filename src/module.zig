@@ -24,19 +24,23 @@ pub const FileOffset = struct {
 /// Format a set of expected token kinds as a human-readable string.
 /// Produces: "expected 'X'" for 1 item, "expected 'X' or 'Y'" for 2,
 /// and "expected 'X', 'Y', or 'Z'" for 3+.
-fn formatExpectedSet(alloc: std.mem.Allocator, set: []const lexer.TokenKind) ![]u8 {
+fn formatExpectedSet(alloc: std.mem.Allocator, set: std.EnumSet(lexer.TokenKind)) ![]u8 {
     const engine_mod = @import("peg/engine.zig");
+    const total = set.count();
     var buf = std.ArrayListUnmanaged(u8){};
     errdefer buf.deinit(alloc);
     try buf.appendSlice(alloc, "expected ");
-    for (set, 0..) |kind, i| {
-        if (i > 0 and i < set.len - 1) try buf.appendSlice(alloc, ", ");
-        if (i > 0 and i == set.len - 1) {
-            if (set.len > 2) try buf.appendSlice(alloc, ", or ") else try buf.appendSlice(alloc, " or ");
+    var it = set.iterator();
+    var i: usize = 0;
+    while (it.next()) |kind| {
+        if (i > 0 and i < total - 1) try buf.appendSlice(alloc, ", ");
+        if (i > 0 and i == total - 1) {
+            if (total > 2) try buf.appendSlice(alloc, ", or ") else try buf.appendSlice(alloc, " or ");
         }
         try buf.append(alloc, '\'');
         try buf.appendSlice(alloc, engine_mod.kindDisplayName(kind));
         try buf.append(alloc, '\'');
+        i += 1;
     }
     return buf.toOwnedSlice(alloc);
 }
@@ -472,7 +476,7 @@ pub const Resolver = struct {
                         break :blk try std.fmt.allocPrint(alloc, "var &T is not valid — use &T for mutable references", .{})
                     else
                         break :blk try std.fmt.allocPrint(alloc, "unexpected '{s}'", .{err_info.found});
-                } else if (err_info.expected_set.len > 1) blk: {
+                } else if (err_info.expected_set.count() > 1) blk: {
                     break :blk try formatExpectedSet(alloc, err_info.expected_set);
                 } else try std.fmt.allocPrint(alloc, "unexpected '{s}'", .{err_info.found});
                 defer alloc.free(msg);
