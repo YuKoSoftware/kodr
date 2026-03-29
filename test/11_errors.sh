@@ -431,6 +431,9 @@ run_fixture neg_own fail_ownership.orh "use of moved value\|moved" "fixture: cat
 
 # thread safety errors
 run_fixture neg_thread2 fail_threads.orh "must be joined" "fixture: catches unjoined thread"
+run_fixture neg_thread_move fail_threads.orh "moved into thread" "fixture: catches use after move into thread"
+run_fixture neg_thread_freeze fail_threads.orh "cannot mutate.*borrowed by thread" "fixture: catches frozen var mutation"
+run_fixture neg_thread_mutborrow fail_threads.orh "cannot pass mutable borrow to thread" "fixture: catches mutable borrow to thread"
 
 # borrow errors
 run_fixture neg_borrow fail_borrow.orh "cannot borrow\|already borrowed" "fixture: catches borrow conflict"
