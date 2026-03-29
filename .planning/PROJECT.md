@@ -90,7 +90,7 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 **Tests:** 266 across 11 stages
 **Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14, v0.15, v0.16
 
-v0.17 in progress — codegen split (Phase 29), error quality (Phase 30), PEG error messages (Phase 31), LSP split (Phase 32), MIR split (Phase 33), and main split (Phase 34) complete. 2 module splits remaining. 266 tests pass.
+v0.17 in progress — codegen split (Phase 29), error quality (Phase 30), PEG error messages (Phase 31), LSP split (Phase 32), MIR split (Phase 33), main split (Phase 34), and zig-runner split (Phase 35) complete. 1 module split remaining (peg-builder). 266 tests pass.
 
 ### Out of Scope
 
@@ -152,4 +152,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after Phase 34 (Main split) complete*
+*Last updated: 2026-03-29 after Phase 35 (Zig runner split) complete*
