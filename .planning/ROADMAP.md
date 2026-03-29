@@ -183,7 +183,9 @@ Plans:
   2. Split follows the same decls/stmts/exprs/types pattern as the codegen split (Phase 29)
   3. Dispatch table remains centralized in one file importing all builder categories
   4. `./testall.sh` passes all tests — PEG builder tests pass in their new locations
-**Plans**: TBD
+**Plans:** 1/1 plans
+Plans:
+- [ ] 36-01-PLAN.md — Split builder.zig into hub + 5 satellites (decls, bridge, stmts, exprs, types) with dispatch routing
 
 ## Progress
 
