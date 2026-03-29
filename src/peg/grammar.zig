@@ -57,10 +57,17 @@ pub const Rule = struct {
 pub const Grammar = struct {
     rules: std.StringHashMapUnmanaged(Expr),
     rule_names: []const []const u8, // preserve definition order
+    labels: std.StringHashMapUnmanaged(?[]const u8), // rule name -> human-readable label (optional)
     arena: std.heap.ArenaAllocator,
 
     pub fn getRule(self: *const Grammar, name: []const u8) ?Expr {
         return self.rules.get(name);
+    }
+
+    /// Return the human-readable label for a rule, if one was defined with {label: "..."}.
+    pub fn getLabel(self: *const Grammar, rule_name: []const u8) ?[]const u8 {
+        if (self.labels.get(rule_name)) |maybe_label| return maybe_label;
+        return null;
     }
 
     pub fn deinit(self: *Grammar) void {
@@ -86,6 +93,7 @@ pub fn parseGrammar(source: []const u8, backing_allocator: std.mem.Allocator) !G
         .allocator = allocator,
         .rules = .{},
         .rule_names = .{},
+        .labels = .{},
     };
     try parser.parse();
 
@@ -116,6 +124,7 @@ pub fn parseGrammar(source: []const u8, backing_allocator: std.mem.Allocator) !G
     return Grammar{
         .rules = parser.rules,
         .rule_names = try parser.rule_names.toOwnedSlice(allocator),
+        .labels = parser.labels,
         .arena = arena,
     };
 }
@@ -126,6 +135,7 @@ const GrammarParser = struct {
     allocator: std.mem.Allocator,
     rules: std.StringHashMapUnmanaged(Expr),
     rule_names: std.ArrayListUnmanaged([]const u8),
+    labels: std.StringHashMapUnmanaged(?[]const u8),
 
     fn parse(self: *GrammarParser) !void {
         while (self.pos < self.source.len) {
@@ -162,6 +172,9 @@ const GrammarParser = struct {
             // Store rule
             try self.rules.put(self.allocator, name, body);
             try self.rule_names.append(self.allocator, name);
+
+            // Try to parse an optional label annotation: {label: "human-readable text"}
+            try self.tryParseLabel(name);
         }
     }
 
@@ -327,6 +340,55 @@ const GrammarParser = struct {
 
     // ── Low-level Helpers ───────────────────────────────────
 
+    /// Parse an optional {label: "..."} annotation after the rule body.
+    /// The label must appear on the same line as the last token of the rule body.
+    /// Syntax: {label: "human-readable text"}
+    fn tryParseLabel(self: *GrammarParser, rule_name: []const u8) !void {
+        // Skip spaces/tabs (but not newlines) to find the label
+        const saved_pos = self.pos;
+        self.skipWhitespaceOnly();
+
+        // Check for {label:
+        if (!self.matchStr("{label:")) {
+            self.pos = saved_pos;
+            return;
+        }
+
+        // Skip whitespace before the quoted string
+        self.skipWhitespaceOnly();
+
+        // Expect a double-quoted string
+        if (self.pos >= self.source.len or self.source[self.pos] != '"') {
+            // Not valid label syntax — restore position
+            self.pos = saved_pos;
+            return;
+        }
+        self.pos += 1; // skip opening "
+        const label_start = self.pos;
+        while (self.pos < self.source.len and self.source[self.pos] != '"' and self.source[self.pos] != '\n') {
+            self.pos += 1;
+        }
+        if (self.pos >= self.source.len or self.source[self.pos] != '"') {
+            // Unterminated string — restore position
+            self.pos = saved_pos;
+            return;
+        }
+        const label_text = self.source[label_start..self.pos];
+        self.pos += 1; // skip closing "
+
+        // Skip whitespace and closing }
+        self.skipWhitespaceOnly();
+        if (self.pos >= self.source.len or self.source[self.pos] != '}') {
+            // Missing closing brace — restore position
+            self.pos = saved_pos;
+            return;
+        }
+        self.pos += 1; // skip }
+
+        // Store the label
+        try self.labels.put(self.allocator, rule_name, label_text);
+    }
+
     fn readIdent(self: *GrammarParser) []const u8 {
         const start = self.pos;
         while (self.pos < self.source.len and isIdentChar(self.source[self.pos])) {
@@ -486,6 +548,22 @@ test "grammar - parse full orhon grammar" {
 
     // Should have a substantial number of rules
     try std.testing.expect(grammar.rule_names.len >= 50);
+}
+
+test "grammar - parse rule with label" {
+    const alloc = std.testing.allocator;
+    const src = "foo\n    <- 'bar' baz  {label: \"a foo thing\"}\n";
+    var grammar = try parseGrammar(src, alloc);
+    defer grammar.deinit();
+    try std.testing.expectEqualStrings("a foo thing", grammar.getLabel("foo").?);
+}
+
+test "grammar - rule without label returns null" {
+    const alloc = std.testing.allocator;
+    const src = "foo\n    <- 'bar' baz\n";
+    var grammar = try parseGrammar(src, alloc);
+    defer grammar.deinit();
+    try std.testing.expect(grammar.getLabel("foo") == null);
 }
 
 test "grammar - token resolution in parsed rules" {
