@@ -85,7 +85,7 @@ pub const ParseError = struct {
     found: []const u8, // token text at failure point
     found_kind: TokenKind,
     expected_rule: []const u8, // rule that was being attempted
-    expected_set: []const TokenKind, // all expected token kinds at furthest failure (deduplicated)
+    expected_set: std.EnumSet(TokenKind), // all expected token kinds at furthest failure (deduplicated)
 };
 
 pub const Engine = struct {
@@ -96,12 +96,8 @@ pub const Engine = struct {
     // Error tracking — furthest failure position
     furthest_pos: usize = 0,
     furthest_rule: []const u8 = "",
-    // Raw accumulated expected tokens at furthest position (may have duplicates)
-    furthest_expected_buf: [64]TokenKind = undefined,
-    furthest_expected_len: u8 = 0,
-    // Deduplicated expected set — populated by getError()
-    expected_set_buf: [64]TokenKind = undefined,
-    expected_set_len: u8 = 0,
+    // Expected tokens at furthest position — EnumSet provides O(1) insert and automatic deduplication
+    furthest_expected: std.EnumSet(TokenKind) = std.EnumSet(TokenKind).initEmpty(),
 
     pub fn init(grammar: *const Grammar, tokens: []const Token, allocator: std.mem.Allocator) Engine {
         return .{
@@ -117,27 +113,12 @@ pub const Engine = struct {
     }
 
     /// Get error info after a failed parse.
-    /// Deduplicates the accumulated expected set and returns ParseError.
+    /// Returns ParseError with the EnumSet of expected tokens at the furthest failure position.
     pub fn getError(self: *Engine) ParseError {
         const pos = @min(self.furthest_pos, if (self.tokens.len > 0) self.tokens.len - 1 else 0);
         const tok = if (pos < self.tokens.len) self.tokens[pos] else Token{
             .kind = .eof, .text = "", .line = 0, .col = 0,
         };
-
-        // Deduplicate furthest_expected into expected_set_buf
-        var count: u8 = 0;
-        for (self.furthest_expected_buf[0..self.furthest_expected_len]) |kind| {
-            var found = false;
-            for (self.expected_set_buf[0..count]) |existing| {
-                if (existing == kind) { found = true; break; }
-            }
-            if (!found) {
-                self.expected_set_buf[count] = kind;
-                count += 1;
-            }
-        }
-        self.expected_set_len = count;
-
         return .{
             .pos = pos,
             .line = tok.line,
@@ -145,7 +126,7 @@ pub const Engine = struct {
             .found = tok.text,
             .found_kind = tok.kind,
             .expected_rule = self.furthest_rule,
-            .expected_set = self.expected_set_buf[0..self.expected_set_len],
+            .expected_set = self.furthest_expected,
         };
     }
 
@@ -227,17 +208,11 @@ pub const Engine = struct {
         if (pos > self.furthest_pos) {
             // New furthest position — reset set
             self.furthest_pos = pos;
-            self.furthest_expected_len = 0;
-            if (self.furthest_expected_len < 64) {
-                self.furthest_expected_buf[self.furthest_expected_len] = expected;
-                self.furthest_expected_len += 1;
-            }
+            self.furthest_expected = std.EnumSet(TokenKind).initEmpty();
+            self.furthest_expected.insert(expected);
         } else if (pos == self.furthest_pos) {
-            // Same position — accumulate
-            if (self.furthest_expected_len < 64) {
-                self.furthest_expected_buf[self.furthest_expected_len] = expected;
-                self.furthest_expected_len += 1;
-            }
+            // Same position — accumulate (EnumSet handles deduplication automatically)
+            self.furthest_expected.insert(expected);
         }
         // pos < furthest_pos: ignore
     }
@@ -454,18 +429,10 @@ test "engine - choice failure accumulates expected set" {
     defer engine.deinit();
     _ = engine.matchRule("item", 0);
     const err = engine.getError();
-    try std.testing.expectEqual(@as(usize, 3), err.expected_set.len);
-    var found_func = false;
-    var found_struct = false;
-    var found_enum = false;
-    for (err.expected_set) |kind| {
-        if (kind == .kw_func) found_func = true;
-        if (kind == .kw_struct) found_struct = true;
-        if (kind == .kw_enum) found_enum = true;
-    }
-    try std.testing.expect(found_func);
-    try std.testing.expect(found_struct);
-    try std.testing.expect(found_enum);
+    try std.testing.expectEqual(@as(usize, 3), err.expected_set.count());
+    try std.testing.expect(err.expected_set.contains(.kw_func));
+    try std.testing.expect(err.expected_set.contains(.kw_struct));
+    try std.testing.expect(err.expected_set.contains(.kw_enum));
 }
 
 test "engine - expected set deduplication" {
@@ -484,7 +451,7 @@ test "engine - expected set deduplication" {
     defer engine.deinit();
     _ = engine.matchRule("item", 0);
     const err = engine.getError();
-    try std.testing.expectEqual(@as(usize, 1), err.expected_set.len);
+    try std.testing.expectEqual(@as(usize, 1), err.expected_set.count());
 }
 
 test "engine - single token failure keeps len 1" {
@@ -503,8 +470,8 @@ test "engine - single token failure keeps len 1" {
     defer engine.deinit();
     _ = engine.matchRule("item", 0);
     const err = engine.getError();
-    try std.testing.expectEqual(@as(usize, 1), err.expected_set.len);
-    try std.testing.expectEqual(TokenKind.kw_func, err.expected_set[0]);
+    try std.testing.expectEqual(@as(usize, 1), err.expected_set.count());
+    try std.testing.expect(err.expected_set.contains(.kw_func));
 }
 
 test "engine - kindDisplayName" {
