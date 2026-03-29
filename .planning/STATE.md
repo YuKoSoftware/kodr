@@ -4,7 +4,7 @@ milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
 status: executing
 stopped_at: Completed 34-02-PLAN.md
-last_updated: "2026-03-29T10:13:59.842Z"
+last_updated: "2026-03-29T10:18:58.029Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 8
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 
 ## Current Position
 
-Phase: 34 (main-split) — EXECUTING
-Plan: 2 of 2
+Phase: 35
+Plan: Not started
 Status: Ready to execute
 Last activity: 2026-03-29
 
