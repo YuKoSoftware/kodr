@@ -180,19 +180,12 @@ declaration-file trick.
 **Implementation:** serialize public DeclTable to canonical form, hash it, store hash.
 When checking downstream modules, compare interface hash, not file hash.
 
-### PEG error recovery — expected-set accumulation
+### ~~PEG error recovery — expected-set accumulation~~ — already implemented
 
-Replace single `furthest_expected` with a set. When alternatives `A / B / C` all fail
-at the same position, the error message becomes "expected keyword, identifier, or '('"
-instead of just "expected '('". Low effort, high impact.
-
-**Implementation in `engine.zig`:**
-```zig
-// Replace single furthest_expected with:
-furthest_expected_set: std.EnumSet(TokenKind) = .{},
-// On terminal match failure at furthest_pos: insert into set
-// On new furthest_pos: clear set and start fresh
-```
+~~Replace single `furthest_expected` with a set.~~ Already done: `engine.zig` uses
+`std.EnumSet(TokenKind)` for `furthest_expected`. `formatExpectedSet()` in `module.zig`
+produces "expected 'X', 'Y', or 'Z'" messages. Accumulation on same-position failures
+and reset on new-position already implemented.
 
 ### PEG error recovery — labeled failures
 
@@ -438,10 +431,12 @@ struct SDL_Event {
 Maps to Zig's `extern struct`. Needed for direct C struct passing without wrapper
 overhead.
 
-### Comma-separated `#linkc`
+### ~~Comma-separated `#linkc`~~ — obsolete
 
-`#linkc "vulkan, SDL3"` instead of multiple `#linkc` lines. Split on `,` + trim in
-directive handler.
+~~`#linkc "vulkan, SDL3"` instead of multiple lines.~~ `#linkc` was replaced by
+`#cimport = { name: "lib", include: "header.h" }` in v0.15 Phase 24. Each `#cimport`
+declaration links one library. Multiple libraries use multiple `#cimport` directives.
+No comma-separated syntax needed.
 
 ---
 
@@ -536,15 +531,15 @@ Beyond "does it crash" fuzzing — test semantic properties across the pipeline:
 
 ## Documentation Gaps
 
-### `use` vs `import` semantics
+### ~~`use` vs `import` semantics~~ — documented
 
-No dedicated section explaining the difference. `use` brings names into current
-scope, `import` keeps them namespaced — but this is only mentioned once in COMPILER.md.
+~~No dedicated section.~~ Added to `docs/11-modules.md`: `import` vs `use` comparison
+table, syntax, scope rules, when to use each.
 
-### String interpolation `@{...}`
+### ~~String interpolation `@{...}`~~ — documented
 
-Not documented in the language spec at all. Syntax, supported expressions, format
-specifiers, and memory behavior should be specified.
+~~Not documented at all.~~ Added to `docs/02-types.md`: syntax, supported types,
+memory behavior (auto defer free), how it maps to `allocPrint`.
 
 ### Testing framework
 
@@ -556,10 +551,11 @@ format, organization patterns.
 No user-facing documentation. Missing: supported features, editor setup guide,
 VS Code extension usage.
 
-### `compt` function rules
+### ~~`compt` function rules~~ — documented
 
-When and how compile-time evaluation triggers. Can compt functions call other compt
-functions? What happens with non-constant arguments?
+~~When and how compile-time evaluation triggers.~~ Expanded in `docs/05-functions.md`:
+type-generating vs value-computing compt, `any` parameters, `compt for`, rules for
+what compt can and cannot do.
 
 ### Design rationale documentation
 

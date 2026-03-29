@@ -28,16 +28,25 @@ func apply(arr: []i32, f: Transform) []i32 {
 ```
 
 ## `compt` Functions
-Entire function runs at compile time. Used for type generation and zero-cost abstractions. When a `compt` function generates a type, its return type is annotated with the `type` keyword:
+
+`compt` marks a function for compile-time evaluation. The entire body runs during
+compilation — nothing from the function exists at runtime. Two main uses: generating
+types and computing constant values.
+
+### Type-generating `compt` — returns `type`
+
+When a `compt` function returns `type`, it generates a new struct, enum, or other type
+at compile time. The `type` keyword in the return position signals this:
+
 ```
-compt func Vec2(T: any) type {      // returns a type, not a value
+compt func Vec2(T: type) type {
     return struct {
         x: T
         y: T
     }
 }
 
-compt func Pair(A: any, B: any) type {
+compt func Pair(A: type, B: type) type {
     return struct {
         first: A
         second: B
@@ -47,6 +56,54 @@ compt func Pair(A: any, B: any) type {
 var pos: Vec2(f32) = Vec2(f32)(x: 1.0, y: 2.0)
 var p: Pair(i32, String) = Pair(i32, String)(first: 42, second: "hello")
 ```
+
+Type-generating `compt` functions map to Zig's `comptime` functions. Each unique set
+of type arguments produces a distinct concrete type.
+
+### Value-computing `compt` — returns a value
+
+When a `compt` function returns a regular type (not `type`), it computes a constant
+value at compile time. Maps to Zig `inline fn`:
+
+```
+compt func doubled(n: i32) i32 {
+    return n * 2
+}
+
+const result: i32 = doubled(21)    // 42 — computed at compile time
+```
+
+### `compt` with `any` parameters
+
+`any` in a `compt` parameter position means the function works with multiple types.
+The compiler generates a specialized version for each concrete type used:
+
+```
+compt func describe(val: any) String {
+    if(val is i32) { return "integer" }
+    if(val is f32) { return "float" }
+    return "unknown"
+}
+```
+
+### `compt for` — compile-time loop unrolling
+
+`compt for` unrolls the loop at compile time. Each iteration becomes separate code
+in the output:
+
+```
+compt for(fields) |field| {
+    // each iteration is a separate block in the generated code
+}
+```
+
+### Rules
+
+- `compt` functions can call other functions (Zig's comptime allows this)
+- `compt` functions with `T: type` parameters require the type to be known at compile time
+- `compt` functions returning `type` cannot be called at runtime — types don't exist at runtime
+- `compt` is a function-level modifier, not a block-level one — the entire function is compile-time
+- `compt` variables at module level (`compt const X = ...`) are compile-time constants
 
 
 ## No Function Overloading

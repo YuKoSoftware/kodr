@@ -107,25 +107,56 @@ my_project/
 
 ## Import Syntax
 
-Import the whole module — compiler eliminates dead code automatically. No symbol lists, no wildcard imports.
+Two ways to bring a module into scope: `import` (namespaced) and `use` (flat). Both
+import the whole module — compiler eliminates dead code automatically. No symbol lists,
+no wildcard imports.
 
-Three import forms — origin is always explicit:
+### `import` — namespaced access
+
+Access symbols through the module name (or alias). The module name acts as a namespace:
 
 ```
-// Project-local module — no scope, looks in src/
+// Project-local module
 import math
 math.add(1, 2)
 
-// Stdlib module — std:: scope, looks in <orhon_dir>/std/
-import std::alpha
-alpha.println("hello")
+// Stdlib module — std:: scope
+import std::collections
+var list: collections.List(i32) = collections.List(i32).new()
 
 // With alias — as renames the access prefix
 import std::alpha as io
 io.println("hello")
 ```
 
-**Scope rules:**
+### `use` — flat access (scope merge)
+
+Brings all `pub` symbols directly into the current scope. No prefix needed:
+
+```
+use std::collections
+var list: List(i32) = List(i32).new()
+
+use std::alpha
+println("hello")
+```
+
+`use` does not support `as` aliasing — since names are merged into scope, there is
+no prefix to rename.
+
+### `import` vs `use` summary
+
+| | `import` | `use` |
+|---|----------|-------|
+| Access | `module.symbol` | `symbol` |
+| Aliasing | `import X as Y` | not supported |
+| Name conflicts | explicit via prefix | can collide with local names |
+| When to use | default choice — clear provenance | when you use many symbols from one module |
+
+Both compile to the same thing — `use` generates re-exports so symbols appear local.
+Zero runtime difference.
+
+### Scope rules
 - No `::` → project-local (`src/`)
 - `std::name` → embedded stdlib (auto-extracted to `.orh-cache/std/`)
 - Only one level of `::` — `std::a::b` is never valid
