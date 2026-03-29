@@ -142,9 +142,9 @@ Plans:
   2. Type definitions (TypeClass, Coercion, NodeInfo, MirKind) are in a shared types module
   3. MirNode struct is in its own file with accessor methods
   4. `./testall.sh` passes all tests — MIR unit tests pass in their new locations
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
-- [ ] 33-01-PLAN.md — Extract foundation modules (mir_types, mir_registry, mir_node) from mir.zig
+- [x] 33-01-PLAN.md — Extract foundation modules (mir_types, mir_registry, mir_node) from mir.zig
 - [ ] 33-02-PLAN.md — Extract implementation modules (mir_annotator, mir_lowerer), finalize mir.zig facade
 
 ### Phase 34: Main Split
@@ -195,7 +195,7 @@ Plans:
 | 30 | v0.17 | 2/2 | Complete    | 2026-03-28 |
 | 31 | v0.17 | 1/1 | Complete    | 2026-03-28 |
 | 32 | v0.17 | 2/2 | Complete    | 2026-03-29 |
-| 33 | v0.17 | 0/2 | Not started | - |
+| 33 | v0.17 | 1/2 | In Progress|  |
 | 34 | v0.17 | 0/? | Not started | - |
 | 35 | v0.17 | 0/? | Not started | - |
 | 36 | v0.17 | 0/? | Not started | - |

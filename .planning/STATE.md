@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
 status: executing
-stopped_at: Phase 33 context gathered
-last_updated: "2026-03-29T07:31:11.864Z"
+stopped_at: Completed 33-01-PLAN.md
+last_updated: "2026-03-29T07:50:35.677Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 8
   completed_phases: 4
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 7
   percent: 0
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 32 — lsp-split
+**Current focus:** Phase 33 — mir-split
 
 ## Current Position
 
-Phase: 33
-Plan: Not started
-Status: Executing Phase 32
+Phase: 33 (mir-split) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-03-29
 
 Progress: [░░░░░░░░░░] 0%
@@ -59,6 +59,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 30-error-quality]: Borrow fixture updated to add use-while-borrowed scenario: existing conflict only triggered mutable-new-borrow path (no hint), new scenario triggers checkNotMutablyBorrowedPath which always shows const & hint
 - [Phase 31-peg-error-messages]: Use two fixed arrays instead of BoundedArray for PEG error accumulation — Zig 0.15 has no std.BoundedArray
 - [Phase 31-peg-error-messages]: Dedup-on-read for PEG expected set: accumulate raw during parsing, deduplicate only in getError() once on failure
+- [Phase 33-mir-split]: Underscore-prefixed module import names (_mir_types, _mir_registry, _mir_node) to avoid Zig shadowing conflicts with local variables
+- [Phase 33-mir-split]: pub const re-exports in mir.zig for all 9 moved types — zero downstream changes required
 
 ### Pending Todos
 
@@ -76,9 +78,10 @@ None.
 | Phase 30-error-quality P01 | 45m | 2 tasks | 4 files |
 | Phase 30-error-quality P02 | 25m | 2 tasks | 6 files |
 | Phase 31-peg-error-messages P01 | 22 | 3 tasks | 3 files |
+| Phase 33-mir-split P01 | 10 | 1 tasks | 5 files |
 
 ## Session Continuity
 
 Last activity: 2026-03-28
-Stopped at: Phase 33 context gathered
-Resume file: .planning/phases/33-mir-split/33-CONTEXT.md
+Stopped at: Completed 33-01-PLAN.md
+Resume file: None
