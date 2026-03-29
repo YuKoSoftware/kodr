@@ -536,6 +536,15 @@ understand the philosophy. Gleam, Roc, and Zig all do this well.
 
 ## Done
 
+### Thread safety argument enforcement ✓
+
+**Done in v0.10.17 (post-v0.17).** Three rules enforced at compile time when passing arguments to thread functions:
+1. **Owned values** → moved into thread, original variable dead until join
+2. **Const borrows (`&x`)** → original frozen (read-only) until thread joined via `.value` or `.wait()`
+3. **Mutable borrows (`var &x`)** → compile error (no mutable sharing across threads)
+
+Infrastructure: `moved_to_thread` map (existed, now populated), `frozen_for_thread` map (new), `checkThreadCallArgs` (new), `unfreezeForThread` (new). 14 unit tests + 4 negative integration fixtures.
+
 ### `throw` statement for error propagation ✓
 
 **Done in v0.15 Phase 22.** `throw x` propagates error and narrows the variable

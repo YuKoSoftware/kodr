@@ -860,7 +860,7 @@ test "thread safety - mutable borrow arg rejected" {
     try std.testing.expect(reporter.hasErrors());
 }
 
-test "thread safety - frozen var unfreezes after join" {
+test "thread safety - frozen var unfreezes after .value join" {
     const alloc = std.testing.allocator;
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -883,5 +883,100 @@ test "thread safety - frozen var unfreezes after join" {
 
     // x should be unfrozen
     try std.testing.expect(!checker.frozen_for_thread.contains("x"));
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "thread safety - frozen var unfreezes after .wait() join" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    const declarations = @import("declarations.zig");
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+    var checker = ThreadSafetyChecker.init(alloc, &ctx);
+    defer checker.deinit();
+
+    // Simulate: x is frozen for thread "t"
+    try checker.frozen_for_thread.put("x", "t");
+    try checker.declared_threads.put("t", {});
+
+    // Simulate: t.wait() — call_expr path, not field_expr path
+    var t_id = parser.Node{ .identifier = "t" };
+    var wait_field = parser.Node{ .field_expr = .{ .object = &t_id, .field = "wait" } };
+    var no_args = [_]*parser.Node{};
+    var no_names = [_][]const u8{};
+    var wait_call = parser.Node{ .call_expr = .{
+        .callee = &wait_field,
+        .args = &no_args,
+        .arg_names = &no_names,
+    } };
+    try checker.checkStatement(&wait_call);
+
+    // x should be unfrozen
+    try std.testing.expect(!checker.frozen_for_thread.contains("x"));
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "thread safety - multi-arg thread call: move + const borrow" {
+    const alloc = std.testing.allocator;
+    const declarations = @import("declarations.zig");
+    const types = @import("types.zig");
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+
+    // Register: thread worker(a: i32, b: const &i32) Handle(void)
+    var void_node = parser.Node{ .identifier = "void" };
+    var i32_node = parser.Node{ .identifier = "i32" };
+    const constants = @import("constants.zig");
+    var ref_node = parser.Node{ .type_ptr = .{ .kind = constants.Ptr.CONST_REF, .elem = &i32_node } };
+    var param_a = parser.Node{ .param = .{
+        .name = "a",
+        .type_annotation = &i32_node,
+        .default_value = null,
+    } };
+    var param_b = parser.Node{ .param = .{
+        .name = "b",
+        .type_annotation = &ref_node,
+        .default_value = null,
+    } };
+    var param_nodes = [_]*parser.Node{ &param_a, &param_b };
+    try decl_table.funcs.put("worker", .{
+        .name = "worker",
+        .params = &.{},
+        .param_nodes = &param_nodes,
+        .return_type = types.ResolvedType{ .primitive = .void },
+        .return_type_node = &void_node,
+        .is_compt = false,
+        .is_pub = false,
+        .is_thread = true,
+    });
+
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+    var checker = ThreadSafetyChecker.init(alloc, &ctx);
+    defer checker.deinit();
+
+    // Build: worker(x, &y) — owned move + const borrow
+    var callee = parser.Node{ .identifier = "worker" };
+    var x_arg = parser.Node{ .identifier = "x" };
+    var y_id = parser.Node{ .identifier = "y" };
+    var y_borrow = parser.Node{ .borrow_expr = &y_id };
+    var args = [_]*parser.Node{ &x_arg, &y_borrow };
+    var arg_names = [_][]const u8{ "", "" };
+    var call = parser.Node{ .call_expr = .{
+        .callee = &callee,
+        .args = &args,
+        .arg_names = &arg_names,
+    } };
+
+    try checker.checkThreadCallArgs(&call);
+
+    // x should be moved, y should be frozen
+    try std.testing.expect(checker.moved_to_thread.contains("x"));
+    try std.testing.expect(checker.frozen_for_thread.contains("y"));
     try std.testing.expect(!reporter.hasErrors());
 }

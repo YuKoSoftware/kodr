@@ -187,7 +187,7 @@ files to understand what compiler issues need fixing.
 
 **Orhon Compiler**
 
-Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.9.7.
+Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Version is defined in `build.zig.zon`.
 
 **Core Value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
 
@@ -235,7 +235,7 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 ## Configuration
 - No `.env` files — compiler has no runtime environment variable requirements
 - Version is baked in at compile time via `build.zig` `addOptions` / `build_options` import
-- Current version: `0.9.3` (defined in `build.zig`; `build.zig.zon` shows `0.8.3` and may be stale)
+- Version defined in `build.zig.zon` (single source of truth, read by `build.zig` at compile time)
 - `build.zig` — defines `exe`, `test`, and `fuzz` steps; injects version string as comptime option
 - `build.zig.zon` — package manifest; minimum Zig version `0.15.2`; zero external dependencies
 - Stored in `.orh-cache/` (gitignored) — timestamps, dependency graph, generated `.zig` files
@@ -254,7 +254,7 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 
 ## Naming Patterns
 - `snake_case.zig` for all source files: `codegen.zig`, `zig_runner.zig`, `thread_safety.zig`
-- Subdirectories use `snake_case/` as well: `src/peg/`, `src/std/`
+- Subdirectories use `snake_case/` as well: `src/peg/`, `src/std/`, `src/codegen/`, `src/mir/`, `src/lsp/`, `src/zig_runner/`
 - `PascalCase` for public structs and enums: `Reporter`, `CodeGen`, `MirAnnotator`, `TypeClass`, `OwnershipScope`
 - `PascalCase` for type aliases: `const RT = types.ResolvedType;`
 - `camelCase` for all methods and free functions: `init`, `deinit`, `hasErrors`, `typeToZig`, `classifyType`, `resolveFileLoc`
@@ -263,7 +263,7 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 - `snake_case` for fields and local variables: `file_offsets`, `active_borrows`, `decl_table`, `is_debug`
 - Boolean fields start with `is_`, `has_`: `is_pub`, `is_compt`, `is_thread`, `has_bridges`
 - `SCREAMING_SNAKE_CASE` for module-level string/array constants: `BUILTIN_TYPES`, `COMPILER_FUNCS`, `CACHE_DIR`
-- Namespace constants inside structs also `SCREAMING_SNAKE_CASE`: `K.Type.ERROR`, `K.Ptr.VAR_REF`
+- Namespace constants inside structs also `SCREAMING_SNAKE_CASE`: `constants.Type.ERROR`, `constants.Ptr.VAR_REF`
 - `snake_case` for enum variants: `.owned`, `.moved`, `.error_union`, `.null_union`, `.kw_func`, `.lparen`
 - Exception: token kinds and node kinds use `snake_case` consistently throughout
 ## File Structure
@@ -293,10 +293,10 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 - `errors.zig` → `Reporter`
 - `declarations.zig` → `DeclCollector`, `DeclTable`
 - `ownership.zig` → `OwnershipChecker`, `OwnershipScope`
-- `codegen.zig` → `CodeGen`
-- `mir.zig` → `MirAnnotator`, `MirLowerer`, `UnionRegistry`
+- `codegen/codegen.zig` → `CodeGen` (hub + 4 satellites: decls, exprs, stmts, match)
+- `mir/mir.zig` → `MirAnnotator`, `MirLowerer`, `UnionRegistry` (hub + 5 satellites: types, node, annotator, lowerer, registry)
 - `types.zig` — `ResolvedType`, `Primitive`, `OwnershipState`
-- `constants.zig` — shared string constants (`K.Type.*`, `K.Ptr.*`)
+- `constants.zig` — shared string constants (`Type.*`, `Ptr.*`)
 - `parser.zig` — AST node types only (no parsing logic)
 <!-- GSD:conventions-end -->
 
@@ -304,7 +304,7 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 ## Architecture
 
 ## Pattern Overview
-- One file per pipeline pass — each pass is a self-contained Zig module
+- Hub-and-spoke architecture — large passes split into a hub file that re-exports from satellite files (codegen/, mir/, lsp/, zig_runner/, peg/builder*)
 - Passes run sequentially; each pass only proceeds if the previous reported no errors
 - Multiple errors per pass are collected before stopping (not fail-fast)
 - Incremental compilation: unchanged modules skip passes 4–12 and reuse cached `.zig` files
@@ -312,12 +312,12 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 - AST uses arena allocation — entire tree freed in one call
 ## Layers
 - Purpose: Parse command-line arguments, dispatch to commands, drive the pipeline
-- Location: `src/main.zig`
+- Location: `src/main.zig` (entry), `src/cli.zig` (arg parsing), `src/pipeline.zig` (pipeline orchestration), `src/commands.zig` (secondary commands), `src/init.zig` (project scaffolding)
 - Contains: `Command` enum, `CliArgs` struct, `runPipeline()`, `initProject()`
 - Depends on: Every pass module (lexer through zig_runner)
 - Used by: OS shell invocation
 - Purpose: Turn raw source text into a typed AST
-- Location: `src/lexer.zig`, `src/parser.zig`, `src/orhon.peg`, `src/peg/`
+- Location: `src/lexer.zig`, `src/parser.zig`, `src/orhon.peg`, `src/peg.zig`, `src/peg/` (engine, grammar, capture, builder hub + 5 satellites, token_map)
 - Contains: `Lexer`, `TokenKind`, `Node`, `NodeKind`, PEG engine + grammar + builder
 - Depends on: Nothing (lexer is standalone; PEG depends only on lexer)
 - Used by: `module.zig` (parseModules), `lsp.zig`
@@ -332,17 +332,17 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 - Depends on: parser (AST nodes), types, errors, sema (shared context)
 - Used by: `main.zig` (runPipeline), `lsp.zig`
 - Purpose: Walk AST + resolver type_map to produce a typed annotation table (`NodeMap`). Codegen reads this instead of re-discovering types.
-- Location: `src/mir.zig`
+- Location: `src/mir/` (hub: `mir.zig`, satellites: `mir_types.zig`, `mir_node.zig`, `mir_annotator.zig`, `mir_lowerer.zig`, `mir_registry.zig`)
 - Contains: `TypeClass` enum, `NodeInfo`, `NodeMap` (AST node pointer → NodeInfo), `UnionRegistry`, `MirAnnotator`, `MirLowerer`, `MirNode` tree
 - Depends on: parser, declarations, types, errors
 - Used by: `main.zig` (runPipeline), `codegen.zig`
 - Purpose: Pure 1:1 translation of MIR + AST to readable Zig source. One `.zig` file per Orhon module.
-- Location: `src/codegen.zig`
+- Location: `src/codegen/` (hub: `codegen.zig`, satellites: `codegen_decls.zig`, `codegen_exprs.zig`, `codegen_stmts.zig`, `codegen_match.zig`)
 - Contains: `CodeGen` struct — stateful generator walking the AST with MIR annotation
 - Depends on: parser, mir, declarations, types, errors, builtins
 - Used by: `main.zig` (runPipeline)
 - Purpose: Invoke the Zig compiler on generated `.zig` files to produce final binary
-- Location: `src/zig_runner.zig`
+- Location: `src/zig_runner/` (hub: `zig_runner.zig`, satellites: `zig_runner_build.zig`, `zig_runner_discovery.zig`, `zig_runner_multi.zig`)
 - Contains: `ZigRunner`, `ZigResult` — discovers Zig binary (adjacent dir or PATH)
 - Depends on: errors, cache, module
 - Used by: `main.zig` (runPipeline)
@@ -353,10 +353,10 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 - Purpose: Orhon `.orh` interface files + Zig `.zig` sidecars for stdlib modules
 - Location: `src/std/`
 - Contains: Paired `.orh`/`.zig` files for each stdlib module (collections, str, json, fs, etc.)
-- Embedded via: `@embedFile` in `main.zig`, extracted to `.orh-cache/std/` at build time
-- Used by: Orhon user code via `import std::X` or `include std::X`
+- Embedded via: `@embedFile` in `std_bundle.zig`, extracted to `.orh-cache/std/` at build time
+- Used by: Orhon user code via `import std::X` or `use std::X`
 - `src/formatter.zig` — `orhon fmt` source formatter
-- `src/lsp.zig` — JSON-RPC LSP server (runs passes 1–9, publishes diagnostics, hover, completion, etc.)
+- `src/lsp/` — JSON-RPC LSP server (hub: `lsp.zig`, satellites: `lsp_types.zig`, `lsp_json.zig`, `lsp_analysis.zig`, `lsp_nav.zig`, `lsp_edit.zig`, `lsp_view.zig`, `lsp_semantic.zig`, `lsp_utils.zig`). Runs passes 1–9, publishes diagnostics, hover, completion, etc.
 - `src/docgen.zig` — `orhon gendoc` doc generator from `///` comments
 - `src/fuzz.zig` — standalone fuzzer binary for lexer + parser
 ## Data Flow
@@ -396,10 +396,10 @@ Orhon is a compiled, memory-safe programming language that transpiles to Zig. Wr
 - Location: `src/main.zig` → `pub fn main()`
 - Triggers: User invoking the `orhon` binary
 - Responsibilities: Allocator setup (DebugAllocator in debug, smp_allocator in release), CLI parse, command dispatch, error flush, process exit
-- Location: `src/main.zig` → `fn runPipeline()`
+- Location: `src/pipeline.zig` → `pub fn runPipeline()`
 - Triggers: `main()` for build/run/test/debug commands
 - Responsibilities: Std file extraction, module resolution, per-module pass execution in topological order, cache update, Zig invocation
-- Location: `src/lsp.zig` → `pub fn serve()`
+- Location: `src/lsp/lsp.zig` → `pub fn serve()`
 - Triggers: `orhon lsp`
 - Responsibilities: JSON-RPC stdio loop, incremental analysis, diagnostic publishing
 - Location: `src/peg.zig` → `loadGrammar()`, `peg/engine.zig` → `Engine.matchRule()`

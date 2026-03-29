@@ -86,15 +86,25 @@ One file per pipeline pass. Tests are Zig `test` blocks in each file.
 
 ```
 src/
-    main.zig                // entry point, CLI, orchestrator
+    main.zig                // entry point, CLI dispatch, allocator setup
+    cli.zig                 // command-line argument parsing (CliArgs, Command, BuildTarget)
+    pipeline.zig            // compilation pipeline orchestration (runPipeline)
+    commands.zig            // secondary command runners (analysis, debug, gendoc, addtopath)
+    init.zig                // orhon init project scaffolding
     lexer.zig               // pass 1
     orhon.peg               // pass 2  — PEG grammar (formal syntax spec)
     parser.zig              // AST type definitions (Node, NodeKind, structs)
+    peg.zig                 // public PEG API
     peg/                    // PEG engine
         grammar.zig         //   .peg file parser
         engine.zig          //   packrat matching engine
         capture.zig         //   capture tree builder
-        builder.zig         //   capture tree → AST node conversion
+        builder.zig         //   hub — capture tree → AST node conversion
+        builder_decls.zig   //   declaration building
+        builder_exprs.zig   //   expression building
+        builder_stmts.zig   //   statement building
+        builder_types.zig   //   type building
+        builder_bridge.zig  //   bridge/context building
         token_map.zig       //   grammar literals → TokenKind mapping
     module.zig              // pass 3
     declarations.zig        // pass 4
@@ -104,16 +114,44 @@ src/
     borrow.zig              // pass 7
     thread_safety.zig       // pass 8
     propagation.zig         // pass 9
-    mir.zig                 // pass 10 — MIR annotation + lowering (MirNode tree, TypeClass, UnionRegistry)
-    codegen.zig             // pass 11 — pure 1:1 translator
-    zig_runner.zig          // pass 12
+    mir/                    // pass 10 — MIR annotation + lowering
+        mir.zig             //   hub — re-exports (TypeClass, NodeMap, MirNode, etc.)
+        mir_types.zig       //   type classification (TypeClass enum, Coercion)
+        mir_node.zig        //   MIR tree node definitions (MirKind, MirNode)
+        mir_annotator.zig   //   annotation pass (type analysis)
+        mir_lowerer.zig     //   lowering pass (tree construction)
+        mir_registry.zig    //   union/struct registry for type tracking
+    codegen/                // pass 11 — pure 1:1 translator
+        codegen.zig         //   hub — main code generation (MIR → Zig)
+        codegen_decls.zig   //   declaration codegen (structs, enums, functions)
+        codegen_exprs.zig   //   expression codegen
+        codegen_stmts.zig   //   statement codegen
+        codegen_match.zig   //   match expression codegen
+    zig_runner/             // pass 12
+        zig_runner.zig      //   hub — main entry point
+        zig_runner_build.zig    //   build invocation and multi-target support
+        zig_runner_discovery.zig //  Zig compiler discovery (PATH lookup)
+        zig_runner_multi.zig    //   multi-target build coordination
     types.zig               // shared — type system (Primitive enum, ResolvedType)
     errors.zig              // shared — error formatting
     builtins.zig            // shared — language intrinsics only
     constants.zig           // shared — constants
     cache.zig               // shared — incremental cache
+    interface.zig           // bridge interface system
+    std_bundle.zig          // embedded stdlib file extraction
     formatter.zig           // orhon fmt
-    lsp.zig                 // language server
+    docgen.zig              // orhon gendoc
+    fuzz.zig                // standalone fuzzer binary
+    lsp/                    // language server
+        lsp.zig             //   hub — JSON-RPC transport, server loop
+        lsp_types.zig       //   LSP data structures
+        lsp_json.zig        //   JSON serialization/deserialization
+        lsp_analysis.zig    //   AST analysis for LSP features
+        lsp_nav.zig         //   go-to-definition, find references
+        lsp_edit.zig        //   text editing operations
+        lsp_view.zig        //   document view/hover information
+        lsp_semantic.zig    //   semantic highlighting
+        lsp_utils.zig       //   utility functions
     std/                    // stdlib bridge modules (module + .zig sidecar)
 ```
 

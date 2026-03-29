@@ -8,17 +8,18 @@
 
 Creates a real OS thread. Use for CPU-heavy work.
 ```
-thread(i32) my_thread {
-    return heavy_computation()
+thread compute(x: i32) Handle(i32) {
+    return Handle(heavy_computation(x))
 }
 
-my_thread.value       // blocks until done, returns i32 (move — one call only)
-my_thread.finished    // bool, non-blocking
-my_thread.wait()      // block without getting value
-my_thread.cancel()    // cooperative cancellation — thread checks flag
+const h: Handle(i32) = compute(42)
+h.value       // blocks until done, returns i32 (move — one call only)
+h.finished    // bool, non-blocking
+h.wait()      // block without getting value
+h.cancel()    // cooperative cancellation — thread checks flag
 ```
 
-`thread` is a keyword. No import needed.
+`thread` is a keyword. Thread functions return `Handle(T)` where `T` is the result type. No import needed.
 
 > `Async` is deferred — will share the same interface but use IO concurrency instead of OS threads. Not designed yet.
 
@@ -26,31 +27,63 @@ my_thread.cancel()    // cooperative cancellation — thread checks flag
 
 ## Ownership and Threads
 
-Values **move** into threads — no borrows. Using a value after it has been moved into a thread is a compile time error. Ownership returns through `.value`.
+Thread functions accept arguments. The compiler enforces safety rules based on how arguments are passed:
+
+| Passing style | Allowed? | Effect on original |
+|---|---|---|
+| Owned value (`x`) | Yes | **Moved** — variable dead until thread joined |
+| Const borrow (`&x`) | Yes | **Frozen** — read-only until thread joined |
+| Mutable borrow (`var &x`) | **No** | Compile error |
+
+### Owned values move into threads
+
+Passing an owned value to a thread transfers ownership. Using the variable after the thread is spawned is a compile error.
 
 ```
-var data: []i32 = [1, 2, 3]
-
-thread([]i32) my_thread {
-    data[0] = 99
-    return data
+thread consumer(data: i32) Handle(i32) {
+    return Handle(data)
 }
 
-// data is moved — using it here is a compile error
-var result: []i32 = my_thread.value    // ownership returned (move)
+var x: i32 = 42
+const h: Handle(i32) = consumer(x)
+// x is moved — using it here is a compile error
+var result: i32 = h.value    // ownership returned (move)
 ```
 
-### Captures are implicit
+### Const borrows freeze the original
 
-The compiler detects which outer variables the thread body references. All referenced variables are moved into the thread automatically — no explicit capture list needed.
+Passing a const borrow (`&x`) to a thread freezes the original variable — it becomes read-only until the thread is joined via `.value` or `.wait()`. This prevents data races where the caller mutates data while the thread reads it.
+
+```
+thread reader(val: const &i32) Handle(void) {
+    // can read val, cannot modify it
+}
+
+var x: i32 = 10
+const h: Handle(void) = reader(&x)
+x = 20        // compile error — cannot mutate 'x' while it is borrowed by thread
+h.wait()      // thread joined — freeze released
+x = 20        // ok — x is unfrozen after join
+```
+
+### Mutable borrows are forbidden
+
+Passing a mutable borrow (`var &x`) to a thread is always a compile error. Two things writing to the same data concurrently is a data race — no static analysis can make it safe without synchronization primitives.
+
+```
+thread writer(val: &i32) Handle(void) { }
+
+var x: i32 = 10
+const h: Handle(void) = writer(&x)    // compile error — cannot pass mutable borrow to thread
+```
 
 ### `.value` is a move
 
 Calling `.value` transfers ownership back from the thread. A second `.value` call is a use-after-move error. Store the result in a variable if you need it multiple times.
 
 ```
-var result: []i32 = worker.value    // ok — ownership moves to result
-var again: []i32 = worker.value     // compile error — use-after-move
+var result: i32 = worker.value    // ok — ownership moves to result
+var again: i32 = worker.value     // compile error — use-after-move
 ```
 
 ### Unjoined threads are compile errors
@@ -59,12 +92,12 @@ Every thread must be consumed before its scope ends — either via `.value` or `
 
 ```
 func bad() void {
-    thread(i32) t { return 42 }
-}   // compile error — thread 't' not joined before scope exit
+    const h: Handle(i32) = worker(42)
+}   // compile error — thread 'h' not joined before scope exit
 
 func good() void {
-    thread(i32) t { return 42 }
-    t.wait()    // ok
+    const h: Handle(i32) = worker(42)
+    h.wait()    // ok
 }
 ```
 
@@ -75,17 +108,18 @@ func good() void {
 Cancellation is cooperative. Calling `.cancel()` sets a flag — the thread body is responsible for checking it. The thread is not killed mid-execution.
 
 ```
-thread(i32) worker {
+thread process_all(items: []i32) Handle(i32) {
     var total: i32 = 0
     for(items) |item| {
         // thread checks cancellation flag internally
         total += process(item)
     }
-    return total
+    return Handle(total)
 }
 
-worker.cancel()     // sets the flag — thread exits at next check point
-worker.wait()       // still must join
+const h: Handle(i32) = process_all(items)
+h.cancel()     // sets the flag — thread exits at next check point
+h.wait()       // still must join
 ```
 
 The exact mechanism for checking the flag inside the body is TBD (may be automatic at loop boundaries, or an explicit `thread.cancelled()` check).
@@ -100,8 +134,11 @@ No shared mutable state. Data must be explicitly split using `splitAt` — a sin
 // atomic split — data consumed, no overlap possible
 var left, right = data.splitAt(3)
 
-thread([]i32) thread_a { return left }
-thread([]i32) thread_b { return right }
+thread process_left(d: []i32) Handle([]i32) { return Handle(d) }
+thread process_right(d: []i32) Handle([]i32) { return Handle(d) }
+
+const a: Handle([]i32) = process_left(left)
+const b: Handle([]i32) = process_right(right)
 ```
 
 `splitAt` works on slices, Lists, and any collection type where splitting is meaningful.
@@ -113,11 +150,11 @@ thread([]i32) thread_b { return right }
 If the thread body can produce an error, the return type is `(Error | T)`. The error must be handled before scope exit — unhandled errors crash the program.
 
 ```
-thread((Error | i32)) worker {
-    return risky_operation()
+thread risky_work() Handle((Error | i32)) {
+    return Handle(risky_operation())
 }
 
-var result: (Error | i32) = worker.value
+var result: (Error | i32) = risky_work().value
 match result {
     Error => { console.println("failed") }
     i32   => { console.println("ok") }
@@ -131,14 +168,16 @@ match result {
 Threads can spawn other threads. The same ownership and move rules apply at every level.
 
 ```
-thread(i32) outer {
-    thread(i32) inner {
-        return compute()
-    }
-    return inner.value + 1
+thread compute() Handle(i32) {
+    return Handle(heavy_work())
 }
 
-var result: i32 = outer.value
+thread orchestrate() Handle(i32) {
+    const inner: Handle(i32) = compute()
+    return Handle(inner.value + 1)
+}
+
+var result: i32 = orchestrate().value
 ```
 
 ---
@@ -153,8 +192,9 @@ None. Any function can be called inside a thread body. Safety comes from ownersh
 
 | Rule | Decision |
 |------|----------|
-| Data transfer | Moves only — no borrows into threads |
-| Captures | Implicit — compiler detects referenced vars |
+| Owned values | Move into thread — original variable dead until join |
+| Const borrows (`&x`) | Allowed — original frozen (read-only) until join |
+| Mutable borrows (`var &x`) | Forbidden — compile error |
 | `.value` | Move — one call only, second is compile error |
 | Unjoined thread | Compile error — must `.value` or `.wait()` |
 | Cancellation | Cooperative — flag-based, not forced |
