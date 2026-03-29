@@ -191,7 +191,7 @@ Plans:
 | 29 | v0.17 | 1/1 | Complete    | 2026-03-28 |
 | 30 | v0.17 | 2/2 | Complete    | 2026-03-28 |
 | 31 | v0.17 | 1/1 | Complete    | 2026-03-28 |
-| 32 | v0.17 | 2/2 | Complete   | 2026-03-29 |
+| 32 | v0.17 | 2/2 | Complete    | 2026-03-29 |
 | 33 | v0.17 | 0/? | Not started | - |
 | 34 | v0.17 | 0/? | Not started | - |
 | 35 | v0.17 | 0/? | Not started | - |
