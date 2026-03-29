@@ -64,7 +64,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     // Load incremental cache
     var comp_cache = cache.Cache.init(allocator);
     defer comp_cache.deinit();
-    try comp_cache.loadTimestamps();
+    try comp_cache.loadHashes();
     try comp_cache.loadDeps();
 
     // Pre-scan imports to discover std modules before full parsing.
@@ -308,14 +308,14 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             });
         }
 
-        // Update timestamp cache
+        // Update content hash cache
         for (mod_ptr.files) |file| {
-            try comp_cache.updateTimestamp(file);
+            try comp_cache.updateHash(file);
         }
     }
 
     // Save updated cache
-    try comp_cache.saveTimestamps();
+    try comp_cache.saveHashes();
     try comp_cache.saveDeps();
     try cache.saveWarnings(all_warnings.items);
 
