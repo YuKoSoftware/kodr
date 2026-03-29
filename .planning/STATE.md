@@ -58,6 +58,7 @@ None.
 ### Quick Tasks Completed
 
 - 260329-t2l: Remove dead types (VersionRule, Dependency) from BUILTIN_TYPES
+- 260329-w2f: Semantic token-stream hashing for incremental cache (hashSemanticContent)
 
 ### Blockers/Concerns
 
@@ -66,5 +67,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-29
-Stopped at: Completed quick-260329-t2l
+Stopped at: Completed quick-260329-w2f
 Resume file: None
