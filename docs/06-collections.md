@@ -45,10 +45,10 @@ Hard compiler error if split index is out of range.
 
 ## Collection Types (stdlib)
 
-`List(T)`, `Map(K, V)`, and `Set(T)` are generic collection types in `std::collections`. They are **not** builtin types — they are bridge modules imported like any other module.
+`List(T)`, `Map(K, V)`, and `Set(T)` are generic collection types in `std::collections`. They are **not** builtin types — they require an explicit import like any other module.
 
 ```
-import std::collections
+use std::collections
 
 var items: List(i32) = List(i32)()
 items.append(42)
@@ -58,4 +58,11 @@ table.put("key", 1)
 
 var unique: Set(str) = Set(str)()
 unique.add("hello")
+```
+
+With namespaced import:
+```
+import std::collections
+
+var items: collections.List(i32) = collections.List(i32)()
 ```

@@ -42,7 +42,7 @@ Source (.orh)
 ```
 
 ### Incremental compilation
-Checked at step 3. Unchanged modules with unchanged dependencies skip passes 4-12, reusing cached `.zig` files. Cache stored in `.orh-cache/`.
+Checked at step 3. Pass 4 (declaration collection) always runs so cross-module type resolution works for all modules. Unchanged modules with unchanged dependencies skip passes 5-12, reusing cached `.zig` files. Cache stored in `.orh-cache/`.
 
 ---
 
