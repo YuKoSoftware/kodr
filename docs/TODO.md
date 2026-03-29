@@ -41,15 +41,12 @@ Ordered by how much each item unblocks downstream work.
 newlines and doc comments. Whitespace-only and comment-only edits no longer
 invalidate the cache.
 
-### Incremental compilation — interface diffing
+### ~~Incremental compilation — interface diffing~~ DONE (v0.10.21)
 
-After declaration pass on a changed module, compare its public interface (exported
-functions, types, constants) against the cached interface. If unchanged, downstream
-modules skip recompilation even though the implementation changed. This is TypeScript's
-declaration-file trick.
-
-**Implementation:** serialize public DeclTable to canonical form, hash it, store hash.
-When checking downstream modules, compare interface hash, not file hash.
+~~After declaration pass, compare public interface against cached interface.~~ Shipped.
+`cache.zig` has `hashInterface()` that hashes sorted public DeclTable entries
+(funcs, structs, enums, bitfields, vars, type aliases). Pipeline checks dependency
+interface hashes — downstream modules skip passes 5-12 when upstream public API unchanged.
 
 ### PEG error recovery — labeled failures
 
