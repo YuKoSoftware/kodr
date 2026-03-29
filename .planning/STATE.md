@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
 status: executing
-stopped_at: Completed 34-02-PLAN.md
-last_updated: "2026-03-29T10:18:58.029Z"
+stopped_at: Phase 35 context gathered
+last_updated: "2026-03-29T11:30:07.244Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 8
@@ -87,5 +87,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-28
-Stopped at: Completed 34-02-PLAN.md
-Resume file: None
+Stopped at: Phase 35 context gathered
+Resume file: .planning/phases/35-zig-runner-split/35-CONTEXT.md
