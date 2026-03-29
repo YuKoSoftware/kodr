@@ -66,6 +66,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     defer comp_cache.deinit();
     try comp_cache.loadHashes();
     try comp_cache.loadDeps();
+    try comp_cache.loadInterfaceHashes();
 
     // Pre-scan imports to discover std modules before full parsing.
     // This avoids the need for a second parse pass.
@@ -135,6 +136,18 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         decl_collector_ptrs.deinit(allocator);
     }
 
+    // Snapshot the interface hashes as they were at the start of this build.
+    // Used to detect whether a dependency's interface changed during this build:
+    // compare against comp_cache.interface_hashes (updated as each module is compiled).
+    var prev_iface_hashes = std.StringHashMap(u64).init(allocator);
+    defer prev_iface_hashes.deinit();
+    {
+        var it = comp_cache.interface_hashes.iterator();
+        while (it.next()) |entry| {
+            try prev_iface_hashes.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+    }
+
     // Process each module in dependency order
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
@@ -157,9 +170,58 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         if (reporter.hasErrors()) return null;
         try all_module_decls.put(mod_name, &decl_collector.table);
 
-        // Check if module needs recompilation (passes 5–12)
-        const needs_recompile = try comp_cache.moduleNeedsRecompile(mod_name, mod_ptr.files);
+        // Compute this module's current interface hash (after pass 4, before skip decision).
+        // Stored here so it is available whether or not we recompile.
+        const current_iface_hash = cache.hashInterface(&decl_collector.table);
+
+        // Check if module needs recompilation (passes 5–12).
+        // Interface-aware logic:
+        //   a) If any own source file changed → must recompile.
+        //   b) If own sources unchanged, check dependency interfaces: if any dep's
+        //      interface hash changed (or has no cached hash), recompile.
+        //   c) If nothing changed, skip passes 5–12.
+        var own_source_changed = false;
+        for (mod_ptr.files) |file| {
+            if (try comp_cache.hasChanged(file)) {
+                own_source_changed = true;
+                break;
+            }
+        }
+
+        var dep_interface_changed = false;
+        if (!own_source_changed) {
+            if (comp_cache.deps.get(mod_name)) |dep_list| {
+                for (dep_list.items) |dep_name| {
+                    // Check if dep's generated .zig file exists
+                    const zig_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ cache.GENERATED_DIR, dep_name });
+                    defer allocator.free(zig_path);
+                    std.fs.cwd().access(zig_path, .{}) catch {
+                        dep_interface_changed = true;
+                        break;
+                    };
+                    // Compare dep's current interface hash (in comp_cache.interface_hashes,
+                    // updated when the dep was processed this build) against the previous
+                    // build's value (in prev_iface_hashes, snapshotted before the loop).
+                    const prev_hash = prev_iface_hashes.get(dep_name);
+                    const curr_hash = comp_cache.interface_hashes.get(dep_name);
+                    if (prev_hash == null or curr_hash == null or prev_hash.? != curr_hash.?) {
+                        dep_interface_changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const needs_recompile = own_source_changed or dep_interface_changed;
         if (!needs_recompile) {
+            // Store the current interface hash for this skipped module so that
+            // downstream dependents can compare against it this build.
+            const skip_iface_result = try comp_cache.interface_hashes.getOrPut(mod_name);
+            if (!skip_iface_result.found_existing) {
+                skip_iface_result.key_ptr.* = try allocator.dupe(u8, mod_name);
+            }
+            skip_iface_result.value_ptr.* = current_iface_hash;
+
             // Replay cached warnings for this module
             for (cached_warnings.items) |w| {
                 if (std.mem.eql(u8, w.module, mod_name)) {
@@ -314,11 +376,21 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         for (mod_ptr.files) |file| {
             try comp_cache.updateHash(file);
         }
+
+        // Store the freshly computed interface hash for this module.
+        // Downstream modules processed later in topological order will see this
+        // updated value when checking dep_interface_changed.
+        const iface_result = try comp_cache.interface_hashes.getOrPut(mod_name);
+        if (!iface_result.found_existing) {
+            iface_result.key_ptr.* = try allocator.dupe(u8, mod_name);
+        }
+        iface_result.value_ptr.* = current_iface_hash;
     }
 
     // Save updated cache
     try comp_cache.saveHashes();
     try comp_cache.saveDeps();
+    try comp_cache.saveInterfaceHashes();
     try cache.saveWarnings(all_warnings.items);
 
     if (cli.command == .@"test") {
