@@ -45,8 +45,6 @@ pub const CodeGen = struct {
     // Import alias tracking — use the user's import name instead of hardcoded prefixes
     str_import_alias: ?[]const u8 = null,
     str_is_included: bool = false,
-    collections_import_alias: ?[]const u8 = null,
-    collections_is_included: bool = false,
     // MIR annotation table — Phase 1+2 typed annotation pass
     node_map: ?*const mir.NodeMap = null,
     union_registry: ?*const mir.UnionRegistry = null,
@@ -317,17 +315,10 @@ pub const CodeGen = struct {
             }
         }
 
-        // Auto-import str and collections if not explicitly imported.
-        // These modules are always available via build.zig addImport — no
-        // import needed in user code, but the generated Zig file needs them
-        // if string/collection operations are used implicitly (e.g., String methods).
+        // Auto-import str if not explicitly imported — needed for string method dispatch
         if (self.str_import_alias == null and !self.str_is_included) {
             self.str_import_alias = "str";
             try self.emit("const str = @import(\"_orhon_str\");\n");
-        }
-        if (self.collections_import_alias == null and !self.collections_is_included) {
-            self.collections_import_alias = "collections";
-            try self.emit("const collections = @import(\"_orhon_collections\");\n");
         }
 
         try self.emit("\n");
@@ -409,12 +400,6 @@ pub const CodeGen = struct {
                 self.str_is_included = true;
             } else {
                 self.str_import_alias = imp.alias orelse "str";
-            }
-        } else if (std.mem.eql(u8, imp.path, "collections")) {
-            if (imp.is_include) {
-                self.collections_is_included = true;
-            } else {
-                self.collections_import_alias = imp.alias orelse "collections";
             }
         }
 
@@ -789,25 +774,15 @@ pub const CodeGen = struct {
                         break :blk try self.allocTypeStr("@Vector({s}, {s})", .{ size_str, elem });
                     }
                 }
-                // Collection types → use import alias (or bare name if included)
-                const is_collection = std.mem.eql(u8, g.name, "List") or
-                    std.mem.eql(u8, g.name, "Map") or
-                    std.mem.eql(u8, g.name, "Set");
-
                 // Inside a generic struct, self-references use @This()
                 if (self.generic_struct_name) |gsn| {
                     if (std.mem.eql(u8, g.name, gsn)) break :blk "@This()";
                 }
 
-                // User-defined generic type — Name(T, U) → Name(zigT, zigU)
+                // Generic type — Name(T, U) → Name(zigT, zigU)
                 if (g.args.len > 0) {
                     var buf = std.ArrayListUnmanaged(u8){};
                     defer buf.deinit(self.allocator);
-                    if (is_collection and !self.collections_is_included) {
-                        const prefix = self.collections_import_alias orelse "collections";
-                        try buf.appendSlice(self.allocator, prefix);
-                        try buf.append(self.allocator, '.');
-                    }
                     try buf.appendSlice(self.allocator, g.name);
                     try buf.append(self.allocator, '(');
                     for (g.args, 0..) |arg, ai| {

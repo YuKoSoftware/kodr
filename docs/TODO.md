@@ -7,113 +7,7 @@ Research sources: `.planning/research/` (compiler-techniques, zig-ecosystem, lan
 
 ## Bugs
 
-### Builtins — `List`, `Map`, `Set` hardcoded as builtin types
-
-`BUILTIN_TYPES` in `builtins.zig` includes `List`, `Map`, `Set`, `Version`. These are
-not compiler intrinsics — collections come from `std::collections` and `Version` is
-build metadata. Hardcoding them bypasses the import system and gives them special
-treatment they shouldn't have. (`VersionRule`, `Dependency` already removed — dead code.)
-
-**The problem:** The resolver uses `isBuiltinType()` as a shortcut to recognize
-`List`/`Map`/`Set` as valid generic types without requiring an import. This means
-they work even when the user hasn't imported `std::collections` — wrong behavior.
-
-**Fix:** Refactor the resolver so `List`, `Map`, `Set` are resolved through the import
-system like any other user-defined type. When the user writes `List(i32)`, the resolver
-should find it in the current scope (populated by `import std::collections` or
-`use std::collections`), not in a hardcoded list. After the resolver refactor, remove
-`List`, `Map`, `Set`, `Version` from `BUILTIN_TYPES`.
-
-**Correct `BUILTIN_TYPES`:** `Ptr`, `RawPtr`, `VolatilePtr`, `Handle`, `Error`, `Vector`
-— only types the compiler must understand natively for code generation.
-
-### ~~Codegen — multi-type null union collapses to optional~~ — fixed v0.14 Phase 20
-
-~~`(null | A | B | C)` generates `?A` instead of a proper tagged union with null.~~
-Fixed: generates `?union(enum) { ... }` for multi-type null unions.
-
-### ~~Codegen — `cast(EnumType, int)` emits `@intCast` instead of `@enumFromInt`~~ — fixed v0.14 Phase 20
-
-~~Cannot cast raw integers to enum variants.~~ Fixed: codegen emits `@enumFromInt`.
-
-### ~~Codegen — empty struct construction generates invalid Zig~~ — fixed v0.14 Phase 20
-
-~~`TypeName()` for a zero-field struct emits `TypeName()` in Zig.~~ Fixed: emits `TypeName{}`.
-
-### ~~Build — multi-file module with Zig sidecar: "file exists in two modules"~~ — fixed v0.16 Phase 27
-
-~~Build fails when a module has multiple `.orh` files and a `.zig` sidecar.~~
-Fixed: sidecar deduplication prevents duplicate module registration.
-
-### ~~Parser — `size` is a reserved keyword in bridge func parameters~~ — fixed (PEG grammar)
-
-~~Cannot use `size` as a parameter name.~~ Fixed: `param_name` rule in PEG grammar
-allows `size` and other builtin keywords in parameter position.
-
-### ~~Codegen — `const &BridgeStruct` passes by value instead of by pointer~~ — fixed v0.16 Phase 25
-
-~~Bridge struct parameters typed as `const &` generate by-value passing in Zig.~~
-Fixed: `is_bridge` flag on FuncSig guards const auto-borrow for bridge calls.
-
-### ~~Codegen — sidecar `export fn` should emit `pub export fn`~~ — fixed v0.16 Phase 25
-
-~~Bridge functions in a module's sidecar `.zig` are not accessible.~~ Fixed:
-sidecar copy now does read-modify-write to prepend `pub` to all `export fn`.
-
-### ~~Codegen — cross-module struct ref-passing~~ — fixed v0.10 Phase 4
-
-~~Codegen didn't know imported method parameter types.~~ Fixed: MIR `resolveCallSig`
-now resolves cross-module instance method signatures for `value_to_const_ref` coercion.
-
-### ~~Resolver — qualified generic types not validated~~ — fixed v0.10 Phase 4
-
-~~Qualified generic types bypassed validation.~~ Fixed: resolver reports Orhon-level
-errors when module is found but type doesn't exist in its DeclTable.
-
-### ~~Ownership — const values treated as moved on by-value pass~~ — fixed v0.11 Phase 8
-
-~~Const struct values counted as moves.~~ Fixed: const non-primitives now auto-borrow
-as `const &` at call sites. Codegen emits `*const T` signatures and `&arg` at call sites.
-`copy()` still works for explicit copies.
-
-### ~~Codegen — tester module fails to compile (cross-module codegen)~~ — fixed v0.12 Phase 13
-
-~~For-loop index variables, destructure name leaking, named tuple types, null literal
-wrapping, pointer syntax, collection constructors~~ — all fixed. Test stages 09 (21/21)
-and 10 (102/102) pass fully. Cross-module codegen is correct end-to-end.
-
-### ~~Unit test — intermittent "read module name" failure~~ — fixed v0.12 Phase 13
-
-~~The "read module name" test in module.zig wrote to a hardcoded `/tmp/test_module.orh`
-path, causing write/delete races when Zig runs tests in parallel threads or when multiple
-`zig build test` invocations overlap.~~ Fixed: switched to `std.testing.tmpDir` so each
-test invocation gets an isolated temporary directory with automatic cleanup.
-
-### Module — sidecar path leaked (`error(gpa)`) — fixed v0.9.6
-
-~~`module.zig:660` allocates a sidecar path string that is never freed.~~ Fixed: freed
-in `Resolver.deinit()`.
-
-### ~~`orhon test` — output format mismatch~~ — fixed v0.10 Phase 4 (v0.9 Phase 1)
-
-~~Reports 0 passed/0 failed.~~ Fixed: test output parsing corrected.
-
-### ~~Stdlib — string interpolation leaks memory~~ — fixed v0.10 Phase 6
-
-~~`@{variable}` allocates temp buffers never freed.~~ Fixed: codegen emits
-`defer std.heap.page_allocator.free(...)` after each `allocPrint`.
-
-### ~~Codegen — `catch unreachable` in generated code~~ — fixed v0.10 Phase 5
-
-~~Thread shared state allocation crashes on OOM.~~ Fixed: 4 compiler-side instances
-replaced with `@panic` with diagnostic messages. 8 generated-code instances are
-correct (error union narrowing) and remain.
-
-### ~~Stdlib — silent error suppression (`catch {}`)~~ — fixed v0.10 Phase 5
-
-~~103 instances of `catch {}` across 15 files.~~ Fixed: v0.9 Phase 2 fixed 75 instances,
-v0.10 Phase 5 fixed remaining 8 data-loss sites (collections, stream). 20 fire-and-forget
-I/O sites (console, tui, fs, system) intentionally retained.
+*No open bugs.*
 
 ---
 
@@ -134,33 +28,11 @@ not to the end of the scope. ~85% of Rust's safety for ~30% of Polonius complexi
 
 Full Polonius (flow-sensitive dataflow analysis) is overkill for Orhon.
 
-### Allocator pairing — already covered
-
-~~Should arena allocators accept a backing allocator?~~ **Not needed.** Mode 2
-(`.new(my_allocator)`) already handles this. Users create composed allocators in
-bridge code and pass them through. No new syntax — Orhon's value is hiding this
-complexity, not exposing it.
-
 ---
 
 ## Core — Compiler Architecture
 
 Ordered by how much each item unblocks downstream work.
-
-### Codegen — refactor, not rewrite
-
-~~Original plan: 3-layer split (Zig IR + Lowering + Printer).~~ **Rejected.** A Zig IR
-would mean modeling Zig's semantics inside the compiler — a second representation that
-can drift from real Zig on every version bump. Bugs would hide across two layers instead
-of one. The real optimization target is MIR/SSA (our own IR), not a Zig AST model.
-
-**Instead:** keep direct string emission but clean up the 3262-line codegen:
-- Extract helper functions, group by construct type
-- Split into 2-3 files (declarations, expressions, statements)
-- 80% of the maintainability benefit without the abstraction cost
-
-The Zig printer should stay dumb and direct. All smart decisions (coercions, union
-wrapping, bridge imports) happen in MIR.
 
 ### Incremental compilation — semantic hashing
 
@@ -179,13 +51,6 @@ declaration-file trick.
 
 **Implementation:** serialize public DeclTable to canonical form, hash it, store hash.
 When checking downstream modules, compare interface hash, not file hash.
-
-### ~~PEG error recovery — expected-set accumulation~~ — already implemented
-
-~~Replace single `furthest_expected` with a set.~~ Already done: `engine.zig` uses
-`std.EnumSet(TokenKind)` for `furthest_expected`. `formatExpectedSet()` in `module.zig`
-produces "expected 'X', 'Y', or 'Z'" messages. Accumulation on same-position failures
-and reset on new-position already implemented.
 
 ### PEG error recovery — labeled failures
 
@@ -274,7 +139,6 @@ learning = more adoption. Elm, Gleam, and Rust set the bar.
 - Generic instantiation failures should show the constraint that failed
 
 **PEG parser improvements (see Compiler Architecture section):**
-- Expected-set accumulation — show all expected tokens, not just one
 - Labeled failures — human-readable error messages from grammar rules
 - Common mistake detection — try token insertions/deletions at failure point
   ("missing ':' in variable declaration")
@@ -431,13 +295,6 @@ struct SDL_Event {
 Maps to Zig's `extern struct`. Needed for direct C struct passing without wrapper
 overhead.
 
-### ~~Comma-separated `#linkc`~~ — obsolete
-
-~~`#linkc "vulkan, SDL3"` instead of multiple lines.~~ `#linkc` was replaced by
-`#cimport = { name: "lib", include: "header.h" }` in v0.15 Phase 24. Each `#cimport`
-declaration links one library. Multiple libraries use multiple `#cimport` directives.
-No comma-separated syntax needed.
-
 ---
 
 ## Features — Tooling & Ecosystem
@@ -526,45 +383,6 @@ Beyond "does it crash" fuzzing — test semantic properties across the pipeline:
 - Parse then pretty-print should round-trip
 - Type-checking the same input twice should give identical results
 - Codegen output should always be valid Zig (run `zig ast-check` on it)
-
----
-
-## Documentation Gaps
-
-### ~~`use` vs `import` semantics~~ — documented
-
-~~No dedicated section.~~ Added to `docs/11-modules.md`: `import` vs `use` comparison
-table, syntax, scope rules, when to use each.
-
-### ~~String interpolation `@{...}`~~ — documented
-
-~~Not documented at all.~~ Added to `docs/02-types.md`: syntax, supported types,
-memory behavior (auto defer free), how it maps to `allocPrint`.
-
-### ~~Testing framework~~ — documented
-
-~~Only 15 lines of docs.~~ Expanded `docs/15-testing.md`: test declaration syntax,
-`assert` + `std::testing` assertions with full table, output format, organization
-guidelines, current limitations (no filtering, no fixtures).
-
-### ~~LSP capabilities~~ — documented
-
-~~No user-facing documentation.~~ Added LSP section to `docs/13-build-cli.md`: full
-feature table (15 features), how it works (passes 1-9), VS Code extension settings
-and setup.
-
-### ~~`compt` function rules~~ — documented
-
-~~When and how compile-time evaluation triggers.~~ Expanded in `docs/05-functions.md`:
-type-generating vs value-computing compt, `any` parameters, `compt for`, rules for
-what compt can and cannot do.
-
-### ~~Design rationale documentation~~ — documented
-
-~~Explain WHY Orhon chose its design.~~ Added "Design Rationale" section to
-`docs/01-basics.md`: no closures, no lifetime annotations, no operator overloading,
-nominal types, no exceptions, no GC, no macros, explicit cast. Each with reasoning
-and inspiration sources.
 
 ---
 
@@ -680,3 +498,18 @@ removed. Multi-file modules with Zig sidecars build correctly.
 
 **Done in v0.16 Phase 28.** Cross-compilation target flag corrected. Build cache
 cleaned up. Dead `Async(T)` codegen branch removed from `typeToZig`.
+
+### Codegen refactor ✓
+
+**Done.** Split into 5 files: hub (`codegen.zig`) + 4 satellites (`codegen_decls.zig`,
+`codegen_exprs.zig`, `codegen_stmts.zig`, `codegen_match.zig`). Zig IR layer rejected
+— direct string emission kept. All smart decisions happen in MIR.
+
+### Builtins cleanup — `List`, `Map`, `Set` no longer hardcoded ✓
+
+**Done in v0.10.19.** Removed `List`, `Map`, `Set` from `BUILTIN_TYPES`. Collections
+are now resolved through the import system like any other module. `use std::collections`
+or `import std::collections` required. Added bridge func declarations to `collections.orh`.
+Fixed `preScanImports` to recognize `use` keyword. Always collect declarations for all
+modules (including cached) so cross-module type resolution works. Codegen's collection
+auto-import and prefix logic removed.

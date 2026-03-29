@@ -140,7 +140,24 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
         const ast = mod_ptr.ast orelse continue;
 
-        // Check if module needs recompilation
+        // Get source location map and file offsets for error reporting
+        const locs_ptr: ?*const parser.LocMap = if (mod_ptr.locs) |*l| l else null;
+        const file_offsets = mod_ptr.file_offsets;
+
+        // ── Pass 4: Declaration Collection ────────────────────
+        // Always collect declarations so cross-module type resolution works
+        // (e.g., `use std::collections` needs collections DeclTable in all_module_decls)
+        const decl_collector = try allocator.create(declarations.DeclCollector);
+        decl_collector.* = declarations.DeclCollector.init(allocator, reporter);
+        try decl_collector_ptrs.append(allocator, decl_collector);
+        decl_collector.locs = locs_ptr;
+        decl_collector.file_offsets = file_offsets;
+
+        try decl_collector.collect(ast);
+        if (reporter.hasErrors()) return null;
+        try all_module_decls.put(mod_name, &decl_collector.table);
+
+        // Check if module needs recompilation (passes 5–12)
         const needs_recompile = try comp_cache.moduleNeedsRecompile(mod_name, mod_ptr.files);
         if (!needs_recompile) {
             // Replay cached warnings for this module
@@ -161,23 +178,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             continue;
         }
 
-        // Get source location map and file offsets for error reporting
-        const locs_ptr: ?*const parser.LocMap = if (mod_ptr.locs) |*l| l else null;
-        const file_offsets = mod_ptr.file_offsets;
-
         // Snapshot warning count to capture new warnings from this module
         const warn_start = reporter.warnings.items.len;
-
-        // ── Pass 4: Declaration Collection ────────────────────
-        const decl_collector = try allocator.create(declarations.DeclCollector);
-        decl_collector.* = declarations.DeclCollector.init(allocator, reporter);
-        try decl_collector_ptrs.append(allocator, decl_collector);
-        decl_collector.locs = locs_ptr;
-        decl_collector.file_offsets = file_offsets;
-
-        try decl_collector.collect(ast);
-        if (reporter.hasErrors()) return null;
-        try all_module_decls.put(mod_name, &decl_collector.table);
 
         // ── Pass 5: Type Resolution ────────────────────────────
         var type_resolver = resolver.TypeResolver.init(allocator, &decl_collector.table, reporter);

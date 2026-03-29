@@ -70,6 +70,8 @@ pub const TypeResolver = struct {
     current_return_type: ?RT = null, // expected return type of current function
     /// All module DeclTables — for cross-module qualified generic type validation.
     all_decls: ?*const std.StringHashMap(*declarations.DeclTable) = null,
+    /// Module names imported with `use` — their types are available unqualified.
+    included_modules: std.ArrayListUnmanaged([]const u8) = .{},
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -98,6 +100,21 @@ pub const TypeResolver = struct {
     pub fn deinit(self: *TypeResolver) void {
         self.bindings.deinit(self.allocator);
         self.type_map.deinit(self.allocator);
+        self.included_modules.deinit(self.allocator);
+    }
+
+    /// Check if a type name exists in any `use`-d (included) module's DeclTable.
+    fn isIncludedType(self: *const TypeResolver, name: []const u8) bool {
+        const ad = self.all_decls orelse return false;
+        for (self.included_modules.items) |mod_name| {
+            if (ad.get(mod_name)) |mod_decls| {
+                if (mod_decls.structs.contains(name) or
+                    mod_decls.enums.contains(name) or
+                    mod_decls.funcs.contains(name) or
+                    mod_decls.types.contains(name)) return true;
+            }
+        }
+        return false;
     }
 
     /// Resolve a type node, treating type alias names as opaque (returns .inferred).
@@ -125,6 +142,13 @@ pub const TypeResolver = struct {
     /// Resolve types in a program AST
     pub fn resolve(self: *TypeResolver, ast: *parser.Node) !void {
         if (ast.* != .program) return;
+
+        // Collect `use`-d module names for unqualified type resolution
+        for (ast.program.imports) |imp| {
+            if (imp.* == .import_decl and imp.import_decl.is_include) {
+                try self.included_modules.append(self.allocator, imp.import_decl.path);
+            }
+        }
 
         var scope = Scope.init(self.allocator, null);
         defer scope.deinit();
@@ -541,6 +565,7 @@ pub const TypeResolver = struct {
                 if (self.decls.enums.contains(id_name)) return RT{ .named = id_name };
                 if (self.decls.vars.get(id_name)) |v| return v.type_ orelse RT.unknown;
                 if (builtins.isBuiltinType(id_name)) return RT{ .named = id_name };
+                if (self.isIncludedType(id_name)) return RT{ .named = id_name };
                 if (builtins.isBuiltinValue(id_name)) return RT{ .named = id_name };
                 // Primitive type names (i32, f64, etc.) may appear as arguments to cast() and similar
                 if (types.isPrimitiveName(id_name)) return RT{ .named = id_name };
@@ -621,8 +646,8 @@ pub const TypeResolver = struct {
                     const name = c.callee.identifier;
                     // Struct constructor: Player(...) → Player
                     if (self.decls.structs.contains(name)) return RT{ .named = name };
-                    // Builtin generic constructor: List(i32)(...) → List(i32)
-                    if (builtins.isBuiltinType(name)) return RT{ .named = name };
+                    // Builtin or included type constructor: Ptr(T)(...), List(i32)(...)
+                    if (builtins.isBuiltinType(name) or self.isIncludedType(name)) return RT{ .named = name };
                     if (scope.lookup(name)) |t| {
                         if (t == .func_ptr) {
                             // Function pointer call — OK
@@ -630,7 +655,8 @@ pub const TypeResolver = struct {
                             !self.decls.structs.contains(name) and
                             !self.decls.enums.contains(name) and
                             !self.decls.bitfields.contains(name) and
-                            !builtins.isBuiltinType(name))
+                            !builtins.isBuiltinType(name) and
+                            !self.isIncludedType(name))
                         {
                             // Non-callable variable
                             const msg = try std.fmt.allocPrint(self.allocator,
@@ -718,7 +744,7 @@ pub const TypeResolver = struct {
                         if (self.decls.funcs.get(name)) |sig| {
                             if (sig.is_compt) return RT{ .named = name };
                         }
-                        if (builtins.isBuiltinType(name)) return RT{ .named = name };
+                        if (builtins.isBuiltinType(name) or self.isIncludedType(name)) return RT{ .named = name };
                     }
                 }
                 return callee_type;
@@ -952,6 +978,7 @@ pub const TypeResolver = struct {
                     self.decls.bitfields.contains(type_name) or
                     self.decls.types.contains(type_name) or // type aliases
                     builtins.isBuiltinType(type_name) or
+                    self.isIncludedType(type_name) or
                     std.mem.eql(u8, type_name, K.Type.ANY) or
                     std.mem.eql(u8, type_name, K.Type.VOID) or
                     std.mem.eql(u8, type_name, K.Type.NULL) or
@@ -992,6 +1019,7 @@ pub const TypeResolver = struct {
                 var is_known = builtins.isBuiltinType(g.name) or
                     self.decls.funcs.contains(g.name) or
                     self.decls.structs.contains(g.name) or
+                    self.isIncludedType(g.name) or
                     scope.lookup(g.name) != null;
 
                 // For qualified names (module.Type), validate against cross-module DeclTables

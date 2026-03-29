@@ -1,6 +1,7 @@
 module example
 
 import std::console
+use std::collections
 
 // ─── Collections ────────────────────────────────────────────────────────────
 

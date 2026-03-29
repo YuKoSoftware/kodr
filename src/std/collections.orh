@@ -1,11 +1,17 @@
 module collections
 
 // collections — generic data structures for Orhon programs
-// Types are used directly: List(i32), Map(String, i32), Set(String)
-// Auto-imported by the compiler — no explicit import needed.
+// Import with: use std::collections (or import std::collections)
+// Types are generic constructors: List(i32), Map(String, i32), Set(String)
 
 // List(T) — dynamic array
 
+pub bridge func List(T: type) type
+
 // Map(K, V) — hash map
 
+pub bridge func Map(K: type, V: type) type
+
 // Set(T) — hash set
+
+pub bridge func Set(T: type) type

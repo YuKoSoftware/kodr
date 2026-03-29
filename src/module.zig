@@ -289,9 +289,14 @@ pub const Resolver = struct {
             var lines_iter = std.mem.splitSequence(u8, content, "\n");
             while (lines_iter.next()) |line| {
                 const trimmed = std.mem.trimLeft(u8, line, " \t");
-                // Quick check: line starts with "import "
-                if (!std.mem.startsWith(u8, trimmed, "import ")) continue;
-                const after_import = std.mem.trimLeft(u8, trimmed["import ".len..], " \t");
+                // Quick check: line starts with "import " or "use "
+                const after_keyword = if (std.mem.startsWith(u8, trimmed, "import "))
+                    trimmed["import ".len..]
+                else if (std.mem.startsWith(u8, trimmed, "use "))
+                    trimmed["use ".len..]
+                else
+                    continue;
+                const after_import = std.mem.trimLeft(u8, after_keyword, " \t");
                 // Check for std:: prefix
                 if (std.mem.startsWith(u8, after_import, "std::")) {
                     const mod_part = after_import["std::".len..];

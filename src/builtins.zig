@@ -12,9 +12,6 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "Handle",
     "Error",
     "Version",
-    "List",
-    "Map",
-    "Set",
     "Vector",
 };
 
@@ -124,9 +121,9 @@ test "builtin type detection" {
     try std.testing.expect(isBuiltinType("Error"));
     try std.testing.expect(!isBuiltinType("Player"));
     try std.testing.expect(!isBuiltinType("i32"));
-    try std.testing.expect(isBuiltinType("List"));
-    try std.testing.expect(isBuiltinType("Map"));
-    try std.testing.expect(isBuiltinType("Set"));
+    try std.testing.expect(!isBuiltinType("List"));
+    try std.testing.expect(!isBuiltinType("Map"));
+    try std.testing.expect(!isBuiltinType("Set"));
     try std.testing.expect(isBuiltinType("Version"));
     try std.testing.expect(!isBuiltinType("VersionRule"));
     try std.testing.expect(!isBuiltinType("Dependency"));

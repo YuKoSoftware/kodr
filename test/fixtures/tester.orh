@@ -8,6 +8,7 @@ module tester
 
 import std::console
 import std::allocator
+use std::collections
 
 // ─── Variables ───────────────────────────────────────────────
 
