@@ -75,6 +75,7 @@ None.
 |---|-------------|------|--------|-----------|
 | 1 | Move 25 files into codegen/, lsp/, mir/, zig_runner/ subdirs + peg/orhon.peg | 2026-03-29 | 452647e | 260329-ndd |
 | 2 | Thread safety arg enforcement: move, freeze, reject mutable borrow | 2026-03-29 | f9c27d9, f40ff27 | 260329-ozf |
+| 3 | PEG expected set — replace fixed arrays with std.EnumSet(TokenKind) | 2026-03-29 | dc47eae, 4646766 | 260329-rb1 |
 
 ### Blockers/Concerns
 
@@ -91,5 +92,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-29
-Stopped at: Completed quick task 260329-ozf: thread safety arg enforcement
+Stopped at: Completed quick task 260329-rb1: PEG expected set accumulation (EnumSet)
 Resume file: None
