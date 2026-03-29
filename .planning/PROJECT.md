@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.16.
+Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Currently at v0.17.
 
 ## Core Value
 
@@ -73,26 +73,15 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 
 ### Active
 
-(Defined in REQUIREMENTS.md for v0.17 Codegen Refactor & Error Quality)
-
-## Current Milestone: v0.17 Codegen Refactor & Error Quality
-
-**Goal:** Split the monolithic codegen into maintainable files and add developer-facing error improvements — better parse errors, type mismatch display, and fix suggestions.
-
-**Target features:**
-- Split codegen.zig (3262 lines) into 2-3 focused files with shared helpers
-- "Did you mean X?" suggestions for identifier typos
-- Expected vs actual display for type mismatches
-- Ownership/borrow violation fix suggestions
-- PEG expected-set accumulation (show all expected tokens)
+(Next milestone not yet defined — run `/gsd:new-milestone`)
 
 ## Current State
 
-**Version:** v0.16 (shipped 2026-03-28)
-**Tests:** 266 across 11 stages
-**Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14, v0.15, v0.16
+**Version:** v0.17 (shipped 2026-03-29)
+**Tests:** 269 across 11 stages
+**Milestones shipped:** v0.10, v0.11, v0.12, v0.13, v0.14, v0.15, v0.16, v0.17
 
-v0.17 complete — all 8 phases shipped: codegen split (29), error quality (30), PEG error messages (31), LSP split (32), MIR split (33), main split (34), zig-runner split (35), PEG builder split (36). 266 tests pass.
+All major compiler source files split into focused modules. Error messages now include typo suggestions, type mismatch display, and fix hints. PEG parser shows all expected tokens on failure. Incremental compilation uses content hashing (XxHash3) instead of timestamps. Codebase is well-modularized and ready for feature work.
 
 ### Out of Scope
 
@@ -135,6 +124,9 @@ v0.17 complete — all 8 phases shipped: codegen split (29), error quality (30),
 | Sidecar pub fixup via read-modify-write | Prepend `pub ` to export fn when missing, scanner advances past needle | ✓ v0.16 Phase 25 — no infinite loop |
 | Remove Async(T) entirely | Dead language construct, never implemented — clean removal over deprecation | ✓ v0.16 Phase 28 — no dead code |
 | 5-file codegen split (not 3-4) | Match/compiler-func section was larger than estimated; 5 files keeps all under 1200 lines | ✓ v0.17 Phase 29 — better than planned |
+| Underscore-prefixed module imports | Avoid Zig shadowing conflicts between import names and local variables | ✓ v0.17 Phase 33 — convention for all satellite files |
+| Adaptive Levenshtein threshold | 1 for names ≤4 chars, 2 for longer — reduces false positives on short identifiers | ✓ v0.17 Phase 30 — better suggestion quality |
+| Hub + satellite split pattern | All large file splits use same pattern: hub re-exports, satellites import from hub | ✓ v0.17 Phases 29-36 — consistent architecture |
 
 ## Evolution
 
@@ -154,4 +146,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after Phase 36 (PEG builder split) complete — v0.17 milestone finished*
+*Last updated: 2026-03-29 after v0.17 milestone complete*

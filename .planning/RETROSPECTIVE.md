@@ -120,6 +120,42 @@
 - 13 bugs in 4 phases (5 plans) is about right for a bug-fix milestone — focused enough to ship in one day
 - Removing dead code (Async(T)) should happen as soon as it's identified, not deferred
 
+## Milestone: v0.17 — Codegen Refactor & Error Quality
+
+**Shipped:** 2026-03-29
+**Phases:** 8 | **Plans:** 12
+
+### What Was Built
+- Codegen split: 4354-line monolith into 5 focused files (938-1082 lines each)
+- Error quality: "did you mean?" suggestions, type mismatch display, ownership/borrow fix hints
+- PEG expected-set accumulation for multi-token parse errors
+- 5 more module splits: LSP (9 files), MIR (6 files), main (7 files), zig_runner (4 files), builder (6 files)
+- 4 quick tasks: directory reorg, thread safety enforcement, EnumSet PEG, XxHash3 content hashing
+
+### What Worked
+- Hub-and-satellite pattern proved highly repeatable — once established in Phase 29 (codegen), Phases 32-36 followed the same pattern with minimal deviation
+- Wrapper stub pattern for Zig file splitting: hub re-exports types, satellites import from hub — avoids circular imports
+- Underscore-prefixed module import names convention (`_mir_types`) prevents shadowing conflicts systematically
+- Quick tasks (`/gsd:quick`) handled orthogonal improvements (thread safety, EnumSet, content hashing) without disrupting split phases
+- Parallel phase execution (32-36 were independent after Phase 29) allowed natural grouping
+
+### What Was Inefficient
+- Some SUMMARY.md one-liners were malformed (starting with "One-liner:" or "1. [Rule 1 - Bug]") — the summary-extract tool produced garbage for milestone accomplishments, requiring manual cleanup
+- Phase 35 (zig_runner) was smaller than expected (489 lines after prior slimming) — could have been folded into Phase 34
+- No milestone audit was run before completion — all requirements passed anyway but the process gap remains
+
+### Patterns Established
+- Hub + satellite split pattern as the standard approach for all large files (>1000 lines)
+- `anytype` parameter to break circular imports between satellite files (zig_runner_build/zig_runner_multi)
+- Adaptive Levenshtein threshold (1 for short names, 2 for longer) for typo suggestion quality
+- 12 guard checks before identifier error to prevent false "did you mean?" suggestions
+
+### Key Lessons
+- Refactoring milestones are fast (2 days for 8 phases) because the scope is mechanical — no design decisions, just moving code
+- The first split (Phase 29) takes longest because it establishes the pattern; subsequent splits are faster
+- Quick tasks are the right escape valve for "while we're in here" improvements that don't fit the milestone scope
+- Content hashing (XxHash3) for incremental compilation was a quick task that could have been a phase — it succeeded because the scope was narrow
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Duration | Theme |
@@ -131,3 +167,4 @@
 | v0.14 | 3 | 6 | 2 days | Build system & allocators |
 | v0.15 | 3 | 6 | 1 day | Language ergonomics |
 | v0.16 | 4 | 5 | 1 day | Bug fixes (zero workarounds) |
+| v0.17 | 8 | 12 | 2 days | Codegen refactor & error quality |

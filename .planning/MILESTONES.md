@@ -1,5 +1,26 @@
 # Milestones
 
+## v0.17 Codegen Refactor & Error Quality (Shipped: 2026-03-29)
+
+**Phases completed:** 8 phases, 12 plans
+**Stats:** 139 files changed, +28,519 / -14,516 lines, 119 commits
+**Timeline:** 2026-03-28 → 2026-03-29 (2 days)
+**Tests:** 269 across 11 stages
+
+**Key accomplishments:**
+
+- codegen.zig split from 4354-line monolith into 5 focused files (938-1082 lines each) with byte-for-byte identical output
+- "Did you mean?" typo suggestions, "expected X, got Y" type mismatch display, and ownership/borrow/thread fix hints added to compiler errors
+- PEG engine accumulates all expected tokens at furthest failure position for multi-token parse errors
+- lsp.zig (3301 lines) split into 9 focused handler modules, all under 640 lines
+- mir.zig (2356 lines) split into 6 satellite modules with 15-line re-export facade
+- main.zig (2315 lines) split into pipeline.zig, commands.zig, cli.zig, init.zig, std_bundle.zig, interface.zig — main reduced to 131-line dispatcher
+- zig_runner.zig split into runner core + build gen + multi-target gen + discovery
+- builder.zig (1836 lines) split into hub + 5 satellites (decls, bridge, stmts, exprs, types)
+- 4 quick tasks: directory reorg (25 files into subdirs), thread safety arg enforcement, EnumSet PEG expected-set, XxHash3 content hashing for incremental compilation
+
+---
+
 ## v0.16 Bug Fixes (Shipped: 2026-03-28)
 
 **Phases completed:** 4 phases, 5 plans, 11 tasks
