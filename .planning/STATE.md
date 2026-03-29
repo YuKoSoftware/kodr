@@ -62,6 +62,7 @@ None.
 - 260329-t2l: Remove dead types (VersionRule, Dependency) from BUILTIN_TYPES
 - 260329-w2f: Semantic token-stream hashing for incremental cache (hashSemanticContent)
 - 260329-wak: Interface diffing for incremental compilation (hashInterface + pipeline integration)
+- 260330-04a: Comma-separated library names in #cimport name field
 
 ### Blockers/Concerns
 
