@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
 status: verifying
-stopped_at: Phase 36 context gathered
-last_updated: "2026-03-29T12:41:30.567Z"
+stopped_at: Completed 36-01-PLAN.md — peg builder split done
+last_updated: "2026-03-29T13:16:18.383Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 8
-  completed_phases: 7
-  total_plans: 11
-  completed_plans: 11
+  completed_phases: 8
+  total_plans: 12
+  completed_plans: 12
   percent: 0
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 35 — zig-runner-split
+**Current focus:** Phase 36 — peg-builder-split
 
 ## Current Position
 
-Phase: 36
-Plan: Not started
+Phase: 36 (peg-builder-split) — EXECUTING
+Plan: 1 of 1
 Status: Phase complete — ready for verification
 Last activity: 2026-03-29
 
@@ -64,6 +64,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 33-mir-split]: mir.zig reduced to 15-line re-export facade — all 6 mir_*.zig files contain implementations
 - [Phase 34-main-split]: pipeline.zig calls _commands directly for emitZigProject/moveArtifactsToSubfolder — avoids main.zig routing
 - [Phase 35-zig-runner-split]: anytype for generateSharedCImportFiles targets param — avoids circular import between zig_runner_build and zig_runner_multi
+- [Phase 36-peg-builder-split]: Peg satellites not in build.zig test_files: src/peg/ relative imports break standalone compilation
+- [Phase 36-peg-builder-split]: collectStructParts+hasPubBefore+setPub in hub as pub fn — shared by decls and bridge satellites, avoids cross-satellite imports
 
 ### Pending Todos
 
@@ -85,9 +87,10 @@ None.
 | Phase 33-mir-split P02 | 15m | 1 tasks | 4 files |
 | Phase 34-main-split P02 | 15 | 2 tasks | 4 files |
 | Phase 35-zig-runner-split P01 | 10m | 2 tasks | 5 files |
+| Phase 36-peg-builder-split P01 | 20min | 2 tasks | 6 files |
 
 ## Session Continuity
 
 Last activity: 2026-03-28
-Stopped at: Phase 36 context gathered
-Resume file: .planning/phases/36-peg-builder-split/36-CONTEXT.md
+Stopped at: Completed 36-01-PLAN.md — peg builder split done
+Resume file: None

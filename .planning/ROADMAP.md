@@ -76,7 +76,7 @@ See: [milestones/v0.16-ROADMAP.md](milestones/v0.16-ROADMAP.md)
 - [x] **Phase 33: MIR Split** - Split mir.zig (2356 lines) into types, registry, node, annotator, lowerer, and utils (completed 2026-03-29)
 - [x] **Phase 34: Main Split** - Split main.zig (2315 lines) into CLI, pipeline, init, stdlib bundler, and interface gen (completed 2026-03-29)
 - [x] **Phase 35: Zig Runner Split** - Split zig_runner.zig (1952 lines) into runner, build gen, multi-target gen, and discovery (completed 2026-03-29)
-- [ ] **Phase 36: PEG Builder Split** - Split peg/builder.zig (1836 lines) into context, dispatch, decls, stmts, exprs, and types
+- [x] **Phase 36: PEG Builder Split** - Split peg/builder.zig (1836 lines) into context, dispatch, decls, stmts, exprs, and types (completed 2026-03-29)
 
 ## Phase Details
 
@@ -183,9 +183,9 @@ Plans:
   2. Split follows the same decls/stmts/exprs/types pattern as the codegen split (Phase 29)
   3. Dispatch table remains centralized in one file importing all builder categories
   4. `./testall.sh` passes all tests — PEG builder tests pass in their new locations
-**Plans:** 1/1 plans
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 36-01-PLAN.md — Split builder.zig into hub + 5 satellites (decls, bridge, stmts, exprs, types) with dispatch routing
+- [x] 36-01-PLAN.md — Split builder.zig into hub + 5 satellites (decls, bridge, stmts, exprs, types) with dispatch routing
 
 ## Progress
 
@@ -205,4 +205,4 @@ Plans:
 | 33 | v0.17 | 2/2 | Complete    | 2026-03-29 |
 | 34 | v0.17 | 2/2 | Complete    | 2026-03-29 |
 | 35 | v0.17 | 1/1 | Complete    | 2026-03-29 |
-| 36 | v0.17 | 0/? | Not started | - |
+| 36 | v0.17 | 1/1 | Complete   | 2026-03-29 |

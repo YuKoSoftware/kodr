@@ -30,8 +30,8 @@ Requirements for v0.17 Codegen Refactor & Error Quality milestone. Each maps to 
 - [x] **SPLIT-02**: Zero behavior change gate — `./testall.sh` passes all tests before and after each split, unit tests work in new locations
 - [x] **SPLIT-03**: mir.zig split into 6+ files — types, registry, node, annotator, lowerer, and utils
 - [x] **SPLIT-04**: main.zig split into 6+ files — CLI, pipeline, project init, stdlib bundler, interface gen, and slim dispatcher
-- [ ] **SPLIT-05**: zig_runner.zig split into 4+ files — runner core, single-target build gen, multi-target build gen, and Zig discovery
-- [ ] **SPLIT-06**: peg/builder.zig split into 6+ files — context, dispatch, decls, stmts, exprs, and types (mirrors codegen pattern)
+- [x] **SPLIT-05**: zig_runner.zig split into 4+ files — runner core, single-target build gen, multi-target build gen, and Zig discovery
+- [x] **SPLIT-06**: peg/builder.zig split into 6+ files — context, dispatch, decls, stmts, exprs, and types (mirrors codegen pattern)
 
 ## Future Requirements
 
@@ -63,8 +63,8 @@ None deferred — all Tier 2 items included in v0.17.
 | SPLIT-02 | Phases 32-36 | Complete |
 | SPLIT-03 | Phase 33 | Complete |
 | SPLIT-04 | Phase 34 | Complete |
-| SPLIT-05 | Phase 35 | Pending |
-| SPLIT-06 | Phase 36 | Pending |
+| SPLIT-05 | Phase 35 | Complete |
+| SPLIT-06 | Phase 36 | Complete |
 
 **Coverage:**
 - v0.17 requirements: 14 total
