@@ -156,7 +156,10 @@ Plans:
   2. Pipeline orchestration (runPipeline) is in its own file
   3. CLI parsing, project init, stdlib bundling, and interface generation are separate modules
   4. `./testall.sh` passes all tests — pipeline integration tests pass in their new locations
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 34-01-PLAN.md — Extract foundation modules (cli.zig, init.zig, std_bundle.zig, interface.zig)
+- [ ] 34-02-PLAN.md — Extract pipeline.zig and commands.zig, finalize main.zig facade
 
 ### Phase 35: Zig Runner Split
 **Goal**: zig_runner.zig is broken into focused files (runner, single-target build gen, multi-target build gen, discovery) with no behavior change — all tests pass
@@ -196,6 +199,6 @@ Plans:
 | 31 | v0.17 | 1/1 | Complete    | 2026-03-28 |
 | 32 | v0.17 | 2/2 | Complete    | 2026-03-29 |
 | 33 | v0.17 | 2/2 | Complete    | 2026-03-29 |
-| 34 | v0.17 | 0/? | Not started | - |
+| 34 | v0.17 | 0/2 | Not started | - |
 | 35 | v0.17 | 0/? | Not started | - |
 | 36 | v0.17 | 0/? | Not started | - |
