@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
-status: verifying
+status: executing
 stopped_at: Phase 34 context gathered
-last_updated: "2026-03-29T09:31:58.074Z"
-last_activity: 2026-03-29
+last_updated: "2026-03-29T09:49:58.791Z"
+last_activity: 2026-03-29 -- Phase 34 execution started
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 8
+  total_plans: 10
   completed_plans: 8
   percent: 0
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 33 — mir-split
+**Current focus:** Phase 34 — main-split
 
 ## Current Position
 
-Phase: 34
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-03-29
+Phase: 34 (main-split) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 34
+Last activity: 2026-03-29 -- Phase 34 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
