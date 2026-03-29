@@ -64,6 +64,8 @@ A clean, correct compiler with zero workarounds — every bug fixed, every error
 - ✓ Cross-compilation target fix, -fast cache cleanup, Async(T) removal, TODO.md cleanup — v0.16 Phase 28
 - ✓ Codegen split — monolithic codegen.zig (4354 lines) into 5 focused files, all under 1200 lines — v0.17 Phase 29
 - ✓ Error quality — "did you mean?" typo suggestions, "expected X, got Y" type mismatch display, ownership/borrow/thread fix hints — v0.17 Phase 30
+- ✓ PEG error messages — multi-token expected-set accumulation in parse errors — v0.17 Phase 31
+- ✓ LSP split — monolithic lsp.zig (3303 lines) into 9 focused files, all under 640 lines — v0.17 Phase 32
 
 ### Active
 
