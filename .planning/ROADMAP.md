@@ -75,7 +75,7 @@ See: [milestones/v0.16-ROADMAP.md](milestones/v0.16-ROADMAP.md)
 - [x] **Phase 32: LSP Split** - Split lsp.zig (3301 lines) into types, JSON, analysis, handlers, and server loop (completed 2026-03-29)
 - [x] **Phase 33: MIR Split** - Split mir.zig (2356 lines) into types, registry, node, annotator, lowerer, and utils (completed 2026-03-29)
 - [x] **Phase 34: Main Split** - Split main.zig (2315 lines) into CLI, pipeline, init, stdlib bundler, and interface gen (completed 2026-03-29)
-- [ ] **Phase 35: Zig Runner Split** - Split zig_runner.zig (1952 lines) into runner, build gen, multi-target gen, and discovery
+- [x] **Phase 35: Zig Runner Split** - Split zig_runner.zig (1952 lines) into runner, build gen, multi-target gen, and discovery (completed 2026-03-29)
 - [ ] **Phase 36: PEG Builder Split** - Split peg/builder.zig (1836 lines) into context, dispatch, decls, stmts, exprs, and types
 
 ## Phase Details
@@ -170,9 +170,9 @@ Plans:
   2. buildZigContent (414 lines) and buildZigContentMulti (594 lines) are in separate files
   3. Zig binary discovery is in its own module
   4. `./testall.sh` passes all tests — build generation tests pass in their new locations
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 35-01-PLAN.md — Extract zig_runner_build.zig, zig_runner_multi.zig, zig_runner_discovery.zig; reduce zig_runner.zig to re-export facade
+- [x] 35-01-PLAN.md — Extract zig_runner_build.zig, zig_runner_multi.zig, zig_runner_discovery.zig; reduce zig_runner.zig to re-export facade
 
 ### Phase 36: PEG Builder Split
 **Goal**: peg/builder.zig is broken into focused files (context, dispatch, decls, stmts, exprs, types) mirroring the codegen split pattern — all tests pass
@@ -202,5 +202,5 @@ Plans:
 | 32 | v0.17 | 2/2 | Complete    | 2026-03-29 |
 | 33 | v0.17 | 2/2 | Complete    | 2026-03-29 |
 | 34 | v0.17 | 2/2 | Complete    | 2026-03-29 |
-| 35 | v0.17 | 0/1 | Not started | - |
+| 35 | v0.17 | 1/1 | Complete   | 2026-03-29 |
 | 36 | v0.17 | 0/? | Not started | - |

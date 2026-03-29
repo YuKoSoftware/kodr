@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.17
 milestone_name: Codegen Refactor & Error Quality
-status: executing
-stopped_at: Phase 35 context gathered
-last_updated: "2026-03-29T11:30:07.244Z"
+status: verifying
+stopped_at: Completed 35-01-PLAN.md
+last_updated: "2026-03-29T11:57:31.644Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 8
-  completed_phases: 6
-  total_plans: 10
-  completed_plans: 10
+  completed_phases: 7
+  total_plans: 11
+  completed_plans: 11
   percent: 0
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-**Current focus:** Phase 34 — main-split
+**Current focus:** Phase 35 — zig-runner-split
 
 ## Current Position
 
-Phase: 35
-Plan: Not started
-Status: Ready to execute
+Phase: 35 (zig-runner-split) — EXECUTING
+Plan: 1 of 1
+Status: Phase complete — ready for verification
 Last activity: 2026-03-29
 
 Progress: [░░░░░░░░░░] 0%
@@ -63,6 +63,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - [Phase 33-mir-split]: pub const re-exports in mir.zig for all 9 moved types — zero downstream changes required
 - [Phase 33-mir-split]: mir.zig reduced to 15-line re-export facade — all 6 mir_*.zig files contain implementations
 - [Phase 34-main-split]: pipeline.zig calls _commands directly for emitZigProject/moveArtifactsToSubfolder — avoids main.zig routing
+- [Phase 35-zig-runner-split]: anytype for generateSharedCImportFiles targets param — avoids circular import between zig_runner_build and zig_runner_multi
 
 ### Pending Todos
 
@@ -83,9 +84,10 @@ None.
 | Phase 33-mir-split P01 | 10 | 1 tasks | 5 files |
 | Phase 33-mir-split P02 | 15m | 1 tasks | 4 files |
 | Phase 34-main-split P02 | 15 | 2 tasks | 4 files |
+| Phase 35-zig-runner-split P01 | 10m | 2 tasks | 5 files |
 
 ## Session Continuity
 
 Last activity: 2026-03-28
-Stopped at: Phase 35 context gathered
-Resume file: .planning/phases/35-zig-runner-split/35-CONTEXT.md
+Stopped at: Completed 35-01-PLAN.md
+Resume file: None
