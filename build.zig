@@ -70,6 +70,8 @@ pub fn build(b: *std.Build) void {
         "src/lsp_analysis.zig",
         "src/lsp_nav.zig",
         "src/lsp_edit.zig",
+        "src/lsp_view.zig",
+        "src/lsp_semantic.zig",
         "src/peg.zig",
     };
 
