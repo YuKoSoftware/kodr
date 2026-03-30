@@ -69,6 +69,7 @@ None.
 - 260330-doe: MIR residual AST audit — 4 migrated, 6 documented as permanent boundary
 - 260330-e1b: Codegen snapshot tests — 4 fixture pairs, diff-based regression detection
 - 260330-ern: std::async bridge module — Atomic(T) wrapping std.atomic.Value(T), 4 unit tests, PEG validated
+- 260330-uvu: const& and mut& compound borrow tokens — lexer, PEG, AST rename, 38 files migrated, all 277 tests pass
 
 ### Blockers/Concerns
 
@@ -77,5 +78,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-30
-Stopped at: Completed quick-260330-e1b
+Stopped at: Completed quick-260330-uvu
 Resume file: None
