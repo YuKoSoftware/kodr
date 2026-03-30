@@ -22,7 +22,7 @@ pub fn Atomic(comptime T: type) type {
             self.inner.store(val, .seq_cst);
         }
 
-        pub fn swap(self: *Self, val: T) T {
+        pub fn exchange(self: *Self, val: T) T {
             return self.inner.swap(val, .seq_cst);
         }
 
@@ -44,9 +44,9 @@ test "Atomic basic" {
     try std.testing.expectEqual(@as(i32, 42), a.load());
 }
 
-test "Atomic swap" {
+test "Atomic exchange" {
     var a = Atomic(i32).new(10);
-    const old = a.swap(20);
+    const old = a.exchange(20);
     try std.testing.expectEqual(@as(i32, 10), old);
     try std.testing.expectEqual(@as(i32, 20), a.load());
 }

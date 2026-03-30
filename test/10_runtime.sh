@@ -47,6 +47,7 @@ for TEST_NAME in \
     interpolation interpolation_int \
     string_eq string_ne string_eq_literal string_eq_param \
     thread thread_multi thread_params thread_void thread_done thread_join \
+    atomic atomic_fetch atomic_swap atomic_bool \
     map_get \
     bitfield_constructor bitfield_methods \
     const_auto_borrow var_caller_promoted const_copy \

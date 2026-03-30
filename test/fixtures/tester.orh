@@ -9,6 +9,7 @@ module tester
 import std::console
 import std::allocator
 use std::collections
+use std::async
 
 // ─── Variables ───────────────────────────────────────────────
 
@@ -1375,6 +1376,44 @@ pub func test_thread_join() i32 {
     var h: Handle(i32) = doubler(99)
     h.join()
     return 1
+}
+
+// ─── Atomics ────────────────────────────────────────────────
+
+// Atomic(T) — lock-free shared state
+
+pub func test_atomic() i32 {
+    var a: Atomic(i32) = Atomic(i32).new(0)
+    a.store(42)
+    return a.load()
+}
+
+// atomic fetch operations
+
+pub func test_atomic_fetch() i32 {
+    var a: Atomic(i32) = Atomic(i32).new(10)
+    a.fetchAdd(5)
+    a.fetchSub(3)
+    return a.load()
+}
+
+// atomic swap
+
+pub func test_atomic_swap() i32 {
+    var a: Atomic(i32) = Atomic(i32).new(100)
+    const old: i32 = a.exchange(200)
+    return old
+}
+
+// atomic bool — the pattern used for thread cancellation flags
+
+pub func test_atomic_bool() i32 {
+    var flag: Atomic(bool) = Atomic(bool).new(false)
+    flag.store(true)
+    if (flag.load()) {
+        return 1
+    }
+    return 0
 }
 
 // ─── Bitfields ───────────────────────────────────────────────

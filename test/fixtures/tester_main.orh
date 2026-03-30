@@ -590,6 +590,30 @@ func main() void {
         console.println("FAIL thread_join")
     }
 
+    if(tester.test_atomic() == 42) {
+        console.println("PASS atomic")
+    } else {
+        console.println("FAIL atomic")
+    }
+
+    if(tester.test_atomic_fetch() == 12) {
+        console.println("PASS atomic_fetch")
+    } else {
+        console.println("FAIL atomic_fetch")
+    }
+
+    if(tester.test_atomic_swap() == 100) {
+        console.println("PASS atomic_swap")
+    } else {
+        console.println("FAIL atomic_swap")
+    }
+
+    if(tester.test_atomic_bool() == 1) {
+        console.println("PASS atomic_bool")
+    } else {
+        console.println("FAIL atomic_bool")
+    }
+
     if(tester.test_map_get() == 77) {
         console.println("PASS map_get")
     } else {
