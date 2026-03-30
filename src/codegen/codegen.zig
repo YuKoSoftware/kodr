@@ -51,10 +51,12 @@ pub const CodeGen = struct {
     var_types: ?*const std.StringHashMapUnmanaged(mir.NodeInfo) = null,
     // Const auto-borrow: function name → set of param indices promoted to *const T
     const_ref_params: ?*const std.StringHashMapUnmanaged(std.AutoHashMapUnmanaged(usize, void)) = null,
+    // AST-path-only: set by generateFunc/generateThreadFunc for legacy AST codegen path.
+    // MIR-path uses current_func_mir instead.
     current_func_node: ?*parser.Node = null,
     // MIR tree — Phase 3 lowered tree (available for incremental migration)
     mir_root: ?*mir.MirNode = null,
-    // MIR node for the current function — replaces current_func_node progressively
+    // MIR node for the current function — set by generateFuncMir/generateThreadFuncMir.
     current_func_mir: ?*mir.MirNode = null,
     // Pre-statement hoisting buffer — interpolation temp vars are appended here,
     // flushed to main output before the statement that references them.
@@ -90,23 +92,17 @@ pub const CodeGen = struct {
     }
 
     /// Get the TypeClass of the current function's return type from MIR.
+    /// Only valid in MIR-path codegen (current_func_mir set by generateFuncMir).
     pub fn funcReturnTypeClass(self: *const CodeGen) mir.TypeClass {
         if (self.current_func_mir) |m| return m.type_class;
-        if (self.current_func_node) |fn_node| {
-            if (self.getNodeInfo(fn_node)) |info| return info.type_class;
-        }
         return .plain;
     }
 
     /// Get the union members of the current function's return type from MIR.
+    /// Only valid in MIR-path codegen (current_func_mir set by generateFuncMir).
     pub fn funcReturnMembers(self: *const CodeGen) ?[]const RT {
         if (self.current_func_mir) |m| {
             if (m.resolved_type == .union_type) return m.resolved_type.union_type;
-        }
-        if (self.current_func_node) |fn_node| {
-            if (self.getNodeInfo(fn_node)) |info| {
-                if (info.resolved_type == .union_type) return info.resolved_type.union_type;
-            }
         }
         return null;
     }
@@ -189,6 +185,11 @@ pub const CodeGen = struct {
             }
         }
         return null;
+    }
+
+    /// Source location from MirNode — convenience wrapper over nodeLoc.
+    pub fn nodeLocMir(self: *const CodeGen, m: *const mir.MirNode) ?errors.SourceLoc {
+        return self.nodeLoc(m.ast);
     }
 
     /// Check if a name is an enum variant in any declared enum

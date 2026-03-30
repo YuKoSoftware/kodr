@@ -245,7 +245,7 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             if (callee_is_ident and std.mem.eql(u8, callee_name, "Version")) {
                 try cg.reporter.report(.{
                     .message = "Version() can only be used in #version metadata",
-                    .loc = cg.nodeLoc(m.ast),
+                    .loc = cg.nodeLocMir(m),
                 });
                 return;
             }

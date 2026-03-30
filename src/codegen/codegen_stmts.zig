@@ -82,7 +82,7 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     const msg = try std.fmt.allocPrint(cg.allocator,
                         "'{s}' is declared as var but never reassigned — use const", .{var_name});
                     defer cg.allocator.free(msg);
-                    try cg.reporter.warn(.{ .message = msg, .loc = cg.nodeLoc(m.ast) });
+                    try cg.reporter.warn(.{ .message = msg, .loc = cg.nodeLocMir(m) });
                 }
                 try cg.generateStmtDeclMir(m, decl_keyword);
             }

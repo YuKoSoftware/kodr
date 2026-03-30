@@ -106,8 +106,8 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         !m.is_bridge and !std.mem.eql(u8, func_name, "main")) return;
 
     // Track current function for MIR return type queries
-    const prev_func_node = cg.current_func_node;
-    cg.current_func_node = m.ast;
+    const prev_func_mir = cg.current_func_mir;
+    cg.current_func_mir = m;
     const prev_reassigned_vars = cg.reassigned_vars;
     cg.reassigned_vars = .{};
     try collectAssignedMir(m.body(), &cg.reassigned_vars, cg.allocator);
@@ -116,7 +116,7 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const prev_null_narrowed = cg.null_narrowed;
     cg.null_narrowed = .{};
     defer {
-        cg.current_func_node = prev_func_node;
+        cg.current_func_mir = prev_func_mir;
         cg.reassigned_vars.deinit(cg.allocator);
         cg.reassigned_vars = prev_reassigned_vars;
         cg.error_narrowed.deinit(cg.allocator);
@@ -206,13 +206,13 @@ pub fn generateThreadFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
 
     // Body function
     {
-        const prev_func_node = cg.current_func_node;
-        cg.current_func_node = m.ast;
+        const prev_func_mir = cg.current_func_mir;
+        cg.current_func_mir = m;
         const prev_assigned = cg.reassigned_vars;
         cg.reassigned_vars = .{};
         try collectAssignedMir(m.body(), &cg.reassigned_vars, cg.allocator);
         defer {
-            cg.current_func_node = prev_func_node;
+            cg.current_func_mir = prev_func_mir;
             cg.reassigned_vars.deinit(cg.allocator);
             cg.reassigned_vars = prev_assigned;
         }
