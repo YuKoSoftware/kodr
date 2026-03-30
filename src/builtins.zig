@@ -45,8 +45,6 @@ pub const BUILD_FIELDS = [_][]const u8{
     "description",
     "icon",
     "deps",
-    "allocator",
-    "gpu",
 };
 
 /// Build type values for #build metadata
