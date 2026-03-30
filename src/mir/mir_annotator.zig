@@ -294,6 +294,10 @@ pub const MirAnnotator = struct {
                 try self.annotateExpr(node);
                 try self.annotateNode(b);
             },
+            .const_borrow_expr => |b| {
+                try self.annotateExpr(node);
+                try self.annotateNode(b);
+            },
             .collection_expr => |c| {
                 try self.annotateExpr(node);
                 for (c.type_args) |arg| try self.annotateNode(arg);

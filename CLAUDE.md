@@ -1,14 +1,33 @@
 # Orhon — Claude Project Instructions
 
+# The Orhon programming language compiler
+
+## code 
+- no workarounds
+- no hacked code
+- always cleanup, no lingering stale code
+- clean and correct code
+- always log bugs and other problems
+- modular and maintainable code
+- correct mechanics
+- keep code well organized
+- use correct type, variable, function, module and folder names
+## comments 
+- comments stay up to date
+## project 
+- don't bloat files, separate logically into files and folders
+- always be clear what you want to implement
+- always be clear about the changes
+- keep project well organized
+- only well researched changes, don't step into the dark
+## documentation
+- keep documentation up to date and well organized
+- docs are managed with Obsidian — use `[[wikilinks]]` for cross-references between doc files
+- doc files live in `docs/` — the vault root is the project root
 ## What This Project Is
 Orhon is a compiled, memory-safe programming language that transpiles to Zig.
 Written in Zig 0.15.x. Lives entirely in `src/`.
 One-sentence pitch: *"A simple yet powerful language that is safe."*
-
-**IMPORTANT.txt** in project root is the **highest-authority document** in this project.
-It contains the enforced rules for all work. Only the user may edit it — Claude must NEVER
-modify IMPORTANT.txt. Read it at the start of every session and before making changes.
-Rules in IMPORTANT.txt override any conflicting guidance elsewhere.
 
 **Full language spec:** `docs/` folder — read relevant files before making any decisions about
 language behavior, syntax, or semantics. Do not rely on memory or assumptions — check the spec.
@@ -29,19 +48,19 @@ zig build -Doptimize=ReleaseFast  # release build
 Always run `./testall.sh` after changes. Test files live in `test/`, each independently
 runnable. Pipeline order:
 
-| File | What it tests |
-|------|---------------|
-| `test/01_unit.sh` | Zig unit tests (`zig build test`) |
-| `test/02_build.sh` | Compile the compiler (`zig build`) |
-| `test/03_cli.sh` | CLI args, help, error exits |
-| `test/04_init.sh` | `orhon init` + embedded std scaffolding |
-| `test/05_compile.sh` | `orhon build`, `orhon run`, `orhon test`, `orhon debug`, incremental |
-| `test/06_library.sh` | Static + dynamic library builds |
-| `test/07_multimodule.sh` | Multi-module project builds |
-| `test/08_codegen.sh` | Generated Zig quality checks |
-| `test/09_language.sh` | Language feature codegen (example + tester modules) |
-| `test/10_runtime.sh` | Runtime correctness (tester binary output) |
-| `test/11_errors.sh` | Negative tests (expected compilation failures) |
+| File                     | What it tests                                                        |
+| ------------------------ | -------------------------------------------------------------------- |
+| `test/01_unit.sh`        | Zig unit tests (`zig build test`)                                    |
+| `test/02_build.sh`       | Compile the compiler (`zig build`)                                   |
+| `test/03_cli.sh`         | CLI args, help, error exits                                          |
+| `test/04_init.sh`        | `orhon init` + embedded std scaffolding                              |
+| `test/05_compile.sh`     | `orhon build`, `orhon run`, `orhon test`, `orhon debug`, incremental |
+| `test/06_library.sh`     | Static + dynamic library builds                                      |
+| `test/07_multimodule.sh` | Multi-module project builds                                          |
+| `test/08_codegen.sh`     | Generated Zig quality checks                                         |
+| `test/09_language.sh`    | Language feature codegen (example + tester modules)                  |
+| `test/10_runtime.sh`     | Runtime correctness (tester binary output)                           |
+| `test/11_errors.sh`      | Negative tests (expected compilation failures)                       |
 
 Test fixtures (`.orh` files used by tests) live in `test/fixtures/`.
 
@@ -139,23 +158,6 @@ Each file in the example module starts with `module example` and is embedded via
 
 ## Workflow Rules
 
-### Cleanliness
-Keep the project structure clean and organized. Remove unnecessary files, stale
-logs, and unused artifacts. No orphan files lingering in the root. If something
-is no longer used, delete it — don't leave it around "just in case."
-
-### Code quality
-- Write clean, structured code — no hacky code or workarounds
-- No messy code — if a solution feels fragile or unclear, rethink it
-- Correct mechanics — ensure the implementation is technically sound, not just passing
-- Modular and maintainable code — favor clear structure over clever shortcuts
-- Keep comments up to date — when code changes, update or remove nearby comments
-  so they always reflect what the code actually does
-- Always log bugs and other problems — don't silently work around issues
-- Only well-researched changes — understand the problem and solution before coding.
-  Don't step into the dark.
-- Always be clear what you want to implement and about the changes being made
-
 ### No special treatment rule
 The compiler must not give special treatment to stdlib types or functions. Only
 **core language types** (`Ptr`, `RawPtr`, `VolatilePtr`, `Handle`, `Error`, `Vector`)
@@ -204,24 +206,6 @@ stress test for the compiler.
 Its primary value to us: bugs discovered while building the framework are logged
 in `docs/bugs.md` and language design feedback in `docs/ideas.md`. Read these
 files to understand what compiler issues need fixing.
-
-<!-- GSD:project-start source:PROJECT.md -->
-## Project
-
-**Orhon Compiler**
-
-Orhon is a compiled, memory-safe programming language that transpiles to Zig. Written in Zig 0.15.x, it targets developers who want Rust-level safety with Zig-level simplicity. The compiler implements a 12-pass pipeline from source to native binary, with ownership tracking, borrow checking, thread safety analysis, and incremental compilation. Version is defined in `build.zig.zon`.
-
-**Core Value:** A clean, correct compiler with zero workarounds — every bug fixed, every error propagated, every code path honest.
-
-### Constraints
-
-- **Language**: Zig 0.15.2+ — all compiler code is Zig, targets Codeberg for references
-- **Architecture**: No runtime libraries — all stdlib through bridge modules, native Zig types only
-- **Testing**: `./testall.sh` is the gate — 11 test stages must pass
-- **Quality**: No hacky workarounds — clean fixes only
-- **Compatibility**: Changes must not break existing `.orh` programs or the example module
-<!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:codebase/STACK.md -->
 ## Technology Stack

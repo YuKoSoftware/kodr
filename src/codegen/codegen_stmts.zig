@@ -297,6 +297,12 @@ pub fn generateExpr(cg: *CodeGen, node: *parser.Node) anyerror!void {
             try cg.emit("&");
             try cg.generateExpr(inner);
         },
+        .const_borrow_expr => |inner| {
+            // const &expr — explicit const borrow; Zig uses &x for both mutable/const borrows,
+            // constness is determined by the pointer type annotation, not the expression syntax.
+            try cg.emit("&");
+            try cg.generateExpr(inner);
+        },
         .array_literal => |items| {
             try cg.emit(".{");
             for (items, 0..) |item, i| {

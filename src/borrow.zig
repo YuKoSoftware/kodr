@@ -90,10 +90,15 @@ pub const BorrowChecker = struct {
         switch (node.*) {
             .var_decl => |v| {
                 // If the type is var &T and value is &x, it's a mutable borrow
+                // If value is const &x, it's always an immutable borrow
                 if (v.value.* == .borrow_expr) {
                     const is_mut = isMutableBorrowType(v.type_annotation);
                     if (extractBorrowTarget(v.value.borrow_expr)) |target| {
                         try self.addBorrow(target.variable, target.field, is_mut);
+                    }
+                } else if (v.value.* == .const_borrow_expr) {
+                    if (extractBorrowTarget(v.value.const_borrow_expr)) |target| {
+                        try self.addBorrow(target.variable, target.field, false); // always immutable
                     }
                 } else {
                     try self.checkExpr(v.value);
@@ -102,10 +107,15 @@ pub const BorrowChecker = struct {
             .const_decl => |v| {
                 // Borrow mutability comes from the type annotation (&T vs const &T),
                 // not from const/var — const binding to &T is still a mutable borrow
+                // const &x always produces an immutable borrow
                 if (v.value.* == .borrow_expr) {
                     const is_mut = isMutableBorrowType(v.type_annotation);
                     if (extractBorrowTarget(v.value.borrow_expr)) |target| {
                         try self.addBorrow(target.variable, target.field, is_mut);
+                    }
+                } else if (v.value.* == .const_borrow_expr) {
+                    if (extractBorrowTarget(v.value.const_borrow_expr)) |target| {
+                        try self.addBorrow(target.variable, target.field, false); // always immutable
                     }
                 } else {
                     try self.checkExpr(v.value);
@@ -162,6 +172,10 @@ pub const BorrowChecker = struct {
                     if (extractBorrowTarget(a.right.borrow_expr)) |target| {
                         try self.addBorrow(target.variable, target.field, is_mut);
                     }
+                } else if (a.right.* == .const_borrow_expr) {
+                    if (extractBorrowTarget(a.right.const_borrow_expr)) |target| {
+                        try self.addBorrow(target.variable, target.field, false); // always immutable
+                    }
                 }
                 // Check that borrowed variables aren't used while mutably borrowed
                 try self.checkExprAccess(a.left);
@@ -176,6 +190,13 @@ pub const BorrowChecker = struct {
         switch (node.*) {
             .borrow_expr => |inner| {
                 // Bare & in expression context (e.g. function call arg) — default immutable
+                if (extractBorrowTarget(inner)) |target| {
+                    try self.addBorrow(target.variable, target.field, false);
+                }
+                try self.checkExpr(inner);
+            },
+            .const_borrow_expr => |inner| {
+                // Explicit const & in expression context — always immutable
                 if (extractBorrowTarget(inner)) |target| {
                     try self.addBorrow(target.variable, target.field, false);
                 }

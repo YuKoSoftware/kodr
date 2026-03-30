@@ -7,17 +7,12 @@ Research sources: `.planning/research/` (compiler-techniques, zig-ecosystem, lan
 
 ## Bugs
 
-### `const &expr` not parseable as call argument
+### ~~`const &expr` not parseable as call argument~~ DONE (v0.10.30)
 
-`const &flag` in a function call (e.g., `worker(const &flag)`) fails to parse —
-the PEG grammar doesn't support `const &` as an expression-level borrow operator
-in argument position. It works in type annotations (`flag: const &Atomic(bool)`)
-but not in expressions. This blocks passing explicit const borrows to thread
-functions, which is needed for the `Atomic(bool)` cancellation pattern.
-
-Workaround: rely on const auto-borrow (the compiler auto-borrows const values as
-`*const T`). But for threads, the thread safety checker may need explicit borrow
-syntax to distinguish move vs borrow semantics.
+`const &flag` in a function call (e.g., `worker(const &flag)`) now parses and
+compiles correctly. The `const &` expression-level borrow is handled in the PEG
+`unary_expr` rule, produces a `const_borrow_expr` AST node, and is treated as an
+immutable borrow in all passes. Codegen emits `&x` (Zig constness is in the type).
 
 ### ~~`@` prefix for compiler functions~~ DONE (v0.10.30)
 

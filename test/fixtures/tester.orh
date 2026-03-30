@@ -1590,3 +1590,25 @@ pub func test_negative_args() i32 {
 test "negative literal args" {
     @assert(test_negative_args() == 1)
 }
+
+// ─── Const Borrow Expr ───────────────────────────────────────
+
+// const &expr in call argument position — explicit const borrow passing.
+// Uses a struct parameter to verify the const & syntax parses and compiles.
+
+pub struct BorrowTarget {
+    pub value: i32
+}
+
+func read_borrow_target(t: const &BorrowTarget) i32 {
+    return t.value
+}
+
+pub func test_const_borrow_arg() i32 {
+    const target: BorrowTarget = BorrowTarget(value: 42)
+    return read_borrow_target(const &target)
+}
+
+test "const borrow expr as call argument" {
+    @assert(test_const_borrow_arg() == 42)
+}

@@ -629,6 +629,7 @@ pub const TypeResolver = struct {
 
             .unary_expr => |u| try self.resolveExpr(u.operand, scope),
             .borrow_expr => |b| try self.resolveExpr(b, scope),
+            .const_borrow_expr => |b| try self.resolveExpr(b, scope),
 
             .call_expr => |c| {
                 const callee_type = try self.resolveExpr(c.callee, scope);

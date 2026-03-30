@@ -274,6 +274,12 @@ pub const ThreadSafetyChecker = struct {
                 if (inner.* == .identifier) {
                     try self.frozen_for_thread.put(inner.identifier, thread_name);
                 }
+            } else if (arg.* == .const_borrow_expr) {
+                // Explicit const & borrow — always immutable, safe for threads
+                const inner = arg.const_borrow_expr;
+                if (inner.* == .identifier) {
+                    try self.frozen_for_thread.put(inner.identifier, thread_name);
+                }
             } else if (arg.* == .identifier) {
                 // Owned value — move into thread
                 try self.moved_to_thread.put(arg.identifier, thread_name);
@@ -420,6 +426,7 @@ pub const ThreadSafetyChecker = struct {
                 try self.collectUsedVars(s.high, vars);
             },
             .borrow_expr => |inner| try self.collectUsedVars(inner, vars),
+            .const_borrow_expr => |inner| try self.collectUsedVars(inner, vars),
             .compiler_func => |cf| {
                 for (cf.args) |arg| try self.collectUsedVars(arg, vars);
             },
@@ -481,10 +488,17 @@ fn isHandleType(type_ann: ?*parser.Node) bool {
     return t.* == .type_generic and std.mem.eql(u8, t.type_generic.name, "Handle");
 }
 
-/// Collect variables that are borrowed (&x) in a node tree
+/// Collect variables that are borrowed (&x or const &x) in a node tree
 fn collectBorrowedVars(node: *parser.Node, vars: *std.StringHashMap(void)) anyerror!void {
     switch (node.*) {
         .borrow_expr => |inner| {
+            if (inner.* == .identifier) {
+                try vars.put(inner.identifier, {});
+            } else if (inner.* == .field_expr and inner.field_expr.object.* == .identifier) {
+                try vars.put(inner.field_expr.object.identifier, {});
+            }
+        },
+        .const_borrow_expr => |inner| {
             if (inner.* == .identifier) {
                 try vars.put(inner.identifier, {});
             } else if (inner.* == .field_expr and inner.field_expr.object.* == .identifier) {

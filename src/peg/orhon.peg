@@ -362,6 +362,7 @@ mul_expr
 unary_expr
     <- '!' unary_expr
      / '-' unary_expr
+     / 'const' '&' unary_expr
      / '&' unary_expr
      / postfix_expr
 

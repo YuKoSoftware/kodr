@@ -80,7 +80,7 @@ Orhon interacts with Zig through the bridge. A module declares its interface usi
 - `&T` (mutable ref) — **not allowed** across the bridge (except `self` on bridge struct methods)
 - Default arguments on bridge funcs are filled at the call site by the codegen
 
-See [14-zig-bridge.md](14-zig-bridge.md) for full documentation.
+See [[14-zig-bridge]] for full documentation.
 
 ---
 

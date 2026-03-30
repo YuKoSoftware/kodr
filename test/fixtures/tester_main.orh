@@ -725,5 +725,12 @@ func main() void {
         console.println("FAIL negative_literal_args")
     }
 
+    // Test: const &expr as call argument (explicit const borrow passing)
+    if(tester.test_const_borrow_arg() == 42) {
+        console.println("PASS const_borrow_arg")
+    } else {
+        console.println("FAIL const_borrow_arg")
+    }
+
     console.println("TESTER:DONE")
 }

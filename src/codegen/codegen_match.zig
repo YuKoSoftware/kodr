@@ -953,7 +953,7 @@ pub fn generatePtrCoercion(cg: *CodeGen, kind: []const u8, type_node: *parser.No
             cg.warned_rawptr = true;
         }
         const zig_type = try cg.typeToZig(type_node);
-        if (value.* == .borrow_expr) {
+        if (value.* == .borrow_expr or value.* == .const_borrow_expr) {
             // RawPtr(T) + &x → @as([*]T, @ptrCast(&x))
             try cg.emitFmt("@as([*]{s}, @ptrCast(", .{zig_type});
             try cg.generateExpr(value);
@@ -970,7 +970,7 @@ pub fn generatePtrCoercion(cg: *CodeGen, kind: []const u8, type_node: *parser.No
             cg.warned_rawptr = true;
         }
         const zig_type = try cg.typeToZig(type_node);
-        if (value.* == .borrow_expr) {
+        if (value.* == .borrow_expr or value.* == .const_borrow_expr) {
             // VolatilePtr(T) + &x → @as(*volatile T, @ptrCast(&x))
             try cg.emitFmt("@as(*volatile {s}, @ptrCast(", .{zig_type});
             try cg.generateExpr(value);

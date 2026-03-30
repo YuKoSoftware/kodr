@@ -375,6 +375,11 @@ pub const OwnershipChecker = struct {
                 try self.checkExpr(inner, scope, true);
             },
 
+            .const_borrow_expr => |inner| {
+                // Explicit const borrow — same as borrow_expr, always read-only
+                try self.checkExpr(inner, scope, true);
+            },
+
             .binary_expr => |b| {
                 // Operands of binary expressions are reads, not moves
                 try self.checkExpr(b.left, scope, true);
@@ -393,8 +398,8 @@ pub const OwnershipChecker = struct {
                 }
                 try self.checkExpr(c.callee, scope, true); // callee is always borrowed
                 for (c.args) |arg| {
-                    // Arguments passed by value are moves, by & are borrows
-                    const arg_is_borrow = arg.* == .borrow_expr;
+                    // Arguments passed by value are moves, by & or const & are borrows
+                    const arg_is_borrow = arg.* == .borrow_expr or arg.* == .const_borrow_expr;
                     try self.checkExpr(arg, scope, arg_is_borrow);
                 }
             },
