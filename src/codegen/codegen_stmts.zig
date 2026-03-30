@@ -58,7 +58,7 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             // Must precede is_compt check. No _ = &name; suffix — type aliases are types, not values.
             if (m.is_const and codegen.isTypeAlias(m.type_annotation)) {
                 try cg.emitFmt("const {s} = ", .{var_name});
-                try cg.emit(try cg.typeToZig(m.value().ast));
+                try cg.emit(try cg.typeToZig(m.value().ast)); // type trees are structural — typeToZig walks AST
                 try cg.emit(";");
                 return;
             }

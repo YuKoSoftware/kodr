@@ -94,11 +94,15 @@ context rather than wiring individual fields, making per-thread state easier.
 Unblocks: compilation speed scales with CPU cores. Matters most for projects with many
 independent modules.
 
-### MIR — residual AST accesses
+### ~~MIR — residual AST accesses~~ RESOLVED (v0.10.25)
 
-6 `m.ast` reads remain in codegen: source location queries, current function node
-tracking, `type_expr`/`passthrough` (type trees are structural, not duplicated into MIR).
-Decide: migrate into MirNode fields or document as permanent architectural boundary.
+Audited and resolved. 4 accesses migrated to MIR: `current_func_node` → `current_func_mir`
+in `generateFuncMir`/`generateThreadFuncMir`, `nodeLoc(m.ast)` → `nodeLocMir(m)` at 2 sites.
+6 accesses remain as a **permanent architectural boundary**: `typeToZig()` and `generateExpr()`
+for `type_expr`/`passthrough` nodes walk the recursive AST type tree (`type_named`,
+`type_slice`, `type_array`, `type_union`, `type_ptr`). Duplicating this structural tree
+into MirNode adds complexity with zero benefit — type trees are syntax-to-syntax translations.
+`MirNode.ast` back-pointer is retained for this purpose.
 
 ### ~~Bridge module import scoping~~ PARTIALLY DONE (v0.10.22)
 
@@ -463,9 +467,9 @@ errors collected via `BuildContext.syntax_errors`.
 `type_annotation`, `return_type`, `backing_type`, `type_params`, `default_value`,
 `bit_members`, `arg_names`, `field_names`, `captures`, `index_var`, `names`,
 `interp_parts` fields. Match arm children now include pattern (`[pattern, body]`).
-`collectAssignedMir` traverses MirNode tree. 6 residual `m.ast` accesses remain for:
-source location queries, current function node tracking, and `type_expr`/`passthrough`
-(type trees are structural, not duplicated into MIR).
+`collectAssignedMir` traverses MirNode tree. Residual `m.ast` accesses audited in v0.10.25:
+4 migrated (`current_func_node` → `current_func_mir`, `nodeLoc(m.ast)` → `nodeLocMir(m)`);
+6 retained as permanent boundary for `typeToZig()` structural type tree walks.
 
 ### Fuzz Testing ✓
 

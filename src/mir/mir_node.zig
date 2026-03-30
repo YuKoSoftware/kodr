@@ -12,10 +12,17 @@ pub const Coercion = mir_types.Coercion;
 
 /// MIR node — self-contained representation for codegen.
 /// All semantic data is on MirNode fields. The `ast` back-pointer is retained
-/// only for: source location queries, current_func_node tracking, and
-/// type_expr/passthrough nodes where type trees are structural.
+/// only as a permanent architectural boundary for two categories:
+/// 1. typeToZig() walks the recursive AST type tree (type_named, type_slice,
+///    type_array, type_union, type_ptr, etc.) for structural syntax-to-syntax
+///    translation. Duplicating this tree into MirNode adds complexity with no
+///    benefit — type trees are purely structural.
+/// 2. type_expr and passthrough MirKinds delegate to AST-path generateExpr()
+///    for the same reason.
+/// Source locations read through ast via nodeLocMir().
 pub const MirNode = struct {
-    /// Original AST node — used for source locations and type_expr/passthrough only.
+    /// Original AST node — retained for typeToZig/type_expr structural type trees
+    /// and source location queries (via nodeLocMir). See struct doc for details.
     ast: *parser.Node,
     /// Resolved type of this node.
     resolved_type: RT,

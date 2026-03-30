@@ -813,7 +813,7 @@ pub fn generateTopLevelDeclMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (m.is_const and isTypeAlias(m.type_annotation)) {
         if (m.is_pub) try cg.emit("pub ");
         try cg.emitFmt("const {s} = ", .{name});
-        try cg.emit(try cg.typeToZig(m.value().ast));
+        try cg.emit(try cg.typeToZig(m.value().ast)); // type trees are structural — typeToZig walks AST
         try cg.emit(";\n");
         return;
     }

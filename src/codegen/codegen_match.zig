@@ -580,9 +580,9 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         try cg.emit(")).ptr)");
     } else if (std.mem.eql(u8, cf_name, "cast")) {
         if (args.len >= 2) {
-            const target_type = try cg.typeToZig(args[0].ast);
+            const target_type = try cg.typeToZig(args[0].ast); // type trees are structural — typeToZig walks AST
             const target_is_float = target_type.len > 0 and target_type[0] == 'f';
-            const target_is_enum = cg.isEnumTypeName(args[0].ast);
+            const target_is_enum = cg.isEnumTypeName(args[0].ast); // type trees are structural — isEnumTypeName reads AST
             const source_is_float_literal = args[1].literal_kind == .float;
             try cg.emitFmt("@as({s}, ", .{target_type});
             if (target_is_enum) {
