@@ -72,7 +72,7 @@ fn collectGenericArgs(ctx: *BuildContext, cap: *const CaptureNode, out: *std.Arr
 }
 
 pub fn buildBorrowType(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // borrow_type <- 'const' '&' type
+    // borrow_type <- 'const&' type
     if (cap.findChild("type")) |t| {
         const inner = try builder.buildNode(ctx, t);
         return ctx.newNode(.{ .type_ptr = .{ .kind = "const &", .elem = inner } });
@@ -81,7 +81,7 @@ pub fn buildBorrowType(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 }
 
 pub fn buildRefType(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // ref_type <- '&' type
+    // ref_type <- 'mut&' type
     if (cap.findChild("type")) |t| {
         const inner = try builder.buildNode(ctx, t);
         return ctx.newNode(.{ .type_ptr = .{ .kind = "var &", .elem = inner } });

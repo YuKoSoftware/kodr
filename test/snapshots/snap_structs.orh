@@ -7,11 +7,11 @@ pub struct Point {
     pub label: String
 }
 
-// struct with a method (const &Self parameter)
+// struct with a method (const& Self parameter)
 pub struct Circle {
     pub radius: f32
 
-    pub func area(self: const &Circle) f32 {
+    pub func area(self: const& Circle) f32 {
         return self.radius * self.radius
     }
 }
@@ -36,7 +36,7 @@ pub enum(u8) Color {
     Green
     Blue
 
-    pub func is_warm(self: const &Color) bool {
+    pub func is_warm(self: const& Color) bool {
         match(self) {
             Red => { return true }
             Green => { return false }

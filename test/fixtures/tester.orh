@@ -41,11 +41,11 @@ pub struct Counter {
         return Counter(count: start)
     }
 
-    pub func get(self: const &Counter) i32 {
+    pub func get(self: const& Counter) i32 {
         return self.count
     }
 
-    pub func increment(self: &Counter) void {
+    pub func increment(self: mut& Counter) void {
         self.count = self.count + 1
     }
 }
@@ -64,7 +64,7 @@ pub enum(u8) Direction {
     East
     West
 
-    pub func opposite(self: const &Direction) Direction {
+    pub func opposite(self: const& Direction) Direction {
         match(self) {
             North => { return South }
             South => { return North }
@@ -692,20 +692,20 @@ test "cast float" {
 
 pub func raw_ptr_read() i32 {
     var x: i32 = 99
-    const raw: RawPtr(i32) = &x
+    const raw: RawPtr(i32) = mut& x
     x = raw[0]
     return x
 }
 
 pub func raw_ptr_index() i32 {
     const arr: [3]i32 = [1, 2, 3]
-    const raw: RawPtr(i32) = &arr
+    const raw: RawPtr(i32) = mut& arr
     return raw[1]
 }
 
 pub func safe_ptr_read() i32 {
     const x: i32 = 77
-    const p: Ptr(i32) = &x
+    const p: Ptr(i32) = mut& x
     return p.value
 }
 
@@ -1464,7 +1464,7 @@ pub func test_const_auto_borrow() f64 {
     return sum_point(pt)
 }
 
-// Var caller of promoted function — also emits &arg at call site (Pitfall 2)
+// Var caller of promoted function — also emits mut& arg at call site (Pitfall 2)
 
 pub func test_var_caller_promoted() f64 {
     var pt: Point2D = Point2D(x: 5.0, y: 6.0)
@@ -1593,20 +1593,20 @@ test "negative literal args" {
 
 // ─── Const Borrow Expr ───────────────────────────────────────
 
-// const &expr in call argument position — explicit const borrow passing.
-// Uses a struct parameter to verify the const & syntax parses and compiles.
+// const& expr in call argument position — explicit const borrow passing.
+// Uses a struct parameter to verify the const& syntax parses and compiles.
 
 pub struct BorrowTarget {
     pub value: i32
 }
 
-func read_borrow_target(t: const &BorrowTarget) i32 {
+func read_borrow_target(t: const& BorrowTarget) i32 {
     return t.value
 }
 
 pub func test_const_borrow_arg() i32 {
     const target: BorrowTarget = BorrowTarget(value: 42)
-    return read_borrow_target(const &target)
+    return read_borrow_target(const& target)
 }
 
 test "const borrow expr as call argument" {

@@ -46,17 +46,17 @@ pub fn println(msg: []const u8) void {
 Mutable references cannot cross the bridge in either direction. This ensures Orhon's
 safety guarantees are maintained at the boundary.
 
-| Direction | `T` (value) | `const &T` | `&T` (mutable) |
+| Direction | `T` (value) | `const& T` | `mut& T` (mutable) |
 |-----------|------------|------------|-----------------|
 | Orhon → Zig | Move | Borrow (read) | **Not allowed** |
 | Zig → Orhon | Owned | Borrow (read) | **Not allowed** |
 
-**Exception:** `self: &BridgeStruct` on bridge struct methods is allowed — Zig
+**Exception:** `self: mut& BridgeStruct` on bridge struct methods is allowed — Zig
 mutates its own data, not Orhon-owned data.
 
 Violating this rule produces a compile error:
 ```
-mutable reference '&data' not allowed across bridge — use 'const &data' or pass by value
+mutable reference 'mut& data' not allowed across bridge — use 'const& data' or pass by value
 ```
 
 ---
@@ -91,8 +91,8 @@ The Zig sidecar must have a matching `pub const`.
 ```
 bridge struct Counter {
     bridge func create(start: i32) Counter
-    bridge func get(self: const &Counter) i32
-    bridge func increment(self: &Counter) void
+    bridge func get(self: const& Counter) i32
+    bridge func increment(self: mut& Counter) void
 }
 ```
 The sidecar must have a matching struct with `pub fn` methods.
@@ -101,8 +101,8 @@ The sidecar must have a matching struct with `pub fn` methods.
 ```
 bridge struct Box(T: type) {
     bridge func create(val: T) Box
-    bridge func get(self: const &Box) T
-    bridge func set(self: &Box, val: T) void
+    bridge func get(self: const& Box) T
+    bridge func set(self: mut& Box, val: T) void
 }
 ```
 The sidecar implements this as a comptime function returning a type:
@@ -132,8 +132,8 @@ module mylib
 // Raw bridge — thin bridge declarations
 bridge struct RawList(T: type) {
     bridge func init(alloc: any) RawList
-    bridge func append(self: &RawList, item: T) void
-    bridge func deinit(self: &RawList) void
+    bridge func append(self: mut& RawList, item: T) void
+    bridge func deinit(self: mut& RawList) void
 }
 
 // Orhon API — ergonomic wrapper
@@ -144,11 +144,11 @@ pub struct List(T: type) {
         return List(raw: RawList(T).init(defaultAlloc()))
     }
 
-    pub func add(self: &List, item: T) void {
+    pub func add(self: mut& List, item: T) void {
         self.raw.append(item)
     }
 
-    pub func free(self: &List) void {
+    pub func free(self: mut& List) void {
         self.raw.deinit()
     }
 }

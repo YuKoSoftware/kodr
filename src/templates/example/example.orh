@@ -97,14 +97,14 @@ pub func allocator_demo() i32 {
 
 // ─── Borrowing ───────────────────────────────────────────────────────────────
 
-// const &T — immutable borrow (many allowed simultaneously)
-// &T — mutable borrow (only one at a time)
+// const& T — immutable borrow (many allowed simultaneously)
+// mut& T — mutable borrow (only one at a time)
 // Cannot have both immutable and mutable borrows simultaneously.
 //
-//   func read(data: const &Player) void { }
-//   func modify(data: &Player) void { }
+//   func read(data: const& Player) void { }
+//   func modify(data: mut& Player) void { }
 //
-// const values auto-borrow as const & when passed to functions.
+// const values auto-borrow as const& when passed to functions.
 // No silent deep copies — zero cost.
 
 // ─── Structs ─────────────────────────────────────────────────────────────────
@@ -124,11 +124,11 @@ pub struct Player {
         return Player(name: n, health: 100.0)
     }
 
-    pub func is_alive(self: const &Player) bool {
+    pub func is_alive(self: const& Player) bool {
         return self.health > 0.0
     }
 
-    pub func take_damage(self: &Player, amount: f32) void {
+    pub func take_damage(self: mut& Player, amount: f32) void {
         self.health = self.health - amount
     }
 }
@@ -225,7 +225,7 @@ pub struct Pair(A: type, B: type) {
 pub struct Box(T: type) {
     pub value: T
 
-    pub func get(self: const &Box) T {
+    pub func get(self: const& Box) T {
         return self.value
     }
 }

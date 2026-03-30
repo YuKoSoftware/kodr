@@ -17,12 +17,12 @@ struct Player {
     }
 
     // immutable instance method
-    func isAlive(self: const &Player) bool {
+    func isAlive(self: const& Player) bool {
         return self.health > 0.0
     }
 
     // mutable instance method
-    func takeDamage(self: &Player, amount: f32) void {
+    func takeDamage(self: mut& Player, amount: f32) void {
         self.health = self.health - amount
     }
 
@@ -66,7 +66,7 @@ var cfg = Config(width: 1920, height: 1080)                     // fullscreen us
 ### Rules
 - Named instantiation always — `Player(name: "john", score: 0, health: 100.0)`
 - `self` is always the explicit first argument for instance methods
-- No `self` = static, `const &T` = immutable, `&T` = mutable, `T` = consuming
+- No `self` = static, `const& T` = immutable, `mut& T` = mutable, `T` = consuming
 - Fields are private by default — `pub` makes them accessible outside the module
 
 ### Generic Structs
@@ -81,12 +81,12 @@ pub struct Stack(T: type) {
     items: [100]T
     top: i32 = 0
 
-    pub func push(self: &Stack, val: T) void {
+    pub func push(self: mut& Stack, val: T) void {
         self.items[self.top] = val
         self.top = self.top + 1
     }
 
-    pub func peek(self: const &Stack) T {
+    pub func peek(self: const& Stack) T {
         return self.items[self.top - 1]
     }
 }
@@ -115,7 +115,7 @@ Explicit only — no automatic method forwarding:
 ```
 struct Animal {
     name: String
-    func speak(self: const &Animal) void { }
+    func speak(self: const& Animal) void { }
 }
 
 struct Dog {
@@ -165,7 +165,7 @@ enum(u32) Shape {
     Rectangle(width: f32, height: f32)
     Point
 
-    func area(self: const &Shape) f32 {
+    func area(self: const& Shape) f32 {
         match self {
             Circle    => { return 3.14 * Circle.radius * Circle.radius }
             Rectangle => { return Rectangle.width * Rectangle.height }

@@ -53,6 +53,10 @@ pub const TokenKind = enum {
     kw_throw,
     kw_type,
 
+    // Compound borrow tokens
+    const_borrow,  // const&
+    mut_borrow,    // mut&
+
     // Punctuation
     lparen,     // (
     rparen,     // )
@@ -346,6 +350,19 @@ pub const Lexer = struct {
         }
 
         const text = self.source[start..self.pos];
+
+        // Check for compound borrow tokens: const& and mut&
+        // The & must immediately follow (no whitespace) to form the compound token.
+        if (std.mem.eql(u8, text, "const") and self.peek() == '&') {
+            _ = self.advance(); // consume &
+            return .{ .kind = .const_borrow, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
+        }
+        if (std.mem.eql(u8, text, "mut") and self.peek() == '&') {
+            _ = self.advance(); // consume &
+            return .{ .kind = .mut_borrow, .text = self.source[start..self.pos], .line = start_line, .col = start_col };
+        }
+
+        // "mut" alone is not a keyword — return as identifier
         const kind = KEYWORDS.get(text) orelse .identifier;
 
         return .{ .kind = kind, .text = text, .line = start_line, .col = start_col };
@@ -875,4 +892,78 @@ test "lexer - doc comment without space after slashes" {
     }
     try std.testing.expectEqual(TokenKind.doc_comment, kinds.items[0]);
     try std.testing.expectEqualStrings("no space", texts.items[0]);
+}
+
+test "lexer - const& compound borrow token" {
+    const alloc = std.testing.allocator;
+    var lex = Lexer.init("const&x");
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var kinds = std.ArrayListUnmanaged(TokenKind){};
+    defer kinds.deinit(alloc);
+    for (tokens.items) |t| {
+        if (t.kind != .newline and t.kind != .eof) {
+            try kinds.append(alloc, t.kind);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), kinds.items.len);
+    try std.testing.expectEqual(TokenKind.const_borrow, kinds.items[0]);
+    try std.testing.expectEqual(TokenKind.identifier, kinds.items[1]);
+}
+
+test "lexer - mut& compound borrow token" {
+    const alloc = std.testing.allocator;
+    var lex = Lexer.init("mut&x");
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var kinds = std.ArrayListUnmanaged(TokenKind){};
+    defer kinds.deinit(alloc);
+    for (tokens.items) |t| {
+        if (t.kind != .newline and t.kind != .eof) {
+            try kinds.append(alloc, t.kind);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), kinds.items.len);
+    try std.testing.expectEqual(TokenKind.mut_borrow, kinds.items[0]);
+    try std.testing.expectEqual(TokenKind.identifier, kinds.items[1]);
+}
+
+test "lexer - const with space & is not compound" {
+    const alloc = std.testing.allocator;
+    var lex = Lexer.init("const &x");
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var kinds = std.ArrayListUnmanaged(TokenKind){};
+    defer kinds.deinit(alloc);
+    for (tokens.items) |t| {
+        if (t.kind != .newline and t.kind != .eof) {
+            try kinds.append(alloc, t.kind);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), kinds.items.len);
+    try std.testing.expectEqual(TokenKind.kw_const, kinds.items[0]);
+    try std.testing.expectEqual(TokenKind.ampersand, kinds.items[1]);
+    try std.testing.expectEqual(TokenKind.identifier, kinds.items[2]);
+}
+
+test "lexer - bare & is bitwise AND" {
+    const alloc = std.testing.allocator;
+    var lex = Lexer.init("a & b");
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var kinds = std.ArrayListUnmanaged(TokenKind){};
+    defer kinds.deinit(alloc);
+    for (tokens.items) |t| {
+        if (t.kind != .newline and t.kind != .eof) {
+            try kinds.append(alloc, t.kind);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), kinds.items.len);
+    try std.testing.expectEqual(TokenKind.identifier, kinds.items[0]);
+    try std.testing.expectEqual(TokenKind.ampersand, kinds.items[1]);
+    try std.testing.expectEqual(TokenKind.identifier, kinds.items[2]);
 }

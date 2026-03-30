@@ -290,7 +290,7 @@ pub const MirAnnotator = struct {
                 try self.annotateExpr(node);
                 for (cf.args) |arg| try self.annotateNode(arg);
             },
-            .borrow_expr => |b| {
+            .mut_borrow_expr => |b| {
                 try self.annotateExpr(node);
                 try self.annotateNode(b);
             },
@@ -522,7 +522,7 @@ pub const MirAnnotator = struct {
         // Null union → plain (optional unwrap)
         if (src == .null_union and dst != .null_union)
             return .{ .kind = .optional_unwrap };
-        // Value → const ref (T → const &T)
+        // Value → const ref (T → const& T)
         if (dst == .ptr) {
             if (std.mem.eql(u8, dst.ptr.kind, "const &")) {
                 if (typesMatch(src, dst.ptr.elem.*)) {

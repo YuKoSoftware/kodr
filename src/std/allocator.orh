@@ -8,22 +8,22 @@ module allocator
 
 pub bridge struct SMP {
     bridge func create() SMP
-    bridge func allocator(self: &SMP) void
-    bridge func deinit(self: &SMP) void
+    bridge func allocator(self: mut& SMP) void
+    bridge func deinit(self: mut& SMP) void
 }
 
 // Arena — batch allocator, freeAll releases everything at once
 
 pub bridge struct Arena {
     bridge func create() Arena
-    bridge func allocator(self: &Arena) void
-    bridge func freeAll(self: &Arena) void
-    bridge func deinit(self: &Arena) void
+    bridge func allocator(self: mut& Arena) void
+    bridge func freeAll(self: mut& Arena) void
+    bridge func deinit(self: mut& Arena) void
 }
 
 // Page — OS page allocator, simple and fast
 
 pub bridge struct Page {
     bridge func create() Page
-    bridge func allocator(self: &Page) void
+    bridge func allocator(self: mut& Page) void
 }

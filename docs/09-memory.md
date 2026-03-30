@@ -12,7 +12,7 @@
 ### Copy vs Move
 - **Primitives** (`i32`, `i64`, `u8`, `f64`, `bool`, `usize`, `isize`, `String` etc.) — silently copy on assignment, compiler does not track them. `String` is `[]const u8` under the hood (a pointer + length), so copying is always cheap (16 bytes).
 - **`var` non-primitives** (structs, slices, user types) — move by default, compiler tracks ownership
-- **`const` non-primitives** — auto-borrowed as `const &` when passed by value. The compiler passes a read-only reference instead of copying. No silent deep copies. Use `copy()` when you actually need a copy.
+- **`const` non-primitives** — auto-borrowed as `const&` when passed by value. The compiler passes a read-only reference instead of copying. No silent deep copies. Use `copy()` when you actually need a copy.
 - `move` for explicit move intent
 - `copy` for explicit copies of non-primitives
 - For mutable byte manipulation, use `[]u8` (mutable array) — this is a move type
@@ -30,7 +30,7 @@ var d3: MyStruct = copy(d2)     // explicit copy, d2 still valid
 var d4: MyStruct = move(d2)     // explicit move, documents intent
 
 const config: Config = getConfig()
-processA(config)        // auto-borrowed as const &, no copy
+processA(config)        // auto-borrowed as const&, no copy
 processB(config)        // still valid — never moved, never copied
 var mine: Config = copy(config)  // explicit copy when you need owned data
 ```
@@ -38,26 +38,26 @@ var mine: Config = copy(config)  // explicit copy when you need owned data
 Use-after-move is a compile time error. Zero runtime overhead — moved variables do not exist in the output binary.
 
 ### Why `const` Auto-Borrows
-`const` means immutable — the value will never change. Since it cannot change, passing it by reference is always safe. The compiler passes `const &T` under the hood, avoiding silent copies of large structs. This is zero-cost and invisible to the user. If you need an actual owned copy, use `copy()` explicitly.
+`const` means immutable — the value will never change. Since it cannot change, passing it by reference is always safe. The compiler passes `const& T` under the hood, avoiding silent copies of large structs. This is zero-cost and invisible to the user. If you need an actual owned copy, use `copy()` explicitly.
 
 ### Borrowing
-`&` borrows a value without transferring ownership. Caller retains ownership.
+`mut&` borrows a value mutably, `const&` borrows immutably. Caller retains ownership.
 ```
 var s: String = "hello"
-print(&s)     // borrow, s still valid
-print(&s)     // still valid
-print(s)      // move, s is gone after this
+print(mut& s)     // borrow, s still valid
+print(mut& s)     // still valid
+print(s)          // move, s is gone after this
 ```
 
 In function signatures:
 ```
-func read(x: const &String) void { }    // immutable borrow, read only
-func mutate(x: &String) void { }        // mutable borrow, can modify
+func read(x: const& String) void { }    // immutable borrow, read only
+func mutate(x: mut& String) void { }    // mutable borrow, can modify
 ```
 
 ### Borrow Rules
-- `&T` — mutable borrow, only one at a time (`var &T` is the explicit form, same thing)
-- `const &T` — immutable borrow, many allowed simultaneously
+- `mut& T` — mutable borrow, only one at a time
+- `const& T` — immutable borrow, many allowed simultaneously
 - Cannot have immutable and mutable borrow simultaneously — compile time error
 - Functions can never return references, only owned values
 - If you need to return borrowed data, use `copy` to return an owned copy
@@ -66,9 +66,9 @@ func mutate(x: &String) void { }        // mutable borrow, can modify
 struct Game {
     player: Player
 
-    // Don't return &Player — provide methods instead:
-    func getPlayerName(self: const &Game) String { return self.player.name }
-    func damagePlayer(self: &Game, amount: f32) void {
+    // Don't return references — provide methods instead:
+    func getPlayerName(self: const& Game) String { return self.player.name }
+    func damagePlayer(self: mut& Game, amount: f32) void {
         self.player.health = self.player.health - amount
     }
 }
@@ -83,7 +83,7 @@ Structs are atomic ownership units — all fields move together or none do.
 var p: Player = Player(name: "john", score: 0, health: 100.0)
 var p2: Player = p      // entire struct moves, p is invalid
 
-var name: &String = &p2.name    // borrow a field, p2 still owns everything
+var name: mut& String = mut& p2.name    // borrow a field, p2 still owns everything
 ```
 Moving individual fields out of a struct is a compile time error.
 
@@ -91,14 +91,14 @@ Moving individual fields out of a struct is a compile time error.
 
 ## Pointers
 
-Traditional `*T` pointer syntax does not exist in Orhon. Instead there are three distinct pointer types, each with a clear purpose. Pointer construction uses the type annotation and `&` (address-of) — the type carries the safety level, no extra syntax needed.
+Traditional `*T` pointer syntax does not exist in Orhon. Instead there are three distinct pointer types, each with a clear purpose. Pointer construction uses the type annotation and `mut&` (address-of) — the type carries the safety level, no extra syntax needed.
 
 ### `Ptr(T)` — Safe Pointer, General Use
-Compiler tracked. Always `const` — the pointer cannot be reassigned. Points to a single value only — no pointer arithmetic, no `[]` indexing. Must be initialized from a variable address (`&x`) — raw integer addresses are not allowed. The ownership pass ensures you cannot use a `Ptr(T)` after the pointee has moved — this is a hard compile-time error. No warnings emitted.
+Compiler tracked. Always `const` — the pointer cannot be reassigned. Points to a single value only — no pointer arithmetic, no `[]` indexing. Must be initialized from a variable address (`mut& x`) — raw integer addresses are not allowed. The ownership pass ensures you cannot use a `Ptr(T)` after the pointee has moved — this is a hard compile-time error. No warnings emitted.
 
 ```
 var x: i32 = 10
-const ptr: Ptr(i32) = &x
+const ptr: Ptr(i32) = mut& x
 
 ptr.value          // read the pointed-to value
 
@@ -110,7 +110,7 @@ Zero overhead — just a memory address. No compiler tracking, no ownership chec
 
 ```
 // from a variable
-const raw: RawPtr(i32) = &x
+const raw: RawPtr(i32) = mut& x
 raw[0]    // read value, no bounds check
 
 // from a hardware address
@@ -134,13 +134,13 @@ reg[1] = 0x2   // volatile write to next register
 ```
 
 ### Pointer Construction
-The type annotation determines pointer kind — `&` takes the address, integer literals provide hardware addresses:
+The type annotation determines pointer kind — `mut&` takes the address, integer literals provide hardware addresses:
 
 ```
-// From a variable — & takes the address
-const p: Ptr(i32) = &x             // safe, const, compiler-tracked
-const r: RawPtr(i32) = &x          // unsafe, warns
-const v: VolatilePtr(u32) = &x     // volatile, warns
+// From a variable — mut& takes the address
+const p: Ptr(i32) = mut& x             // safe, const, compiler-tracked
+const r: RawPtr(i32) = mut& x          // unsafe, warns
+const v: VolatilePtr(u32) = mut& x     // volatile, warns
 
 // From a hardware address — integer literal
 const reg: VolatilePtr(u32) = 0xFF200000
@@ -148,7 +148,7 @@ const mem: RawPtr(u8) = 0xB8000
 ```
 
 ### Pointer Rules
-- `Ptr(T)` — always `const`, safe, no warnings, single value, `&variable` only
+- `Ptr(T)` — always `const`, safe, no warnings, single value, `mut& variable` only
 - `RawPtr(T)` — always warns, no restrictions, full pointer arithmetic, escape hatch
 - `VolatilePtr(T)` — always warns, like `RawPtr(T)` but all accesses are volatile, hardware registers only
 - Self-referential structures use array indices instead of pointers — faster and safer

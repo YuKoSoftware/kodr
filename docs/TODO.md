@@ -9,10 +9,14 @@ Research sources: `.planning/research/` (compiler-techniques, zig-ecosystem, lan
 
 ### ~~`const &expr` not parseable as call argument~~ DONE (v0.10.30)
 
-`const &flag` in a function call (e.g., `worker(const &flag)`) now parses and
-compiles correctly. The `const &` expression-level borrow is handled in the PEG
+`const& flag` in a function call (e.g., `worker(const& flag)`) now parses and
+compiles correctly. The `const&` expression-level borrow is handled in the PEG
 `unary_expr` rule, produces a `const_borrow_expr` AST node, and is treated as an
 immutable borrow in all passes. Codegen emits `&x` (Zig constness is in the type).
+
+Note: as of v0.10.31, `const&` and `mut&` are compound tokens — the old two-token
+`const &` and bare `&` (for borrow) syntax is no longer valid. Bare `&` only means
+bitwise AND.
 
 ### ~~`@` prefix for compiler functions~~ DONE (v0.10.30)
 
@@ -144,7 +148,7 @@ learning = more adoption. Elm, Gleam, and Rust set the bar.
 - "Did you mean X?" for identifier typos (Levenshtein distance to known names)
 - Expected vs actual display for type mismatches
 - Ownership/borrow violations should suggest fixes ("consider using `copy()`" or
-  "consider borrowing with `const &`")
+  "consider borrowing with `const&`")
 - Cross-module errors should show module context
 - Generic instantiation failures should show the constraint that failed
 
@@ -204,11 +208,11 @@ definitions, no implementation. Keep it simple:
 
 ```
 blueprint Drawable {
-    func draw(self: const &Self) void
+    func draw(self: const& Self) void
 }
 
 impl Drawable for Circle {
-    func draw(self: const &Circle) void { ... }
+    func draw(self: const& Circle) void { ... }
 }
 
 func render(item: any where Drawable) void {
@@ -429,8 +433,8 @@ Beyond "does it crash" fuzzing — test semantic properties across the pipeline:
 
 **Done in v0.10.17 (post-v0.17).** Three rules enforced at compile time when passing arguments to thread functions:
 1. **Owned values** → moved into thread, original variable dead until join
-2. **Const borrows (`&x`)** → original frozen (read-only) until thread joined via `.value` or `.wait()`
-3. **Mutable borrows (`var &x`)** → compile error (no mutable sharing across threads)
+2. **Const borrows (`const& x`)** → original frozen (read-only) until thread joined via `.value` or `.wait()`
+3. **Mutable borrows (`mut& x`)** → compile error (no mutable sharing across threads)
 
 Infrastructure: `moved_to_thread` map (existed, now populated), `frozen_for_thread` map (new), `checkThreadCallArgs` (new), `unfreezeForThread` (new). 14 unit tests + 4 negative integration fixtures.
 
@@ -494,7 +498,7 @@ errors collected via `BuildContext.syntax_errors`.
 
 ### Bridge codegen fixes ✓
 
-**Done in v0.16 Phase 25.** `const &BridgeStruct` parameters now pass by pointer
+**Done in v0.16 Phase 25.** `const& BridgeStruct` parameters now pass by pointer
 (not by value). Sidecar `export fn` declarations are fixed to `pub export fn` via
 read-modify-write scanner. `is_bridge` flag on FuncSig guards const auto-borrow for
 bridge calls.

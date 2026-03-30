@@ -51,6 +51,10 @@ pub const LITERAL_MAP = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "type", .kw_type },
     .{ "@", .at_sign },
 
+    // Compound borrow tokens
+    .{ "const&", .const_borrow },
+    .{ "mut&", .mut_borrow },
+
     // Punctuation
     .{ "(", .lparen },
     .{ ")", .rparen },

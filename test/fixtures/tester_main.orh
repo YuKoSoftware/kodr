@@ -639,7 +639,7 @@ func main() void {
         console.println("FAIL const_auto_borrow")
     }
 
-    // Test: var caller of promoted function — also emits &arg at call site
+    // Test: var caller of promoted function — also emits mut& arg at call site
     if(tester.test_var_caller_promoted() == 30.0) {
         console.println("PASS var_caller_promoted")
     } else {
@@ -725,7 +725,7 @@ func main() void {
         console.println("FAIL negative_literal_args")
     }
 
-    // Test: const &expr as call argument (explicit const borrow passing)
+    // Test: const& expr as call argument (explicit const borrow passing)
     if(tester.test_const_borrow_arg() == 42) {
         console.println("PASS const_borrow_arg")
     } else {

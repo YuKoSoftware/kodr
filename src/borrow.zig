@@ -1,5 +1,5 @@
 // borrow.zig — Borrow Checking pass (pass 7)
-// Validates const &T and var &T borrows.
+// Validates const& T and mut& T borrows.
 // No simultaneous mutable and immutable borrows.
 // Lexical lifetimes only.
 
@@ -89,11 +89,11 @@ pub const BorrowChecker = struct {
         self.current_node = node;
         switch (node.*) {
             .var_decl => |v| {
-                // If the type is var &T and value is &x, it's a mutable borrow
-                // If value is const &x, it's always an immutable borrow
-                if (v.value.* == .borrow_expr) {
+                // If the type is mut& T and value is mut& x, it's a mutable borrow
+                // If value is const& x, it's always an immutable borrow
+                if (v.value.* == .mut_borrow_expr) {
                     const is_mut = isMutableBorrowType(v.type_annotation);
-                    if (extractBorrowTarget(v.value.borrow_expr)) |target| {
+                    if (extractBorrowTarget(v.value.mut_borrow_expr)) |target| {
                         try self.addBorrow(target.variable, target.field, is_mut);
                     }
                 } else if (v.value.* == .const_borrow_expr) {
@@ -105,12 +105,12 @@ pub const BorrowChecker = struct {
                 }
             },
             .const_decl => |v| {
-                // Borrow mutability comes from the type annotation (&T vs const &T),
-                // not from const/var — const binding to &T is still a mutable borrow
-                // const &x always produces an immutable borrow
-                if (v.value.* == .borrow_expr) {
+                // Borrow mutability comes from the type annotation (mut& T vs const& T),
+                // not from const/var — const binding to mut& T is still a mutable borrow
+                // const& x always produces an immutable borrow
+                if (v.value.* == .mut_borrow_expr) {
                     const is_mut = isMutableBorrowType(v.type_annotation);
-                    if (extractBorrowTarget(v.value.borrow_expr)) |target| {
+                    if (extractBorrowTarget(v.value.mut_borrow_expr)) |target| {
                         try self.addBorrow(target.variable, target.field, is_mut);
                     }
                 } else if (v.value.* == .const_borrow_expr) {
@@ -124,7 +124,7 @@ pub const BorrowChecker = struct {
             .return_stmt => |r| {
                 if (r.value) |val| {
                     // Cannot return a reference — only owned values
-                    if (val.* == .borrow_expr) {
+                    if (val.* == .mut_borrow_expr) {
                         try self.ctx.reporter.report(.{
                             .message = "cannot return a reference — functions can only return owned values",
                             .loc = self.ctx.nodeLoc(node),
@@ -167,9 +167,9 @@ pub const BorrowChecker = struct {
             .break_stmt, .continue_stmt => {},
             .assignment => |a| {
                 // If assigning a borrow, check for conflicts
-                if (a.right.* == .borrow_expr) {
+                if (a.right.* == .mut_borrow_expr) {
                     const is_mut = isMutableBorrowType(null); // no type context in assignment
-                    if (extractBorrowTarget(a.right.borrow_expr)) |target| {
+                    if (extractBorrowTarget(a.right.mut_borrow_expr)) |target| {
                         try self.addBorrow(target.variable, target.field, is_mut);
                     }
                 } else if (a.right.* == .const_borrow_expr) {
@@ -188,15 +188,15 @@ pub const BorrowChecker = struct {
 
     fn checkExpr(self: *BorrowChecker, node: *parser.Node) anyerror!void {
         switch (node.*) {
-            .borrow_expr => |inner| {
-                // Bare & in expression context (e.g. function call arg) — default immutable
+            .mut_borrow_expr => |inner| {
+                // mut& in expression context (e.g. function call arg) — default immutable
                 if (extractBorrowTarget(inner)) |target| {
                     try self.addBorrow(target.variable, target.field, false);
                 }
                 try self.checkExpr(inner);
             },
             .const_borrow_expr => |inner| {
-                // Explicit const & in expression context — always immutable
+                // Explicit const& in expression context — always immutable
                 if (extractBorrowTarget(inner)) |target| {
                     try self.addBorrow(target.variable, target.field, false);
                 }
@@ -294,12 +294,12 @@ pub const BorrowChecker = struct {
             const loc = if (self.current_node) |cn| self.ctx.nodeLoc(cn) else null;
             if (field) |f| {
                 const msg = try std.fmt.allocPrint(self.allocator,
-                    "cannot use '{s}.{s}' while it is mutably borrowed — consider borrowing with const &", .{ name, f });
+                    "cannot use '{s}.{s}' while it is mutably borrowed — consider borrowing with const&", .{ name, f });
                 defer self.allocator.free(msg);
                 try self.ctx.reporter.report(.{ .message = msg, .loc = loc });
             } else {
                 const msg = try std.fmt.allocPrint(self.allocator,
-                    "cannot use '{s}' while it is mutably borrowed — consider borrowing with const &", .{name});
+                    "cannot use '{s}' while it is mutably borrowed — consider borrowing with const&", .{name});
                 defer self.allocator.free(msg);
                 try self.ctx.reporter.report(.{ .message = msg, .loc = loc });
             }
@@ -318,7 +318,7 @@ pub const BorrowChecker = struct {
                 const loc = if (self.current_node) |cn| self.ctx.nodeLoc(cn) else null;
                 const label = borrowLabel(variable, field);
                 const hint: []const u8 = if (!is_mutable)
-                    " — consider borrowing with const &"
+                    " — consider borrowing with const&"
                 else
                     "";
                 const msg = try std.fmt.allocPrint(self.allocator,
@@ -463,7 +463,7 @@ test "borrow checker - cannot return reference" {
     defer checker.deinit();
 
     var inner = parser.Node{ .identifier = "x" };
-    var borrow = parser.Node{ .borrow_expr = &inner };
+    var borrow = parser.Node{ .mut_borrow_expr = &inner };
     var ret = parser.Node{ .return_stmt = .{ .value = &borrow } };
 
     try checker.checkStatement(&ret);
@@ -488,7 +488,7 @@ test "borrow checker - mutable borrow via var &T type" {
     var inner_type = parser.Node{ .type_named = "MyStruct" };
     var type_ann = parser.Node{ .type_ptr = .{ .kind = "var &", .elem = &inner_type } };
     var borrow_target = parser.Node{ .identifier = "data" };
-    var borrow_val = parser.Node{ .borrow_expr = &borrow_target };
+    var borrow_val = parser.Node{ .mut_borrow_expr = &borrow_target };
     var decl = parser.Node{ .var_decl = .{
         .name = "ref",
         .type_annotation = &type_ann,
@@ -515,7 +515,7 @@ test "borrow checker - const &T borrow is immutable" {
     var inner_type = parser.Node{ .type_named = "MyStruct" };
     var type_ann = parser.Node{ .type_ptr = .{ .kind = "const &", .elem = &inner_type } };
     var borrow_target = parser.Node{ .identifier = "data" };
-    var borrow_val = parser.Node{ .borrow_expr = &borrow_target };
+    var borrow_val = parser.Node{ .mut_borrow_expr = &borrow_target };
     var decl1 = parser.Node{ .var_decl = .{
         .name = "ref1",
         .type_annotation = &type_ann,
@@ -526,7 +526,7 @@ test "borrow checker - const &T borrow is immutable" {
     try checker.checkStatement(&decl1);
 
     var borrow_target2 = parser.Node{ .identifier = "data" };
-    var borrow_val2 = parser.Node{ .borrow_expr = &borrow_target2 };
+    var borrow_val2 = parser.Node{ .mut_borrow_expr = &borrow_target2 };
     var decl2 = parser.Node{ .var_decl = .{
         .name = "ref2",
         .type_annotation = &type_ann,
@@ -697,7 +697,7 @@ test "borrow checker - bare variable access while field mutably borrowed" {
     try std.testing.expect(reporter.hasErrors());
 }
 
-test "borrow checker - field borrow from borrow_expr field_expr" {
+test "borrow checker - field borrow from mut_borrow_expr field_expr" {
     const alloc = std.testing.allocator;
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -713,7 +713,7 @@ test "borrow checker - field borrow from borrow_expr field_expr" {
     var type_ann = parser.Node{ .type_ptr = .{ .kind = "var &", .elem = &inner_type } };
     var p_ident = parser.Node{ .identifier = "p" };
     var field_access = parser.Node{ .field_expr = .{ .object = &p_ident, .field = "name" } };
-    var borrow_val = parser.Node{ .borrow_expr = &field_access };
+    var borrow_val = parser.Node{ .mut_borrow_expr = &field_access };
     var decl = parser.Node{ .var_decl = .{
         .name = "ref",
         .type_annotation = &type_ann,

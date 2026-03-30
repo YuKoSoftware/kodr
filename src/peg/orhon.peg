@@ -362,8 +362,8 @@ mul_expr
 unary_expr
     <- '!' unary_expr
      / '-' unary_expr
-     / 'const' '&' unary_expr
-     / '&' unary_expr
+     / 'const&' unary_expr
+     / 'mut&' unary_expr
      / postfix_expr
 
 # Level 0 — Postfix (left-associative)
@@ -494,13 +494,13 @@ type
      / named_type
      / keyword_type  {label: "type"}
 
-# const &T — immutable reference
+# const& T — immutable reference
 borrow_type
-    <- 'const' '&' type  {label: "borrow type"}
+    <- 'const&' type  {label: "borrow type"}
 
-# &T — mutable reference
+# mut& T — mutable reference
 ref_type
-    <- '&' type  {label: "reference type"}
+    <- 'mut&' type  {label: "reference type"}
 
 # Parenthesized type — dispatches based on content:
 #   ()                          → void
@@ -598,5 +598,6 @@ _               <- ([ \t\n] / '//' (!'\n' .)* '\n')*
 # pub match struct enum bitfield defer thread null void compt
 # any module test and or not main as break continue true false
 # bridge is type
+# Compound borrow tokens: const& mut&
 # Compiler functions use @ prefix: @cast @copy @move @swap @assert
 # @size @align @typename @typeid @typeof

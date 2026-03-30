@@ -251,11 +251,11 @@ test "peg - validate program with struct methods" {
         \\        return Counter(count: start)
         \\    }
         \\
-        \\    pub func get(self: const &Counter) i32 {
+        \\    pub func get(self: const& Counter) i32 {
         \\        return self.count
         \\    }
         \\
-        \\    pub func increment(self: &Counter) void {
+        \\    pub func increment(self: mut& Counter) void {
         \\        self.count = self.count + 1
         \\    }
         \\}

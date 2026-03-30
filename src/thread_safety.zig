@@ -250,8 +250,8 @@ pub const ThreadSafetyChecker = struct {
         const thread_name = info.name;
 
         for (c.args, 0..) |arg, i| {
-            if (arg.* == .borrow_expr) {
-                // Check if the corresponding param is a mutable borrow (var &T)
+            if (arg.* == .mut_borrow_expr) {
+                // Check if the corresponding param is a mutable borrow (mut& T)
                 if (i < info.sig.param_nodes.len) {
                     const param_node = info.sig.param_nodes[i];
                     if (param_node.* == .param) {
@@ -270,12 +270,12 @@ pub const ThreadSafetyChecker = struct {
                     }
                 }
                 // Const borrow — freeze the inner variable
-                const inner = arg.borrow_expr;
+                const inner = arg.mut_borrow_expr;
                 if (inner.* == .identifier) {
                     try self.frozen_for_thread.put(inner.identifier, thread_name);
                 }
             } else if (arg.* == .const_borrow_expr) {
-                // Explicit const & borrow — always immutable, safe for threads
+                // Explicit const& borrow — always immutable, safe for threads
                 const inner = arg.const_borrow_expr;
                 if (inner.* == .identifier) {
                     try self.frozen_for_thread.put(inner.identifier, thread_name);
@@ -425,7 +425,7 @@ pub const ThreadSafetyChecker = struct {
                 try self.collectUsedVars(s.low, vars);
                 try self.collectUsedVars(s.high, vars);
             },
-            .borrow_expr => |inner| try self.collectUsedVars(inner, vars),
+            .mut_borrow_expr => |inner| try self.collectUsedVars(inner, vars),
             .const_borrow_expr => |inner| try self.collectUsedVars(inner, vars),
             .compiler_func => |cf| {
                 for (cf.args) |arg| try self.collectUsedVars(arg, vars);
@@ -488,10 +488,10 @@ fn isHandleType(type_ann: ?*parser.Node) bool {
     return t.* == .type_generic and std.mem.eql(u8, t.type_generic.name, "Handle");
 }
 
-/// Collect variables that are borrowed (&x or const &x) in a node tree
+/// Collect variables that are borrowed (mut& x or const& x) in a node tree
 fn collectBorrowedVars(node: *parser.Node, vars: *std.StringHashMap(void)) anyerror!void {
     switch (node.*) {
-        .borrow_expr => |inner| {
+        .mut_borrow_expr => |inner| {
             if (inner.* == .identifier) {
                 try vars.put(inner.identifier, {});
             } else if (inner.* == .field_expr and inner.field_expr.object.* == .identifier) {
@@ -670,9 +670,9 @@ test "thread safety - collectUsedVars walks if/while/for" {
 test "thread safety - collectBorrowedVars" {
     const alloc = std.testing.allocator;
 
-    // Build: &x
+    // Build: mut& x
     var x_id = parser.Node{ .identifier = "x" };
-    var borrow = parser.Node{ .borrow_expr = &x_id };
+    var borrow = parser.Node{ .mut_borrow_expr = &x_id };
 
     var borrows = std.StringHashMap(void).init(alloc);
     defer borrows.deinit();
@@ -792,10 +792,10 @@ test "thread safety - const borrow arg freezes variable" {
     var checker = ThreadSafetyChecker.init(alloc, &ctx);
     defer checker.deinit();
 
-    // Build: reader(&x) — const borrow to thread
+    // Build: reader(mut& x) — const borrow to thread
     var callee = parser.Node{ .identifier = "reader" };
     var x_inner = parser.Node{ .identifier = "x" };
-    var borrow_arg = parser.Node{ .borrow_expr = &x_inner };
+    var borrow_arg = parser.Node{ .mut_borrow_expr = &x_inner };
     var args = [_]*parser.Node{&borrow_arg};
     var arg_names = [_][]const u8{""};
     var call = parser.Node{ .call_expr = .{
@@ -858,10 +858,10 @@ test "thread safety - mutable borrow arg rejected" {
     var checker = ThreadSafetyChecker.init(alloc, &ctx);
     defer checker.deinit();
 
-    // Build: writer(var &x) — mutable borrow to thread
+    // Build: writer(mut& x) — mutable borrow to thread
     var callee = parser.Node{ .identifier = "writer" };
     var x_inner = parser.Node{ .identifier = "x" };
-    var borrow_arg = parser.Node{ .borrow_expr = &x_inner };
+    var borrow_arg = parser.Node{ .mut_borrow_expr = &x_inner };
     var args = [_]*parser.Node{&borrow_arg};
     var arg_names = [_][]const u8{""};
     var call = parser.Node{ .call_expr = .{
@@ -943,7 +943,7 @@ test "thread safety - multi-arg thread call: move + const borrow" {
     var decl_table = declarations.DeclTable.init(alloc);
     defer decl_table.deinit();
 
-    // Register: thread worker(a: i32, b: const &i32) Handle(void)
+    // Register: thread worker(a: i32, b: const& i32) Handle(void)
     var void_node = parser.Node{ .identifier = "void" };
     var i32_node = parser.Node{ .identifier = "i32" };
     const constants = @import("constants.zig");
@@ -974,11 +974,11 @@ test "thread safety - multi-arg thread call: move + const borrow" {
     var checker = ThreadSafetyChecker.init(alloc, &ctx);
     defer checker.deinit();
 
-    // Build: worker(x, &y) — owned move + const borrow
+    // Build: worker(x, mut& y) — owned move + const borrow
     var callee = parser.Node{ .identifier = "worker" };
     var x_arg = parser.Node{ .identifier = "x" };
     var y_id = parser.Node{ .identifier = "y" };
-    var y_borrow = parser.Node{ .borrow_expr = &y_id };
+    var y_borrow = parser.Node{ .mut_borrow_expr = &y_id };
     var args = [_]*parser.Node{ &x_arg, &y_borrow };
     var arg_names = [_][]const u8{ "", "" };
     var call = parser.Node{ .call_expr = .{

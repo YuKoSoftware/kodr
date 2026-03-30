@@ -76,8 +76,8 @@ Orhon interacts with Zig through the bridge. A module declares its interface usi
 
 ### Bridge safety rules
 - `T` (by value) — moves across the bridge
-- `const &T` — read-only borrow, both directions
-- `&T` (mutable ref) — **not allowed** across the bridge (except `self` on bridge struct methods)
+- `const& T` — read-only borrow, both directions
+- `mut& T` (mutable ref) — **not allowed** across the bridge (except `self` on bridge struct methods)
 - Default arguments on bridge funcs are filled at the call site by the codegen
 
 See [[14-zig-bridge]] for full documentation.

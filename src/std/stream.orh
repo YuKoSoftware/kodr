@@ -17,29 +17,29 @@ pub bridge struct Buffer {
 
     // Write bytes to end of buffer
 
-    bridge func write(self: &Buffer, data: String) void
+    bridge func write(self: mut& Buffer, data: String) void
 
     // Read n bytes from current cursor position
 
-    bridge func read(self: &Buffer, n: i32) String
+    bridge func read(self: mut& Buffer, n: i32) String
 
     // Return entire buffer contents as a string
 
-    bridge func toString(self: &Buffer) String
+    bridge func toString(self: mut& Buffer) String
 
     // Length of the buffer in bytes
 
-    bridge func len(self: &Buffer) i32
+    bridge func len(self: mut& Buffer) i32
 
     // Reset buffer to empty
 
-    bridge func clear(self: &Buffer) void
+    bridge func clear(self: mut& Buffer) void
 
     // Move read cursor to position
 
-    bridge func seek(self: &Buffer, pos: i32) void
+    bridge func seek(self: mut& Buffer, pos: i32) void
 
     // Free buffer memory
 
-    bridge func deinit(self: &Buffer) void
+    bridge func deinit(self: mut& Buffer) void
 }

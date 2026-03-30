@@ -373,7 +373,7 @@ module main
 #name    = "neg_bridge"
 #version = Version(1, 0, 0)
 #build   = exe
-bridge func modify(data: &i32) void
+bridge func modify(data: mut& i32) void
 func main() void { }
 ORHON
 cat > neg_bridge_ref/src/main.zig <<'ZIG'

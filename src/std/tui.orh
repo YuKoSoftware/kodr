@@ -27,11 +27,11 @@ pub bridge struct Size {
 
     // Number of rows
 
-    bridge func rows(self: &Size) i32
+    bridge func rows(self: mut& Size) i32
 
     // Number of columns
 
-    bridge func cols(self: &Size) i32
+    bridge func cols(self: mut& Size) i32
 }
 
 // Get current terminal dimensions
@@ -120,15 +120,15 @@ pub bridge struct Key {
 
     // Key kind — compare against KEY_* constants
 
-    bridge func kind(self: &Key) i32
+    bridge func kind(self: mut& Key) i32
 
     // Character value (meaningful when kind == KEY_CHAR)
 
-    bridge func char(self: &Key) String
+    bridge func char(self: mut& Key) String
 
     // Whether ctrl was held
 
-    bridge func ctrl(self: &Key) bool
+    bridge func ctrl(self: mut& Key) bool
 }
 
 // Read a single keypress (blocks until input arrives, requires raw mode)
@@ -174,27 +174,27 @@ pub bridge struct Screen {
 
     // Set a character at a position
 
-    bridge func set(self: &Screen, row: i32, col: i32, ch: String) void
+    bridge func set(self: mut& Screen, row: i32, col: i32, ch: String) void
 
     // Set a styled character at a position
 
-    bridge func setStyled(self: &Screen, row: i32, col: i32, ch: String, fg: i32, bg: i32, bold: bool) void
+    bridge func setStyled(self: mut& Screen, row: i32, col: i32, ch: String, fg: i32, bg: i32, bold: bool) void
 
     // Flush changes to terminal (only redraws dirty cells)
 
-    bridge func render(self: &Screen) void
+    bridge func render(self: mut& Screen) void
 
     // Reset all cells to empty
 
-    bridge func clear(self: &Screen) void
+    bridge func clear(self: mut& Screen) void
 
     // Resize the buffer
 
-    bridge func resize(self: &Screen, rows: i32, cols: i32) void
+    bridge func resize(self: mut& Screen, rows: i32, cols: i32) void
 
     // Free buffer memory
 
-    bridge func destroy(self: &Screen) void
+    bridge func destroy(self: mut& Screen) void
 }
 
 // ── Drawing Helpers ──

@@ -293,12 +293,12 @@ pub fn generateExpr(cg: *CodeGen, node: *parser.Node) anyerror!void {
             // Type used as expression value (e.g. generic type arg in Ptr(i32, &x))
             try cg.emit(try cg.typeToZig(node));
         },
-        .borrow_expr => |inner| {
+        .mut_borrow_expr => |inner| {
             try cg.emit("&");
             try cg.generateExpr(inner);
         },
         .const_borrow_expr => |inner| {
-            // const &expr — explicit const borrow; Zig uses &x for both mutable/const borrows,
+            // const& expr — explicit const borrow; Zig uses &x for both mutable/const borrows,
             // constness is determined by the pointer type annotation, not the expression syntax.
             try cg.emit("&");
             try cg.generateExpr(inner);

@@ -5,5 +5,5 @@ module main
 
 func main() void {
     var x: i32 = 42
-    const p: Ptr(i32) = Ptr(i32).cast(&x)
+    const p: Ptr(i32) = Ptr(i32).cast(mut& x)
 }

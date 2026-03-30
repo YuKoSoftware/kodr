@@ -228,7 +228,7 @@ pub const TypeResolver = struct {
                                 // Allow self: &StructName on bridge struct methods
                                 if (std.mem.eql(u8, param.param.name, "self")) continue;
                                 const msg = try std.fmt.allocPrint(self.allocator,
-                                    "mutable reference '&{s}' not allowed across bridge — use 'const &{s}' or pass by value",
+                                    "mutable reference 'mut& {s}' not allowed across bridge — use 'const& {s}' or pass by value",
                                     .{ param.param.name, param.param.name });
                                 defer self.allocator.free(msg);
                                 try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
@@ -240,7 +240,7 @@ pub const TypeResolver = struct {
                         std.mem.eql(u8, f.return_type.type_ptr.kind, K.Ptr.VAR_REF))
                     {
                         try self.reporter.report(.{
-                            .message = "mutable reference return not allowed across bridge — return by value or const &",
+                            .message = "mutable reference return not allowed across bridge — return by value or const&",
                             .loc = self.nodeLoc(node),
                         });
                     }
@@ -628,7 +628,7 @@ pub const TypeResolver = struct {
             },
 
             .unary_expr => |u| try self.resolveExpr(u.operand, scope),
-            .borrow_expr => |b| try self.resolveExpr(b, scope),
+            .mut_borrow_expr => |b| try self.resolveExpr(b, scope),
             .const_borrow_expr => |b| try self.resolveExpr(b, scope),
 
             .call_expr => |c| {

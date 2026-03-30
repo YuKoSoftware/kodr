@@ -84,7 +84,7 @@ func compound_demo() i32 {
 
 func read_via_ptr(n: i32) i32 {
     const x: i32 = n
-    const p: Ptr(i32) = &x
+    const p: Ptr(i32) = mut& x
     return p.value
 }
 
@@ -92,7 +92,7 @@ func read_via_ptr(n: i32) i32 {
 
 // RawPtr example (comment only — emits compiler warning if compiled):
 //   const x: i32 = 99
-//   const raw: RawPtr(i32) = &x
+//   const raw: RawPtr(i32) = mut& x
 //   raw[0]    // read value, no bounds check
 
 // VolatilePtr(T) — like RawPtr but every read/write is volatile

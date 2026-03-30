@@ -371,12 +371,12 @@ pub const OwnershipChecker = struct {
                 }
             },
 
-            .borrow_expr => |inner| {
+            .mut_borrow_expr => |inner| {
                 try self.checkExpr(inner, scope, true);
             },
 
             .const_borrow_expr => |inner| {
-                // Explicit const borrow — same as borrow_expr, always read-only
+                // Explicit const borrow — same as mut_borrow_expr, always read-only
                 try self.checkExpr(inner, scope, true);
             },
 
@@ -398,8 +398,8 @@ pub const OwnershipChecker = struct {
                 }
                 try self.checkExpr(c.callee, scope, true); // callee is always borrowed
                 for (c.args) |arg| {
-                    // Arguments passed by value are moves, by & or const & are borrows
-                    const arg_is_borrow = arg.* == .borrow_expr or arg.* == .const_borrow_expr;
+                    // Arguments passed by value are moves, by mut& or const& are borrows
+                    const arg_is_borrow = arg.* == .mut_borrow_expr or arg.* == .const_borrow_expr;
                     try self.checkExpr(arg, scope, arg_is_borrow);
                 }
             },

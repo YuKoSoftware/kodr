@@ -176,7 +176,7 @@ func split_demo() i32 {
 
 // ─── Const Auto-Borrow ──────────────────────────────────────────────────────
 
-// const values auto-borrow as const & when passed to functions.
+// const values auto-borrow as const& when passed to functions.
 // No silent deep copies. Use @copy() for explicit owned copies.
 
 func read_point(p: Point) f64 {

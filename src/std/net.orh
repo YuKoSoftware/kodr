@@ -21,15 +21,15 @@ pub bridge struct Connection {
 
     // Send data over the connection
 
-    bridge func send(self: &Connection, data: String) (Error | void)
+    bridge func send(self: mut& Connection, data: String) (Error | void)
 
     // Receive up to n bytes
 
-    bridge func recv(self: &Connection, n: i32) (Error | String)
+    bridge func recv(self: mut& Connection, n: i32) (Error | String)
 
     // Close the connection
 
-    bridge func close(self: &Connection) void
+    bridge func close(self: mut& Connection) void
 }
 
 // ── Listener ──
@@ -38,9 +38,9 @@ pub bridge struct Listener {
 
     // Accept a new connection (blocks until one arrives)
 
-    bridge func accept(self: &Listener) (Error | Connection)
+    bridge func accept(self: mut& Listener) (Error | Connection)
 
     // Stop listening
 
-    bridge func close(self: &Listener) void
+    bridge func close(self: mut& Listener) void
 }

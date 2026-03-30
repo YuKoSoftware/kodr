@@ -18,35 +18,35 @@ pub struct Vec2(T: type) {
         return Vec2(T)(x: 0, y: 0)
     }
 
-    pub func add(self: const &Vec2, other: Vec2(T)) Vec2(T) {
+    pub func add(self: const& Vec2, other: Vec2(T)) Vec2(T) {
         return Vec2(T)(x: self.x + other.x, y: self.y + other.y)
     }
 
-    pub func sub(self: const &Vec2, other: Vec2(T)) Vec2(T) {
+    pub func sub(self: const& Vec2, other: Vec2(T)) Vec2(T) {
         return Vec2(T)(x: self.x - other.x, y: self.y - other.y)
     }
 
-    pub func scale(self: const &Vec2, s: T) Vec2(T) {
+    pub func scale(self: const& Vec2, s: T) Vec2(T) {
         return Vec2(T)(x: self.x * s, y: self.y * s)
     }
 
-    pub func dot(self: const &Vec2, other: Vec2(T)) T {
+    pub func dot(self: const& Vec2, other: Vec2(T)) T {
         return self.x * other.x + self.y * other.y
     }
 
-    pub func negate(self: const &Vec2) Vec2(T) {
+    pub func negate(self: const& Vec2) Vec2(T) {
         return Vec2(T)(x: 0 - self.x, y: 0 - self.y)
     }
 
-    pub func lengthSquared(self: const &Vec2) T {
+    pub func lengthSquared(self: const& Vec2) T {
         return self.x * self.x + self.y * self.y
     }
 
-    pub func length(self: const &Vec2) T {
+    pub func length(self: const& Vec2) T {
         return sqrt(self.x * self.x + self.y * self.y)
     }
 
-    pub func normalize(self: const &Vec2) Vec2(T) {
+    pub func normalize(self: const& Vec2) Vec2(T) {
         const len: T = self.length()
         return Vec2(T)(x: self.x / len, y: self.y / len)
     }
@@ -67,23 +67,23 @@ pub struct Vec3(T: type) {
         return Vec3(T)(x: 0, y: 0, z: 0)
     }
 
-    pub func add(self: const &Vec3, other: Vec3(T)) Vec3(T) {
+    pub func add(self: const& Vec3, other: Vec3(T)) Vec3(T) {
         return Vec3(T)(x: self.x + other.x, y: self.y + other.y, z: self.z + other.z)
     }
 
-    pub func sub(self: const &Vec3, other: Vec3(T)) Vec3(T) {
+    pub func sub(self: const& Vec3, other: Vec3(T)) Vec3(T) {
         return Vec3(T)(x: self.x - other.x, y: self.y - other.y, z: self.z - other.z)
     }
 
-    pub func scale(self: const &Vec3, s: T) Vec3(T) {
+    pub func scale(self: const& Vec3, s: T) Vec3(T) {
         return Vec3(T)(x: self.x * s, y: self.y * s, z: self.z * s)
     }
 
-    pub func dot(self: const &Vec3, other: Vec3(T)) T {
+    pub func dot(self: const& Vec3, other: Vec3(T)) T {
         return self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    pub func cross(self: const &Vec3, other: Vec3(T)) Vec3(T) {
+    pub func cross(self: const& Vec3, other: Vec3(T)) Vec3(T) {
         return Vec3(T)(
             x: self.y * other.z - self.z * other.y,
             y: self.z * other.x - self.x * other.z,
@@ -91,24 +91,24 @@ pub struct Vec3(T: type) {
         )
     }
 
-    pub func negate(self: const &Vec3) Vec3(T) {
+    pub func negate(self: const& Vec3) Vec3(T) {
         return Vec3(T)(x: 0 - self.x, y: 0 - self.y, z: 0 - self.z)
     }
 
-    pub func lengthSquared(self: const &Vec3) T {
+    pub func lengthSquared(self: const& Vec3) T {
         return self.x * self.x + self.y * self.y + self.z * self.z
     }
 
-    pub func length(self: const &Vec3) T {
+    pub func length(self: const& Vec3) T {
         return sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
     }
 
-    pub func normalize(self: const &Vec3) Vec3(T) {
+    pub func normalize(self: const& Vec3) Vec3(T) {
         const len: T = self.length()
         return Vec3(T)(x: self.x / len, y: self.y / len, z: self.z / len)
     }
 
-    pub func transform(self: const &Vec3, m: Mat4(T)) Vec3(T) {
+    pub func transform(self: const& Vec3, m: Mat4(T)) Vec3(T) {
         return Vec3(T)(
             x: m.data[0] * self.x + m.data[4] * self.y + m.data[8] * self.z + m.data[12],
             y: m.data[1] * self.x + m.data[5] * self.y + m.data[9] * self.z + m.data[13],
@@ -133,40 +133,40 @@ pub struct Vec4(T: type) {
         return Vec4(T)(x: 0, y: 0, z: 0, w: 0)
     }
 
-    pub func add(self: const &Vec4, other: Vec4(T)) Vec4(T) {
+    pub func add(self: const& Vec4, other: Vec4(T)) Vec4(T) {
         return Vec4(T)(x: self.x + other.x, y: self.y + other.y, z: self.z + other.z, w: self.w + other.w)
     }
 
-    pub func sub(self: const &Vec4, other: Vec4(T)) Vec4(T) {
+    pub func sub(self: const& Vec4, other: Vec4(T)) Vec4(T) {
         return Vec4(T)(x: self.x - other.x, y: self.y - other.y, z: self.z - other.z, w: self.w - other.w)
     }
 
-    pub func scale(self: const &Vec4, s: T) Vec4(T) {
+    pub func scale(self: const& Vec4, s: T) Vec4(T) {
         return Vec4(T)(x: self.x * s, y: self.y * s, z: self.z * s, w: self.w * s)
     }
 
-    pub func dot(self: const &Vec4, other: Vec4(T)) T {
+    pub func dot(self: const& Vec4, other: Vec4(T)) T {
         return self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
     }
 
-    pub func negate(self: const &Vec4) Vec4(T) {
+    pub func negate(self: const& Vec4) Vec4(T) {
         return Vec4(T)(x: 0 - self.x, y: 0 - self.y, z: 0 - self.z, w: 0 - self.w)
     }
 
-    pub func lengthSquared(self: const &Vec4) T {
+    pub func lengthSquared(self: const& Vec4) T {
         return self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
     }
 
-    pub func length(self: const &Vec4) T {
+    pub func length(self: const& Vec4) T {
         return sqrt(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w)
     }
 
-    pub func normalize(self: const &Vec4) Vec4(T) {
+    pub func normalize(self: const& Vec4) Vec4(T) {
         const len: T = self.length()
         return Vec4(T)(x: self.x / len, y: self.y / len, z: self.z / len, w: self.w / len)
     }
 
-    pub func transform(self: const &Vec4, m: Mat4(T)) Vec4(T) {
+    pub func transform(self: const& Vec4, m: Mat4(T)) Vec4(T) {
         return Vec4(T)(
             x: m.data[0] * self.x + m.data[4] * self.y + m.data[8] * self.z + m.data[12] * self.w,
             y: m.data[1] * self.x + m.data[5] * self.y + m.data[9] * self.z + m.data[13] * self.w,
@@ -208,7 +208,7 @@ pub struct Mat4(T: type) {
         ])
     }
 
-    pub func multiply(self: const &Mat4, other: Mat4(T)) Mat4(T) {
+    pub func multiply(self: const& Mat4, other: Mat4(T)) Mat4(T) {
         var result: [16]T = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         var col: i32 = 0
         while (col < 4) {
@@ -226,7 +226,7 @@ pub struct Mat4(T: type) {
         return Mat4(T)(data: result)
     }
 
-    pub func transpose(self: const &Mat4) Mat4(T) {
+    pub func transpose(self: const& Mat4) Mat4(T) {
         return Mat4(T)(data: [
             self.data[0], self.data[4], self.data[8], self.data[12],
             self.data[1], self.data[5], self.data[9], self.data[13],
@@ -235,7 +235,7 @@ pub struct Mat4(T: type) {
         ])
     }
 
-    pub func apply(self: const &Mat4, v: Vec3(T)) Vec3(T) {
+    pub func apply(self: const& Mat4, v: Vec3(T)) Vec3(T) {
         return Vec3(T)(
             x: self.data[0] * v.x + self.data[4] * v.y + self.data[8] * v.z + self.data[12],
             y: self.data[1] * v.x + self.data[5] * v.y + self.data[9] * v.z + self.data[13],
@@ -243,7 +243,7 @@ pub struct Mat4(T: type) {
         )
     }
 
-    pub func applyV4(self: const &Mat4, v: Vec4(T)) Vec4(T) {
+    pub func applyV4(self: const& Mat4, v: Vec4(T)) Vec4(T) {
         return Vec4(T)(
             x: self.data[0] * v.x + self.data[4] * v.y + self.data[8] * v.z + self.data[12] * v.w,
             y: self.data[1] * v.x + self.data[5] * v.y + self.data[9] * v.z + self.data[13] * v.w,
@@ -265,7 +265,7 @@ pub struct Quat(T: type) {
         return Quat(T)(x: 0, y: 0, z: 0, w: 1)
     }
 
-    pub func multiply(self: const &Quat, other: Quat(T)) Quat(T) {
+    pub func multiply(self: const& Quat, other: Quat(T)) Quat(T) {
         return Quat(T)(
             x: self.w * other.x + self.x * other.w + self.y * other.z - self.z * other.y,
             y: self.w * other.y - self.x * other.z + self.y * other.w + self.z * other.x,
@@ -274,24 +274,24 @@ pub struct Quat(T: type) {
         )
     }
 
-    pub func conjugate(self: const &Quat) Quat(T) {
+    pub func conjugate(self: const& Quat) Quat(T) {
         return Quat(T)(x: 0 - self.x, y: 0 - self.y, z: 0 - self.z, w: self.w)
     }
 
-    pub func lengthSquared(self: const &Quat) T {
+    pub func lengthSquared(self: const& Quat) T {
         return self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
     }
 
-    pub func length(self: const &Quat) T {
+    pub func length(self: const& Quat) T {
         return sqrt(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w)
     }
 
-    pub func normalize(self: const &Quat) Quat(T) {
+    pub func normalize(self: const& Quat) Quat(T) {
         const len: T = self.length()
         return Quat(T)(x: self.x / len, y: self.y / len, z: self.z / len, w: self.w / len)
     }
 
-    pub func toMat4(self: const &Quat) Mat4(T) {
+    pub func toMat4(self: const& Quat) Mat4(T) {
         const xx: T = self.x * self.x
         const yy: T = self.y * self.y
         const zz: T = self.z * self.z

@@ -475,10 +475,10 @@ pub const Resolver = struct {
                 _ = val_engine.matchRule("program", 0);
                 const err_info = val_engine.getError();
                 const msg = if (err_info.found_kind == .kw_var) blk: {
-                    // Check if next token is & — common mistake: var &T instead of &T
+                    // Check if next token is & — common mistake: var &T instead of mut& T
                     const next_pos = err_info.pos + 1;
                     if (next_pos < tokens.items.len and tokens.items[next_pos].kind == .ampersand)
-                        break :blk try std.fmt.allocPrint(alloc, "var &T is not valid — use &T for mutable references", .{})
+                        break :blk try std.fmt.allocPrint(alloc, "var &T is not valid — use mut& T for mutable references", .{})
                     else
                         break :blk try std.fmt.allocPrint(alloc, "unexpected '{s}'", .{err_info.found});
                 } else if (err_info.label) |label| blk: {

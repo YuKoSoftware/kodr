@@ -302,7 +302,7 @@ pub fn buildNotExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 }
 
 pub fn buildUnaryExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // unary_expr <- '!' unary_expr / '-' unary_expr / 'const' '&' unary_expr / '&' unary_expr / postfix_expr
+    // unary_expr <- '!' unary_expr / '-' unary_expr / 'const&' unary_expr / 'mut&' unary_expr / postfix_expr
     const first_tok = ctx.tokens[cap.start_pos];
     if (first_tok.kind == .bang) {
         const operand = if (cap.children.len > 0) try builder.buildNode(ctx, &cap.children[0]) else return error.NoOperand;
@@ -312,14 +312,15 @@ pub fn buildUnaryExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
         const operand = if (cap.children.len > 0) try builder.buildNode(ctx, &cap.children[0]) else return error.NoOperand;
         return ctx.newNode(.{ .unary_expr = .{ .op = "-", .operand = operand } });
     }
-    if (first_tok.kind == .kw_const) {
-        // const & — explicit const borrow expression: 'const' '&' unary_expr
+    if (first_tok.kind == .const_borrow) {
+        // const& — explicit const borrow expression
         const operand = if (cap.children.len > 0) try builder.buildNode(ctx, &cap.children[0]) else return error.NoOperand;
         return ctx.newNode(.{ .const_borrow_expr = operand });
     }
-    if (first_tok.kind == .ampersand) {
+    if (first_tok.kind == .mut_borrow) {
+        // mut& — explicit mutable borrow expression
         const operand = if (cap.children.len > 0) try builder.buildNode(ctx, &cap.children[0]) else return error.NoOperand;
-        return ctx.newNode(.{ .borrow_expr = operand });
+        return ctx.newNode(.{ .mut_borrow_expr = operand });
     }
     if (cap.children.len > 0) return builder.buildNode(ctx, &cap.children[0]);
     return error.NoUnaryChildren;

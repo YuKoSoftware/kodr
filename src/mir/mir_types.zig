@@ -37,7 +37,8 @@ pub fn classifyType(t: RT) TypeClass {
                 return .thread_handle;
             return .plain;
         },
-        .ptr => .safe_ptr,
+        // .ptr is a const &T reference — field access auto-derefs in Zig, not a Ptr(T) wrapper
+        .ptr => .plain,
         else => .plain,
     };
 }
@@ -51,7 +52,7 @@ pub const Coercion = enum {
     error_wrap,
     arbitrary_union_wrap,
     optional_unwrap,
-    value_to_const_ref, // T → &T for const & parameters
+    value_to_const_ref, // T → const& T for const& parameters
 };
 
 // ── Node Info ───────────────────────────────────────────────

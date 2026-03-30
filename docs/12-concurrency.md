@@ -32,8 +32,8 @@ Thread functions accept arguments. The compiler enforces safety rules based on h
 | Passing style | Allowed? | Effect on original |
 |---|---|---|
 | Owned value (`x`) | Yes | **Moved** — variable dead until thread joined |
-| Const borrow (`&x`) | Yes | **Frozen** — read-only until thread joined |
-| Mutable borrow (`var &x`) | **No** | Compile error |
+| Const borrow (`const& x`) | Yes | **Frozen** — read-only until thread joined |
+| Mutable borrow (`mut& x`) | **No** | Compile error |
 
 ### Owned values move into threads
 
@@ -52,15 +52,15 @@ var result: i32 = h.value    // ownership returned (move)
 
 ### Const borrows freeze the original
 
-Passing a const borrow (`&x`) to a thread freezes the original variable — it becomes read-only until the thread is joined via `.value` or `.wait()`. This prevents data races where the caller mutates data while the thread reads it.
+Passing a const borrow (`const& x`) to a thread freezes the original variable — it becomes read-only until the thread is joined via `.value` or `.wait()`. This prevents data races where the caller mutates data while the thread reads it.
 
 ```
-thread reader(val: const &i32) Handle(void) {
+thread reader(val: const& i32) Handle(void) {
     // can read val, cannot modify it
 }
 
 var x: i32 = 10
-const h: Handle(void) = reader(&x)
+const h: Handle(void) = reader(mut& x)
 x = 20        // compile error — cannot mutate 'x' while it is borrowed by thread
 h.wait()      // thread joined — freeze released
 x = 20        // ok — x is unfrozen after join
@@ -68,13 +68,13 @@ x = 20        // ok — x is unfrozen after join
 
 ### Mutable borrows are forbidden
 
-Passing a mutable borrow (`var &x`) to a thread is always a compile error. Two things writing to the same data concurrently is a data race — no static analysis can make it safe without synchronization primitives.
+Passing a mutable borrow (`mut& x`) to a thread is always a compile error. Two things writing to the same data concurrently is a data race — no static analysis can make it safe without synchronization primitives.
 
 ```
-thread writer(val: &i32) Handle(void) { }
+thread writer(val: mut& i32) Handle(void) { }
 
 var x: i32 = 10
-const h: Handle(void) = writer(&x)    // compile error — cannot pass mutable borrow to thread
+const h: Handle(void) = writer(mut& x)    // compile error — cannot pass mutable borrow to thread
 ```
 
 ### `.value` is a move
@@ -193,8 +193,8 @@ None. Any function can be called inside a thread body. Safety comes from ownersh
 | Rule | Decision |
 |------|----------|
 | Owned values | Move into thread — original variable dead until join |
-| Const borrows (`&x`) | Allowed — original frozen (read-only) until join |
-| Mutable borrows (`var &x`) | Forbidden — compile error |
+| Const borrows (`const& x`) | Allowed — original frozen (read-only) until join |
+| Mutable borrows (`mut& x`) | Forbidden — compile error |
 | `.value` | Move — one call only, second is compile error |
 | Unjoined thread | Compile error — must `.value` or `.wait()` |
 | Cancellation | Cooperative — flag-based, not forced |
