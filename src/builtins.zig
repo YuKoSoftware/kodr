@@ -43,7 +43,6 @@ pub const BUILD_FIELDS = [_][]const u8{
     "version",
     "build",
     "description",
-    "icon",
 };
 
 /// Build type values for #build metadata
