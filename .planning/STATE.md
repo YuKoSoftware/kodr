@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: milestone
 status: v0.17 shipped — ready for next milestone
-stopped_at: Completed quick-260330-ck9
+stopped_at: Completed quick-260330-c0f
 last_updated: "2026-03-30T00:00:00.000Z"
 last_activity: 2026-03-30
 progress:
@@ -65,7 +65,6 @@ None.
 - 260330-04a: Comma-separated library names in #cimport name field
 - 260330-0pb: PEG labeled failures — 14 rules annotated
 - 260330-c0f: Expand PEG labeled failures — 42 total rules annotated (28 added)
-- 260330-ck9: Move library output (.a/.so/.orh) from bin/ to lib/
 
 ### Blockers/Concerns
 
@@ -74,5 +73,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-30
-Stopped at: Completed quick-260330-ck9
+Stopped at: Completed quick-260330-c0f
 Resume file: None
