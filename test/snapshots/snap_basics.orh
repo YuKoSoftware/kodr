@@ -4,8 +4,8 @@ module snap_basics
 const MAX_COUNT: i32 = 100
 const APP_NAME: String = "orhon"
 
-// var declaration with assignment
-var counter: i32 = 0
+// module-level const
+const RETRY_COUNT: i32 = 3
 
 // type alias
 const Speed: type = i32
