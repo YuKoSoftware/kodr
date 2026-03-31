@@ -1,7 +1,6 @@
 # Orhon — TODO
 
 Items ordered by importance and how much they unblock future work.
-Research sources: `.planning/research/` (compiler-techniques, zig-ecosystem, language-design).
 
 ---
 
@@ -59,17 +58,11 @@ invalidate the cache.
 (funcs, structs, enums, bitfields, vars, type aliases). Pipeline checks dependency
 interface hashes — downstream modules skip passes 5-12 when upstream public API unchanged.
 
-### PEG error recovery — labeled failures
+### ~~PEG error recovery — labeled failures~~ DONE (v0.10.24-25)
 
-Add optional human-readable labels to grammar rules in `orhon.peg`. When a labeled
-rule fails, use the label in error messages instead of the raw rule name.
-
-```
-VarDecl <- 'var' IDENTIFIER ':' TypeExpr '=' Expr
-         {label: "variable declaration (var name: Type = value)"}
-```
-
-Medium effort, high impact for error quality.
+~~Add human-readable labels to grammar rules.~~ Shipped. 42 rules annotated with
+`{label: "..."}` syntax. The PEG engine accumulates all expected tokens at the
+furthest failure position and uses labels in error messages.
 
 ### MIR — SSA construction (Phase 4a)
 
@@ -140,16 +133,15 @@ Pattern: `var cancel: Atomic(bool) = Atomic(bool).new(false)`, pass to thread, c
 The highest-ROI tooling investment. Every user hits errors. Good messages = faster
 learning = more adoption. Elm, Gleam, and Rust set the bar.
 
-**Improvements:**
-- "Did you mean X?" for identifier typos (Levenshtein distance to known names)
-- Expected vs actual display for type mismatches
-- Ownership/borrow violations should suggest fixes ("consider using `copy()`" or
-  "consider borrowing with `const&`")
+**Shipped (v0.17):**
+- ~~"Did you mean X?" for identifier typos~~ — adaptive Levenshtein (threshold 1 for ≤4 chars, 2 for longer)
+- ~~Expected vs actual display for type mismatches~~
+- ~~Ownership/borrow violations suggest fixes~~ — "consider using `copy()`", "consider borrowing with `const&`"
+- ~~PEG labeled failures~~ — 42 rules annotated (v0.10.24-25)
+
+**Remaining:**
 - Cross-module errors should show module context
 - Generic instantiation failures should show the constraint that failed
-
-**PEG parser improvements (see Compiler Architecture section):**
-- Labeled failures — human-readable error messages from grammar rules
 - Common mistake detection — try token insertions/deletions at failure point
   ("missing ':' in variable declaration")
 
@@ -384,6 +376,27 @@ Beyond "does it crash" fuzzing — test semantic properties across the pipeline:
 - Parse then pretty-print should round-trip
 - Type-checking the same input twice should give identical results
 - Codegen output should always be valid Zig (run `zig ast-check` on it)
+
+---
+
+## Architectural Decisions (Settled)
+
+Rationales for key choices already made. Preserved for future design consistency.
+
+| Decision | Rationale |
+|----------|-----------|
+| Fix bugs before architecture work | Correctness before performance/elegance |
+| Const auto-borrow via MIR annotation | Re-derive const-ness from AST, avoid coupling to ownership checker |
+| Type-directed pointer coercion | Type annotation carries safety level |
+| Transparent (structural) type aliases | `Speed == i32`, not a distinct nominal type |
+| Allocator via `.new(alloc)`, not generic param | Keeps generics pure (types only) |
+| SMP as default allocator | GeneralPurposeAllocator optimized for general use |
+| Named bridge modules via build system | createModule/addImport eliminates file-path imports |
+| `throw` not `try` for error propagation | Less noisy, less hidden control flow |
+| Parenthesized guard syntax `(x if expr)` | Consistent with syntax containment rule |
+| Hub + satellite split pattern | All large file splits use same pattern for consistency |
+| `blueprint` for traits, not `impl` blocks | Everything visible at the definition site. One syntax for conformance + implementation |
+| No Zig IR layer in codegen | Direct string emission. MIR/SSA is the optimization target |
 
 ---
 
