@@ -48,11 +48,6 @@ be processed in parallel via a thread pool.
 - Generic instantiation failures should show the constraint that failed
 - Common mistake detection — token insertions/deletions at failure point
 
-### Docgen — wire `#description` as module summary
-
-`#description = "..."` in anchor files is accepted but ignored by docgen.
-Should be used as the module-level summary at the top of generated docs.
-
 ### Formatter — line-length awareness
 
 Missing: wrapping for long lines, function signature breaking rules, alignment

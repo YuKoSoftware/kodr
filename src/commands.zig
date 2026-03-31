@@ -148,6 +148,31 @@ pub fn runGendoc(allocator: std.mem.Allocator, cli: *const _cli.CliArgs) !void {
     // Ensure std files are available (parsing may discover std imports)
     try _std_bundle.ensureStdFiles(allocator);
 
+    if (cli.gen_std) {
+        // Generate stdlib docs from embedded .orh-cache/std/
+        var reporter = errors.Reporter.init(allocator, .debug);
+        defer reporter.deinit();
+
+        var mod_resolver = module.Resolver.init(allocator, &reporter);
+        defer mod_resolver.deinit();
+
+        try mod_resolver.scanDirectory(cache.CACHE_DIR ++ "/std");
+
+        if (reporter.hasErrors()) {
+            try reporter.flush();
+            return;
+        }
+
+        try mod_resolver.parseModules(allocator);
+        if (reporter.hasErrors()) {
+            try reporter.flush();
+            return;
+        }
+
+        try docgen.generateDocs(allocator, &mod_resolver, "docs/std");
+        return;
+    }
+
     // Check source dir exists
     std.fs.cwd().access(cli.source_dir, .{}) catch {
         std.debug.print("error: source directory '{s}' not found\n", .{cli.source_dir});
@@ -190,11 +215,7 @@ pub fn runGendoc(allocator: std.mem.Allocator, cli: *const _cli.CliArgs) !void {
         return;
     }
 
-    // Output to docs/api/{source_dir_name}/
-    const dir_name = std.fs.path.basename(cli.source_dir);
-    const output_dir = try std.fmt.allocPrint(allocator, "docs/api/{s}", .{dir_name});
-    defer allocator.free(output_dir);
-    try docgen.generateDocs(allocator, &mod_resolver, output_dir);
+    try docgen.generateDocs(allocator, &mod_resolver, "docs/api");
 }
 
 pub fn addToPath(allocator: std.mem.Allocator) !void {

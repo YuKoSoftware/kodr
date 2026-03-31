@@ -73,6 +73,7 @@ pub const CliArgs = struct {
     source_dir: []const u8,
     project_name: []const u8, // for init command
     init_in_place: bool, // orhon init (no name) — init in current dir
+    gen_std: bool, // -std flag for gendoc (generate stdlib docs)
     allocator: std.mem.Allocator, // owns duped strings
 
     pub fn deinit(self: *const CliArgs) void {
@@ -103,6 +104,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         .source_dir = "src",
         .project_name = "",
         .init_in_place = false,
+        .gen_std = false,
         .allocator = allocator,
     };
 
@@ -177,6 +179,8 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
             cli.optimize = .small;
         } else if (std.mem.eql(u8, arg, "-verbose")) {
             cli.verbose = true;
+        } else if (std.mem.eql(u8, arg, "-std")) {
+            cli.gen_std = true;
         } else {
             // Treat as source directory
             cli.source_dir = try allocator.dupe(u8, arg);
@@ -207,6 +211,7 @@ pub fn printHelp() void {
         \\  init [name]         Create a new project (in ./<name>/ or current dir if no name)
         \\  fmt                 Format all .orh files in the project
         \\  gendoc              Generate Markdown docs from /// comments (pub items)
+        \\                        -std  Generate stdlib reference docs
         \\  lsp                 Start the language server (for editor integration)
         \\  addtopath           Add orhon to your shell PATH
         \\  debug               Show project info — modules, files, source directory
