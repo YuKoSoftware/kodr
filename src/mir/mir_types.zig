@@ -24,8 +24,6 @@ pub const TypeClass = enum {
 /// Classify a resolved type into a codegen category.
 pub fn classifyType(t: RT) TypeClass {
     return switch (t) {
-        .error_union => .error_union,
-        .null_union => .null_union,
         .union_type => .arbitrary_union,
         .primitive => |p| if (p == .string) .string else .plain,
         .generic => |g| {
@@ -89,8 +87,8 @@ test "classifyType - unions" {
     const inner = try alloc.create(RT);
     defer alloc.destroy(inner);
     inner.* = RT{ .primitive = .i32 };
-    try std.testing.expectEqual(TypeClass.error_union, classifyType(RT{ .error_union = inner }));
-    try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .null_union = inner }));
+    try std.testing.expectEqual(TypeClass.error_union, classifyType(RT{ .core_type = .{ .kind = .error_union, .inner = inner } }));
+    try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .core_type = .{ .kind = .null_union, .inner = inner } }));
 }
 
 test "classifyType - pointers and named" {

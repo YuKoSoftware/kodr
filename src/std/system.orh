@@ -11,11 +11,11 @@ pub bridge func run(cmd: String, args: any) any
 
 // Get an environment variable
 
-pub bridge func getEnv(name: String) (Error | String)
+pub bridge func getEnv(name: String) ErrorUnion(String)
 
 // Set an environment variable
 
-pub bridge func setEnv(name: String, value: String) (Error | void)
+pub bridge func setEnv(name: String, value: String) ErrorUnion(void)
 
 // Check if an environment variable exists
 

@@ -22,7 +22,7 @@ pub bridge func debugPrint(msg: String) void
 
 // Read one line from stdin — returns Error on EOF or read failure
 
-pub bridge func get() (Error | String)
+pub bridge func get() ErrorUnion(String)
 
 // Check if stdout supports colored output (true for terminals, false for pipes/files)
 

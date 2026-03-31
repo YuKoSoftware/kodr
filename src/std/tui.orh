@@ -7,7 +7,7 @@ module tui
 
 // Enable raw mode — keypresses arrive immediately, no echo
 
-pub bridge func enableRawMode() (Error | void)
+pub bridge func enableRawMode() ErrorUnion(void)
 
 // Disable raw mode — restore original terminal state
 
@@ -133,7 +133,7 @@ pub bridge struct Key {
 
 // Read a single keypress (blocks until input arrives, requires raw mode)
 
-pub bridge func readKey() (Error | Key)
+pub bridge func readKey() ErrorUnion(Key)
 
 // Key kind constants
 

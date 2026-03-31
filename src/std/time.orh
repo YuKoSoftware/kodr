@@ -31,7 +31,7 @@ pub bridge func format(ms: i64) String
 
 // Parse an ISO 8601 date string ("2026-03-23") to milliseconds since epoch
 
-pub bridge func parseDate(date: String) (Error | i64)
+pub bridge func parseDate(date: String) ErrorUnion(i64)
 
 // Get year from milliseconds since epoch
 

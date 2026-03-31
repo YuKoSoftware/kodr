@@ -6,11 +6,11 @@ module csv
 
 // Get a field value by row and column (0-indexed)
 
-pub bridge func getField(source: String, row: i32, col: i32) (Error | String)
+pub bridge func getField(source: String, row: i32, col: i32) ErrorUnion(String)
 
 // Get an entire row as tab-separated fields
 
-pub bridge func getRow(source: String, row: i32) (Error | String)
+pub bridge func getRow(source: String, row: i32) ErrorUnion(String)
 
 // Number of rows in CSV data
 

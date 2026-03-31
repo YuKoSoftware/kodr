@@ -384,8 +384,8 @@ pub const PropagationChecker = struct {
 
                     if (func_name) |fname| {
                         if (self.ctx.decls.funcs.get(fname)) |sig| {
-                            if (sig.return_type.isErrorUnion()) return true;
-                            if (sig.return_type.isNullUnion()) return false;
+                            if (sig.return_type.isCoreType(.error_union)) return true;
+                            if (sig.return_type.isCoreType(.null_union)) return false;
                         }
                     }
                 }
@@ -427,11 +427,9 @@ pub const PropagationChecker = struct {
 /// Returns true = Error union, false = null union, null = not a union
 fn typeNodeIsUnion(node: *parser.Node) ?bool {
     switch (node.*) {
-        .type_union => |u| {
-            for (u) |t| {
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) return true;
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) return false;
-            }
+        .type_generic => |g| {
+            if (std.mem.eql(u8, g.name, "ErrorUnion")) return true;
+            if (std.mem.eql(u8, g.name, "NullUnion")) return false;
             return null;
         },
         else => return null,
@@ -464,11 +462,10 @@ fn nodeIsEarlyExit(node: *parser.Node) bool {
 
 fn typeCanPropagate(node: *parser.Node) bool {
     switch (node.*) {
-        .type_union => |u| {
-            for (u) |t| {
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) return true;
-                if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) return true;
-            }
+        .type_generic => |g| {
+            // ErrorUnion(T) can propagate errors, NullUnion(T) can propagate null
+            if (std.mem.eql(u8, g.name, "ErrorUnion")) return true;
+            if (std.mem.eql(u8, g.name, "NullUnion")) return true;
             return false;
         },
         .type_named => |n| return std.mem.eql(u8, n, K.Type.VOID) == false,
@@ -521,18 +518,18 @@ test "propagation - unhandled in non-propagating function" {
 test "propagation - ResolvedType detects Error and null unions" {
     const alloc = std.testing.allocator;
 
-    // Error union
+    // Error union (CoreType)
     const inner = try alloc.create(types.ResolvedType);
     defer alloc.destroy(inner);
     inner.* = .{ .primitive = .i32 };
-    const err_union = types.ResolvedType{ .error_union = inner };
-    try std.testing.expect(err_union.isErrorUnion());
-    try std.testing.expect(!err_union.isNullUnion());
+    const err_union = types.ResolvedType{ .core_type = .{ .kind = .error_union, .inner = inner } };
+    try std.testing.expect(err_union.isCoreType(.error_union));
+    try std.testing.expect(!err_union.isCoreType(.null_union));
 
-    // Null union
-    const null_union = types.ResolvedType{ .null_union = inner };
-    try std.testing.expect(null_union.isNullUnion());
-    try std.testing.expect(!null_union.isErrorUnion());
+    // Null union (CoreType)
+    const null_union = types.ResolvedType{ .core_type = .{ .kind = .null_union, .inner = inner } };
+    try std.testing.expect(null_union.isCoreType(.null_union));
+    try std.testing.expect(!null_union.isCoreType(.error_union));
 
     // Plain type — not a union
     const plain = types.ResolvedType{ .primitive = .i32 };
@@ -544,32 +541,26 @@ test "propagation - ResolvedType detects Error and null unions" {
 test "propagation - typeNodeIsUnion detects union AST nodes" {
     const alloc = std.testing.allocator;
 
-    // Build a type_union node: (Error | i32)
-    var error_type = parser.Node{ .type_named = "Error" };
+    // Build a type_generic node: ErrorUnion(i32)
     var i32_type = parser.Node{ .type_named = "i32" };
-    var members = try alloc.alloc(*parser.Node, 2);
-    defer alloc.free(members);
-    members[0] = &error_type;
-    members[1] = &i32_type;
-    var union_node = parser.Node{ .type_union = members };
+    var err_args = [_]*parser.Node{&i32_type};
+    var err_union_node = parser.Node{ .type_generic = .{ .name = "ErrorUnion", .args = &err_args } };
 
     // Should detect as Error union
-    try std.testing.expect(typeNodeIsUnion(&union_node).? == true);
+    try std.testing.expect(typeNodeIsUnion(&err_union_node).? == true);
 
-    // Build a null union: (null | User)
-    var null_type = parser.Node{ .type_named = "null" };
+    // Build NullUnion(User)
     var user_type = parser.Node{ .type_named = "User" };
-    var null_members = try alloc.alloc(*parser.Node, 2);
-    defer alloc.free(null_members);
-    null_members[0] = &null_type;
-    null_members[1] = &user_type;
-    var null_union = parser.Node{ .type_union = null_members };
+    var null_args = [_]*parser.Node{&user_type};
+    var null_union_node = parser.Node{ .type_generic = .{ .name = "NullUnion", .args = &null_args } };
 
-    try std.testing.expect(typeNodeIsUnion(&null_union).? == false);
+    try std.testing.expect(typeNodeIsUnion(&null_union_node).? == false);
 
     // Plain type — not a union
     var plain = parser.Node{ .type_named = "i32" };
     try std.testing.expect(typeNodeIsUnion(&plain) == null);
+
+    _ = alloc;
 }
 
 test "propagation - call expr resolved via decl table" {
@@ -598,7 +589,7 @@ test "propagation - call expr resolved via decl table" {
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
-        .return_type = .{ .error_union = inner },
+        .return_type = .{ .core_type = .{ .kind = .error_union, .inner = inner } },
         .return_type_node = ret_node,
         .is_compt = false,
         .is_pub = false,
@@ -741,7 +732,7 @@ test "propagation - reassignment resets handled status" {
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
-        .return_type = .{ .error_union = inner },
+        .return_type = .{ .core_type = .{ .kind = .error_union, .inner = inner } },
         .return_type_node = ret_node,
         .is_compt = false,
         .is_pub = false,

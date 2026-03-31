@@ -32,11 +32,11 @@ pub bridge func hmacSha256(data: String, key: String) String
 
 // Encrypt plaintext with a 32-byte key (returns base64-encoded blob)
 
-pub bridge func encrypt(plaintext: String, key: String) (Error | String)
+pub bridge func encrypt(plaintext: String, key: String) ErrorUnion(String)
 
 // Decrypt base64-encoded blob with a 32-byte key
 
-pub bridge func decrypt(ciphertext: String, key: String) (Error | String)
+pub bridge func decrypt(ciphertext: String, key: String) ErrorUnion(String)
 
 // ── Identifiers ──
 

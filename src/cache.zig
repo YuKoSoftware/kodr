@@ -580,12 +580,6 @@ fn hashResolvedType(seed: u64, rt: types.ResolvedType) u64 {
             const addr: u64 = @intFromPtr(arr.size);
             s = XxHash3.hash(s, std.mem.asBytes(&addr));
         },
-        .error_union => |inner| {
-            s = hashResolvedType(s, inner.*);
-        },
-        .null_union => |inner| {
-            s = hashResolvedType(s, inner.*);
-        },
         .union_type => |variants| {
             for (variants) |v| {
                 s = hashResolvedType(s, v);

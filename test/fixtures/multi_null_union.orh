@@ -3,7 +3,7 @@ module test_mnu
 pub struct A { pub x: i32 }
 pub struct B { pub y: i32 }
 
-pub func choose(flag: i32) (null | A | B) {
+pub func choose(flag: i32) NullUnion((A | B)) {
     if(flag == 1) {
         return A(x: 10)
     } elif(flag == 2) {

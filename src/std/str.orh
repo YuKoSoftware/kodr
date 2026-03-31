@@ -10,8 +10,8 @@ module str
 pub bridge func contains(s: String, needle: String) bool
 pub bridge func startsWith(s: String, prefix: String) bool
 pub bridge func endsWith(s: String, suffix: String) bool
-pub bridge func indexOf(s: String, needle: String) (null | i32)
-pub bridge func lastIndexOf(s: String, needle: String) (null | i32)
+pub bridge func indexOf(s: String, needle: String) NullUnion(i32)
+pub bridge func lastIndexOf(s: String, needle: String) NullUnion(i32)
 
 // Case
 

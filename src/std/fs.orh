@@ -5,15 +5,15 @@ module fs
 
 // Read entire file as String
 
-pub bridge func readFile(path: String) (Error | String)
+pub bridge func readFile(path: String) ErrorUnion(String)
 
 // Write String to file (creates or overwrites)
 
-pub bridge func writeFile(path: String, content: String) (Error | void)
+pub bridge func writeFile(path: String, content: String) ErrorUnion(void)
 
 // Append String to file
 
-pub bridge func appendFile(path: String, content: String) (Error | void)
+pub bridge func appendFile(path: String, content: String) ErrorUnion(void)
 
 // Check if path exists
 
@@ -21,19 +21,19 @@ pub bridge func exists(path: String) bool
 
 // Delete a file
 
-pub bridge func remove(path: String) (Error | void)
+pub bridge func remove(path: String) ErrorUnion(void)
 
 // File size in bytes
 
-pub bridge func fileSize(path: String) (Error | i64)
+pub bridge func fileSize(path: String) ErrorUnion(i64)
 
 // Create directory (and parents)
 
-pub bridge func mkdir(path: String) (Error | void)
+pub bridge func mkdir(path: String) ErrorUnion(void)
 
 // List directory entries
 
-pub bridge func readDir(path: String) (Error | String)
+pub bridge func readDir(path: String) ErrorUnion(String)
 
 // ── Path Operations ──
 

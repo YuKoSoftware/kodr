@@ -44,7 +44,7 @@ compt func double(n: i32) i32 {
 // bridge functions declare an Orhon interface backed by a Zig sidecar file.
 // Used in std modules — not typically in user code.
 //
-//   pub bridge func get(source: String, path: String) (Error | String)
+//   pub bridge func get(source: String, path: String) ErrorUnion(String)
 //
 // The compiler pairs the .orh file with a same-name .zig sidecar,
 // re-exporting the Zig implementation through the Orhon type system.

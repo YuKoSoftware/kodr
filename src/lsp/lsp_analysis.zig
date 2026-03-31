@@ -46,16 +46,6 @@ pub fn formatType(allocator: std.mem.Allocator, t: types.ResolvedType) anyerror!
             const size_str = if (a.size.* == .int_literal) a.size.int_literal else "N";
             break :blk std.fmt.allocPrint(allocator, "[{s}]{s}", .{ size_str, inner_s });
         },
-        .error_union => |inner| blk: {
-            const inner_s = try formatType(allocator, inner.*);
-            defer allocator.free(inner_s);
-            break :blk std.fmt.allocPrint(allocator, "(Error | {s})", .{inner_s});
-        },
-        .null_union => |inner| blk: {
-            const inner_s = try formatType(allocator, inner.*);
-            defer allocator.free(inner_s);
-            break :blk std.fmt.allocPrint(allocator, "(null | {s})", .{inner_s});
-        },
         .generic => |g| allocator.dupe(u8, g.name),
         .func_ptr => |f| blk: {
             const ret_s = try formatType(allocator, f.return_type.*);

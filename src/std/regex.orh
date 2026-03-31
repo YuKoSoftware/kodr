@@ -22,16 +22,16 @@ pub bridge func matches(pattern: String, text: String) bool
 
 // Find first match in text
 
-pub bridge func find(pattern: String, text: String) (Error | String)
+pub bridge func find(pattern: String, text: String) ErrorUnion(String)
 
 // Find all non-overlapping matches (newline-separated)
 
-pub bridge func findAll(pattern: String, text: String) (Error | String)
+pub bridge func findAll(pattern: String, text: String) ErrorUnion(String)
 
 // Replace first match
 
-pub bridge func replace(pattern: String, text: String, replacement: String) (Error | String)
+pub bridge func replace(pattern: String, text: String, replacement: String) ErrorUnion(String)
 
 // Replace all matches
 
-pub bridge func replaceAll(pattern: String, text: String, replacement: String) (Error | String)
+pub bridge func replaceAll(pattern: String, text: String, replacement: String) ErrorUnion(String)

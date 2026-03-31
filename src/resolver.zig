@@ -718,11 +718,8 @@ pub const TypeResolver = struct {
                             if (scope.lookup(obj_id)) |var_type| {
                                 // Unwrap error_union and null_union to get the underlying named type
                                 if (var_type == .named) break :blk var_type.named;
-                                if (var_type == .error_union) {
-                                    if (var_type.error_union.* == .named) break :blk var_type.error_union.named;
-                                }
-                                if (var_type == .null_union) {
-                                    if (var_type.null_union.* == .named) break :blk var_type.null_union.named;
+                                if (var_type.coreInner()) |ci| {
+                                    if (ci.* == .named) break :blk ci.named;
                                 }
                             }
                             break :blk "";
@@ -784,11 +781,10 @@ pub const TypeResolver = struct {
 
             .field_expr => |f| {
                 const obj_type = try self.resolveExpr(f.object, scope);
-                // .value on (Error | T) or (null | T) unwraps to the inner type.
+                // .value on ErrorUnion(T) or NullUnion(T) unwraps to the inner type.
                 // This lets the resolver track variables assigned via `var x = result.value`.
                 if (std.mem.eql(u8, f.field, "value")) {
-                    if (obj_type == .error_union) return obj_type.error_union.*;
-                    if (obj_type == .null_union) return obj_type.null_union.*;
+                    if (obj_type.coreInner()) |ci| return ci.*;
                 }
                 const obj_name = obj_type.name();
                 if (self.decls.structs.get(obj_name)) |sig| {
@@ -940,24 +936,12 @@ pub const TypeResolver = struct {
         const covered_slice = covered.items;
 
         switch (match_type) {
-            .error_union => |inner| {
-                const required = [_][]const u8{ "Error", inner.name() };
-                for (required) |req| {
-                    var found = false;
-                    for (covered_slice) |c| {
-                        if (std.mem.eql(u8, c, req)) { found = true; break; }
-                    }
-                    if (!found) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "non-exhaustive match — missing arm for '{s}', add it or use 'else'", .{req});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(match_node) });
-                        return;
-                    }
-                }
-            },
-            .null_union => |inner| {
-                const required = [_][]const u8{ "null", inner.name() };
+            .core_type => |ct| {
+                const required: [2][]const u8 = switch (ct.kind) {
+                    .error_union => .{ "Error", ct.inner.name() },
+                    .null_union => .{ "null", ct.inner.name() },
+                    else => return, // other core types don't have match exhaustiveness
+                };
                 for (required) |req| {
                     var found = false;
                     for (covered_slice) |c| {
@@ -994,23 +978,26 @@ pub const TypeResolver = struct {
     /// Validate that a match arm pattern is a valid member of the matched union type
     fn validateMatchArm(self: *TypeResolver, pattern_name: []const u8, match_type: RT, arm_node: *parser.Node) !void {
         switch (match_type) {
-            .error_union => |inner| {
-                // Valid arms: Error, and the inner type
-                if (std.mem.eql(u8, pattern_name, "Error")) return;
-                if (std.mem.eql(u8, pattern_name, inner.name())) return;
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "match arm '{s}' is not a member of (Error | {s})", .{ pattern_name, inner.name() });
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(arm_node) });
-            },
-            .null_union => |inner| {
-                // Valid arms: null, and the inner type
-                if (std.mem.eql(u8, pattern_name, "null")) return;
-                if (std.mem.eql(u8, pattern_name, inner.name())) return;
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "match arm '{s}' is not a member of (null | {s})", .{ pattern_name, inner.name() });
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(arm_node) });
+            .core_type => |ct| {
+                switch (ct.kind) {
+                    .error_union => {
+                        if (std.mem.eql(u8, pattern_name, "Error")) return;
+                        if (std.mem.eql(u8, pattern_name, ct.inner.name())) return;
+                        const msg = try std.fmt.allocPrint(self.allocator,
+                            "match arm '{s}' is not a member of ErrorUnion({s})", .{ pattern_name, ct.inner.name() });
+                        defer self.allocator.free(msg);
+                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(arm_node) });
+                    },
+                    .null_union => {
+                        if (std.mem.eql(u8, pattern_name, "null")) return;
+                        if (std.mem.eql(u8, pattern_name, ct.inner.name())) return;
+                        const msg = try std.fmt.allocPrint(self.allocator,
+                            "match arm '{s}' is not a member of NullUnion({s})", .{ pattern_name, ct.inner.name() });
+                        defer self.allocator.free(msg);
+                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(arm_node) });
+                    },
+                    else => {}, // other core types don't have match arms
+                }
             },
             .union_type => |members| {
                 // Valid arms: any member type name
@@ -1337,15 +1324,12 @@ fn typesMatchWithSubstitution(struct_type: RT, bp_type: RT, bp_name: []const u8,
                 else => false,
             };
         },
-        .error_union => |bp_inner| {
+        .core_type => |bp_ct| {
             return switch (struct_type) {
-                .error_union => |si| typesMatchWithSubstitution(si.*, bp_inner.*, bp_name, struct_name),
-                else => false,
-            };
-        },
-        .null_union => |bp_inner| {
-            return switch (struct_type) {
-                .null_union => |si| typesMatchWithSubstitution(si.*, bp_inner.*, bp_name, struct_name),
+                .core_type => |si_ct| {
+                    if (bp_ct.kind != si_ct.kind) return false;
+                    return typesMatchWithSubstitution(si_ct.inner.*, bp_ct.inner.*, bp_name, struct_name);
+                },
                 else => false,
             };
         },
@@ -1401,27 +1385,25 @@ fn typesCompatible(a: RT, b: RT) bool {
     // Integer-to-integer and float-to-float are compatible (Zig handles coercion)
     if (a == .primitive and b == .primitive and a.primitive.isInteger() and b.primitive.isInteger()) return true;
     if (a == .primitive and b == .primitive and a.primitive.isFloat() and b.primitive.isFloat()) return true;
-    // CoreType wrappers: compatible with their bare named type (e.g. Handle(T) ↔ Handle)
+    // CoreType wrappers: compatible with their bare named type, inner type, or special values
     if (a == .core_type) {
         const wrapper_name = coreTypeName(a.core_type.kind);
         if (std.mem.eql(u8, b_name, wrapper_name)) return true;
-        return typesCompatible(a.core_type.inner.*, b);
+        if (b == .inferred or b == .unknown) return true;
+        // ErrorUnion(T) accepts Error, T, and literal-compatible values
+        if (a.core_type.kind == .error_union and b == .err) return true;
+        // NullUnion(T) accepts null, T, and literal-compatible values
+        if (a.core_type.kind == .null_union and b == .null_type) return true;
+        return typesCompatible(a.core_type.inner.*, b) or isLiteralCompatible(b, a.core_type.inner.*);
     }
     if (b == .core_type) {
         const wrapper_name = coreTypeName(b.core_type.kind);
         if (std.mem.eql(u8, a_name, wrapper_name)) return true;
-        return typesCompatible(a, b.core_type.inner.*);
+        if (a == .inferred or a == .unknown) return true;
+        if (b.core_type.kind == .error_union and a == .err) return true;
+        if (b.core_type.kind == .null_union and a == .null_type) return true;
+        return typesCompatible(a, b.core_type.inner.*) or isLiteralCompatible(a, b.core_type.inner.*);
     }
-    // Error unions accept their inner type, Error, or unresolved literals
-    if (b == .error_union) return a == .err or a == .inferred or a == .unknown or
-        std.mem.eql(u8, a_name, b.error_union.name()) or isLiteralCompatible(a, b.error_union.*);
-    if (a == .error_union) return b == .err or b == .inferred or b == .unknown or
-        std.mem.eql(u8, b_name, a.error_union.name()) or isLiteralCompatible(b, a.error_union.*);
-    // Null unions accept their inner type, null, or unresolved literals
-    if (b == .null_union) return a == .null_type or a == .inferred or a == .unknown or
-        std.mem.eql(u8, a_name, b.null_union.name()) or isLiteralCompatible(a, b.null_union.*);
-    if (a == .null_union) return b == .null_type or b == .inferred or b == .unknown or
-        std.mem.eql(u8, b_name, a.null_union.name()) or isLiteralCompatible(b, a.null_union.*);
     // Arbitrary unions accept any of their members, or unresolved literals matching any member
     if (b == .union_type) {
         if (a == .inferred or a == .unknown) return true;

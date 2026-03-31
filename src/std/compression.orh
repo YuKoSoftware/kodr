@@ -5,16 +5,16 @@ module compression
 
 // Compress data using gzip
 
-pub bridge func gzipCompress(data: String) (Error | String)
+pub bridge func gzipCompress(data: String) ErrorUnion(String)
 
 // Decompress gzip data
 
-pub bridge func gzipDecompress(data: String) (Error | String)
+pub bridge func gzipDecompress(data: String) ErrorUnion(String)
 
 // Compress data using zlib (deflate)
 
-pub bridge func zlibCompress(data: String) (Error | String)
+pub bridge func zlibCompress(data: String) ErrorUnion(String)
 
 // Decompress zlib data
 
-pub bridge func zlibDecompress(data: String) (Error | String)
+pub bridge func zlibDecompress(data: String) ErrorUnion(String)

@@ -6,7 +6,7 @@ module main
 
 // match arm with a type that is not a member of the union
 
-func get_result(flag: bool) (Error | i32) {
+func get_result(flag: bool) ErrorUnion(i32) {
     if(flag) { return 42 }
     return Error("fail")
 }
@@ -21,7 +21,7 @@ func bad_match_arm() void {
 
 // match on nullable with wrong arm type
 
-func find(id: i32) (null | i32) {
+func find(id: i32) NullUnion(i32) {
     if(id <= 0) { return null }
     return id
 }

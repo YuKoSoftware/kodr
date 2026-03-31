@@ -487,11 +487,11 @@ pub const MirAnnotator = struct {
         // Array → slice
         if (src == .array and dst == .slice)
             return .{ .kind = .array_to_slice };
-        // Plain → null union
-        if (dst == .null_union and src != .null_union and src != .null_type)
+        // Plain → null union (CoreType)
+        if (dst.isCoreType(.null_union) and !src.isCoreType(.null_union) and src != .null_type)
             return .{ .kind = .null_wrap };
-        // Plain → error union
-        if (dst == .error_union and src != .error_union and src != .err)
+        // Plain → error union (CoreType)
+        if (dst.isCoreType(.error_union) and !src.isCoreType(.error_union) and src != .err)
             return .{ .kind = .error_wrap };
         // Plain → arbitrary union
         if (dst == .union_type and src != .union_type) {
@@ -520,7 +520,7 @@ pub const MirAnnotator = struct {
             return .{ .kind = .arbitrary_union_wrap, .tag = src.name() };
         }
         // Null union → plain (optional unwrap)
-        if (src == .null_union and dst != .null_union)
+        if (src.isCoreType(.null_union) and !dst.isCoreType(.null_union))
             return .{ .kind = .optional_unwrap };
         // Value → const ref (T → const& T)
         if (dst == .ptr) {
@@ -674,16 +674,18 @@ test "detectCoercion - null_wrap" {
     defer alloc.destroy(inner);
     inner.* = RT{ .primitive = .i32 };
 
+    const null_union_type = RT{ .core_type = .{ .kind = .null_union, .inner = inner } };
+
     // Plain → null union → null_wrap
-    const r1 = MirAnnotator.detectCoercion(RT{ .primitive = .i32 }, RT{ .null_union = inner });
+    const r1 = MirAnnotator.detectCoercion(RT{ .primitive = .i32 }, null_union_type);
     try std.testing.expectEqual(Coercion.null_wrap, r1.kind.?);
 
     // null_union → null_union → no coercion
-    const r2 = MirAnnotator.detectCoercion(RT{ .null_union = inner }, RT{ .null_union = inner });
+    const r2 = MirAnnotator.detectCoercion(null_union_type, null_union_type);
     try std.testing.expect(r2.kind == null);
 
     // null_type → null_union → no coercion (null literal handled separately)
-    const r3 = MirAnnotator.detectCoercion(RT.null_type, RT{ .null_union = inner });
+    const r3 = MirAnnotator.detectCoercion(RT.null_type, null_union_type);
     try std.testing.expect(r3.kind == null);
 }
 
@@ -693,16 +695,18 @@ test "detectCoercion - error_wrap" {
     defer alloc.destroy(inner);
     inner.* = RT{ .primitive = .i32 };
 
+    const error_union_type = RT{ .core_type = .{ .kind = .error_union, .inner = inner } };
+
     // Plain → error union → error_wrap
-    const r1 = MirAnnotator.detectCoercion(RT{ .primitive = .i32 }, RT{ .error_union = inner });
+    const r1 = MirAnnotator.detectCoercion(RT{ .primitive = .i32 }, error_union_type);
     try std.testing.expectEqual(Coercion.error_wrap, r1.kind.?);
 
     // error_union → error_union → no coercion
-    const r2 = MirAnnotator.detectCoercion(RT{ .error_union = inner }, RT{ .error_union = inner });
+    const r2 = MirAnnotator.detectCoercion(error_union_type, error_union_type);
     try std.testing.expect(r2.kind == null);
 
     // err → error_union → no coercion (error literal handled separately)
-    const r3 = MirAnnotator.detectCoercion(RT.err, RT{ .error_union = inner });
+    const r3 = MirAnnotator.detectCoercion(RT.err, error_union_type);
     try std.testing.expect(r3.kind == null);
 }
 
@@ -730,7 +734,7 @@ test "detectCoercion - optional_unwrap" {
     inner.* = RT{ .primitive = .i32 };
 
     // null_union → plain → optional_unwrap
-    const r1 = MirAnnotator.detectCoercion(RT{ .null_union = inner }, RT{ .primitive = .i32 });
+    const r1 = MirAnnotator.detectCoercion(RT{ .core_type = .{ .kind = .null_union, .inner = inner } }, RT{ .primitive = .i32 });
     try std.testing.expectEqual(Coercion.optional_unwrap, r1.kind.?);
 }
 
@@ -741,7 +745,7 @@ test "detectCoercion - unknown types" {
     inner.* = RT{ .primitive = .i32 };
 
     // Unknown source → no coercion
-    const r1 = MirAnnotator.detectCoercion(RT.unknown, RT{ .null_union = inner });
+    const r1 = MirAnnotator.detectCoercion(RT.unknown, RT{ .core_type = .{ .kind = .null_union, .inner = inner } });
     try std.testing.expect(r1.kind == null);
 
     // Unknown destination → no coercion
@@ -1118,7 +1122,7 @@ test "const auto-borrow - bridge struct method with error-union return skips pro
     params[0] = .{ .name = "self", .type_ = RT{ .named = "Renderer" } };
     params[1] = .{ .name = "texture", .type_ = RT{ .named = "Texture" } };
 
-    // Return type: (Error | Material)
+    // Return type: ErrorUnion(Material)
     const ret_inner = try decls.typeAllocator().create(RT);
     ret_inner.* = RT{ .named = "Material" };
     const ret_node = try a.create(parser.Node);
@@ -1129,7 +1133,7 @@ test "const auto-borrow - bridge struct method with error-union return skips pro
         .name = "createMaterial",
         .params = params,
         .param_nodes = param_nodes,
-        .return_type = RT{ .error_union = ret_inner },
+        .return_type = RT{ .core_type = .{ .kind = .error_union, .inner = ret_inner } },
         .return_type_node = ret_node,
         .is_compt = false,
         .is_pub = true,
@@ -1205,7 +1209,7 @@ test "const auto-borrow - direct bridge function call skips promotion" {
     param_nodes[0] = param_type_node;
     params[0] = .{ .name = "tex", .type_ = RT{ .named = "Texture" } };
 
-    // Return type: (Error | Material)
+    // Return type: ErrorUnion(Material)
     const ret_inner = try decls.typeAllocator().create(RT);
     ret_inner.* = RT{ .named = "Material" };
     const ret_node = try a.create(parser.Node);
@@ -1215,7 +1219,7 @@ test "const auto-borrow - direct bridge function call skips promotion" {
         .name = "processTexture",
         .params = params,
         .param_nodes = param_nodes,
-        .return_type = RT{ .error_union = ret_inner },
+        .return_type = RT{ .core_type = .{ .kind = .error_union, .inner = ret_inner } },
         .return_type_node = ret_node,
         .is_compt = false,
         .is_pub = true,

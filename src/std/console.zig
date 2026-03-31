@@ -29,7 +29,7 @@ pub fn debugPrint(msg: []const u8) void {
     stderr.writeAll(msg) catch {}; // fire-and-forget: I/O in void fn
 }
 
-// GetResult mirrors (Error | string) as the codegen expects: .ok and .err tags
+// GetResult mirrors ErrorUnion(String) as the codegen expects: .ok and .err tags
 const GetError = struct { message: []const u8 };
 const GetResult = union(enum) { ok: []const u8, err: GetError };
 

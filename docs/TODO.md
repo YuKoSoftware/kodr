@@ -6,63 +6,17 @@ Items ordered by importance and how much they unblock future work.
 
 ## Bugs
 
-### ~~`const &expr` not parseable as call argument~~ DONE (v0.10.30)
-
-`const& flag` in a function call (e.g., `worker(const& flag)`) now parses and
-compiles correctly. The `const&` expression-level borrow is handled in the PEG
-`unary_expr` rule, produces a `const_borrow_expr` AST node, and is treated as an
-immutable borrow in all passes. Codegen emits `&x` (Zig constness is in the type).
-
-Note: as of v0.10.31, `const&` and `mut&` are compound tokens — the old two-token
-`const &` and bare `&` (for borrow) syntax is no longer valid. Bare `&` only means
-bitwise AND.
-
-### ~~`@` prefix for compiler functions~~ DONE (v0.10.30)
-
-Compiler intrinsics now require `@` prefix: `@cast`, `@copy`, `@move`, `@swap`,
-`@assert`, `@size`, `@align`, `@typename`, `@typeid`, `@typeOf`. Bare names are
-regular identifiers — user methods can use them freely (e.g., `Atomic(T).swap()`).
-
 ---
 
 ## Core — Language Ergonomics
 
 These are the highest-impact language changes. Every user benefits immediately.
 
-### ~~Non-lexical lifetimes (NLL)~~ DONE (v0.10.33)
-
-~~Move borrow checker from lexical lifetimes to "borrow ends at last use."~~
-Shipped. Borrows now end at the last use of the reference variable, not at scope
-exit. Pre-scan builds a last-use map per block, `dropExpiredBorrows()` releases
-borrows after their reference is no longer needed. Temporary borrows (expression-level)
-keep existing immediate-cleanup behavior. `dropBorrowsAtDepth()` remains as a
-scope-exit safety net.
-
 ---
 
 ## Core — Compiler Architecture
 
 Ordered by how much each item unblocks downstream work.
-
-### ~~Incremental compilation — semantic hashing~~ DONE (v0.10.20)
-
-~~Replace timestamp-based cache invalidation with semantic hashing.~~ Shipped.
-`cache.zig` now hashes the token stream via `hashSemanticContent()`, skipping
-newlines and doc comments. Whitespace-only and comment-only edits no longer
-invalidate the cache.
-
-### ~~Incremental compilation — interface diffing~~ DONE (v0.10.21)
-
-~~After declaration pass, compare public interface against cached interface.~~ Shipped.
-`cache.zig` has `hashInterface()` that hashes sorted public DeclTable entries
-(funcs, structs, enums, bitfields, vars, type aliases). Pipeline checks dependency
-interface hashes — downstream modules skip passes 5-12 when upstream public API unchanged.
-
-### ~~PEG error recovery — labeled failures~~ DONE (v0.10.24-25)
-
-~~Add human-readable labels to grammar rules.~~ Shipped. 42 rules annotated with
-`{label: "..."}` syntax. The PEG engine accumulates all expected tokens at the
-furthest failure position and uses labels in error messages.
 
 ### MIR — SSA construction (Phase 4a)
 
@@ -133,12 +87,6 @@ Pattern: `var cancel: Atomic(bool) = Atomic(bool).new(false)`, pass to thread, c
 The highest-ROI tooling investment. Every user hits errors. Good messages = faster
 learning = more adoption. Elm, Gleam, and Rust set the bar.
 
-**Shipped (v0.17):**
-- ~~"Did you mean X?" for identifier typos~~ — adaptive Levenshtein (threshold 1 for ≤4 chars, 2 for longer)
-- ~~Expected vs actual display for type mismatches~~
-- ~~Ownership/borrow violations suggest fixes~~ — "consider using `copy()`", "consider borrowing with `const&`"
-- ~~PEG labeled failures~~ — 42 rules annotated (v0.10.24-25)
-
 **Remaining:**
 - Cross-module errors should show module context
 - Generic instantiation failures should show the constraint that failed
@@ -206,7 +154,7 @@ struct Animal: Describable {
 }
 ```
 
-Unblocks: generic constraints (already in TODO), `#derive`, numerous library patterns.
+Unblocks: generic constraints, numerous library patterns.
 
 ### ~~Compile-time struct introspection~~ DONE (v0.11.0)
 
@@ -217,76 +165,15 @@ Unblocks: generic constraints (already in TODO), `#derive`, numerous library pat
 string literal checks). Complements blueprints (nominal contracts) with low-level
 introspection (structural queries).
 
-### `#derive` for common traits
+### ~~Union flattening & CoreType unification~~ DONE (v0.13.0)
 
-Once traits exist, auto-generate standard implementations:
+~~Compose unions from other unions.~~ Shipped. Unions containing other unions are
+automatically flattened. Duplicate type names after flattening are a compile error.
+`ErrorUnion(T)` and `NullUnion(T)` replace the old `(Error | T)` and `(null | T)`
+syntax — Error and null are now banned from regular unions. All core language wrapper
+types (ErrorUnion, NullUnion, Handle, Ptr, RawPtr, VolatilePtr) unified under a single
+`CoreType` variant in the type system.
 
-```
-#derive(Eq, Hash, Debug)
-struct Point {
-    x: f32
-    y: f32
-}
-```
-
-Implement via `compt`, not macros. Rust's `#[derive]` is enormously popular. Eliminates
-massive boilerplate for common patterns.
-
-### Union spreading syntax
-
-Compose unions from other unions:
-```
-pub const GuiEvent: type = (...InputEvent | ButtonClickEvent | ScrollEvent)
-```
-where `InputEvent` is itself a union. Avoids repeating type lists across modules.
-From Tamga feedback — needed for event hierarchies.
-
-### Explicit capture — `capture()` compiler function
-
-Instead of implicit closures, use explicit `capture()` to bring outer variables into
-a nested function's scope. Follows Orhon's "no implicit anything" philosophy — you
-see exactly what's captured.
-
-```
-var x: i32 = 42
-var data: MyStruct = MyStruct(...)
-
-var callback = func() i32 {
-    capture(x)           // copies primitive
-    capture(copy(data))  // explicit copy of non-primitive
-    capture(&data)       // borrows as const
-    return x + data.value
-}
-```
-
-`capture()` is a compiler function like `copy()` and `move()`. Ownership rules apply
-normally — the borrow checker already handles moves, borrows, and copies. No new
-semantics needed, just explicit intent.
-
-This replaces the "first-class closures" idea. No implicit environment capture.
-
-### `async` keyword — IO concurrency
-
-Deferred — will share the same interface as `thread` but use IO concurrency instead of
-OS threads. Not designed yet. This is the biggest missing language feature but also the
-most complex to design. Needs dedicated research (stackful vs stackless, relationship
-to existing `thread`).
-
-### Bridge struct layout control
-
-For C interop, struct field order and padding matter. Support `#extern` annotation
-for C-compatible layout:
-
-```
-#extern
-struct SDL_Event {
-    event_type: u32
-    timestamp: u64
-}
-```
-
-Maps to Zig's `extern struct`. Needed for direct C struct passing without wrapper
-overhead.
 
 ---
 
@@ -416,6 +303,10 @@ Rationales for key choices already made. Preserved for future design consistency
 | Full Polonius borrow checker | Overkill for Orhon. NLL gives 85% of the benefit for 30% of the work. |
 | Zig IR layer in codegen | Would model Zig semantics inside the compiler. See codegen refactor entry. |
 | Arena allocator pairing syntax | Mode 2 `.new(alloc)` already covers composed allocators via bridge. |
+| `#derive` auto-generation | Blueprints require explicit implementation. Fits "no implicit anything" philosophy. |
+| `#extern` / `#packed` struct layout | Sidecar `.zig` files already support `extern struct` and `packed struct`. Bridge imports work normally. No need to duplicate layout control in Orhon. |
+| `async` keyword | Zig removed async, will reintroduce with new design. Designing Orhon async now would mean fighting the backend. Wait for Zig's new primitives, then map cleanly. `thread` + `Atomic` covers parallelism meanwhile. |
+| `capture()` / closures | Orhon has no anonymous functions. State is passed as arguments — explicit, obvious, already works. Closures would be the first implicit state mechanism in the language. Pass functions and data separately, like Zig and C. |
 
 ---
 

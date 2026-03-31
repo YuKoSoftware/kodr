@@ -9,7 +9,7 @@ pub bridge func base64Encode(data: String) String
 
 // Decode base64 string to bytes
 
-pub bridge func base64Decode(data: String) (Error | String)
+pub bridge func base64Decode(data: String) ErrorUnion(String)
 
 // Encode bytes to lowercase hex string
 
@@ -17,4 +17,4 @@ pub bridge func hexEncode(data: String) String
 
 // Decode hex string to bytes
 
-pub bridge func hexDecode(data: String) (Error | String)
+pub bridge func hexDecode(data: String) ErrorUnion(String)

@@ -274,9 +274,13 @@ pub const DeclCollector = struct {
         var params: std.ArrayListUnmanaged(ParamSig) = .{};
         for (f.params) |param| {
             if (param.* == .param) {
+                const param_type = types.resolveTypeNode(self.table.typeAllocator(), param.param.type_annotation) catch |err| {
+                    try self.reportUnionError(err, loc);
+                    return;
+                };
                 try params.append(self.allocator, .{
                     .name = param.param.name,
-                    .type_ = try types.resolveTypeNode(self.table.typeAllocator(), param.param.type_annotation),
+                    .type_ = param_type,
                 });
             }
         }
@@ -296,11 +300,16 @@ pub const DeclCollector = struct {
             }
         }
 
+        const return_type = types.resolveTypeNode(self.table.typeAllocator(), f.return_type) catch |err| {
+            try self.reportUnionError(err, loc);
+            return;
+        };
+
         const sig = FuncSig{
             .name = f.name,
             .params = try params.toOwnedSlice(self.allocator),
             .param_nodes = f.params,
-            .return_type = try types.resolveTypeNode(self.table.typeAllocator(), f.return_type),
+            .return_type = return_type,
             .return_type_node = f.return_type,
             .is_compt = f.is_compt,
             .is_pub = f.is_pub,
@@ -442,6 +451,19 @@ pub const DeclCollector = struct {
         });
     }
 
+    /// Report a user-facing error for union type resolution failures.
+    fn reportUnionError(self: *DeclCollector, err: anyerror, loc: ?errors.SourceLoc) !void {
+        const msg_text = switch (err) {
+            error.ErrorInUnion => "Error cannot be a union member — use ErrorUnion(T) instead",
+            error.NullInUnion => "null cannot be a union member — use NullUnion(T) instead",
+            error.DuplicateUnionMember => "duplicate type in union after flattening",
+            else => return err,
+        };
+        const msg = try std.fmt.allocPrint(self.allocator, "{s}", .{msg_text});
+        defer self.allocator.free(msg);
+        try self.reporter.report(.{ .message = msg, .loc = loc });
+    }
+
     fn collectEnum(self: *DeclCollector, e: parser.EnumDecl, loc: ?errors.SourceLoc) anyerror!void {
         var variants: std.ArrayListUnmanaged([]const u8) = .{};
         for (e.members) |member| {
@@ -500,9 +522,17 @@ pub const DeclCollector = struct {
             return;
         }
 
+        const var_type: ?types.ResolvedType = if (v.type_annotation) |t|
+            (types.resolveTypeNode(self.table.typeAllocator(), t) catch |err| {
+                try self.reportUnionError(err, loc);
+                return;
+            })
+        else
+            null;
+
         const sig = VarSig{
             .name = v.name,
-            .type_ = if (v.type_annotation) |t| try types.resolveTypeNode(self.table.typeAllocator(), t) else null,
+            .type_ = var_type,
             .is_const = is_const,
             .is_compt = is_compt,
             .is_pub = v.is_pub,

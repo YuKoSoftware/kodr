@@ -162,4 +162,16 @@ else
     fail "multiple blueprints compile" "$OUTPUT"
 fi
 
+# union flattening
+cd "$TESTDIR"
+mkdir -p union_flat/src
+cp "$FIXTURES/union_flatten.orh" union_flat/src/main.orh
+cd union_flat
+FLAT_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$FLAT_OUT" | grep -q "Built:"; then
+    pass "union flattening compiles"
+else
+    fail "union flattening compiles" "$FLAT_OUT"
+fi
+
 report_results

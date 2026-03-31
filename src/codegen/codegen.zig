@@ -663,51 +663,8 @@ pub const CodeGen = struct {
                 break :blk try self.allocTypeStr("[{s}]{s}", .{ size_text, inner });
             },
             .type_union => |u| blk: {
-                var has_error = false;
-                var has_null = false;
-                var non_special_count: usize = 0;
-                for (u) |t| {
-                    if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) {
-                        has_error = true;
-                    } else if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) {
-                        has_null = true;
-                    } else {
-                        non_special_count += 1;
-                    }
-                }
-                if (has_error or has_null) {
-                    if (non_special_count == 1) {
-                        // Native Zig two-member union: (Error | T) → anyerror!T, (null | T) → ?T
-                        for (u) |t| {
-                            if (t.* == .type_named and
-                                !std.mem.eql(u8, t.type_named, K.Type.ERROR) and
-                                !std.mem.eql(u8, t.type_named, K.Type.NULL))
-                            {
-                                const inner = try self.typeToZig(t);
-                                if (has_error) break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
-                                if (has_null) break :blk try self.allocTypeStr("?{s}", .{inner});
-                            }
-                        }
-                    } else {
-                        // Multiple non-special types: (null | A | B | C) → ?(union(enum) { _A: A, _B: B, _C: C })
-                        // (Error | A | B | C) → anyerror!(union(enum) { _A: A, _B: B, _C: C })
-                        var inner_buf = std.ArrayListUnmanaged(u8){};
-                        defer inner_buf.deinit(self.allocator);
-                        try inner_buf.appendSlice(self.allocator, "union(enum) { ");
-                        for (u) |t| {
-                            if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.ERROR)) continue;
-                            if (t.* == .type_named and std.mem.eql(u8, t.type_named, K.Type.NULL)) continue;
-                            const zig_type = try self.typeToZig(t);
-                            const type_name = if (t.* == .type_named) t.type_named else zig_type;
-                            try inner_buf.writer(self.allocator).print("_{s}: {s}, ", .{ type_name, zig_type });
-                        }
-                        try inner_buf.appendSlice(self.allocator, "}");
-                        const inner = try self.allocTypeStr("{s}", .{inner_buf.items});
-                        if (has_error) break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
-                        if (has_null) break :blk try self.allocTypeStr("?{s}", .{inner});
-                    }
-                }
                 // Arbitrary union: (i32 | f32 | String) → union(enum) { _i32: i32, _f32: f32, _String: []const u8 }
+                // Note: Error and null are banned from unions — use ErrorUnion(T) and NullUnion(T) instead.
                 var buf = std.ArrayListUnmanaged(u8){};
                 defer buf.deinit(self.allocator);
                 try buf.appendSlice(self.allocator, "union(enum) { ");
@@ -741,7 +698,19 @@ pub const CodeGen = struct {
                     .{ params_str.items, ret });
             },
             .type_generic => |g| blk: {
-                if (std.mem.eql(u8, g.name, "Thread")) {
+                if (std.mem.eql(u8, g.name, "ErrorUnion")) {
+                    // ErrorUnion(T) → anyerror!T
+                    if (g.args.len > 0) {
+                        const inner = try self.typeToZig(g.args[0]);
+                        break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
+                    }
+                } else if (std.mem.eql(u8, g.name, "NullUnion")) {
+                    // NullUnion(T) → ?T
+                    if (g.args.len > 0) {
+                        const inner = try self.typeToZig(g.args[0]);
+                        break :blk try self.allocTypeStr("?{s}", .{inner});
+                    }
+                } else if (std.mem.eql(u8, g.name, "Thread")) {
                     break :blk "std.Thread"; // Thread handle type
                 } else if (std.mem.eql(u8, g.name, "Handle")) {
                     // Handle(T) → _OrhonHandle(zigT) (emitted as file-level helper)
@@ -858,16 +827,15 @@ pub fn opToZig(op: []const u8) []const u8 { return match_impl.opToZig(op); }
 /// Check if a field name is a type name used for union value access (result.i32, result.User)
 pub fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) bool { return match_impl.isResultValueField(name, decls); }
 
-/// Extract the value type from a (Error | T) or (null | T) union type annotation.
-/// Returns null if not a recognized union or no non-Error/non-null type found.
+/// Extract the value type from an ErrorUnion(T) or NullUnion(T) type annotation.
+/// Returns null if not a recognized core type wrapper.
 /// Available at file scope so helper modules (codegen_exprs.zig) can call codegen.extractValueType().
 pub fn extractValueType(node: *parser.Node) ?*parser.Node {
-    if (node.* != .type_union) return null;
-    for (node.type_union) |t| {
-        if (t.* == .type_named and
-            (std.mem.eql(u8, t.type_named, K.Type.ERROR) or std.mem.eql(u8, t.type_named, K.Type.NULL)))
-            continue;
-        return t;
+    if (node.* == .type_generic) {
+        const g = node.type_generic;
+        if ((std.mem.eql(u8, g.name, "ErrorUnion") or std.mem.eql(u8, g.name, "NullUnion")) and g.args.len > 0) {
+            return g.args[0];
+        }
     }
     return null;
 }
