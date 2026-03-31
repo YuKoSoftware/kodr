@@ -1,0 +1,23 @@
+module tester
+
+blueprint Eq {
+    func eq(self: const& Eq, other: const& Eq) bool
+}
+
+blueprint Printable {
+    func name(self: const& Printable) str
+}
+
+struct Color: Eq, Printable {
+    r: u8
+    g: u8
+    b: u8
+
+    pub func eq(self: const& Color, other: const& Color) bool {
+        return self.r == other.r and self.g == other.g and self.b == other.b
+    }
+
+    pub func name(self: const& Color) str {
+        return "Color"
+    }
+}

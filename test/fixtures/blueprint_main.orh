@@ -1,0 +1,7 @@
+module main
+#name    = "bptest"
+#version = Version(1, 0, 0)
+#build   = exe
+
+func main() void {
+}
