@@ -207,7 +207,6 @@ Its primary value to us: bugs discovered while building the framework are logged
 in `docs/bugs.md` and language design feedback in `docs/ideas.md`. Read these
 files to understand what compiler issues need fixing.
 
-<!-- GSD:stack-start source:codebase/STACK.md -->
 ## Technology Stack
 
 ## Languages
@@ -254,9 +253,7 @@ files to understand what compiler issues need fixing.
 - Self-contained native binary (`zig-out/bin/orhon`)
 - Zig binary must be co-located with or accessible on PATH at runtime (for code generation step)
 - Cross-compilation supported: linux_x64, linux_arm, win_x64, mac_x64, mac_arm, wasm
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 ## Naming Patterns
@@ -305,9 +302,7 @@ files to understand what compiler issues need fixing.
 - `types.zig` — `ResolvedType`, `Primitive`, `OwnershipState`
 - `constants.zig` — shared string constants (`Type.*`, `Ptr.*`)
 - `parser.zig` — AST node types only (no parsing logic)
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
 ## Pattern Overview
@@ -418,24 +413,4 @@ files to understand what compiler issues need fixing.
 - `SourceLoc` carries `file`, `line`, `col`; `SemanticContext.nodeLoc()` resolves combined-buffer positions to original file locations
 - Zig errors (`error.ParseError`, `error.CompileError`) bubble to `main()` which checks them; other errors (`anyerror`) propagate normally
 ## Cross-Cutting Concerns
-<!-- GSD:architecture-end -->
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd:debug` for investigation and bug fixing
-- `/gsd:execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
