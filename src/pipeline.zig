@@ -53,6 +53,11 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         return null;
     };
 
+    // Derive project folder name for primary module detection
+    const cwd_path = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(cwd_path);
+    const project_folder_name = std.fs.path.basename(cwd_path);
+
     try mod_resolver.scanDirectory(cli.source_dir);
 
     if (reporter.hasErrors()) return null;
@@ -487,7 +492,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         };
         defer runner.deinit();
 
-        var last_binary_name: []const u8 = "main";
+        var last_binary_name: []const u8 = project_folder_name;
         var any_failed = false;
         var mod_it2 = mod_resolver.modules.iterator();
         while (mod_it2.next()) |entry| {
@@ -626,7 +631,11 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             const binary_name = if (project_name.len > 0) project_name else mod.name;
 
             if (std.mem.eql(u8, build_type, "exe")) {
-                if (exe_binary_name == null) {
+                // Primary module (name matches folder) gets priority for orhon run
+                if (std.mem.eql(u8, mod.name, project_folder_name)) {
+                    if (exe_binary_name) |old| allocator.free(old);
+                    exe_binary_name = try allocator.dupe(u8, binary_name);
+                } else if (exe_binary_name == null) {
                     exe_binary_name = try allocator.dupe(u8, binary_name);
                 }
             }
@@ -996,7 +1005,11 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             }
 
             if (std.mem.eql(u8, build_type, "exe")) {
-                if (exe_binary_name == null) {
+                // Primary module (name matches folder) gets priority for orhon run
+                if (std.mem.eql(u8, mod.name, project_folder_name)) {
+                    if (exe_binary_name) |old| allocator.free(old);
+                    exe_binary_name = try allocator.dupe(u8, binary_name);
+                } else if (exe_binary_name == null) {
                     exe_binary_name = try allocator.dupe(u8, binary_name);
                 }
             } else {
