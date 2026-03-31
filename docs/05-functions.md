@@ -136,6 +136,10 @@ assert(x)               // assertion, checked at compile time or test time
 assert(x, "message")    // with custom failure message
 size(x)                 // returns size of type or value in bytes
 align(x)                // returns alignment requirement of type or value in bytes
+hasField(T, "name")     // true if struct T has a field named "name"
+hasDecl(T, "name")      // true if type T has a declaration (method, const) named "name"
+fieldType(T, "name")    // returns the type of field "name" on struct T
+fieldNames(T)           // returns comptime slice of all field names on struct T
 ```
 
 ### `typename` — type name as `String`
@@ -189,6 +193,35 @@ Returns the alignment requirement of a type or value in bytes. Essential for cus
 align(i32)         // 4 — must be on a 4 byte boundary
 align(f64)         // 8
 align(MyStruct)    // largest alignment of any field in the struct
+```
+
+### `hasField` — struct field check
+Returns `true` if the struct type has a field with the given name. Works with types and values. Compile-time evaluation — zero runtime cost.
+```
+hasField(Point, "x")       // true
+hasField(Point, "z")       // false
+hasField(my_point, "x")    // true — value is auto-wrapped in typeOf
+```
+
+### `hasDecl` — declaration check
+Returns `true` if the type has any declaration (method, compt function, constant) with the given name. Useful for conditional logic based on type capabilities.
+```
+hasDecl(Counter, "create")     // true — Counter has a create method
+hasDecl(Vec2, "nonexistent")   // false
+```
+
+### `fieldType` — field type extraction
+Returns the compile-time `type` of a named field on a struct. Can be stored in a `const` or used in compt code for type-level programming.
+```
+const XType: type = fieldType(Point, "x")   // f32
+```
+
+### `fieldNames` — all field names
+Returns a compile-time slice of all field names on a struct. Primary use: iterating fields in compt for-loops for auto-derive patterns.
+```
+compt for(fieldNames(Point)) |name| {
+    // name is a comptime string: "x", "y"
+}
 ```
 
 ---
