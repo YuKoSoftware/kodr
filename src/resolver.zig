@@ -125,7 +125,16 @@ pub const TypeResolver = struct {
     }
 
     fn resolveTypeAnnotationInScope(self: *TypeResolver, node: *parser.Node, scope: ?*Scope) !RT {
-        const resolved = try types.resolveTypeNode(self.decls.typeAllocator(), node);
+        const resolved = types.resolveTypeNode(self.decls.typeAllocator(), node) catch |err| {
+            if (err == error.DuplicateUnionMember) {
+                try self.reporter.report(.{
+                    .message = "duplicate type in union after flattening",
+                    .loc = self.nodeLoc(node),
+                });
+                return RT.unknown;
+            }
+            return err;
+        };
         if (resolved == .named) {
             // Module-level type alias
             if (self.decls.types.contains(resolved.named)) return RT.inferred;
