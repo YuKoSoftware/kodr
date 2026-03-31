@@ -36,10 +36,20 @@ pub fn buildProgram(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
             } else if (std.mem.eql(u8, r, "import_decl")) {
                 try imports_list.append(ctx.alloc(), try builder.buildNode(ctx, child));
             } else if (std.mem.eql(u8, r, "top_level")) {
-                // top_level is transparent — build its child
+                // top_level <- doc_block? top_level_decl
+                var pending_doc: ?[]const u8 = null;
                 for (child.children) |*tl_child| {
-                    if (tl_child.rule) |_| {
-                        try top_level_list.append(ctx.alloc(), try builder.buildNode(ctx, tl_child));
+                    if (tl_child.rule) |tl_rule| {
+                        if (std.mem.eql(u8, tl_rule, "doc_block")) {
+                            pending_doc = builder.extractDoc(ctx, tl_child);
+                        } else {
+                            const node = try builder.buildNode(ctx, tl_child);
+                            if (pending_doc) |doc| {
+                                builder.setDoc(node, doc);
+                                pending_doc = null;
+                            }
+                            try top_level_list.append(ctx.alloc(), node);
+                        }
                     }
                 }
             } else if (std.mem.eql(u8, r, "top_level_decl")) {
