@@ -1,0 +1,17 @@
+module main
+
+#name    = "fail_introspection"
+#version = Version(1, 0, 0)
+#build   = exe
+
+struct Point {
+    x: f32
+    y: f32
+}
+
+func main() void {
+    // Wrong arg count — should fail with "@hasField takes exactly 2 arguments"
+    const a: bool = @hasField(Point)
+    // Non-string second arg — should fail with "@hasField requires a string literal"
+    const b: bool = @hasField(Point, 42)
+}

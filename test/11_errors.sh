@@ -547,4 +547,16 @@ else
     fail "borrow violation suggests function parameter" "$NEG_OUT"
 fi
 
+# introspection — wrong argument count / type
+cd "$TESTDIR"
+mkdir -p neg_introspect/src
+cp "$FIXTURES/fail_introspection.orh" neg_introspect/src/main.orh
+cd neg_introspect
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "@hasField\|error"; then
+    pass "rejects bad introspection args"
+else
+    fail "rejects bad introspection args" "$NEG_OUT"
+fi
+
 report_results
