@@ -633,6 +633,66 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             try cg.generateExprMir(args[1]);
             try cg.emit(")");
         }
+    } else if (std.mem.eql(u8, cf_name, "hasField")) {
+        try cg.emit("@hasField(");
+        if (args.len >= 1) {
+            if (args[0].kind == .type_expr) {
+                try cg.generateExprMir(args[0]);
+            } else {
+                try cg.emit("@TypeOf(");
+                try cg.generateExprMir(args[0]);
+                try cg.emit(")");
+            }
+        }
+        if (args.len >= 2) {
+            try cg.emit(", ");
+            try cg.generateExprMir(args[1]);
+        }
+        try cg.emit(")");
+    } else if (std.mem.eql(u8, cf_name, "hasDecl")) {
+        try cg.emit("@hasDecl(");
+        if (args.len >= 1) {
+            if (args[0].kind == .type_expr) {
+                try cg.generateExprMir(args[0]);
+            } else {
+                try cg.emit("@TypeOf(");
+                try cg.generateExprMir(args[0]);
+                try cg.emit(")");
+            }
+        }
+        if (args.len >= 2) {
+            try cg.emit(", ");
+            try cg.generateExprMir(args[1]);
+        }
+        try cg.emit(")");
+    } else if (std.mem.eql(u8, cf_name, "fieldType")) {
+        try cg.emit("@FieldType(");
+        if (args.len >= 1) {
+            if (args[0].kind == .type_expr) {
+                try cg.generateExprMir(args[0]);
+            } else {
+                try cg.emit("@TypeOf(");
+                try cg.generateExprMir(args[0]);
+                try cg.emit(")");
+            }
+        }
+        if (args.len >= 2) {
+            try cg.emit(", ");
+            try cg.generateExprMir(args[1]);
+        }
+        try cg.emit(")");
+    } else if (std.mem.eql(u8, cf_name, "fieldNames")) {
+        try cg.emit("std.meta.fieldNames(");
+        if (args.len >= 1) {
+            if (args[0].kind == .type_expr) {
+                try cg.generateExprMir(args[0]);
+            } else {
+                try cg.emit("@TypeOf(");
+                try cg.generateExprMir(args[0]);
+                try cg.emit(")");
+            }
+        }
+        try cg.emit(")");
     } else {
         try cg.emitFmt("/* unknown @{s} */", .{cf_name});
     }
