@@ -37,6 +37,13 @@ pub fn classifyType(t: RT) TypeClass {
                 return .thread_handle;
             return .plain;
         },
+        .core_type => |ct| switch (ct.kind) {
+            .raw_ptr, .volatile_ptr => .raw_ptr,
+            .safe_ptr => .safe_ptr,
+            .handle => .thread_handle,
+            .error_union => .error_union,
+            .null_union => .null_union,
+        },
         // .ptr is a const &T reference — field access auto-derefs in Zig, not a Ptr(T) wrapper
         .ptr => .plain,
         else => .plain,

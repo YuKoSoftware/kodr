@@ -1401,6 +1401,17 @@ fn typesCompatible(a: RT, b: RT) bool {
     // Integer-to-integer and float-to-float are compatible (Zig handles coercion)
     if (a == .primitive and b == .primitive and a.primitive.isInteger() and b.primitive.isInteger()) return true;
     if (a == .primitive and b == .primitive and a.primitive.isFloat() and b.primitive.isFloat()) return true;
+    // CoreType wrappers: compatible with their bare named type (e.g. Handle(T) ↔ Handle)
+    if (a == .core_type) {
+        const wrapper_name = coreTypeName(a.core_type.kind);
+        if (std.mem.eql(u8, b_name, wrapper_name)) return true;
+        return typesCompatible(a.core_type.inner.*, b);
+    }
+    if (b == .core_type) {
+        const wrapper_name = coreTypeName(b.core_type.kind);
+        if (std.mem.eql(u8, a_name, wrapper_name)) return true;
+        return typesCompatible(a, b.core_type.inner.*);
+    }
     // Error unions accept their inner type, Error, or unresolved literals
     if (b == .error_union) return a == .err or a == .inferred or a == .unknown or
         std.mem.eql(u8, a_name, b.error_union.name()) or isLiteralCompatible(a, b.error_union.*);
@@ -1431,6 +1442,18 @@ fn typesCompatible(a: RT, b: RT) bool {
     // func_ptr / func returns are hard to check without full inference — allow
     if (a == .func_ptr or b == .func_ptr) return true;
     return false;
+}
+
+/// Map CoreType.Kind to its Orhon wrapper type name
+fn coreTypeName(kind: types.ResolvedType.CoreType.Kind) []const u8 {
+    return switch (kind) {
+        .error_union => "ErrorUnion",
+        .null_union => "NullUnion",
+        .handle => "Handle",
+        .safe_ptr => "Ptr",
+        .raw_ptr => "RawPtr",
+        .volatile_ptr => "VolatilePtr",
+    };
 }
 
 /// Check if an unresolved literal type is compatible with a target type

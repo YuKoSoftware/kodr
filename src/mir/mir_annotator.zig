@@ -538,6 +538,7 @@ pub const MirAnnotator = struct {
         if (a == .primitive and b == .primitive) return a.primitive == b.primitive;
         if (a == .named and b == .named) return std.mem.eql(u8, a.named, b.named);
         if (a == .generic and b == .generic) return std.mem.eql(u8, a.generic.name, b.generic.name);
+        if (a == .core_type and b == .core_type) return a.core_type.kind == b.core_type.kind;
         return false;
     }
 

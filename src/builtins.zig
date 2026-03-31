@@ -13,6 +13,8 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "Error",
     "Version",
     "Vector",
+    "ErrorUnion",
+    "NullUnion",
 };
 
 /// Compiler function names (called with @ prefix: @cast, @copy, etc.)

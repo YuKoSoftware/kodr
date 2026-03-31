@@ -63,6 +63,19 @@ pub fn formatType(allocator: std.mem.Allocator, t: types.ResolvedType) anyerror!
             break :blk std.fmt.allocPrint(allocator, "func(...) {s}", .{ret_s});
         },
         .ptr => |p| allocator.dupe(u8, p.kind),
+        .core_type => |ct| blk: {
+            const inner_s = try formatType(allocator, ct.inner.*);
+            defer allocator.free(inner_s);
+            const wrapper = switch (ct.kind) {
+                .error_union => "ErrorUnion",
+                .null_union => "NullUnion",
+                .handle => "Handle",
+                .safe_ptr => "Ptr",
+                .raw_ptr => "RawPtr",
+                .volatile_ptr => "VolatilePtr",
+            };
+            break :blk std.fmt.allocPrint(allocator, "{s}({s})", .{ wrapper, inner_s });
+        },
         .inferred => allocator.dupe(u8, "inferred"),
         .unknown => allocator.dupe(u8, "unknown"),
         .tuple, .union_type => allocator.dupe(u8, t.name()),
