@@ -732,5 +732,48 @@ func main() void {
         console.println("FAIL const_borrow_arg")
     }
 
+    // Struct introspection
+    if(tester.test_has_field() == 1) {
+        console.println("PASS has_field")
+    } else {
+        console.println("FAIL has_field")
+    }
+
+    if(tester.test_has_field_missing() == 1) {
+        console.println("PASS has_field_missing")
+    } else {
+        console.println("FAIL has_field_missing")
+    }
+
+    if(tester.test_has_field_value() == 1) {
+        console.println("PASS has_field_value")
+    } else {
+        console.println("FAIL has_field_value")
+    }
+
+    if(tester.test_has_decl() == 1) {
+        console.println("PASS has_decl")
+    } else {
+        console.println("FAIL has_decl")
+    }
+
+    if(tester.test_has_decl_missing() == 1) {
+        console.println("PASS has_decl_missing")
+    } else {
+        console.println("FAIL has_decl_missing")
+    }
+
+    if(tester.test_field_type() == 1) {
+        console.println("PASS field_type")
+    } else {
+        console.println("FAIL field_type")
+    }
+
+    if(tester.test_field_names() == 1) {
+        console.println("PASS field_names")
+    } else {
+        console.println("FAIL field_names")
+    }
+
     console.println("TESTER:DONE")
 }

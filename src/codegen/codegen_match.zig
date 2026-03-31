@@ -566,6 +566,34 @@ pub fn generatePtrCoercionMir(cg: *CodeGen, kind: []const u8, type_node: *parser
     }
 }
 
+/// Emit the first argument to a struct-introspection compiler function.
+/// If the arg is a type reference (type_expr, or an identifier whose name IS the
+/// resolved type name — i.e. a struct/enum name used directly), emit it as-is.
+/// Otherwise wrap in @TypeOf() to handle value arguments (e.g. a variable).
+fn emitIntrospectionType(cg: *CodeGen, arg: *mir.MirNode) anyerror!void {
+    const is_type_ref = switch (arg.kind) {
+        .type_expr => true,
+        .identifier => blk: {
+            // Identifier is a direct type reference when its name matches the resolved type name.
+            // e.g. Vec2 → name="Vec2", resolved_type=.named{"Vec2"} → true
+            // e.g. v   → name="v",    resolved_type=.named{"Vec2"} → false
+            const id_name = arg.name orelse break :blk false;
+            break :blk switch (arg.resolved_type) {
+                .named => |n| std.mem.eql(u8, id_name, n),
+                else => false,
+            };
+        },
+        else => false,
+    };
+    if (is_type_ref) {
+        try cg.generateExprMir(arg);
+    } else {
+        try cg.emit("@TypeOf(");
+        try cg.generateExprMir(arg);
+        try cg.emit(")");
+    }
+}
+
 /// MIR-path compiler function (@typename, @cast, @size, etc.).
 pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const cf_name = m.name orelse return;
@@ -636,13 +664,7 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     } else if (std.mem.eql(u8, cf_name, "hasField")) {
         try cg.emit("@hasField(");
         if (args.len >= 1) {
-            if (args[0].kind == .type_expr) {
-                try cg.generateExprMir(args[0]);
-            } else {
-                try cg.emit("@TypeOf(");
-                try cg.generateExprMir(args[0]);
-                try cg.emit(")");
-            }
+            try emitIntrospectionType(cg, args[0]);
         }
         if (args.len >= 2) {
             try cg.emit(", ");
@@ -652,13 +674,7 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     } else if (std.mem.eql(u8, cf_name, "hasDecl")) {
         try cg.emit("@hasDecl(");
         if (args.len >= 1) {
-            if (args[0].kind == .type_expr) {
-                try cg.generateExprMir(args[0]);
-            } else {
-                try cg.emit("@TypeOf(");
-                try cg.generateExprMir(args[0]);
-                try cg.emit(")");
-            }
+            try emitIntrospectionType(cg, args[0]);
         }
         if (args.len >= 2) {
             try cg.emit(", ");
@@ -668,13 +684,7 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     } else if (std.mem.eql(u8, cf_name, "fieldType")) {
         try cg.emit("@FieldType(");
         if (args.len >= 1) {
-            if (args[0].kind == .type_expr) {
-                try cg.generateExprMir(args[0]);
-            } else {
-                try cg.emit("@TypeOf(");
-                try cg.generateExprMir(args[0]);
-                try cg.emit(")");
-            }
+            try emitIntrospectionType(cg, args[0]);
         }
         if (args.len >= 2) {
             try cg.emit(", ");
@@ -684,13 +694,7 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     } else if (std.mem.eql(u8, cf_name, "fieldNames")) {
         try cg.emit("std.meta.fieldNames(");
         if (args.len >= 1) {
-            if (args[0].kind == .type_expr) {
-                try cg.generateExprMir(args[0]);
-            } else {
-                try cg.emit("@TypeOf(");
-                try cg.generateExprMir(args[0]);
-                try cg.emit(")");
-            }
+            try emitIntrospectionType(cg, args[0]);
         }
         try cg.emit(")");
     } else {

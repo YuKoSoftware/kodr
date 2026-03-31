@@ -53,7 +53,10 @@ for TEST_NAME in \
     const_auto_borrow var_caller_promoted const_copy \
     is_qualified is_not_qualified \
     error_void_ok error_void_fail \
-    cast_to_enum null_multi_union empty_struct_construct; do
+    cast_to_enum null_multi_union empty_struct_construct \
+    has_field has_field_missing has_field_value \
+    has_decl has_decl_missing \
+    field_type field_names; do
     if echo "$BINOUT" | grep -q "PASS $TEST_NAME"; then pass "runtime: $TEST_NAME"
     else fail "runtime: $TEST_NAME"; fi
 done
