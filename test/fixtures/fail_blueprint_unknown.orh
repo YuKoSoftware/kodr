@@ -1,0 +1,12 @@
+module main
+#name    = "bptest"
+#version = Version(1, 0, 0)
+#build   = exe
+
+struct Point: NonExistent {
+    x: f32
+    y: f32
+}
+
+func main() void {
+}

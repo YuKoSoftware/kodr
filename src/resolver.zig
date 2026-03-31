@@ -187,6 +187,9 @@ pub const TypeResolver = struct {
                     try scope.define(flag_name, RT{ .named = b.name });
                 }
             },
+            .blueprint_decl => |b| {
+                try scope.define(b.name, RT{ .named = b.name });
+            },
             .const_decl => |v| {
                 const t = if (v.type_annotation) |ta|
                     try self.resolveTypeAnnotation(ta)
@@ -290,6 +293,18 @@ pub const TypeResolver = struct {
                 }
                 for (s.members) |member| {
                     try self.resolveNode(member, &struct_scope);
+                }
+                // Check blueprint conformance
+                try self.checkBlueprintConformance(s, self.nodeLoc(node));
+            },
+            .blueprint_decl => |b| {
+                // Validate method signatures resolve correctly
+                var bp_scope = Scope.init(self.allocator, scope);
+                defer bp_scope.deinit();
+                // Blueprint name is a valid type within its own methods
+                try bp_scope.define(b.name, .{ .primitive = .@"type" });
+                for (b.methods) |method| {
+                    try self.resolveNode(method, &bp_scope);
                 }
             },
             .enum_decl => |e| {
@@ -1213,7 +1228,136 @@ pub const TypeResolver = struct {
             }
         }
     }
+
+    /// Check that a struct implements all methods required by its blueprints.
+    fn checkBlueprintConformance(self: *TypeResolver, s: parser.StructDecl, loc: ?errors.SourceLoc) anyerror!void {
+        // Check for duplicate blueprint references
+        for (s.blueprints, 0..) |bp_name, i| {
+            for (s.blueprints[0..i]) |prev| {
+                if (std.mem.eql(u8, bp_name, prev)) {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "struct '{s}' lists blueprint '{s}' more than once", .{ s.name, bp_name });
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = loc });
+                }
+            }
+        }
+
+        for (s.blueprints) |bp_name| {
+            // Look up blueprint in declarations
+            const bp_sig = self.decls.blueprints.get(bp_name) orelse {
+                const msg = try std.fmt.allocPrint(self.allocator,
+                    "unknown blueprint '{s}'", .{bp_name});
+                defer self.allocator.free(msg);
+                try self.reporter.report(.{ .message = msg, .loc = loc });
+                continue;
+            };
+
+            // Check each required method
+            for (bp_sig.methods) |bp_method| {
+                const method_key = try std.fmt.allocPrint(self.allocator,
+                    "{s}.{s}", .{ s.name, bp_method.name });
+                defer self.allocator.free(method_key);
+
+                const struct_method = self.decls.struct_methods.get(method_key) orelse {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "struct '{s}' does not implement '{s}' required by blueprint '{s}'",
+                        .{ s.name, bp_method.name, bp_name });
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = loc });
+                    continue;
+                };
+
+                // Compare parameter count
+                if (struct_method.params.len != bp_method.params.len) {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "method '{s}' in struct '{s}' has {d} parameter(s), blueprint '{s}' requires {d}",
+                        .{ bp_method.name, s.name, struct_method.params.len, bp_name, bp_method.params.len });
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = loc });
+                    continue;
+                }
+
+                // Compare parameter types (with blueprint→struct name substitution)
+                for (struct_method.params, bp_method.params) |sp, bp| {
+                    if (!typesMatchWithSubstitution(sp.type_, bp.type_, bp_name, s.name)) {
+                        const msg = try std.fmt.allocPrint(self.allocator,
+                            "method '{s}' in struct '{s}' does not match blueprint '{s}': parameter type mismatch",
+                            .{ bp_method.name, s.name, bp_name });
+                        defer self.allocator.free(msg);
+                        try self.reporter.report(.{ .message = msg, .loc = loc });
+                        break;
+                    }
+                }
+
+                // Compare return type
+                if (!typesMatchWithSubstitution(struct_method.return_type, bp_method.return_type, bp_name, s.name)) {
+                    const msg = try std.fmt.allocPrint(self.allocator,
+                        "method '{s}' in struct '{s}' does not match blueprint '{s}': return type mismatch",
+                        .{ bp_method.name, s.name, bp_name });
+                    defer self.allocator.free(msg);
+                    try self.reporter.report(.{ .message = msg, .loc = loc });
+                }
+            }
+        }
+    }
 };
+
+/// Compare two ResolvedTypes with blueprint→struct name substitution.
+/// When a blueprint declares `self: const& Eq`, a struct implementing it
+/// should have `self: const& Point` — this function treats Eq↔Point as a match.
+fn typesMatchWithSubstitution(struct_type: RT, bp_type: RT, bp_name: []const u8, struct_name: []const u8) bool {
+    switch (bp_type) {
+        .named => |name| {
+            if (std.mem.eql(u8, name, bp_name)) {
+                // Blueprint's own name → must match struct's name
+                return switch (struct_type) {
+                    .named => |sn| std.mem.eql(u8, sn, struct_name),
+                    else => false,
+                };
+            }
+            // Non-self named type must match exactly
+            return switch (struct_type) {
+                .named => |sn| std.mem.eql(u8, sn, name),
+                else => false,
+            };
+        },
+        .primitive => |p| {
+            return switch (struct_type) {
+                .primitive => |sp| sp == p,
+                else => false,
+            };
+        },
+        .ptr => |bp_ptr| {
+            return switch (struct_type) {
+                .ptr => |sp| {
+                    if (!std.mem.eql(u8, bp_ptr.kind, sp.kind)) return false;
+                    return typesMatchWithSubstitution(sp.elem.*, bp_ptr.elem.*, bp_name, struct_name);
+                },
+                else => false,
+            };
+        },
+        .error_union => |bp_inner| {
+            return switch (struct_type) {
+                .error_union => |si| typesMatchWithSubstitution(si.*, bp_inner.*, bp_name, struct_name),
+                else => false,
+            };
+        },
+        .null_union => |bp_inner| {
+            return switch (struct_type) {
+                .null_union => |si| typesMatchWithSubstitution(si.*, bp_inner.*, bp_name, struct_name),
+                else => false,
+            };
+        },
+        .inferred => return struct_type == .inferred,
+        .unknown => return true,
+        else => {
+            // For other types (slice, array, tuple, func_ptr, generic, etc.)
+            // fall back to tag comparison
+            return std.meta.activeTag(bp_type) == std.meta.activeTag(struct_type);
+        },
+    }
+}
 
 /// Infer the element type for for-loop captures from the iterable.
 fn inferCaptureType(iterable: *parser.Node, iter_type: RT) RT {
