@@ -1,6 +1,6 @@
-module example
 /// The example module is a living language manual.
 /// It covers every implemented feature with short examples.
+module example
 
 // ─── Imports ─────────────────────────────────────────────────────────────────
 
@@ -11,6 +11,8 @@ import std::allocator
 // use — flat access: symbols dumped directly into scope (no prefix needed)
 // List, Map, Set are available without a module prefix after use.
 use std::collections
+
+#description = "Language feature examples"
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -72,6 +74,7 @@ compt func double(n: i32) i32 {
 // Collections accept an optional allocator via .new(alloc).
 // Three modes: default SMP, inline allocator, external variable.
 
+/// Demonstrates the three allocator modes: default SMP, inline arena, and external.
 pub func allocator_demo() i32 {
     // Mode 1: default SMP allocator (no argument)
     var defaults: List(i32) = List(i32).new()
@@ -168,6 +171,7 @@ func add(a: i32, b: i32) i32 {
     return a + b
 }
 
+/// Multiplies two integers and returns the result.
 pub func multiply(a: i32, b: i32) i32 {
     return a * b
 }

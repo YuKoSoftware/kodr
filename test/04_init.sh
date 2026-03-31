@@ -55,7 +55,7 @@ else
     fail "testproj.orh has project name"
 fi
 
-if head -1 testproj/src/example/example.orh | grep -q "^module example$"; then
+if grep -q "^module example$" testproj/src/example/example.orh; then
     pass "example.orh has 'module example'"
 else
     fail "example.orh has 'module example'"

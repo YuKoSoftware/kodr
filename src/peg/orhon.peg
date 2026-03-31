@@ -42,7 +42,7 @@ top_level_start
      / 'thread' / 'compt' / 'bridge' / 'test' / 'import' / '#'
 
 module_decl
-    <- doc_block? 'module' IDENTIFIER NL  {label: "module declaration"}
+    <- doc_block? _ 'module' IDENTIFIER NL  {label: "module declaration"}
 
 metadata
     <- '#' metadata_body NL  {label: "metadata directive"}
@@ -583,7 +583,7 @@ keyword_type
 # Doc comments (///) attach to the declaration that follows them.
 # Multiple consecutive /// lines merge into a single doc block.
 doc_block
-    <- DOC_COMMENT+  {label: "doc comment"}
+    <- DOC_COMMENT (_ DOC_COMMENT)*  {label: "doc comment"}
 
 
 # ============================================================
