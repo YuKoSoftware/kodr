@@ -121,7 +121,7 @@ section "Blueprint features"
 cd "$TESTDIR"
 mkdir -p bptest/src
 cp "$FIXTURES/blueprint_main.orh" bptest/src/main.orh
-cp "$FIXTURES/blueprint_basic.orh" bptest/src/blueprint_basic.orh
+cp "$FIXTURES/blueprint_basic.orh" bptest/src/tester.orh
 cd bptest
 
 OUTPUT=$("$ORHON" build 2>&1 || true)
@@ -152,7 +152,7 @@ fi
 cd "$TESTDIR"
 mkdir -p bpmulti/src
 cp "$FIXTURES/blueprint_main.orh" bpmulti/src/main.orh
-cp "$FIXTURES/blueprint_multiple.orh" bpmulti/src/blueprint_multiple.orh
+cp "$FIXTURES/blueprint_multiple.orh" bpmulti/src/tester.orh
 cd bpmulti
 
 OUTPUT=$("$ORHON" build 2>&1 || true)

@@ -4,11 +4,11 @@ blueprint Eq {
     func eq(self: const& Eq, other: const& Eq) bool
 }
 
-blueprint Printable {
-    func name(self: const& Printable) str
+blueprint Measurable {
+    func measure(self: const& Measurable) f32
 }
 
-struct Color: Eq, Printable {
+struct Color: Eq, Measurable {
     r: u8
     g: u8
     b: u8
@@ -17,7 +17,7 @@ struct Color: Eq, Printable {
         return self.r == other.r and self.g == other.g and self.b == other.b
     }
 
-    pub func name(self: const& Color) str {
-        return "Color"
+    pub func measure(self: const& Color) f32 {
+        return 0.0
     }
 }
