@@ -242,7 +242,7 @@ const ErrDivByZero = Error("division by zero")
 const ErrNotFound = Error("file not found")
 
 // usage
-func divide(a: i32, b: i32) (Error | i32) {
+func divide(a: i32, b: i32) ErrorUnion(i32) {
     if(b == 0) {
         return ErrDivByZero
     }
