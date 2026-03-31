@@ -341,7 +341,7 @@ fn classifyNamed(n: []const u8) ResolvedType {
 /// Errors on duplicate type names after flattening.
 fn resolveUnion(alloc: std.mem.Allocator, members: []*parser.Node) !ResolvedType {
     // Phase 1: Resolve all members, collecting into a flat list
-    var flat = std.ArrayList(ResolvedType){};
+    var flat = std.ArrayListUnmanaged(ResolvedType){};
     defer flat.deinit(alloc);
 
     for (members) |m| {
