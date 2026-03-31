@@ -94,8 +94,9 @@ try std.testing.expect(node.* == .var_decl);         // CORRECT
 try std.testing.expectEqual(NodeKind.var_decl, node.*); // WRONG
 ```
 
-### `main` is a keyword — `kw_main` not `.identifier`
-The grammar handles this: `func_name <- IDENTIFIER / 'main'`.
+### `main` is a regular identifier — reserved for entry point only
+`main` is not a keyword. It is a regular `.identifier` token that the compiler
+reserves semantically: only valid as `func main()` in `#build = exe` module anchor files.
 
 ### Reporter owns all message strings — always `defer free` after `report()`
 ```zig

@@ -160,7 +160,7 @@ pub fn format(allocator: std.mem.Allocator, source: []const u8) ![]u8 {
 
 test "format - collapse multiple blank lines" {
     const alloc = std.testing.allocator;
-    const input = "module main\n\n\n\nfunc foo() void {\n}\n";
+    const input = "module myapp\n\n\n\nfunc foo() void {\n}\n";
     const result = try format(alloc, input);
     defer alloc.free(result);
     // Should have at most 1 blank line
@@ -169,7 +169,7 @@ test "format - collapse multiple blank lines" {
 
 test "format - trailing whitespace removed" {
     const alloc = std.testing.allocator;
-    const input = "module main   \nfunc foo() void {  \n}\n";
+    const input = "module myapp   \nfunc foo() void {  \n}\n";
     const result = try format(alloc, input);
     defer alloc.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "   \n") == null);
@@ -178,7 +178,7 @@ test "format - trailing whitespace removed" {
 
 test "format - tabs to spaces" {
     const alloc = std.testing.allocator;
-    const input = "module main\n\tfunc foo() void {\n\t\treturn\n\t}\n";
+    const input = "module myapp\n\tfunc foo() void {\n\t\treturn\n\t}\n";
     const result = try format(alloc, input);
     defer alloc.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "\t") == null);
@@ -187,7 +187,7 @@ test "format - tabs to spaces" {
 
 test "format - single trailing newline" {
     const alloc = std.testing.allocator;
-    const input = "module main\n\n\n\n";
+    const input = "module myapp\n\n\n\n";
     const result = try format(alloc, input);
     defer alloc.free(result);
     try std.testing.expect(result.len > 0);
@@ -200,8 +200,8 @@ test "format - single trailing newline" {
 
 test "format - blank line after module" {
     const alloc = std.testing.allocator;
-    const input = "module main\nimport std::console\n";
+    const input = "module myapp\nimport std::console\n";
     const result = try format(alloc, input);
     defer alloc.free(result);
-    try std.testing.expect(std.mem.indexOf(u8, result, "module main\n\nimport") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "module myapp\n\nimport") != null);
 }

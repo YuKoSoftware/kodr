@@ -1005,7 +1005,7 @@ test "full pipeline - hello world" {
     const alloc = std.testing.allocator;
 
     const source =
-        \\module main
+        \\module testmod
         \\
         \\func main() void {
         \\    var x: i32 = 42
@@ -1092,14 +1092,14 @@ test "full pipeline - hello world" {
     cg.union_registry = &mir_annotator.union_registry;
     cg.var_types = &mir_annotator.var_types;
     cg.mir_root = mir_root;
-    try cg.generate(ast, "main");
+    try cg.generate(ast, "testmod");
     try std.testing.expect(!reporter.hasErrors());
 
     const output = cg.getOutput();
     try std.testing.expect(output.len > 0);
 
     // Verify the generated Zig output contains the expected structure
-    try std.testing.expect(std.mem.indexOf(u8, output, "// generated from module main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "// generated from module testmod") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "const std = @import(\"std\");") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "pub fn main()") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "const x: i32 = 42;") != null);
@@ -1110,7 +1110,7 @@ test "codegen - var never reassigned becomes const" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
     const output = try codegenSource(alloc,
-        \\module main
+        \\module testmod
         \\
         \\func main() void {
         \\    var a: i32 = 1
@@ -1160,7 +1160,7 @@ fn codegenSource(alloc: std.mem.Allocator, source: []const u8, reporter: *errors
     cg.union_registry = &mir_annotator.union_registry;
     cg.var_types = &mir_annotator.var_types;
     cg.mir_root = mir_root;
-    try cg.generate(ast, "main");
+    try cg.generate(ast, "testmod");
     return try alloc.dupe(u8, cg.getOutput());
 }
 
@@ -1169,7 +1169,7 @@ test "codegen - struct with method" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
     const out = try codegenSource(alloc,
-        \\module main
+        \\module testmod
         \\pub struct Vec2 {
         \\    pub x: f32
         \\    pub y: f32
@@ -1192,7 +1192,7 @@ test "codegen - enum with match" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
     const out = try codegenSource(alloc,
-        \\module main
+        \\module testmod
         \\enum(u8) Color {
         \\    Red
         \\    Green
@@ -1218,7 +1218,7 @@ test "codegen - bitfield declaration" {
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
     const out = try codegenSource(alloc,
-        \\module main
+        \\module testmod
         \\bitfield(u8) Perms {
         \\    Read
         \\    Write

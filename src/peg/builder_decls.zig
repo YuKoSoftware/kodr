@@ -66,10 +66,9 @@ pub fn buildProgram(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 }
 
 pub fn buildModuleDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // module_decl <- doc_block? 'module' (IDENTIFIER / 'main') NL
-    // Find the name token — it's the identifier or 'main' keyword after 'module'
+    // module_decl <- doc_block? 'module' IDENTIFIER NL
+    // Find the name token — it's the identifier after 'module'
     const name_pos = builder.findTokenInRange(ctx, cap.start_pos + 1, cap.end_pos, .identifier) orelse
-        builder.findTokenInRange(ctx, cap.start_pos + 1, cap.end_pos, .kw_main) orelse
         return error.NoModuleName;
     return ctx.newNode(.{ .module_decl = .{ .name = builder.tokenText(ctx, name_pos) } });
 }
@@ -90,7 +89,7 @@ pub fn buildImport(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
         if (tok.kind == .string_literal) {
             path = tok.text;
             is_c_header = true;
-        } else if (tok.kind == .identifier or tok.kind == .kw_main) {
+        } else if (tok.kind == .identifier) {
             if (i + 1 < cap.end_pos and ctx.tokens[i + 1].kind == .scope) {
                 scope = tok.text;
                 i += 2; // skip ::

@@ -93,7 +93,7 @@ pub fn classifyToken(kind: lexer.TokenKind) TokenClassification {
         .kw_break, .kw_continue, .kw_defer, .kw_thread, .kw_any,
         .kw_and, .kw_or, .kw_not, .kw_as, .kw_is,
         .kw_true, .kw_false, .kw_null,
-        .kw_void, .kw_main, .kw_type,
+        .kw_void, .kw_type,
         => .{ .token_type = .keyword, .modifiers = 0 },
 
         // @ prefix for compiler functions — classify as operator prefix

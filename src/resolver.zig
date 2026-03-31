@@ -1497,7 +1497,7 @@ test "resolver - untyped numeric literal requires explicit type" {
     } };
 
     const module_node = try a.create(parser.Node);
-    module_node.* = .{ .module_decl = .{ .name = "main" } };
+    module_node.* = .{ .module_decl = .{ .name = "testmod" } };
     const top_level = try a.alloc(*parser.Node, 1);
     top_level[0] = func_node;
 

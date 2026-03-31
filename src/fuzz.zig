@@ -66,13 +66,13 @@ pub fn main() !void {
             4 => {
                 // Semi-valid Orhon program structures — exercises deeper parser paths
                 const templates = [_][]const u8{
-                    "module main\nfunc main() void {\n",
-                    "module main\npub struct Foo {\n    pub x: i32\n}\n",
-                    "module main\npub enum(u8) Bar {\n    A\n    B\n}\n",
-                    "module main\nconst X: i32 = 42\n",
-                    "module main\nfunc add(a: i32, b: i32) i32 {\n    return a + b\n}\n",
-                    "module main\nimport std::console\nfunc main() void {\n",
-                    "module main\nvar x: i32 = 0\nfunc f() void {\n    if(x > 0) {\n",
+                    "module fuzztest\nfunc main() void {\n",
+                    "module fuzztest\npub struct Foo {\n    pub x: i32\n}\n",
+                    "module fuzztest\npub enum(u8) Bar {\n    A\n    B\n}\n",
+                    "module fuzztest\nconst X: i32 = 42\n",
+                    "module fuzztest\nfunc add(a: i32, b: i32) i32 {\n    return a + b\n}\n",
+                    "module fuzztest\nimport std::console\nfunc main() void {\n",
+                    "module fuzztest\nvar x: i32 = 0\nfunc f() void {\n    if(x > 0) {\n",
                 };
                 const tmpl = templates[rand.intRangeAtMost(usize, 0, templates.len - 1)];
                 const n = @min(tmpl.len, buf.len);

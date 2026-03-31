@@ -437,7 +437,7 @@ test "builder - build minimal program AST" {
     var g = try peg.loadGrammar(alloc);
     defer g.deinit();
 
-    var lex = lexer.Lexer.init("module main\n");
+    var lex = lexer.Lexer.init("module myapp\n");
     var tokens = try lex.tokenize(alloc);
     defer tokens.deinit(alloc);
 
@@ -449,7 +449,7 @@ test "builder - build minimal program AST" {
     defer result.ctx.deinit();
 
     try std.testing.expect(result.node.* == .program);
-    try std.testing.expectEqualStrings("main", result.node.program.module.module_decl.name);
+    try std.testing.expectEqualStrings("myapp", result.node.program.module.module_decl.name);
 }
 
 test "builder - build program with function" {
@@ -460,7 +460,7 @@ test "builder - build program with function" {
     defer g.deinit();
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func add(a: i32, b: i32) i32 {
         \\    return a + b
@@ -478,7 +478,7 @@ test "builder - build program with function" {
     defer result.ctx.deinit();
 
     const prog = result.node.program;
-    try std.testing.expectEqualStrings("main", prog.module.module_decl.name);
+    try std.testing.expectEqualStrings("myapp", prog.module.module_decl.name);
     try std.testing.expectEqual(@as(usize, 1), prog.top_level.len);
 
     const func = prog.top_level[0];
@@ -495,7 +495,7 @@ test "builder - build program with const" {
     defer g.deinit();
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\const MAX: i32 = 100
         \\

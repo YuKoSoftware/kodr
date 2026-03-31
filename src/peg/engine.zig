@@ -344,7 +344,7 @@ test "engine - match choice" {
     const alloc = std.testing.allocator;
     const grammar_mod2 = @import("grammar.zig");
 
-    const src = "name\n    <- IDENTIFIER / 'main'\n";
+    const src = "name\n    <- IDENTIFIER / 'void'\n";
     var g = try grammar_mod2.parseGrammar(src, alloc);
     defer g.deinit();
 
@@ -357,9 +357,9 @@ test "engine - match choice" {
     defer e1.deinit();
     try std.testing.expect(e1.matchAll("name"));
 
-    // Test with 'main' keyword
+    // Test with 'void' keyword
     const tokens2 = [_]Token{
-        .{ .kind = .kw_main, .text = "main", .line = 1, .col = 1 },
+        .{ .kind = .kw_void, .text = "void", .line = 1, .col = 1 },
         .{ .kind = .eof, .text = "", .line = 1, .col = 5 },
     };
     var e2 = Engine.init(&g, &tokens2, alloc);

@@ -61,7 +61,7 @@ test "peg - load embedded grammar" {
 test "peg - validate minimal program" {
     const alloc = std.testing.allocator;
 
-    var lex = lexer.Lexer.init("module main\n");
+    var lex = lexer.Lexer.init("module myapp\n");
     var tokens = try lex.tokenize(alloc);
     defer tokens.deinit(alloc);
 
@@ -73,7 +73,7 @@ test "peg - validate real program with function" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func add(a: i32, b: i32) i32 {
         \\    return a + b
@@ -110,7 +110,7 @@ test "peg - validate program with imports and metadata" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\#name = "hello"
         \\#build = exe
@@ -133,7 +133,7 @@ test "peg - validate program with control flow" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func abs(x: i32) i32 {
         \\    if(x < 0) {
@@ -175,7 +175,7 @@ test "peg - validate program with while and for" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func sum(n: i32) i32 {
         \\    var total: i32 = 0
@@ -198,7 +198,7 @@ test "peg - validate program with match" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func classify(n: i32) i32 {
         \\    match(n) {
@@ -221,7 +221,7 @@ test "peg - validate program with error union" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func safe_divide(a: i32, b: i32) (Error | i32) {
         \\    if(b == 0) {
@@ -294,7 +294,7 @@ test "peg - validate program with defer" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func example() i32 {
         \\    var x: i32 = 0
@@ -317,7 +317,7 @@ test "peg - validate program with elif" {
     const alloc = std.testing.allocator;
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func sign(n: i32) i32 {
         \\    if(n > 0) {

@@ -335,7 +335,7 @@ test "capture - full orhon program" {
     defer g.deinit();
 
     var lex = lexer.Lexer.init(
-        \\module main
+        \\module myapp
         \\
         \\func add(a: i32, b: i32) i32 {
         \\    return a + b

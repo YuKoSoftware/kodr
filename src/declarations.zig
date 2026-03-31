@@ -630,7 +630,7 @@ test "declaration collector - struct" {
     top_level[0] = struct_node;
 
     const module_node = try a.create(parser.Node);
-    module_node.* = .{ .module_decl = .{ .name = "main" } };
+    module_node.* = .{ .module_decl = .{ .name = "testmod" } };
 
     const prog = try a.create(parser.Node);
     prog.* = .{ .program = .{
@@ -677,7 +677,7 @@ test "declaration collector - duplicate func error" {
     top_level[1] = func2;
 
     const module_node = try a.create(parser.Node);
-    module_node.* = .{ .module_decl = .{ .name = "main" } };
+    module_node.* = .{ .module_decl = .{ .name = "testmod" } };
 
     const prog = try a.create(parser.Node);
     prog.* = .{ .program = .{ .module = module_node,
@@ -715,7 +715,7 @@ test "declaration collector - enum" {
     top_level[0] = enum_node;
 
     const module_node = try a.create(parser.Node);
-    module_node.* = .{ .module_decl = .{ .name = "main" } };
+    module_node.* = .{ .module_decl = .{ .name = "testmod" } };
 
     const prog = try a.create(parser.Node);
     prog.* = .{ .program = .{ .module = module_node,
@@ -757,7 +757,7 @@ test "declaration collector - bridge func is registered" {
     top_level[0] = func_node;
 
     const module_node = try a.create(parser.Node);
-    module_node.* = .{ .module_decl = .{ .name = "main" } };
+    module_node.* = .{ .module_decl = .{ .name = "testmod" } };
 
     const prog = try a.create(parser.Node);
     prog.* = .{ .program = .{ .module = module_node,

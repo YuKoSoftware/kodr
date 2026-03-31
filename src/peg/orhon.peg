@@ -42,7 +42,7 @@ top_level_start
      / 'thread' / 'compt' / 'bridge' / 'test' / 'import' / '#'
 
 module_decl
-    <- doc_block? 'module' (IDENTIFIER / 'main') NL  {label: "module declaration"}
+    <- doc_block? 'module' IDENTIFIER NL  {label: "module declaration"}
 
 metadata
     <- '#' metadata_body NL  {label: "metadata directive"}
@@ -64,7 +64,7 @@ import_decl
 
 import_path
     <- STRING_LITERAL                           # C header: import "header.h"
-     / (IDENTIFIER / 'main') '::' IDENTIFIER   # scoped: std::console, global::utils
+     / IDENTIFIER '::' IDENTIFIER   # scoped: std::console, global::utils
      / IDENTIFIER                               # bare: project-local module
 
 
@@ -112,7 +112,7 @@ thread_decl
     <- 'thread' func_name '(' _ param_list _ ')' type block  {label: "thread declaration"}
 
 func_name
-    <- IDENTIFIER / 'main'
+    <- IDENTIFIER
 
 param_list
     <- (param (_ ',' _ param)* (_ ',')?)?
@@ -616,7 +616,7 @@ _               <- ([ \t\n] / '//' (!'\n' .)* '\n')*
 # ============================================================
 # func var const if else elif for while return throw import use
 # pub match struct enum bitfield defer thread null void compt
-# any module test and or not main as break continue true false
+# any module test and or not as break continue true false
 # bridge is type blueprint
 # Compound borrow tokens: const& mut&
 # Compiler functions use @ prefix: @cast @copy @move @swap @assert

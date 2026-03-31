@@ -39,7 +39,6 @@ pub const LITERAL_MAP = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "and", .kw_and },
     .{ "or", .kw_or },
     .{ "not", .kw_not },
-    .{ "main", .kw_main },
     .{ "as", .kw_as },
     .{ "break", .kw_break },
     .{ "continue", .kw_continue },
