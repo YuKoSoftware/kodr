@@ -1,5 +1,5 @@
-module main
-#name    = "union_flatten"
+module union_flat
+#name    = "union_flat"
 #version = Version(1, 0, 0)
 #build   = exe
 

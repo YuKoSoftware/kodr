@@ -16,7 +16,7 @@ else fail "fails outside a project"; fi
 # missing module declaration
 cd "$TESTDIR"
 mkdir -p neg_module/src
-cp "$FIXTURES/fail_missing_module.orh" neg_module/src/main.orh
+cp "$FIXTURES/fail_missing_module.orh" neg_module/src/neg_module.orh
 cd neg_module
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if [ $? -ne 0 ] || echo "$NEG_OUT" | grep -qi "module\|error"; then
@@ -28,7 +28,8 @@ fi
 # missing import
 cd "$TESTDIR"
 mkdir -p neg_import/src
-cp "$FIXTURES/fail_missing_import.orh" neg_import/src/main.orh
+cp "$FIXTURES/fail_missing_import.orh" neg_import/src/neg_import.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_import/' neg_import/src/neg_import.orh
 cd neg_import
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "not found\|error"; then
@@ -40,8 +41,8 @@ fi
 # missing anchor file
 cd "$TESTDIR"
 mkdir -p neg_anchor/src
-cat > neg_anchor/src/main.orh <<'ORHON'
-module main
+cat > neg_anchor/src/neg_anchor.orh <<'ORHON'
+module neg_anchor
 #name    = "neg_anchor"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -60,8 +61,8 @@ fi
 # missing bridge sidecar
 cd "$TESTDIR"
 mkdir -p neg_bridge/src
-cat > neg_bridge/src/main.orh <<'ORHON'
-module main
+cat > neg_bridge/src/neg_bridge.orh <<'ORHON'
+module neg_bridge
 #name    = "neg_bridge"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -80,8 +81,8 @@ fi
 # missing import error
 cd "$TESTDIR"
 "$ORHON" init badimport >/dev/null 2>&1
-cat > "$TESTDIR/badimport/src/main.orh" <<'ORHON'
-module main
+cat > "$TESTDIR/badimport/src/badimport.orh" <<'ORHON'
+module badimport
 #name    = "badimport"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -97,7 +98,7 @@ else fail "missing import error" "$BADIMPORT_OUT"; fi
 # missing module error
 cd "$TESTDIR"
 "$ORHON" init nomodule >/dev/null 2>&1
-echo "func main() void {}" > "$TESTDIR/nomodule/src/main.orh"
+echo "func main() void {}" > "$TESTDIR/nomodule/src/nomodule.orh"
 cd "$TESTDIR/nomodule"
 NOMOD_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NOMOD_OUT" | grep -qi "missing module\|no module\|module"; then
@@ -109,6 +110,7 @@ fi
 # missing anchor file error
 cd "$TESTDIR"
 "$ORHON" init noanchor >/dev/null 2>&1
+rm -f "$TESTDIR/noanchor/src/noanchor.orh"
 cat > "$TESTDIR/noanchor/src/wrong_name.orh" <<'ORHON'
 module utils
 pub func helper() i32 {
@@ -123,8 +125,8 @@ else fail "missing anchor file error" "$ANCHOR_OUT"; fi
 # unjoined thread error
 cd "$TESTDIR"
 mkdir -p neg_thread/src
-cat > neg_thread/src/main.orh <<'ORHON'
-module main
+cat > neg_thread/src/neg_thread.orh <<'ORHON'
+module neg_thread
 #name    = "neg_thread"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -145,8 +147,8 @@ else fail "rejects unjoined thread" "$NEG_OUT"; fi
 # use after splitAt error
 cd "$TESTDIR"
 mkdir -p neg_split/src
-cat > neg_split/src/main.orh <<'ORHON'
-module main
+cat > neg_split/src/neg_split.orh <<'ORHON'
+module neg_split
 #name    = "neg_split"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -164,8 +166,8 @@ else fail "rejects use after splitAt" "$NEG_OUT"; fi
 # return type mismatch
 cd "$TESTDIR"
 mkdir -p neg_rettype/src
-cat > neg_rettype/src/main.orh <<'ORHON'
-module main
+cat > neg_rettype/src/neg_rettype.orh <<'ORHON'
+module neg_rettype
 #name    = "neg_rettype"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -183,8 +185,8 @@ else fail "rejects return type mismatch" "$NEG_OUT"; fi
 # non-bool if condition
 cd "$TESTDIR"
 mkdir -p neg_ifcond/src
-cat > neg_ifcond/src/main.orh <<'ORHON'
-module main
+cat > neg_ifcond/src/neg_ifcond.orh <<'ORHON'
+module neg_ifcond
 #name    = "neg_ifcond"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -200,8 +202,8 @@ else fail "rejects non-bool if condition" "$NEG_OUT"; fi
 # non-bool while condition
 cd "$TESTDIR"
 mkdir -p neg_whilecond/src
-cat > neg_whilecond/src/main.orh <<'ORHON'
-module main
+cat > neg_whilecond/src/neg_whilecond.orh <<'ORHON'
+module neg_whilecond
 #name    = "neg_whilecond"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -217,8 +219,8 @@ else fail "rejects non-bool while condition" "$NEG_OUT"; fi
 # break outside loop
 cd "$TESTDIR"
 mkdir -p neg_break/src
-cat > neg_break/src/main.orh <<'ORHON'
-module main
+cat > neg_break/src/neg_break.orh <<'ORHON'
+module neg_break
 #name    = "neg_break"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -234,8 +236,8 @@ else fail "rejects break outside loop" "$NEG_OUT"; fi
 # continue outside loop
 cd "$TESTDIR"
 mkdir -p neg_continue/src
-cat > neg_continue/src/main.orh <<'ORHON'
-module main
+cat > neg_continue/src/neg_continue.orh <<'ORHON'
+module neg_continue
 #name    = "neg_continue"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -251,8 +253,8 @@ else fail "rejects continue outside loop" "$NEG_OUT"; fi
 # var &T rejected (use &T instead)
 cd "$TESTDIR"
 mkdir -p neg_varref/src
-cat > neg_varref/src/main.orh <<'ORHON'
-module main
+cat > neg_varref/src/neg_varref.orh <<'ORHON'
+module neg_varref
 #name    = "neg_varref"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -272,8 +274,8 @@ else fail "rejects var &T (use &T)" "$NEG_OUT"; fi
 # type mismatch on assignment (string to int)
 cd "$TESTDIR"
 mkdir -p neg_typemismatch/src
-cat > neg_typemismatch/src/main.orh <<'ORHON'
-module main
+cat > neg_typemismatch/src/neg_typemismatch.orh <<'ORHON'
+module neg_typemismatch
 #name    = "neg_typemismatch"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -289,8 +291,8 @@ else fail "rejects type mismatch on assignment" "$NEG_OUT"; fi
 # duplicate variable in same scope
 cd "$TESTDIR"
 mkdir -p neg_dupvar/src
-cat > neg_dupvar/src/main.orh <<'ORHON'
-module main
+cat > neg_dupvar/src/neg_dupvar.orh <<'ORHON'
+module neg_dupvar
 #name    = "neg_dupvar"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -307,8 +309,8 @@ else fail "rejects duplicate variable" "$NEG_OUT"; fi
 # default param before required param
 cd "$TESTDIR"
 mkdir -p neg_default_order/src
-cat > neg_default_order/src/main.orh <<'ORHON'
-module main
+cat > neg_default_order/src/neg_default_order.orh <<'ORHON'
+module neg_default_order
 #name    = "neg_default_order"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -325,8 +327,8 @@ else fail "rejects default before required param" "$NEG_OUT"; fi
 # []u8 → String coercion rejected
 cd "$TESTDIR"
 mkdir -p neg_u8str/src
-cat > neg_u8str/src/main.orh <<'ORHON'
-module main
+cat > neg_u8str/src/neg_u8str.orh <<'ORHON'
+module neg_u8str
 #name    = "neg_u8str"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -345,8 +347,8 @@ else fail "rejects []u8 as String" "$NEG_OUT"; fi
 # duplicate anchor file
 cd "$TESTDIR"
 mkdir -p neg_dup_anchor/src/sub
-cat > neg_dup_anchor/src/main.orh <<'ORHON'
-module main
+cat > neg_dup_anchor/src/neg_dup_anchor.orh <<'ORHON'
+module neg_dup_anchor
 #name    = "neg_dup"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -368,15 +370,15 @@ else fail "rejects duplicate anchor files" "$NEG_OUT"; fi
 # mutable ref across bridge
 cd "$TESTDIR"
 mkdir -p neg_bridge_ref/src
-cat > neg_bridge_ref/src/main.orh <<'ORHON'
-module main
-#name    = "neg_bridge"
+cat > neg_bridge_ref/src/neg_bridge_ref.orh <<'ORHON'
+module neg_bridge_ref
+#name    = "neg_bridge_ref"
 #version = Version(1, 0, 0)
 #build   = exe
 bridge func modify(data: mut& i32) void
 func main() void { }
 ORHON
-cat > neg_bridge_ref/src/main.zig <<'ZIG'
+cat > neg_bridge_ref/src/neg_bridge_ref.zig <<'ZIG'
 pub fn modify(data: *i32) void { data.* = 0; }
 ZIG
 cd neg_bridge_ref
@@ -387,8 +389,8 @@ else fail "rejects mutable ref across bridge" "$NEG_OUT"; fi
 # Version() outside metadata
 cd "$TESTDIR"
 mkdir -p neg_version/src
-cat > neg_version/src/main.orh <<'ORHON'
-module main
+cat > neg_version/src/neg_version.orh <<'ORHON'
+module neg_version
 #name    = "neg_version"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -408,7 +410,8 @@ run_fixture() {
     local name="$1" fixture="$2" pattern="$3" label="$4"
     cd "$TESTDIR"
     mkdir -p "$name/src"
-    cp "$FIXTURES/$fixture" "$name/src/main.orh"
+    cp "$FIXTURES/$fixture" "$name/src/$name.orh"
+    sed -i "1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module $name/" "$name/src/$name.orh"
     cd "$name"
     NEG_OUT=$("$ORHON" build 2>&1 || true)
     if echo "$NEG_OUT" | grep -qi "$pattern"; then pass "$label"
@@ -464,7 +467,8 @@ run_fixture neg_match_guard fail_match_guard.orh "match with guards requires" "f
 # old ptr syntax rejected
 cd "$TESTDIR"
 mkdir -p neg_ptr_cast/src
-cp "$FIXTURES/fail_ptr_cast.orh" neg_ptr_cast/src/main.orh
+cp "$FIXTURES/fail_ptr_cast.orh" neg_ptr_cast/src/neg_ptr_cast.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_ptr_cast/' neg_ptr_cast/src/neg_ptr_cast.orh
 cd neg_ptr_cast
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "error\|parse\|unexpected"; then
@@ -476,7 +480,8 @@ fi
 # throw in void function
 cd "$TESTDIR"
 mkdir -p neg_throw/src
-cp "$FIXTURES/fail_throw.orh" neg_throw/src/main.orh
+cp "$FIXTURES/fail_throw.orh" neg_throw/src/neg_throw.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_throw/' neg_throw/src/neg_throw.orh
 cd neg_throw
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "throw\|error"; then
@@ -488,7 +493,8 @@ fi
 # old C interop directives rejected (CIMP-04)
 cd "$TESTDIR"
 mkdir -p neg_linkc/src
-cp "$FIXTURES/fail_old_linkc.orh" neg_linkc/src/main.orh
+cp "$FIXTURES/fail_old_linkc.orh" neg_linkc/src/neg_linkc.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_linkc/' neg_linkc/src/neg_linkc.orh
 cd neg_linkc
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "error\|unexpected\|parse"; then
@@ -502,7 +508,8 @@ fi
 # did you mean suggestion (ERR-01)
 cd "$TESTDIR"
 mkdir -p neg_did_you_mean/src
-cp "$FIXTURES/fail_did_you_mean.orh" neg_did_you_mean/src/main.orh
+cp "$FIXTURES/fail_did_you_mean.orh" neg_did_you_mean/src/neg_did_you_mean.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_did_you_mean/' neg_did_you_mean/src/neg_did_you_mean.orh
 cd neg_did_you_mean
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -q "did you mean"; then
@@ -514,7 +521,8 @@ fi
 # type mismatch display (ERR-02)
 cd "$TESTDIR"
 mkdir -p neg_type_display/src
-cp "$FIXTURES/fail_type_mismatch_display.orh" neg_type_display/src/main.orh
+cp "$FIXTURES/fail_type_mismatch_display.orh" neg_type_display/src/neg_type_display.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_type_display/' neg_type_display/src/neg_type_display.orh
 cd neg_type_display
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -q "type mismatch.*expected bool"; then
@@ -526,7 +534,8 @@ fi
 # ownership fix hint (ERR-03)
 cd "$TESTDIR"
 mkdir -p neg_ownership_hint/src
-cp "$FIXTURES/fail_ownership.orh" neg_ownership_hint/src/main.orh
+cp "$FIXTURES/fail_ownership.orh" neg_ownership_hint/src/neg_ownership_hint.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_ownership_hint/' neg_ownership_hint/src/neg_ownership_hint.orh
 cd neg_ownership_hint
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -q "consider using @copy()"; then
@@ -538,7 +547,8 @@ fi
 # borrow ref hint (ERR-03)
 cd "$TESTDIR"
 mkdir -p neg_borrow_hint/src
-cp "$FIXTURES/fail_borrow.orh" neg_borrow_hint/src/main.orh
+cp "$FIXTURES/fail_borrow.orh" neg_borrow_hint/src/neg_borrow_hint.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_borrow_hint/' neg_borrow_hint/src/neg_borrow_hint.orh
 cd neg_borrow_hint
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -q "by value or as a function parameter"; then
@@ -550,7 +560,8 @@ fi
 # introspection — wrong argument count / type
 cd "$TESTDIR"
 mkdir -p neg_introspect/src
-cp "$FIXTURES/fail_introspection.orh" neg_introspect/src/main.orh
+cp "$FIXTURES/fail_introspection.orh" neg_introspect/src/neg_introspect.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_introspect/' neg_introspect/src/neg_introspect.orh
 cd neg_introspect
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "@hasField\|error"; then
@@ -562,7 +573,8 @@ fi
 # blueprint: missing method
 cd "$TESTDIR"
 mkdir -p neg_bp_missing/src
-cp "$FIXTURES/fail_blueprint_missing_method.orh" neg_bp_missing/src/main.orh
+cp "$FIXTURES/fail_blueprint_missing_method.orh" neg_bp_missing/src/neg_bp_missing.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_bp_missing/' neg_bp_missing/src/neg_bp_missing.orh
 cd neg_bp_missing
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "does not implement.*required by blueprint"; then
@@ -574,7 +586,8 @@ fi
 # blueprint: wrong signature
 cd "$TESTDIR"
 mkdir -p neg_bp_sig/src
-cp "$FIXTURES/fail_blueprint_wrong_sig.orh" neg_bp_sig/src/main.orh
+cp "$FIXTURES/fail_blueprint_wrong_sig.orh" neg_bp_sig/src/neg_bp_sig.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_bp_sig/' neg_bp_sig/src/neg_bp_sig.orh
 cd neg_bp_sig
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "does not match blueprint\|parameter"; then
@@ -586,7 +599,8 @@ fi
 # blueprint: unknown blueprint
 cd "$TESTDIR"
 mkdir -p neg_bp_unknown/src
-cp "$FIXTURES/fail_blueprint_unknown.orh" neg_bp_unknown/src/main.orh
+cp "$FIXTURES/fail_blueprint_unknown.orh" neg_bp_unknown/src/neg_bp_unknown.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_bp_unknown/' neg_bp_unknown/src/neg_bp_unknown.orh
 cd neg_bp_unknown
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "unknown blueprint"; then
@@ -600,5 +614,36 @@ run_fixture neg_union_dup fail_union_duplicate.orh "duplicate type.*union\|dupli
 
 # Error in regular union banned
 run_fixture neg_error_union fail_error_in_union.orh "Error.*cannot be a union member\|use ErrorUnion\|ErrorInUnion" "fixture: rejects Error in regular union"
+
+# ── module main rejection ────────────────────────────────────────
+# module main is reserved — compiler must reject it
+cd "$TESTDIR"
+mkdir -p neg_modmain/src
+cat > neg_modmain/src/neg_modmain.orh <<'ORHON'
+module main
+#name    = "neg_modmain"
+#version = Version(1, 0, 0)
+#build   = exe
+func main() void { }
+ORHON
+cd neg_modmain
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "'main' is reserved"; then pass "rejects module main"
+else fail "rejects module main" "$NEG_OUT"; fi
+
+# func main() in library module rejected
+cd "$TESTDIR"
+mkdir -p neg_libmain/src
+cat > neg_libmain/src/neg_libmain.orh <<'ORHON'
+module neg_libmain
+#name    = "neg_libmain"
+#version = Version(1, 0, 0)
+#build   = static
+func main() void { }
+ORHON
+cd neg_libmain
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "func main.*only allowed in executable"; then pass "rejects func main() in library"
+else fail "rejects func main() in library" "$NEG_OUT"; fi
 
 report_results

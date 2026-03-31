@@ -9,7 +9,7 @@ section "Runtime correctness"
 
 cd "$TESTDIR"
 mkdir -p comptest/src
-cp "$FIXTURES/tester_main.orh" comptest/src/main.orh
+cp "$FIXTURES/tester_main.orh" comptest/src/comptest.orh
 cp "$FIXTURES/tester.orh" comptest/src/tester.orh
 cd "$TESTDIR/comptest"
 

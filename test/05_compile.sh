@@ -11,7 +11,9 @@ section "orhon test command"
 
 cd "$TESTDIR"
 mkdir -p orhontest/src
-cp "$FIXTURES/tester_main.orh" orhontest/src/main.orh
+cp "$FIXTURES/tester_main.orh" orhontest/src/orhontest.orh
+sed -i '1s/^module comptest$/module orhontest/' orhontest/src/orhontest.orh
+sed -i 's/#name    = "comptest"/#name    = "orhontest"/' orhontest/src/orhontest.orh
 cp "$FIXTURES/tester.orh" orhontest/src/tester.orh
 cd "$TESTDIR/orhontest"
 
@@ -32,8 +34,8 @@ fi
 
 cd "$TESTDIR"
 mkdir -p failtest/src
-cat > failtest/src/main.orh <<'ORHON'
-module main
+cat > failtest/src/failtest.orh <<'ORHON'
+module failtest
 #name    = "failtest"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -65,8 +67,8 @@ else fail "reports success" "$OUTPUT"; fi
 if [ -x bin/buildproj ]; then pass "produces executable"
 else fail "produces executable"; fi
 
-if [ -f .orh-cache/generated/main.zig ]; then pass "generates main.zig"
-else fail "generates main.zig"; fi
+if [ -f .orh-cache/generated/buildproj.zig ]; then pass "generates buildproj.zig"
+else fail "generates buildproj.zig"; fi
 
 if [ -f .orh-cache/generated/example.zig ]; then pass "generates example.zig"
 else fail "generates example.zig"; fi
@@ -110,8 +112,8 @@ OUTPUT=$("$ORHON" debug 2>&1 || true)
 if echo "$OUTPUT" | grep -q "=== orhon debug ==="; then pass "shows header"
 else fail "shows header" "$OUTPUT"; fi
 
-if echo "$OUTPUT" | grep -q "module 'main'"; then pass "finds main module"
-else fail "finds main module" "$OUTPUT"; fi
+if echo "$OUTPUT" | grep -q "module 'buildproj'"; then pass "finds buildproj module"
+else fail "finds buildproj module" "$OUTPUT"; fi
 
 if echo "$OUTPUT" | grep -q "module 'example'"; then pass "finds example module"
 else fail "finds example module" "$OUTPUT"; fi

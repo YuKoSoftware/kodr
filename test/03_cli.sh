@@ -27,7 +27,7 @@ else
 fi
 
 cd "$TESTDIR" && mkdir -p inplace_test && cd inplace_test
-if "$ORHON" init >/dev/null 2>&1 && [ -f src/main.orh ]; then
+if "$ORHON" init >/dev/null 2>&1 && [ -f src/inplace_test.orh ]; then
     pass "orhon init (no name) inits in current dir"
 else
     fail "orhon init (no name) inits in current dir"

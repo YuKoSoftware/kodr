@@ -12,12 +12,12 @@ cd "$TESTDIR"
 cd "$TESTDIR/gentest"
 "$ORHON" build >/dev/null 2>&1 || true
 
-MAIN_ZIG=".orh-cache/generated/main.zig"
+MAIN_ZIG=".orh-cache/generated/gentest.zig"
 EXAMPLE_ZIG=".orh-cache/generated/example.zig"
 
 # ── Basic structure ───────────────────────────────────────────
 
-if grep -q "// generated from module main" "$MAIN_ZIG"; then
+if grep -q "// generated from module gentest" "$MAIN_ZIG"; then
     pass "module header comment"
 else
     fail "module header comment"
@@ -62,8 +62,8 @@ else fail "main is pub"; fi
 # Build a project with a bare call to a non-void function
 cd "$TESTDIR"
 mkdir -p discardtest/src
-cat > discardtest/src/main.orh <<'ORHON'
-module main
+cat > discardtest/src/discardtest.orh <<'ORHON'
+module discardtest
 #name    = "discardtest"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -79,7 +79,7 @@ ORHON
 cd discardtest
 "$ORHON" build >/dev/null 2>&1 || true
 
-if grep -q '_ = ' .orh-cache/generated/main.zig; then pass "bare call discards return value"
+if grep -q '_ = ' .orh-cache/generated/discardtest.zig; then pass "bare call discards return value"
 else fail "bare call discards return value"; fi
 
 # ── Interpolation error propagation ─────────────────────────────
@@ -105,10 +105,10 @@ section "Codegen snapshots"
 
 snapshot_test() {
     local name="$1"
-    local projdir="$TESTDIR/snap_${name}"
+    local projdir="$TESTDIR/snaptest_${name}"
     mkdir -p "$projdir/src"
     cp "$REPO_DIR/test/snapshots/snap_${name}.orh" "$projdir/src/snap_${name}.orh"
-    cp "$REPO_DIR/test/snapshots/snap_${name}_main.orh" "$projdir/src/main.orh"
+    cp "$REPO_DIR/test/snapshots/snap_${name}_main.orh" "$projdir/src/snaptest_${name}.orh"
     cd "$projdir"
     "$ORHON" build >/dev/null 2>&1 || true
 

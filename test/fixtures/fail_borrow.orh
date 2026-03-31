@@ -1,4 +1,4 @@
-module main
+module fixture
 
 #name    = "fail_borrow"
 #version = Version(1, 0, 0)

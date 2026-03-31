@@ -11,7 +11,17 @@ cd "$TESTDIR"
 "$ORHON" init testlib >/dev/null 2>&1 || true
 cd "$TESTDIR/testlib"
 
-sed -i 's/#build   = exe/#build   = static/' src/main.orh
+# Rewrite as static library (func main not allowed in lib modules)
+cat > src/testlib.orh <<'ORHON'
+module testlib
+#name    = "testlib"
+#version = Version(1, 0, 0)
+#build   = static
+
+pub func add(a: i32, b: i32) i32 {
+    return a + b
+}
+ORHON
 
 OUTPUT=$("$ORHON" build 2>&1 || true)
 if echo "$OUTPUT" | grep -q "Built: bin/libtestlib.a"; then pass "static: reports success"
@@ -34,7 +44,7 @@ else fail "static: no memory leaks" "$(echo "$OUTPUT" | grep 'error(gpa)')"; fi
 
 section "Dynamic library"
 
-sed -i 's/#build   = static/#build   = dynamic/' src/main.orh
+sed -i 's/#build   = static/#build   = dynamic/' src/testlib.orh
 rm -rf .orh-cache bin
 
 OUTPUT=$("$ORHON" build 2>&1 || true)
@@ -73,8 +83,8 @@ else fail "iface: library interface generated"; fi
 # Verify the interface file can be parsed by another project
 cd "$TESTDIR"
 mkdir -p ifaceuser/src
-cat > ifaceuser/src/main.orh <<'ORHON'
-module main
+cat > ifaceuser/src/ifaceuser.orh <<'ORHON'
+module ifaceuser
 #name    = "ifaceuser"
 #version = Version(1, 0, 0)
 #build   = exe

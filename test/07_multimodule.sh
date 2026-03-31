@@ -18,8 +18,8 @@ pub func double(n: i32) i32 {
 }
 ORHON
 
-cat > src/main.orh <<'ORHON'
-module main
+cat > src/multimod.orh <<'ORHON'
+module multimod
 #name    = "multimod"
 #version = Version(1, 0, 0)
 #build   = exe
@@ -55,8 +55,8 @@ pub func add(a: i32, b: i32) i32 {
 ORHON
 
 # Create an exe that imports the dynamic lib
-cat > src/main.orh <<'ORHON'
-module main
+cat > src/dynlink.orh <<'ORHON'
+module dynlink
 #name    = "dynlink"
 #build   = exe
 import std::console
@@ -102,8 +102,8 @@ pub func triple(n: i32) i32 {
 ORHON
 
 # Create an exe that imports the static lib
-cat > src/main.orh <<'ORHON'
-module main
+cat > src/statlink.orh <<'ORHON'
+module statlink
 #name    = "statlink"
 #build   = exe
 import std::console
@@ -167,8 +167,8 @@ pub export fn addC(a: i32, b: i32) i32 {
 ZIG
 
 # Exe that imports the multi-file+sidecar lib
-cat > src/main.orh <<'ORHON'
-module main
+cat > src/sidecarmod.orh <<'ORHON'
+module sidecarmod
 #name  = "sidecarmod"
 #build = exe
 import mylib

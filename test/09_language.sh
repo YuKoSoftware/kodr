@@ -58,7 +58,7 @@ section "Tester module codegen"
 
 cd "$TESTDIR"
 mkdir -p comptest/src
-cp "$FIXTURES/tester_main.orh" comptest/src/main.orh
+cp "$FIXTURES/tester_main.orh" comptest/src/comptest.orh
 cp "$FIXTURES/tester.orh" comptest/src/tester.orh
 cd "$TESTDIR/comptest"
 
@@ -120,7 +120,7 @@ section "Blueprint features"
 
 cd "$TESTDIR"
 mkdir -p bptest/src
-cp "$FIXTURES/blueprint_main.orh" bptest/src/main.orh
+cp "$FIXTURES/blueprint_main.orh" bptest/src/bptest.orh
 cp "$FIXTURES/blueprint_basic.orh" bptest/src/tester.orh
 cd bptest
 
@@ -151,12 +151,14 @@ fi
 
 cd "$TESTDIR"
 mkdir -p bpmulti/src
-cp "$FIXTURES/blueprint_main.orh" bpmulti/src/main.orh
+cp "$FIXTURES/blueprint_main.orh" bpmulti/src/bpmulti.orh
+sed -i '1s/^module bptest$/module bpmulti/' bpmulti/src/bpmulti.orh
+sed -i 's/#name    = "bptest"/#name    = "bpmulti"/' bpmulti/src/bpmulti.orh
 cp "$FIXTURES/blueprint_multiple.orh" bpmulti/src/tester.orh
 cd bpmulti
 
 OUTPUT=$("$ORHON" build 2>&1 || true)
-if echo "$OUTPUT" | grep -q "Built: bin/bptest"; then
+if echo "$OUTPUT" | grep -q "Built: bin/bpmulti"; then
     pass "multiple blueprints compile"
 else
     fail "multiple blueprints compile" "$OUTPUT"
@@ -165,7 +167,7 @@ fi
 # union flattening
 cd "$TESTDIR"
 mkdir -p union_flat/src
-cp "$FIXTURES/union_flatten.orh" union_flat/src/main.orh
+cp "$FIXTURES/union_flatten.orh" union_flat/src/union_flat.orh
 cd union_flat
 FLAT_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$FLAT_OUT" | grep -q "Built:"; then

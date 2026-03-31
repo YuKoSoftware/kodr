@@ -1,5 +1,5 @@
-module main
-#name    = "snap_errors"
+module snaptest_errors
+#name    = "snaptest_errors"
 #version = Version(1, 0, 0)
 #build   = exe
 

@@ -19,8 +19,8 @@ fi
 if [ -d testproj/src ]; then pass "creates src/ directory"
 else fail "creates src/ directory"; fi
 
-if [ -f testproj/src/main.orh ]; then pass "creates main.orh"
-else fail "creates main.orh"; fi
+if [ -f testproj/src/testproj.orh ]; then pass "creates testproj.orh"
+else fail "creates testproj.orh"; fi
 
 if [ -d testproj/src/example ]; then pass "creates src/example/ directory"
 else fail "creates src/example/ directory"; fi
@@ -43,16 +43,16 @@ else fail "creates example/strings.orh"; fi
 if [ -f testproj/src/example/advanced.orh ]; then pass "creates example/advanced.orh"
 else fail "creates example/advanced.orh"; fi
 
-if head -1 testproj/src/main.orh | grep -q "^module main$"; then
-    pass "main.orh has 'module main'"
+if head -1 testproj/src/testproj.orh | grep -q "^module testproj$"; then
+    pass "testproj.orh has 'module testproj'"
 else
-    fail "main.orh has 'module main'"
+    fail "testproj.orh has 'module testproj'"
 fi
 
-if grep -q '#name    = "testproj"' testproj/src/main.orh; then
-    pass "main.orh has project name"
+if grep -q '#name    = "testproj"' testproj/src/testproj.orh; then
+    pass "testproj.orh has project name"
 else
-    fail "main.orh has project name"
+    fail "testproj.orh has project name"
 fi
 
 if head -1 testproj/src/example/example.orh | grep -q "^module example$"; then
