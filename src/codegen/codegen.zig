@@ -245,20 +245,6 @@ pub const CodeGen = struct {
         try self.emit("\n");
     }
 
-    /// Emit a type-name path (a.b.c) from a field_expr chain without semantic transforms.
-    /// Used only for `is` type-check RHS where the node is a type name, not a runtime value.
-    pub fn emitTypePath(self: *CodeGen, node: *parser.Node) anyerror!void {
-        switch (node.*) {
-            .identifier => |name| try self.emit(name),
-            .field_expr => |f| {
-                try self.emitTypePath(f.object);
-                try self.emit(".");
-                try self.emit(f.field);
-            },
-            else => try self.generateExpr(node), // fallback
-        }
-    }
-
     /// Emit a type-name path (a.b.c) from a MIR field_access chain without semantic transforms.
     /// Used only for `is` type-check RHS in MIR-path codegen.
     pub fn emitTypeMirPath(self: *CodeGen, m: *mir.MirNode) anyerror!void {
@@ -329,14 +315,6 @@ pub const CodeGen = struct {
     /// Generate a Zig union tag name from an Orhon type name: i32 → _i32
     pub fn unionTagName(self: *CodeGen, orhon_name: []const u8) ![]const u8 {
         return try self.allocTypeStr("_{s}", .{orhon_name});
-    }
-
-    /// Check if an expression is known to be a string (literal, interpolation, or MIR-typed)
-    pub fn isStringExpr(self: *const CodeGen, node: *parser.Node) bool {
-        return switch (node.*) {
-            .string_literal, .interpolated_string => true,
-            else => self.getTypeClass(node) == .string,
-        };
     }
 
     /// Infer which union tag a value belongs to based on its literal type.
@@ -526,12 +504,6 @@ pub const CodeGen = struct {
     pub fn generateStmtDeclMir(self: *CodeGen, m: *mir.MirNode, decl_keyword: []const u8) anyerror!void { return stmts_impl.generateStmtDeclMir(self, m, decl_keyword); }
 
     // ============================================================
-    // EXPRESSIONS (AST path)
-    // ============================================================
-
-    pub fn generateExpr(self: *CodeGen, node: *parser.Node) anyerror!void { return stmts_impl.generateExpr(self, node); }
-
-    // ============================================================
     // MIR EXPRESSIONS
     // ============================================================
 
@@ -548,8 +520,6 @@ pub const CodeGen = struct {
     pub fn generateContinueExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateContinueExprMir(self, m); }
 
     pub fn writeRangeExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.writeRangeExprMir(self, m); }
-
-    pub fn generateInterpolatedString(self: *CodeGen, interp: parser.InterpolatedString) anyerror!void { return exprs_impl.generateInterpolatedString(self, interp); }
 
     pub fn generateForMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateForMir(self, m); }
 
@@ -577,12 +547,6 @@ pub const CodeGen = struct {
 
     pub fn generateCompilerFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateCompilerFuncMir(self, m); }
 
-    pub fn generateWrappingExpr(self: *CodeGen, arg: *parser.Node) anyerror!void { return match_impl.generateWrappingExpr(self, arg); }
-
-    pub fn generateSaturatingExpr(self: *CodeGen, arg: *parser.Node) anyerror!void { return match_impl.generateSaturatingExpr(self, arg); }
-
-    pub fn generateOverflowExpr(self: *CodeGen, arg: *parser.Node) anyerror!void { return match_impl.generateOverflowExpr(self, arg); }
-
     pub fn generateWrappingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateWrappingExprMir(self, m); }
 
     pub fn generateSaturatingExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateSaturatingExprMir(self, m); }
@@ -590,14 +554,6 @@ pub const CodeGen = struct {
     pub fn generateOverflowExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateOverflowExprMir(self, m); }
 
     pub fn fillDefaultArgsMir(self: *CodeGen, callee_mir: *const mir.MirNode, actual_arg_count: usize) anyerror!void { return match_impl.fillDefaultArgsMir(self, callee_mir, actual_arg_count); }
-
-    pub fn generateCompilerFunc(self: *CodeGen, cf: parser.CompilerFunc) anyerror!void { return match_impl.generateCompilerFunc(self, cf); }
-
-    pub fn generatePtrCoercion(self: *CodeGen, kind: []const u8, type_node: *parser.Node, value: *parser.Node) anyerror!void { return match_impl.generatePtrCoercion(self, kind, type_node, value); }
-
-    pub fn fillDefaultArgs(self: *CodeGen, c: parser.CallExpr) anyerror!void { return match_impl.fillDefaultArgs(self, c); }
-
-    pub fn generateCollectionExpr(self: *CodeGen, c: parser.CollectionExpr) anyerror!void { return match_impl.generateCollectionExpr(self, c); }
 
     // ============================================================
     // TYPE TRANSLATION

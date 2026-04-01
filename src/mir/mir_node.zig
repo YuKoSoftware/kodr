@@ -17,8 +17,8 @@ pub const Coercion = mir_types.Coercion;
 ///    type_array, type_union, type_ptr, etc.) for structural syntax-to-syntax
 ///    translation. Duplicating this tree into MirNode adds complexity with no
 ///    benefit — type trees are purely structural.
-/// 2. type_expr and passthrough MirKinds delegate to AST-path generateExpr()
-///    for the same reason.
+/// 2. type_expr and passthrough MirKinds carry AST pointers that codegen reads
+///    via typeToZig() for the same reason.
 /// Source locations read through ast via nodeLocMir().
 pub const MirNode = struct {
     /// Original AST node — retained for typeToZig/type_expr structural type trees
