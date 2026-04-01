@@ -672,6 +672,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                             raw;
 
                         // Split comma-separated library names and emit linkSystemLibrary for each (BLD-03)
+                        // Only link as system library if NOT compiled from source (CIMP-SRC)
+                        const has_source = meta.metadata.cimport_source != null;
                         var lib_segments = std.ArrayListUnmanaged([]const u8){};
                         defer lib_segments.deinit(alloc);
                         try splitCimportLibNames(alloc, lib_name, &lib_segments);
@@ -683,7 +685,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                                 continue;
                             }
                             try registry.put(alloc, seg, mod_name_inner);
-                            try link_libs.append(alloc, seg);
+                            if (!has_source) try link_libs.append(alloc, seg);
                         }
 
                         // include: always required (D-06, validated earlier in declarations pass)
@@ -839,11 +841,13 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                             else
                                 raw;
                             // Split comma-separated library names and emit linkSystemLibrary for each (BLD-03)
+                            // Only link as system library if NOT compiled from source (CIMP-SRC)
+                            const has_source_st = meta.metadata.cimport_source != null;
                             var lib_segments = std.ArrayListUnmanaged([]const u8){};
                             defer lib_segments.deinit(allocator);
                             try splitCimportLibNames(allocator, lib_name, &lib_segments);
                             for (lib_segments.items) |seg| {
-                                try link_libs.append(allocator, seg);
+                                if (!has_source_st) try link_libs.append(allocator, seg);
                             }
                             if (meta.metadata.cimport_include) |inc| {
                                 try c_includes_st.append(allocator, inc);
@@ -877,10 +881,13 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                                 else
                                     raw;
                                 // Split comma-separated library names and emit linkSystemLibrary for each (BLD-03)
+                                // Only link as system library if NOT compiled from source (CIMP-SRC)
+                                const has_source_dep = meta.metadata.cimport_source != null;
                                 var lib_segments = std.ArrayListUnmanaged([]const u8){};
                                 defer lib_segments.deinit(allocator);
                                 try splitCimportLibNames(allocator, lib_name, &lib_segments);
                                 for (lib_segments.items) |seg| {
+                                    if (has_source_dep) continue;
                                     var lib_already = false;
                                     for (link_libs.items) |existing| {
                                         if (std.mem.eql(u8, existing, seg)) { lib_already = true; break; }

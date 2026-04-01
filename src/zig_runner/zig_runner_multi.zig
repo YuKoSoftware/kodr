@@ -116,8 +116,27 @@ pub fn buildZigContentMulti(
             try bridge_set.put(allocator, t.module_name, {});
         }
     }
-    // Include non-root modules that have bridges (not represented as targets)
+    // Filter extra_bridge_modules to only those actually referenced by at least one
+    // target's mod_imports — avoids creating unused bridge variables in build.zig.
+    var used_extra_bridges = std.ArrayListUnmanaged([]const u8){};
+    defer used_extra_bridges.deinit(allocator);
     for (extra_bridge_modules) |bmod_name| {
+        var used = false;
+        for (targets) |t| {
+            for (t.mod_imports) |mod_name| {
+                if (std.mem.eql(u8, mod_name, bmod_name)) {
+                    used = true;
+                    break;
+                }
+            }
+            if (used) break;
+        }
+        if (used) try used_extra_bridges.append(allocator, bmod_name);
+    }
+    const filtered_bridges = used_extra_bridges.items;
+
+    // Include non-root modules that have bridges (not represented as targets)
+    for (filtered_bridges) |bmod_name| {
         try bridge_set.put(allocator, bmod_name, {});
     }
 
@@ -137,7 +156,7 @@ pub fn buildZigContentMulti(
     }
 
     // Also create bridge modules for non-root modules
-    for (extra_bridge_modules) |bmod_name| {
+    for (filtered_bridges) |bmod_name| {
         try _build.appendFmt(&buf, allocator,
             \\    const bridge_{s} = b.createModule(.{{
             \\        .root_source_file = b.path("{s}_bridge.zig"),
@@ -302,7 +321,7 @@ pub fn buildZigContentMulti(
         }
 
         // Add imports for non-root bridge modules actually used by this target
-        for (extra_bridge_modules) |bmod_name| {
+        for (filtered_bridges) |bmod_name| {
             var uses_module = false;
             for (t.mod_imports) |mod_name| {
                 if (std.mem.eql(u8, mod_name, bmod_name)) {
@@ -431,7 +450,7 @@ pub fn buildZigContentMulti(
         }
 
         // Add imports for non-root bridge modules actually used by this target
-        for (extra_bridge_modules) |bmod_name| {
+        for (filtered_bridges) |bmod_name| {
             var uses_module = false;
             for (t.mod_imports) |mod_name| {
                 if (std.mem.eql(u8, mod_name, bmod_name)) {
@@ -550,7 +569,7 @@ pub fn buildZigContentMulti(
         }
 
         // Add imports for non-root bridge modules actually used by this target
-        for (extra_bridge_modules) |bmod_name| {
+        for (filtered_bridges) |bmod_name| {
             var uses_module = false;
             for (t.mod_imports) |mod_name| {
                 if (std.mem.eql(u8, mod_name, bmod_name)) {
