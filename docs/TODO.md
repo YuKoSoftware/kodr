@@ -96,7 +96,8 @@ simplify the compiler without removing features.
 - ~~Merge `buildZigContent()`/`buildZigContentMulti()` — done (v0.14.3, unified into `buildZigContentMulti`)~~
 - ~~`hashInterface()` in `cache.zig` — done (v0.14.2, generic helpers)~~
 - ~~Binary operator / builtin name enums — done (v0.14.3, `CompilerFunc` enum + `Op` constants)~~
-- Remove AST-path remnants in codegen if fully replaced by MIR path.
+- ~~Remove dead `current_func_node` field — done (v0.14.3, field + save/restore + unused `node` params removed from generateFunc/generateThreadFunc)~~
+- Remove remaining AST-path codegen (`generateFunc`, `generateExpr`) once MIR path is fully verified.
 - ~~Unify union wrapping in codegen — done (v0.14.2, shared operator maps)~~
 - ~~Standardize `catch` patterns — done (v0.14.3, `dispatchLsp`/`dispatchLspArray` helpers replace 13 identical handler blocks, -48 lines)~~
 - ~~`appendFmt()` helper for zig_runner — done (v0.14.3, 35 instances converted, -57 lines)~~

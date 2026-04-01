@@ -337,9 +337,9 @@ pub fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 {
     };
 }
 
-pub fn generateFunc(cg: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void {
+pub fn generateFunc(cg: *CodeGen, f: parser.FuncDecl) anyerror!void {
     // Thread function — generate body + spawn wrapper
-    if (f.context == .thread) return cg.generateThreadFunc(node, f);
+    if (f.context == .thread) return cg.generateThreadFunc(f);
 
     // bridge func — re-export from paired sidecar file
     if (f.context == .bridge) return cg.generateBridgeReExport(f.name, f.is_pub);
@@ -349,9 +349,6 @@ pub fn generateFunc(cg: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerr
     if (f.body.* == .block and f.body.block.statements.len == 0 and
         f.context != .bridge and !std.mem.eql(u8, f.name, "main")) return;
 
-    // Track current function for MIR return type queries
-    const prev_func_node = cg.current_func_node;
-    cg.current_func_node = node;
     // Clear per-function tracking maps — each function has its own scope
     const prev_reassigned_vars = cg.reassigned_vars;
     cg.reassigned_vars = .{};
@@ -361,7 +358,6 @@ pub fn generateFunc(cg: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerr
     const prev_null_narrowed = cg.null_narrowed;
     cg.null_narrowed = .{};
     defer {
-        cg.current_func_node = prev_func_node;
         cg.reassigned_vars.deinit(cg.allocator);
         cg.reassigned_vars = prev_reassigned_vars;
         cg.error_narrowed.deinit(cg.allocator);
@@ -441,7 +437,7 @@ pub fn generateFunc(cg: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerr
 /// `thread worker(n: i32) Handle(i32) { return n * 2 }` generates:
 ///   fn _worker_body(n: i32) i32 { return (n * 2); }
 ///   fn worker(n: i32) _OrhonHandle(i32) { ... spawn ... }
-pub fn generateThreadFunc(cg: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void {
+pub fn generateThreadFunc(cg: *CodeGen, f: parser.FuncDecl) anyerror!void {
     // Extract inner type T from Handle(T) return type
     const inner_type = if (f.return_type.* == .type_generic and
         std.mem.eql(u8, f.return_type.type_generic.name, builtins.BT.HANDLE) and
@@ -455,13 +451,10 @@ pub fn generateThreadFunc(cg: *CodeGen, node: *parser.Node, f: parser.FuncDecl) 
 
     // ── Body function: fn _name_body(params) T { ... } ──
     {
-        const prev_func_node = cg.current_func_node;
-        cg.current_func_node = node;
         const prev_assigned = cg.reassigned_vars;
         cg.reassigned_vars = .{};
         try collectAssigned(f.body, &cg.reassigned_vars, cg.allocator);
         defer {
-            cg.current_func_node = prev_func_node;
             cg.reassigned_vars.deinit(cg.allocator);
             cg.reassigned_vars = prev_assigned;
         }

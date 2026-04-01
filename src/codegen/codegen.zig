@@ -51,9 +51,6 @@ pub const CodeGen = struct {
     var_types: ?*const std.StringHashMapUnmanaged(mir.NodeInfo) = null,
     // Const auto-borrow: function name → set of param indices promoted to *const T
     const_ref_params: ?*const std.StringHashMapUnmanaged(std.AutoHashMapUnmanaged(usize, void)) = null,
-    // AST-path-only: set by generateFunc/generateThreadFunc for legacy AST codegen path.
-    // MIR-path uses current_func_mir instead.
-    current_func_node: ?*parser.Node = null,
     // MIR tree — Phase 3 lowered tree (available for incremental migration)
     mir_root: ?*mir.MirNode = null,
     // MIR node for the current function — set by generateFuncMir/generateThreadFuncMir.
@@ -482,13 +479,13 @@ pub const CodeGen = struct {
 
     pub fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 { return decls_impl.getRootIdentMir(m); }
 
-    pub fn generateFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void { return decls_impl.generateFunc(self, node, f); }
+    pub fn generateFunc(self: *CodeGen, f: parser.FuncDecl) anyerror!void { return decls_impl.generateFunc(self, f); }
 
     /// Generate a thread function: body function + spawn wrapper.
     /// `thread worker(n: i32) Handle(i32) { return n * 2 }` generates:
     ///   fn _worker_body(n: i32) i32 { return (n * 2); }
     ///   fn worker(n: i32) _OrhonHandle(i32) { ... spawn ... }
-    pub fn generateThreadFunc(self: *CodeGen, node: *parser.Node, f: parser.FuncDecl) anyerror!void { return decls_impl.generateThreadFunc(self, node, f); }
+    pub fn generateThreadFunc(self: *CodeGen, f: parser.FuncDecl) anyerror!void { return decls_impl.generateThreadFunc(self, f); }
 
     // ============================================================
     // STRUCTS
