@@ -198,11 +198,8 @@ pub const TypeResolver = struct {
                             if (ta.* == .type_ptr and ta.type_ptr.kind == .mut_ref) {
                                 // Allow self: &StructName on bridge struct methods
                                 if (std.mem.eql(u8, param.param.name, "self")) continue;
-                                const msg = try std.fmt.allocPrint(self.allocator,
-                                    "mutable reference 'mut& {s}' not allowed across bridge — use 'const& {s}' or pass by value",
+                                try self.reporter.reportFmt(self.nodeLoc(node), "mutable reference 'mut& {s}' not allowed across bridge — use 'const& {s}' or pass by value",
                                     .{ param.param.name, param.param.name });
-                                defer self.allocator.free(msg);
-                                try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                             }
                         }
                     }
@@ -294,19 +291,13 @@ pub const TypeResolver = struct {
                     try self.validateType(t, scope);
                     // Reference types (const& T, mut& T) are only valid in function parameters
                     if (t.* == .type_ptr) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "reference type not allowed in variable declaration — use '{s}' by value or as a function parameter",
+                        try self.reporter.reportFmt(self.nodeLoc(node), "reference type not allowed in variable declaration — use '{s}' by value or as a function parameter",
                             .{v.name});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                     }
                 }
                 // Duplicate variable check (only inside functions/blocks, not top-level)
                 if (scope.parent != null and scope.vars.contains(v.name)) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "variable '{s}' already declared in this scope", .{v.name});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    try self.reporter.reportFmt(self.nodeLoc(node), "variable '{s}' already declared in this scope", .{v.name});
                 }
                 const val_type = try self.resolveExpr(v.value, scope);
                 const resolved = if (v.type_annotation) |t|
@@ -334,18 +325,12 @@ pub const TypeResolver = struct {
                     try self.validateType(t, scope);
                     // Reference types (const& T, mut& T) are only valid in function parameters
                     if (t.* == .type_ptr) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "reference type not allowed in variable declaration — use '{s}' by value or as a function parameter",
+                        try self.reporter.reportFmt(self.nodeLoc(node), "reference type not allowed in variable declaration — use '{s}' by value or as a function parameter",
                             .{v.name});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                     }
                 }
                 if (scope.parent != null and scope.vars.contains(v.name)) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "variable '{s}' already declared in this scope", .{v.name});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    try self.reporter.reportFmt(self.nodeLoc(node), "variable '{s}' already declared in this scope", .{v.name});
                 }
                 // bridge consts have no value — skip value type checking
                 if (v.is_bridge) {
@@ -403,11 +388,8 @@ pub const TypeResolver = struct {
                             val_type != .unknown and val_type != .inferred and
                             !typesCompatible(val_type, expected))
                         {
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "return type mismatch: expected '{s}', got '{s}'",
+                            try self.reporter.reportFmt(self.nodeLoc(node), "return type mismatch: expected '{s}', got '{s}'",
                                 .{ expected.name(), val_type.name() });
-                            defer self.allocator.free(msg);
-                            try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                         }
                     }
                 }
@@ -417,10 +399,7 @@ pub const TypeResolver = struct {
                 if (cond_type == .primitive and cond_type.primitive != .bool and
                     cond_type != .unknown and cond_type != .inferred)
                 {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "type mismatch in if condition: expected bool, got '{s}'", .{cond_type.name()});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    try self.reporter.reportFmt(self.nodeLoc(node), "type mismatch in if condition: expected bool, got '{s}'", .{cond_type.name()});
                 }
                 try self.resolveNode(i.then_block, scope);
                 if (i.else_block) |e| try self.resolveNode(e, scope);
@@ -430,10 +409,7 @@ pub const TypeResolver = struct {
                 if (cond_type == .primitive and cond_type.primitive != .bool and
                     cond_type != .unknown and cond_type != .inferred)
                 {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "type mismatch in while condition: expected bool, got '{s}'", .{cond_type.name()});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    try self.reporter.reportFmt(self.nodeLoc(node), "type mismatch in while condition: expected bool, got '{s}'", .{cond_type.name()});
                 }
                 if (w.continue_expr) |c| _ = try self.resolveExpr(c, scope);
                 self.loop_depth += 1;
@@ -492,9 +468,7 @@ pub const TypeResolver = struct {
                 }
                 // Guards require else arm for exhaustiveness — guards don't guarantee coverage
                 if (has_guard and !has_else) {
-                    const msg = try std.fmt.allocPrint(self.allocator, "match with guards requires an 'else' arm", .{});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    try self.reporter.reportFmt(self.nodeLoc(node), "match with guards requires an 'else' arm", .{});
                 }
                 // Check exhaustiveness for union matches
                 if (!has_else) {
@@ -604,10 +578,7 @@ pub const TypeResolver = struct {
 
                 const suggestion = try errors.formatSuggestion(id_name, candidates.items, self.allocator);
                 defer if (suggestion) |s| self.allocator.free(s);
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "unknown identifier '{s}'{s}", .{ id_name, suggestion orelse "" });
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                try self.reporter.reportFmt(self.nodeLoc(node), "unknown identifier '{s}'{s}", .{ id_name, suggestion orelse "" });
                 return RT.unknown;
             },
 
@@ -659,10 +630,7 @@ pub const TypeResolver = struct {
                             !self.isIncludedType(name))
                         {
                             // Non-callable variable
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "'{s}' is not callable — expected a function or constructor", .{name});
-                            defer self.allocator.free(msg);
-                            try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                            try self.reporter.reportFmt(self.nodeLoc(node), "'{s}' is not callable — expected a function or constructor", .{name});
                             return t;
                         }
                     }
@@ -772,10 +740,7 @@ pub const TypeResolver = struct {
                 if (obj_type == .primitive) {
                     const tn = obj_type.primitive;
                     if (tn == .bool or tn == .void) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "cannot index into type '{s}'", .{tn.toName()});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                        try self.reporter.reportFmt(self.nodeLoc(node), "cannot index into type '{s}'", .{tn.toName()});
                     }
                 }
                 return RT.inferred;
@@ -818,33 +783,23 @@ pub const TypeResolver = struct {
                 // Introspection functions
                 if (std.mem.eql(u8, cf.name, "hasField") or std.mem.eql(u8, cf.name, "hasDecl")) {
                     if (cf.args.len != 2) {
-                        const msg = try std.fmt.allocPrint(self.allocator, "@{s} takes exactly 2 arguments", .{cf.name});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                        try self.reporter.reportFmt(self.nodeLoc(node), "@{s} takes exactly 2 arguments", .{cf.name});
                     } else if (cf.args[1].* != .string_literal) {
-                        const msg = try std.fmt.allocPrint(self.allocator, "@{s} requires a string literal as second argument", .{cf.name});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                        try self.reporter.reportFmt(self.nodeLoc(node), "@{s} requires a string literal as second argument", .{cf.name});
                     }
                     return RT{ .primitive = .bool };
                 }
                 if (std.mem.eql(u8, cf.name, "fieldType")) {
                     if (cf.args.len != 2) {
-                        const msg = try std.fmt.allocPrint(self.allocator, "@fieldType takes exactly 2 arguments", .{});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                        try self.reporter.reportFmt(self.nodeLoc(node), "@fieldType takes exactly 2 arguments", .{});
                     } else if (cf.args[1].* != .string_literal) {
-                        const msg = try std.fmt.allocPrint(self.allocator, "@fieldType requires a string literal as second argument", .{});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                        try self.reporter.reportFmt(self.nodeLoc(node), "@fieldType requires a string literal as second argument", .{});
                     }
                     return RT{ .primitive = .@"type" };
                 }
                 if (std.mem.eql(u8, cf.name, "fieldNames")) {
                     if (cf.args.len != 1) {
-                        const msg = try std.fmt.allocPrint(self.allocator, "@fieldNames takes exactly 1 argument", .{});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                        try self.reporter.reportFmt(self.nodeLoc(node), "@fieldNames takes exactly 1 argument", .{});
                     }
                     return RT.inferred;
                 }
@@ -916,10 +871,7 @@ pub const TypeResolver = struct {
                         if (std.mem.eql(u8, c, req)) { found = true; break; }
                     }
                     if (!found) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "non-exhaustive match — missing arm for '{s}', add it or use 'else'", .{req});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(match_node) });
+                        try self.reporter.reportFmt(self.nodeLoc(match_node), "non-exhaustive match — missing arm for '{s}', add it or use 'else'", .{req});
                         return;
                     }
                 }
@@ -931,10 +883,7 @@ pub const TypeResolver = struct {
                         if (std.mem.eql(u8, c, member.name())) { found = true; break; }
                     }
                     if (!found) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "non-exhaustive match — missing arm for '{s}', add it or use 'else'", .{member.name()});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(match_node) });
+                        try self.reporter.reportFmt(self.nodeLoc(match_node), "non-exhaustive match — missing arm for '{s}', add it or use 'else'", .{member.name()});
                         return;
                     }
                 }
@@ -951,18 +900,12 @@ pub const TypeResolver = struct {
                     .error_union => {
                         if (std.mem.eql(u8, pattern_name, builtins.BT.ERROR)) return;
                         if (std.mem.eql(u8, pattern_name, ct.inner.name())) return;
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "match arm '{s}' is not a member of ErrorUnion({s})", .{ pattern_name, ct.inner.name() });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(arm_node) });
+                        try self.reporter.reportFmt(self.nodeLoc(arm_node), "match arm '{s}' is not a member of ErrorUnion({s})", .{ pattern_name, ct.inner.name() });
                     },
                     .null_union => {
                         if (std.mem.eql(u8, pattern_name, "null")) return;
                         if (std.mem.eql(u8, pattern_name, ct.inner.name())) return;
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "match arm '{s}' is not a member of NullUnion({s})", .{ pattern_name, ct.inner.name() });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(arm_node) });
+                        try self.reporter.reportFmt(self.nodeLoc(arm_node), "match arm '{s}' is not a member of NullUnion({s})", .{ pattern_name, ct.inner.name() });
                     },
                     else => {}, // other core types don't have match arms
                 }
@@ -972,10 +915,7 @@ pub const TypeResolver = struct {
                 for (members) |member| {
                     if (std.mem.eql(u8, pattern_name, member.name())) return;
                 }
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "match arm '{s}' is not a member of this union type", .{pattern_name});
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(arm_node) });
+                try self.reporter.reportFmt(self.nodeLoc(arm_node), "match arm '{s}' is not a member of this union type", .{pattern_name});
             },
             else => {
                 // Not a union type — pattern matching on integer/string values, not type arms
@@ -1021,10 +961,7 @@ pub const TypeResolver = struct {
 
                     const suggestion = try errors.formatSuggestion(type_name, candidates.items, self.allocator);
                     defer if (suggestion) |s| self.allocator.free(s);
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "unknown type '{s}'{s}", .{ type_name, suggestion orelse "" });
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    try self.reporter.reportFmt(self.nodeLoc(node), "unknown type '{s}'{s}", .{ type_name, suggestion orelse "" });
                 }
             },
             .type_slice => |elem| try self.validateType(elem, scope),
@@ -1068,10 +1005,7 @@ pub const TypeResolver = struct {
                 }
 
                 if (!is_known) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "unknown generic type '{s}'", .{g.name});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
+                    try self.reporter.reportFmt(self.nodeLoc(node), "unknown generic type '{s}'", .{g.name});
                 }
                 // Validate type arguments (Ring/ORing second arg is a size, Vector first arg is a size)
                 const is_ring = std.mem.eql(u8, g.name, "Ring") or std.mem.eql(u8, g.name, "ORing");
@@ -1116,11 +1050,8 @@ pub const TypeResolver = struct {
         // Only check when both sides are primitive — that's where we can be confident
         if (expected != .primitive or actual != .primitive) return;
         if (typesCompatible(actual, expected)) return;
-        const msg = try std.fmt.allocPrint(self.allocator,
-            "type mismatch: expected '{s}', got '{s}'",
+        try self.reporter.reportFmt(self.nodeLoc(node), "type mismatch: expected '{s}', got '{s}'",
             .{ expected.name(), actual.name() });
-        defer self.allocator.free(msg);
-        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
     }
 
     /// Returns true if `name` is a variant of any declared enum or a flag of any declared bitfield.
@@ -1161,11 +1092,8 @@ pub const TypeResolver = struct {
             if (param_type == .primitive and param_type.primitive == .string) {
                 if (arg_type == .slice) {
                     if (arg_type.slice.* == .primitive and arg_type.slice.primitive == .u8) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "cannot pass '[]u8' as 'String' — use str.fromBytes() for explicit conversion",
+                        try self.reporter.reportFmt(self.nodeLoc(node), "cannot pass '[]u8' as 'String' — use str.fromBytes() for explicit conversion",
                             .{});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                     }
                 }
             }
@@ -1173,11 +1101,8 @@ pub const TypeResolver = struct {
             if (param_type == .slice) {
                 if (param_type.slice.* == .primitive and param_type.slice.primitive == .u8) {
                     if (arg_type == .primitive and arg_type.primitive == .string) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "cannot pass 'String' as '[]u8' — use str.toBytes() for explicit conversion",
+                        try self.reporter.reportFmt(self.nodeLoc(node), "cannot pass 'String' as '[]u8' — use str.toBytes() for explicit conversion",
                             .{});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = self.nodeLoc(node) });
                     }
                 }
             }
@@ -1190,10 +1115,7 @@ pub const TypeResolver = struct {
         for (s.blueprints, 0..) |bp_name, i| {
             for (s.blueprints[0..i]) |prev| {
                 if (std.mem.eql(u8, bp_name, prev)) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "struct '{s}' lists blueprint '{s}' more than once", .{ s.name, bp_name });
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = loc });
+                    try self.reporter.reportFmt(loc, "struct '{s}' lists blueprint '{s}' more than once", .{ s.name, bp_name });
                 }
             }
         }
@@ -1201,10 +1123,7 @@ pub const TypeResolver = struct {
         for (s.blueprints) |bp_name| {
             // Look up blueprint in declarations
             const bp_sig = self.decls.blueprints.get(bp_name) orelse {
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "unknown blueprint '{s}'", .{bp_name});
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg, .loc = loc });
+                try self.reporter.reportFmt(loc, "unknown blueprint '{s}'", .{bp_name});
                 continue;
             };
 
@@ -1215,43 +1134,31 @@ pub const TypeResolver = struct {
                 defer self.allocator.free(method_key);
 
                 const struct_method = self.decls.struct_methods.get(method_key) orelse {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "struct '{s}' does not implement '{s}' required by blueprint '{s}'",
+                    try self.reporter.reportFmt(loc, "struct '{s}' does not implement '{s}' required by blueprint '{s}'",
                         .{ s.name, bp_method.name, bp_name });
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = loc });
                     continue;
                 };
 
                 // Compare parameter count
                 if (struct_method.params.len != bp_method.params.len) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "method '{s}' in struct '{s}' has {d} parameter(s), blueprint '{s}' requires {d}",
+                    try self.reporter.reportFmt(loc, "method '{s}' in struct '{s}' has {d} parameter(s), blueprint '{s}' requires {d}",
                         .{ bp_method.name, s.name, struct_method.params.len, bp_name, bp_method.params.len });
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = loc });
                     continue;
                 }
 
                 // Compare parameter types (with blueprint→struct name substitution)
                 for (struct_method.params, bp_method.params) |sp, bp| {
                     if (!typesMatchWithSubstitution(sp.type_, bp.type_, bp_name, s.name)) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "method '{s}' in struct '{s}' does not match blueprint '{s}': parameter type mismatch",
+                        try self.reporter.reportFmt(loc, "method '{s}' in struct '{s}' does not match blueprint '{s}': parameter type mismatch",
                             .{ bp_method.name, s.name, bp_name });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = loc });
                         break;
                     }
                 }
 
                 // Compare return type
                 if (!typesMatchWithSubstitution(struct_method.return_type, bp_method.return_type, bp_name, s.name)) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "method '{s}' in struct '{s}' does not match blueprint '{s}': return type mismatch",
+                    try self.reporter.reportFmt(loc, "method '{s}' in struct '{s}' does not match blueprint '{s}': return type mismatch",
                         .{ bp_method.name, s.name, bp_name });
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = loc });
                 }
             }
         }

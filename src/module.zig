@@ -162,15 +162,9 @@ pub const Resolver = struct {
             }
 
             if (anchor_count == 0) {
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "module '{s}' has no anchor file — expected '{s}'", .{ mod_name, anchor_name });
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg });
+                try self.reporter.reportFmt(null, "module '{s}' has no anchor file — expected '{s}'", .{ mod_name, anchor_name });
             } else if (anchor_count > 1) {
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "module '{s}' has {d} anchor files — only one '{s}' allowed per module", .{ mod_name, anchor_count, anchor_name });
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg });
+                try self.reporter.reportFmt(null, "module '{s}' has {d} anchor files — only one '{s}' allowed per module", .{ mod_name, anchor_count, anchor_name });
             } else if (anchor_idx > 0) {
                 // Swap anchor to front
                 const tmp = files[0];
@@ -227,13 +221,7 @@ pub const Resolver = struct {
 
                 // Reject 'module main' — reserved for the executable entry point
                 if (std.mem.eql(u8, mod_name, "main")) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "'main' is reserved for the executable entry point — use your project name as the module name", .{});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{
-                        .message = msg,
-                        .loc = .{ .file = full_path, .line = 1, .col = 1 },
-                    });
+                    try self.reporter.reportFmt(.{ .file = full_path, .line = 1, .col = 1 }, "'main' is reserved for the executable entry point — use your project name as the module name", .{});
                     self.allocator.free(mod_name);
                     self.allocator.free(full_path);
                     continue;
@@ -423,11 +411,8 @@ pub const Resolver = struct {
                         if (trimmed_line.len > 0 and trimmed_line[0] == '#' and
                             !std.mem.startsWith(u8, trimmed_line, "//"))
                         {
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "metadata (#{s}...) only allowed in anchor file '{s}.orh', found in '{s}'",
+                            try self.reporter.reportFmt(null, "metadata (#{s}...) only allowed in anchor file '{s}.orh', found in '{s}'",
                                 .{ trimmed_line[1..@min(trimmed_line.len, 10)], mod_name, file_path });
-                            defer self.allocator.free(msg);
-                            try self.reporter.report(.{ .message = msg });
                             break;
                         }
                         // bridge declarations only allowed in anchor file
@@ -435,11 +420,8 @@ pub const Resolver = struct {
                             std.mem.startsWith(u8, trimmed_line, "pub bridge ")) and
                             !std.mem.startsWith(u8, trimmed_line, "//"))
                         {
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "bridge declarations only allowed in anchor file '{s}.orh', found in '{s}'",
+                            try self.reporter.reportFmt(null, "bridge declarations only allowed in anchor file '{s}.orh', found in '{s}'",
                                 .{ mod_name, file_path });
-                            defer self.allocator.free(msg);
-                            try self.reporter.report(.{ .message = msg });
                             break;
                         }
                     }
@@ -559,10 +541,7 @@ pub const Resolver = struct {
 
                     // Only std:: imports are supported
                     if (!std.mem.eql(u8, sc, "std")) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "unknown import scope '{s}' — only 'std' is supported", .{sc});
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg });
+                        try self.reporter.reportFmt(null, "unknown import scope '{s}' — only 'std' is supported", .{sc});
                         continue;
                     }
 
@@ -575,11 +554,8 @@ pub const Resolver = struct {
 
                     // Check the .orh file exists
                     std.fs.cwd().access(file_path, .{}) catch {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "module '{s}::{s}' not found",
+                        try self.reporter.reportFmt(null, "module '{s}::{s}' not found",
                             .{ sc, decl.path });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg });
                         self.allocator.free(file_path);
                         continue;
                     };
@@ -729,11 +705,8 @@ pub const Resolver = struct {
                             .struct_decl => |s| s.name,
                             else => "unknown",
                         };
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "bridge '{s}': missing sidecar file '{s}'",
+                        try self.reporter.reportFmt(null, "bridge '{s}': missing sidecar file '{s}'",
                             .{ bridge_name, sidecar });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg });
                         self.allocator.free(sidecar);
                         break;
                     };
@@ -764,11 +737,8 @@ pub const Resolver = struct {
                 // Anchor is directly in src/ if its directory is exactly "src"
                 if (std.mem.eql(u8, dir, "src")) {
                     if (!std.mem.eql(u8, entry.key_ptr.*, project_folder)) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "only the primary module '{s}' may use #build = exe in src/ — move '{s}' to a subdirectory",
+                        try self.reporter.reportFmt(.{ .file = anchor, .line = 1, .col = 1 }, "only the primary module '{s}' may use #build = exe in src/ — move '{s}' to a subdirectory",
                             .{ project_folder, entry.key_ptr.* });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = .{ .file = anchor, .line = 1, .col = 1 } });
                     }
                 }
             }
@@ -782,10 +752,7 @@ pub const Resolver = struct {
             const mod = entry.value_ptr;
             for (mod.imports) |imp_name| {
                 if (!self.modules.contains(imp_name)) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "module '{s}' not found — add '{s}.orh' to src/", .{ imp_name, imp_name });
-                    defer self.allocator.free(msg);
-                    try reporter.report(.{ .message = msg });
+                    try reporter.reportFmt(null, "module '{s}' not found — add '{s}.orh' to src/", .{ imp_name, imp_name });
                 }
             }
         }
@@ -820,10 +787,7 @@ pub const Resolver = struct {
             if (!visited.contains(imp)) {
                 try self.dfsCircularCheck(imp, visited, in_stack);
             } else if (in_stack.get(imp) orelse false) {
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "circular import detected: {s} → {s}", .{ mod_name, imp });
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg });
+                try self.reporter.reportFmt(null, "circular import detected: {s} → {s}", .{ mod_name, imp });
             }
         }
 
@@ -899,10 +863,7 @@ pub const Resolver = struct {
 
             // Verify the dep directory exists
             std.fs.cwd().access(dep_path, .{}) catch {
-                const msg = try std.fmt.allocPrint(alloc,
-                    "#dep: directory '{s}' not found", .{dep_path_rel});
-                defer alloc.free(msg);
-                try self.reporter.report(.{ .message = msg });
+                try self.reporter.reportFmt(null, "#dep: directory '{s}' not found", .{dep_path_rel});
                 continue;
             };
 
@@ -953,11 +914,8 @@ pub const Resolver = struct {
             // act < req → error; act > req → warn
             const cmp = compareVersions(act, req);
             if (cmp < 0) {
-                const msg = try std.fmt.allocPrint(alloc,
-                    "#dep '{s}': requires version {d}.{d}.{d} but found {d}.{d}.{d}",
+                try self.reporter.reportFmt(null, "#dep '{s}': requires version {d}.{d}.{d} but found {d}.{d}.{d}",
                     .{ dep_path_rel, req[0], req[1], req[2], act[0], act[1], act[2] });
-                defer alloc.free(msg);
-                try self.reporter.report(.{ .message = msg });
             } else if (cmp > 0) {
                 const msg = try std.fmt.allocPrint(alloc,
                     "#dep '{s}': expected version {d}.{d}.{d}, found newer {d}.{d}.{d} — ok",

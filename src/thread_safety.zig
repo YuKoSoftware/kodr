@@ -144,11 +144,8 @@ pub const ThreadSafetyChecker = struct {
                 // Check if assigning to a frozen variable (const-borrowed by a thread)
                 if (a.left.* == .identifier) {
                     if (self.frozen_for_thread.get(a.left.identifier)) |thread_name| {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "cannot mutate '{s}' while it is borrowed by thread '{s}'",
+                        try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "cannot mutate '{s}' while it is borrowed by thread '{s}'",
                             .{ a.left.identifier, thread_name });
-                        defer self.allocator.free(msg);
-                        try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(node) });
                     }
                 }
                 try self.checkExprForThreadMoves(a.right);
@@ -260,11 +257,8 @@ pub const ThreadSafetyChecker = struct {
                             type_ann.type_ptr.kind == .mut_ref)
                         {
                             // Mutable borrow to thread — immediate error
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "cannot pass mutable borrow to thread '{s}' — mutable borrows across threads are unsafe",
+                            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(arg), "cannot pass mutable borrow to thread '{s}' — mutable borrows across threads are unsafe",
                                 .{thread_name});
-                            defer self.allocator.free(msg);
-                            try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(arg) });
                             continue;
                         }
                     }
@@ -316,11 +310,8 @@ pub const ThreadSafetyChecker = struct {
                     if (self.declared_threads.contains(name)) {
                         // Check for second .value call — .value is a move
                         if (self.consumed_threads.contains(name)) {
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "thread '{s}' .value already consumed — .value is a move, can only be called once",
+                            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(expr), "thread '{s}' .value already consumed — .value is a move, can only be called once",
                                 .{name});
-                            defer self.allocator.free(msg);
-                            try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(expr) });
                             return;
                         }
                         try self.joined_threads.put(name, {});
@@ -349,11 +340,8 @@ pub const ThreadSafetyChecker = struct {
         while (it.next()) |entry| {
             const thread_name = entry.key_ptr.*;
             if (!self.joined_threads.contains(thread_name)) {
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "thread '{s}' must be joined before scope exit — use .value or .wait()",
+                try self.ctx.reporter.reportFmt(null, "thread '{s}' must be joined before scope exit — use .value or .wait()",
                     .{thread_name});
-                defer self.allocator.free(msg);
-                try self.ctx.reporter.report(.{ .message = msg });
             }
         }
     }
@@ -362,11 +350,8 @@ pub const ThreadSafetyChecker = struct {
         switch (node.*) {
             .identifier => |name| {
                 if (self.moved_to_thread.get(name)) |thread_name| {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "use of '{s}' after it was moved into thread '{s}' — shared mutable state requires synchronization",
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "use of '{s}' after it was moved into thread '{s}' — shared mutable state requires synchronization",
                         .{ name, thread_name });
-                    defer self.allocator.free(msg);
-                    try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(node) });
                 }
             },
             .binary_expr => |b| {

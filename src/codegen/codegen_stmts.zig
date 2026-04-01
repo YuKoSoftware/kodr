@@ -776,9 +776,7 @@ pub fn generateExpr(cg: *CodeGen, node: *parser.Node) anyerror!void {
             try cg.emit("}");
         },
         else => {
-            const msg = try std.fmt.allocPrint(cg.allocator, "internal codegen error: unhandled expression kind '{s}'", .{@tagName(node.*)});
-            defer cg.allocator.free(msg);
-            try cg.reporter.report(.{ .message = msg });
+            try cg.reporter.reportFmt(null, "internal codegen error: unhandled expression kind '{s}'", .{@tagName(node.*)});
             return error.CompileError;
         },
     }

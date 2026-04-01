@@ -186,51 +186,33 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 switch (node.*) {
                     .var_decl, .const_decl, .compt_decl => |v| {
                         if (std.mem.eql(u8, v.name, "main")) {
-                            const msg = try std.fmt.allocPrint(allocator,
-                                "'main' is reserved for the executable entry point", .{});
-                            defer allocator.free(msg);
-                            try reporter.report(.{ .message = msg, .loc = module.resolveNodeLoc(locs_ptr, file_offsets, node) });
+                            try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), "'main' is reserved for the executable entry point", .{});
                         }
                     },
                     .struct_decl => |s| {
                         if (std.mem.eql(u8, s.name, "main")) {
-                            const msg = try std.fmt.allocPrint(allocator,
-                                "'main' is reserved for the executable entry point", .{});
-                            defer allocator.free(msg);
-                            try reporter.report(.{ .message = msg, .loc = module.resolveNodeLoc(locs_ptr, file_offsets, node) });
+                            try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), "'main' is reserved for the executable entry point", .{});
                         }
                     },
                     .enum_decl => |e| {
                         if (std.mem.eql(u8, e.name, "main")) {
-                            const msg = try std.fmt.allocPrint(allocator,
-                                "'main' is reserved for the executable entry point", .{});
-                            defer allocator.free(msg);
-                            try reporter.report(.{ .message = msg, .loc = module.resolveNodeLoc(locs_ptr, file_offsets, node) });
+                            try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), "'main' is reserved for the executable entry point", .{});
                         }
                     },
                     .blueprint_decl => |b| {
                         if (std.mem.eql(u8, b.name, "main")) {
-                            const msg = try std.fmt.allocPrint(allocator,
-                                "'main' is reserved for the executable entry point", .{});
-                            defer allocator.free(msg);
-                            try reporter.report(.{ .message = msg, .loc = module.resolveNodeLoc(locs_ptr, file_offsets, node) });
+                            try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), "'main' is reserved for the executable entry point", .{});
                         }
                     },
                     .bitfield_decl => |bf| {
                         if (std.mem.eql(u8, bf.name, "main")) {
-                            const msg = try std.fmt.allocPrint(allocator,
-                                "'main' is reserved for the executable entry point", .{});
-                            defer allocator.free(msg);
-                            try reporter.report(.{ .message = msg, .loc = module.resolveNodeLoc(locs_ptr, file_offsets, node) });
+                            try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), "'main' is reserved for the executable entry point", .{});
                         }
                     },
                     .func_decl => |f| {
                         if (std.mem.eql(u8, f.name, "main")) {
                             if (!is_exe) {
-                                const msg = try std.fmt.allocPrint(allocator,
-                                    "func main() is only allowed in executable modules", .{});
-                                defer allocator.free(msg);
-                                try reporter.report(.{ .message = msg, .loc = module.resolveNodeLoc(locs_ptr, file_offsets, node) });
+                                try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), "func main() is only allowed in executable modules", .{});
                             } else {
                                 has_func_main = true;
                             }
@@ -242,10 +224,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
             // Exe modules must have func main() in the anchor file
             if (is_exe and !has_func_main) {
-                const msg = try std.fmt.allocPrint(allocator,
-                    "executable module '{s}' requires func main() in anchor file", .{mod_name});
-                defer allocator.free(msg);
-                try reporter.report(.{ .message = msg });
+                try reporter.reportFmt(null, "executable module '{s}' requires func main() in anchor file", .{mod_name});
             }
         }
         if (reporter.hasErrors()) return null;
@@ -701,11 +680,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                         for (lib_segments.items) |seg| {
                             // Duplicate detection per individual library name (D-08 / CIMP-03)
                             if (registry.get(seg)) |existing_mod| {
-                                const msg = try std.fmt.allocPrint(alloc,
-                                    "duplicate #cimport \"{s}\" — already declared in module '{s}'",
+                                try rep.reportFmt(null, "duplicate #cimport \"{s}\" — already declared in module '{s}'",
                                     .{ seg, existing_mod });
-                                defer alloc.free(msg);
-                                try rep.report(.{ .message = msg });
                                 continue;
                             }
                             try registry.put(alloc, seg, mod_name_inner);

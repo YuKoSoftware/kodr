@@ -303,10 +303,7 @@ pub const ZigRunner = struct {
                     try self.reporter.report(.{ .message = msg });
                     continue;
                 }
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "internal codegen error (please report): {s}", .{line});
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg });
+                try self.reporter.reportFmt(null, "internal codegen error (please report): {s}", .{line});
             }
         }
     }

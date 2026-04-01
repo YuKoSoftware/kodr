@@ -79,6 +79,14 @@ pub const Reporter = struct {
         try self.storeOwned(w, &self.warnings);
     }
 
+    /// Format and report an error in one step.
+    /// Replaces the repeated allocPrint + defer free + report pattern.
+    pub fn reportFmt(self: *Reporter, loc: ?SourceLoc, comptime fmt: []const u8, args: anytype) !void {
+        const msg = try std.fmt.allocPrint(self.allocator, fmt, args);
+        defer self.allocator.free(msg);
+        try self.report(.{ .message = msg, .loc = loc });
+    }
+
     pub fn hasErrors(self: *const Reporter) bool {
         return self.errors.items.len > 0;
     }

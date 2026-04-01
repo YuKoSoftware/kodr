@@ -260,27 +260,18 @@ pub const PropagationChecker = struct {
             .throw_stmt => |t| {
                 if (scope.isTracked(t.variable)) |uvar| {
                     if (!uvar.is_error_union) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "'throw' requires an error union variable -- '{s}' is not an error union",
+                        try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "'throw' requires an error union variable -- '{s}' is not an error union",
                             .{t.variable});
-                        defer self.allocator.free(msg);
-                        try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(node) });
                         return;
                     }
                 } else {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "'throw' requires an error union variable -- '{s}' is not an error union",
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "'throw' requires an error union variable -- '{s}' is not an error union",
                         .{t.variable});
-                    defer self.allocator.free(msg);
-                    try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(node) });
                     return;
                 }
                 if (!scope.func_returns_error) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "'throw' used in function that does not return an error union",
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "'throw' used in function that does not return an error union",
                         .{});
-                    defer self.allocator.free(msg);
-                    try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(node) });
                     return;
                 }
                 scope.markHandled(t.variable);
@@ -305,11 +296,8 @@ pub const PropagationChecker = struct {
                     if (scope.isTracked(name)) |uvar| {
                         if (!uvar.handled) {
                             const kind = if (uvar.is_error_union) K.Type.ERROR else K.Type.NULL;
-                            const msg = try std.fmt.allocPrint(self.allocator,
-                                "unsafe unwrap of {s} union '{s}' — check with 'is' or 'match' first",
+                            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "unsafe unwrap of {s} union '{s}' — check with 'is' or 'match' first",
                                 .{ kind, name });
-                            defer self.allocator.free(msg);
-                            try self.ctx.reporter.report(.{ .message = msg, .loc = self.ctx.nodeLoc(node) });
                         }
                     }
                 }
@@ -407,11 +395,8 @@ pub const PropagationChecker = struct {
                         break :blk .{ .file = resolved.file, .line = resolved.line, .col = uvar.col };
                     } else
                         null;
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "unhandled {s} union '{s}' — enclosing function cannot propagate",
+                    try self.ctx.reporter.reportFmt(loc, "unhandled {s} union '{s}' — enclosing function cannot propagate",
                         .{ kind, uvar.name });
-                    defer self.allocator.free(msg);
-                    try self.ctx.reporter.report(.{ .message = msg, .loc = loc });
                 }
             }
         }

@@ -250,9 +250,7 @@ pub const DeclCollector = struct {
             .bitfield_decl => |b| try self.collectBitfield(b, loc),
             .const_decl => |v| try self.collectVar(v, true, false, loc),
             .var_decl => {
-                const msg = try std.fmt.allocPrint(self.allocator, "module-level 'var' is not allowed — use 'const' for module-level declarations", .{});
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg, .loc = loc });
+                try self.reporter.reportFmt(loc, "module-level 'var' is not allowed — use 'const' for module-level declarations", .{});
             },
             .compt_decl => |v| try self.collectVar(v, true, true, loc),
             else => {},
@@ -281,9 +279,7 @@ pub const DeclCollector = struct {
                 if (param_node.param.default_value != null) {
                     seen_default = true;
                 } else if (seen_default) {
-                    const msg = try std.fmt.allocPrint(self.allocator, "parameters with defaults must come after all required parameters in '{s}'", .{f.name});
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = loc });
+                    try self.reporter.reportFmt(loc, "parameters with defaults must come after all required parameters in '{s}'", .{f.name});
                     break;
                 }
             }
@@ -305,10 +301,7 @@ pub const DeclCollector = struct {
         };
 
         if (self.table.funcs.contains(f.name)) {
-            const msg = try std.fmt.allocPrint(self.allocator,
-                "duplicate function declaration: '{s}'", .{f.name});
-            defer self.allocator.free(msg);
-            try self.reporter.report(.{ .message = msg, .loc = loc });
+            try self.reporter.reportFmt(loc, "duplicate function declaration: '{s}'", .{f.name});
             return;
         }
 
@@ -332,18 +325,12 @@ pub const DeclCollector = struct {
         // Validate field names don't conflict with type names and no duplicates
         for (fields.items, 0..) |field, i| {
             if (isReservedTypeName(field.name)) {
-                const msg = try std.fmt.allocPrint(self.allocator,
-                    "field name '{s}' conflicts with type name — choose a different name", .{field.name});
-                defer self.allocator.free(msg);
-                try self.reporter.report(.{ .message = msg, .loc = loc });
+                try self.reporter.reportFmt(loc, "field name '{s}' conflicts with type name — choose a different name", .{field.name});
             }
             // Check for duplicate field names
             for (fields.items[0..i]) |prev| {
                 if (std.mem.eql(u8, field.name, prev.name)) {
-                    const msg = try std.fmt.allocPrint(self.allocator,
-                        "duplicate field '{s}' in struct '{s}'", .{ field.name, s.name });
-                    defer self.allocator.free(msg);
-                    try self.reporter.report(.{ .message = msg, .loc = loc });
+                    try self.reporter.reportFmt(loc, "duplicate field '{s}' in struct '{s}'", .{ field.name, s.name });
                     break;
                 }
             }
@@ -357,10 +344,7 @@ pub const DeclCollector = struct {
         };
 
         if (self.table.structs.contains(s.name)) {
-            const msg = try std.fmt.allocPrint(self.allocator,
-                "duplicate struct declaration: '{s}'", .{s.name});
-            defer self.allocator.free(msg);
-            try self.reporter.report(.{ .message = msg, .loc = loc });
+            try self.reporter.reportFmt(loc, "duplicate struct declaration: '{s}'", .{s.name});
             return;
         }
 
@@ -422,10 +406,7 @@ pub const DeclCollector = struct {
         }
 
         if (self.table.blueprints.contains(b.name)) {
-            const msg = try std.fmt.allocPrint(self.allocator,
-                "duplicate blueprint declaration: '{s}'", .{b.name});
-            defer self.allocator.free(msg);
-            try self.reporter.report(.{ .message = msg, .loc = loc });
+            try self.reporter.reportFmt(loc, "duplicate blueprint declaration: '{s}'", .{b.name});
             return;
         }
 
@@ -444,9 +425,7 @@ pub const DeclCollector = struct {
             error.DuplicateUnionMember => "duplicate type in union after flattening",
             else => return err,
         };
-        const msg = try std.fmt.allocPrint(self.allocator, "{s}", .{msg_text});
-        defer self.allocator.free(msg);
-        try self.reporter.report(.{ .message = msg, .loc = loc });
+        try self.reporter.reportFmt(loc, "{s}", .{msg_text});
     }
 
     fn collectEnum(self: *DeclCollector, e: parser.EnumDecl, loc: ?errors.SourceLoc) anyerror!void {
@@ -456,10 +435,7 @@ pub const DeclCollector = struct {
                 // Check for duplicate variant names
                 for (variants.items) |prev| {
                     if (std.mem.eql(u8, member.enum_variant.name, prev)) {
-                        const msg = try std.fmt.allocPrint(self.allocator,
-                            "duplicate variant '{s}' in enum '{s}'", .{ member.enum_variant.name, e.name });
-                        defer self.allocator.free(msg);
-                        try self.reporter.report(.{ .message = msg, .loc = loc });
+                        try self.reporter.reportFmt(loc, "duplicate variant '{s}' in enum '{s}'", .{ member.enum_variant.name, e.name });
                         break;
                     }
                 }
@@ -475,10 +451,7 @@ pub const DeclCollector = struct {
         };
 
         if (self.table.enums.contains(e.name)) {
-            const msg = try std.fmt.allocPrint(self.allocator,
-                "duplicate enum declaration: '{s}'", .{e.name});
-            defer self.allocator.free(msg);
-            try self.reporter.report(.{ .message = msg, .loc = loc });
+            try self.reporter.reportFmt(loc, "duplicate enum declaration: '{s}'", .{e.name});
             return;
         }
 
@@ -524,10 +497,7 @@ pub const DeclCollector = struct {
         };
 
         if (self.table.vars.contains(v.name)) {
-            const msg = try std.fmt.allocPrint(self.allocator,
-                "duplicate variable declaration: '{s}'", .{v.name});
-            defer self.allocator.free(msg);
-            try self.reporter.report(.{ .message = msg, .loc = loc });
+            try self.reporter.reportFmt(loc, "duplicate variable declaration: '{s}'", .{v.name});
             return;
         }
 
