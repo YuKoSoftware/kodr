@@ -76,36 +76,6 @@ Build a VS Code DAP adapter that reads these maps.
 
 ## Features — Language
 
-### Compiler simplifications
-
-Opportunities found via full codebase scan. Same spirit as the CoreType unification —
-simplify the compiler without removing features.
-
-**Medium — cross-cutting but mechanical:**
-
-- ~~Generic `ScopeBase(V)` — done (v0.14.2, `src/scope.zig`)~~
-- ~~Consolidate `nodeLoc()` — done (v0.14.2, `module.resolveNodeLoc()`)~~
-- `TypeResolver` → `SemanticContext`. Every other checker takes `SemanticContext`.
-  TypeResolver takes individual fields. Standardize. (Deferred — 183 mechanical
-  `self.X` → `self.ctx.X` changes for cosmetic consistency.)
-
-**Larger — needs careful planning:**
-
-- ~~Unify `const_decl`/`var_decl`/`compt_decl` — done (v0.14.3, `Mutability` enum on `VarDecl`, `compt_decl` removed as dead code, -151 lines across 19 files)~~
-- ~~`FuncDecl` flags → context enum — done (v0.14.3, `parser.FuncContext`)~~
-- ~~Merge `buildZigContent()`/`buildZigContentMulti()` — done (v0.14.3, unified into `buildZigContentMulti`)~~
-- ~~`hashInterface()` in `cache.zig` — done (v0.14.2, generic helpers)~~
-- ~~Binary operator / builtin name enums — done (v0.14.3, `CompilerFunc` enum + `Op` constants)~~
-- ~~Remove dead `current_func_node` field — done (v0.14.3, field + save/restore + unused `node` params removed from generateFunc/generateThreadFunc)~~
-- ~~Remove AST-path codegen remnants — done (v0.14.3, eliminated MIR→AST crossover for type_expr/passthrough, removed 7 dead AST-path functions + 8 hub wrappers, -316 lines)~~
-- `generateExpr` retained for default parameter value emission (`fillDefaultArgsMir`). Future: lower default values to MIR to eliminate last AST dependency.
-- ~~Unify union wrapping in codegen — done (v0.14.2, shared operator maps)~~
-- ~~Standardize `catch` patterns — done (v0.14.3, `dispatchLsp`/`dispatchLspArray` helpers replace 13 identical handler blocks, -48 lines)~~
-- ~~`appendFmt()` helper for zig_runner — done (v0.14.3, 35 instances converted, -57 lines)~~
-- ~~Builtin type name constants — done (v0.14.3, `builtins.BT.*` + `isPtrType()`, 47 replacements)~~
-- ~~`reportFmt()` helper on Reporter — done (v0.14.3, 83 instances converted, -234 lines)~~
-- ~~Extract Ptr coercion check — done (v0.14.3, `getPtrCoercionTarget()` replaces 4 identical blocks)~~
-
 ---
 
 ## Features — Tooling & Ecosystem
