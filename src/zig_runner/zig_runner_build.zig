@@ -29,6 +29,19 @@ pub fn sanitizeHeaderStem(hdr: []const u8) StemResult {
     return result;
 }
 
+/// Format and append to a buffer in one step.
+/// Replaces the repeated allocPrint + defer free + appendSlice pattern.
+pub fn appendFmt(
+    buf: *std.ArrayListUnmanaged(u8),
+    allocator: std.mem.Allocator,
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
+    const chunk = try std.fmt.allocPrint(allocator, fmt, args);
+    defer allocator.free(chunk);
+    try buf.appendSlice(allocator, chunk);
+}
+
 /// Emit linkSystemLibrary + linkLibC calls for a Step.Compile artifact.
 pub fn emitLinkLibs(
     buf: *std.ArrayListUnmanaged(u8),
@@ -38,19 +51,15 @@ pub fn emitLinkLibs(
 ) !void {
     if (link_libs.len == 0) return;
     for (link_libs) |lib_name| {
-        const chunk = try std.fmt.allocPrint(allocator,
+        try appendFmt(buf, allocator,
             \\    {s}.linkSystemLibrary("{s}");
             \\
         , .{ artifact_name, lib_name });
-        defer allocator.free(chunk);
-        try buf.appendSlice(allocator, chunk);
     }
-    const libc_chunk = try std.fmt.allocPrint(allocator,
+    try appendFmt(buf, allocator,
         \\    {s}.linkLibC();
         \\
     , .{artifact_name});
-    defer allocator.free(libc_chunk);
-    try buf.appendSlice(allocator, libc_chunk);
 }
 
 /// Emit addIncludePath for a Step.Compile artifact so module-relative headers resolve.
@@ -60,12 +69,10 @@ pub fn emitIncludePath(
     source_dir: []const u8,
     artifact_name: []const u8,
 ) !void {
-    const chunk = try std.fmt.allocPrint(allocator,
+    try appendFmt(buf, allocator,
         \\    {s}.root_module.addIncludePath(.{{ .cwd_relative = "{s}" }});
         \\
     , .{ artifact_name, source_dir });
-    defer allocator.free(chunk);
-    try buf.appendSlice(allocator, chunk);
 }
 
 /// Generate shared @cImport wrapper .zig files for all unique #cimport include headers.
@@ -126,35 +133,29 @@ pub fn emitCSourceFiles(
         if (is_cpp) has_cpp = true;
         const flags = if (is_cpp) "\"-std=c++17\"" else "";
         if (is_cpp) {
-            const chunk = try std.fmt.allocPrint(allocator,
+            try appendFmt(buf, allocator,
                 \\    {s}.root_module.addCSourceFiles(.{{
                 \\        .files = &.{{"{s}"}},
                 \\        .flags = &.{{{s}}},
                 \\    }});
                 \\
             , .{ artifact_name, src_file, flags });
-            defer allocator.free(chunk);
-            try buf.appendSlice(allocator, chunk);
         } else {
-            const chunk = try std.fmt.allocPrint(allocator,
+            try appendFmt(buf, allocator,
                 \\    {s}.root_module.addCSourceFiles(.{{
                 \\        .files = &.{{"{s}"}},
                 \\        .flags = &.{{}},
                 \\    }});
                 \\
             , .{ artifact_name, src_file });
-            defer allocator.free(chunk);
-            try buf.appendSlice(allocator, chunk);
         }
     }
 
     if (has_cpp) {
-        const chunk = try std.fmt.allocPrint(allocator,
+        try appendFmt(buf, allocator,
             \\    {s}.linkLibCpp();
             \\
         , .{artifact_name});
-        defer allocator.free(chunk);
-        try buf.appendSlice(allocator, chunk);
     }
 }
 
