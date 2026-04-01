@@ -39,12 +39,13 @@ Developers who value simplicity and explicitness — people who appreciate what 
 Every keyword in Orhon earns its place. No keyword exists for convenience alone.
 
 ```
-func, var, const, if, else, for, while, return, import, pub,
-match, struct, enum, bitfield, defer, thread, null, void, compt,
-any, module, test, and, or, not, as,
-break, continue, true, false, bridge, is,
-cast, copy, move, swap, assert, size, align, typename, typeid
+func, var, const, if, elif, else, for, while, return, import, use, pub,
+match, struct, enum, bitfield, blueprint, defer, thread, null, void, compt,
+any, module, test, and, or, not, as, type,
+break, continue, true, false, bridge, is, throw
 ```
+
+Compiler functions (`@cast`, `@copy`, `@move`, `@swap`, `@assert`, `@size`, `@align`, `@typename`, `@typeid`) are not keywords — they are intrinsics called with the `@` prefix. See [[05-functions#Compiler Functions]].
 
 ---
 
@@ -90,7 +91,6 @@ Closures implicitly capture variables from their environment. This creates hidde
 makes ownership tracking ambiguous, and complicates the borrow checker. In Orhon, all
 context is passed explicitly as function arguments. Loops with inner scope access cover
 most closure use cases. For callbacks, pass context as arguments or wrap state in a struct.
-`capture()` (planned) will make explicit what closures make implicit.
 
 **Inspiration:** Zig also has no closures for the same reasons.
 
@@ -98,8 +98,8 @@ most closure use cases. For callbacks, pass context as arguments or wrap state i
 
 Rust's lifetime annotations (`'a`, `'b`) are powerful but add significant cognitive load.
 Orhon uses scope-based ownership: borrows are valid within the scope they're created in.
-Non-lexical lifetimes (NLL, planned) will extend borrows to "last use" instead of "scope
-exit" — capturing 85% of Rust's expressiveness without any annotation syntax.
+Non-lexical lifetimes (NLL) extend borrows to "last use" instead of "scope exit" —
+capturing 85% of Rust's expressiveness without any annotation syntax.
 
 **Trade-off:** Some valid programs are rejected. This is intentional — simpler mental
 model wins over accepting every theoretically safe program.

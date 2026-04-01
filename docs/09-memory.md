@@ -173,30 +173,17 @@ var arr: [10]i32 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]   // fixed array, on the stac
 ```
 
 ### Heap Allocation — Requires an Explicit Allocator
+
+Orhon allocators provide a uniform interface: `Type.create()` to instantiate, `.allocator()` to get the underlying Zig `std.mem.Allocator` handle. Heap allocation happens through that handle, not directly on the allocator struct.
+
 ```
 import std::allocator
 
-var a: allocator.SMP = allocator.SMP.create()
-
-// single value
-var x: i32 = a.allocOne(i32, 42)
-var p: Player = a.allocOne(Player, Player.create("hero"))
-
-// slice — multiple values
-var data: []i32 = a.alloc(i32, 100)
+var smp: allocator.SMP = allocator.SMP.create()
+defer { smp.deinit() }
 ```
 
-Every heap allocation is tied to an explicit allocator. No hidden allocations ever.
-
-### Freeing Memory
-```
-a.free(x)       // explicit early free — x is now invalid (ownership move)
-a.free(data)    // free slice
-```
-
-`a.free(x)` is an ownership move — `x` becomes invalid after the call. Using `x` after freeing is a compile-time error. Heap-allocated values that go out of scope without an explicit free are a memory leak — always call `a.free(x)` explicitly.
-
-Custom allocator *implementation* belongs in Zig via `bridge func` — Orhon code uses allocators but does not build them.
+Every heap allocation is tied to an explicit allocator. No hidden allocations ever. Custom allocator *implementation* belongs in Zig via `bridge func` — Orhon code uses allocators but does not build them.
 
 ### Built-in Allocators
 
@@ -206,15 +193,14 @@ Custom allocator *implementation* belongs in Zig via `bridge func` — Orhon cod
 | `allocator.Arena` | fast | batch work, free all at once via `freeAll()` |
 | `allocator.Page` | varies | OS page-sized chunks, large allocations, stateless |
 
-All allocators follow the same pattern: `Type.create()` to instantiate, `.deinit()` to tear down.
+`SMP` and `Arena` have `.deinit()` to tear down. `Page` is stateless — no `.deinit()` needed.
 
 ### Arena — Batch Free
 ```
 var arena: allocator.Arena = allocator.Arena.create()
-var buf: []u8 = arena.alloc(u8, 4096)
-var tmp: []i32 = arena.alloc(i32, 100)
+defer { arena.deinit() }
+// ... allocate via arena.allocator() ...
 arena.freeAll()    // frees everything at once — all arena values become invalid
-arena.deinit()
 ```
 
 `arena.freeAll()` releases all allocations but retains capacity for reuse. Call `.deinit()` to release the backing memory.

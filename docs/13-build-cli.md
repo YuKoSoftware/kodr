@@ -18,8 +18,12 @@ orhon init <name>                    // create a new project in ./<name>/
 orhon init                           // init in current dir, use folder name as project name
 orhon addtopath                      // add orhon to PATH in your shell profile
 orhon debug                          // dump project info: source dir, modules found, files
+orhon analysis                       // dump parse tree analysis for debugging
 orhon fmt                            // format all .orh files in the project
 orhon gendoc                         // generate Markdown docs from /// comments
+orhon lsp                            // start language server (JSON-RPC over stdio)
+orhon which                          // print path to the orhon binary
+orhon version                        // print compiler version
 ```
 
 ---

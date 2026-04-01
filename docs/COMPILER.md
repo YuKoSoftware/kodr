@@ -141,6 +141,7 @@ src/
     builtins.zig            // shared — language intrinsics only
     constants.zig           // shared — constants
     cache.zig               // shared — incremental cache
+    scope.zig               // shared — scope tracking for ownership/borrow passes
     interface.zig           // bridge interface system
     std_bundle.zig          // embedded stdlib file extraction
     formatter.zig           // orhon fmt

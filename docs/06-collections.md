@@ -50,13 +50,13 @@ Hard compiler error if split index is out of range.
 ```
 use std::collections
 
-var items: List(i32) = List(i32)()
-items.append(42)
+var items: List(i32) = List(i32).new()
+items.add(42)
 
-var table: Map(str, i32) = Map(str, i32)()
+var table: Map(str, i32) = Map(str, i32).new()
 table.put("key", 1)
 
-var unique: Set(str) = Set(str)()
+var unique: Set(str) = Set(str).new()
 unique.add("hello")
 ```
 
@@ -64,5 +64,15 @@ With namespaced import:
 ```
 import std::collections
 
-var items: collections.List(i32) = collections.List(i32)()
+var items: collections.List(i32) = collections.List(i32).new()
 ```
+
+### Collection Methods
+
+| Type | Methods |
+|------|---------|
+| `List(T)` | `add(item)`, `get(index)`, `set(index, item)`, `remove(index)`, `pop()`, `len()`, `items()`, `free()` |
+| `Map(K, V)` | `put(key, value)`, `get(key)`, `has(key)`, `remove(key)`, `keys()`, `values()`, `len()`, `free()` |
+| `Set(T)` | `add(item)`, `has(item)`, `remove(item)`, `items()`, `len()`, `free()` |
+
+All collections support optional allocator arguments — see [[09-memory#Allocators]] for the three allocation modes.

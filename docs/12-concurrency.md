@@ -1,6 +1,6 @@
 # Concurrency & Threading
 
-> `thread` is implemented. `async` is deferred.
+> `thread` is implemented. `Atomic(T)` is available via `std::async`. IO-based async/await is deferred.
 
 ---
 
@@ -21,7 +21,9 @@ h.cancel()    // cooperative cancellation — thread checks flag
 
 `thread` is a keyword. Thread functions return `Handle(T)` where `T` is the result type. No import needed.
 
-> `Async` is deferred — will share the same interface but use IO concurrency instead of OS threads. Not designed yet.
+> IO-based `async` is deferred — will use IO concurrency instead of OS threads. Not designed yet.
+>
+> For lock-free shared state, `Atomic(T)` is available now via `use std::async`.
 
 ---
 
