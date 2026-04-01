@@ -100,6 +100,13 @@ simplify the compiler without removing features.
 - Remove AST-path remnants in codegen if fully replaced by MIR path.
 - ~~Unify union wrapping in codegen — done (v0.14.2, shared operator maps)~~
 - Standardize `catch` patterns across infrastructure.
+- `appendFmt()` helper for zig_runner — 35+ allocPrint+defer+appendSlice → one-liners.
+- Builtin type name constants — "Ptr", "Handle", "ErrorUnion" etc. in 40+ raw string
+  comparisons across codegen. Add named constants + `isPtrType()` helper.
+- `reportFmt()` helper on Reporter — allocPrint+defer+report pattern repeats across
+  every checker. One helper eliminates 3 lines per error message.
+- Extract Ptr/RawPtr/VolatilePtr coercion check — identical 5-line block repeated 4x
+  in codegen_decls.zig and codegen_stmts.zig.
 
 ---
 
