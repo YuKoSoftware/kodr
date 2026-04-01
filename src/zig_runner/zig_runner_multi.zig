@@ -787,3 +787,97 @@ test "buildZigContentMulti - csource directive emits addCSourceFiles and linkLib
     // vma_impl.cpp path present
     try std.testing.expect(std.mem.indexOf(u8, content, "vma_impl.cpp") != null);
 }
+
+test "buildZigContentMulti - single exe basic" {
+    const alloc = std.testing.allocator;
+    const targets = [_]MultiTarget{
+        .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
+    };
+    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "addRunArtifact") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "installArtifact") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "\"myapp\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "\"myapp.zig\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "b.step(\"test\"") != null);
+}
+
+test "buildZigContentMulti - single static lib" {
+    const alloc = std.testing.allocator;
+    const targets = [_]MultiTarget{
+        .{ .module_name = "mylib", .project_name = "mylib", .build_type = "static", .lib_imports = &.{} },
+    };
+    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, ".linkage = .static") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "installArtifact") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") == null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "b.step(\"test\"") != null);
+}
+
+test "buildZigContentMulti - single dynamic lib" {
+    const alloc = std.testing.allocator;
+    const targets = [_]MultiTarget{
+        .{ .module_name = "mylib", .project_name = "mylib", .build_type = "dynamic", .lib_imports = &.{} },
+    };
+    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, ".linkage = .dynamic") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "installArtifact") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") == null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "b.step(\"test\"") != null);
+}
+
+test "buildZigContentMulti - project name in exe artifact" {
+    const alloc = std.testing.allocator;
+    const targets = [_]MultiTarget{
+        .{ .module_name = "myapp", .project_name = "calculator", .build_type = "exe", .lib_imports = &.{} },
+    };
+    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    defer alloc.free(content);
+    try std.testing.expect(std.mem.indexOf(u8, content, "\"calculator\"") != null);
+}
+
+test "buildZigContentMulti - single target cimport link libs" {
+    const alloc = std.testing.allocator;
+    const libs = [_][]const u8{"SDL3"};
+    const targets = [_]MultiTarget{
+        .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{}, .link_libs = @constCast(&libs) },
+    };
+    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "linkSystemLibrary(\"SDL3\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "linkLibC()") != null);
+}
+
+test "buildZigContentMulti - single target no cimport means no linkLibC" {
+    const alloc = std.testing.allocator;
+    const targets = [_]MultiTarget{
+        .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
+    };
+    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "linkSystemLibrary") == null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "linkLibC") == null);
+}
+
+test "buildZigContentMulti - single target with bridge modules" {
+    const alloc = std.testing.allocator;
+    const bridges = [_][]const u8{"console"};
+    const targets = [_]MultiTarget{
+        .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
+    };
+    const content = try buildZigContentMulti(alloc, &targets, @constCast(&bridges));
+    defer alloc.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "bridge_console = b.createModule") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "\"console_bridge\"") != null);
+}
