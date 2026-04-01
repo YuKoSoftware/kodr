@@ -270,6 +270,26 @@ pub fn buildZigContentMulti(
         }
     }
 
+    // Cross-wire shared modules: each shared module gets addImport for all
+    // other shared modules, enabling transitive @import resolution.
+    // (e.g. tester.zig can @import("collections") when both are shared modules)
+    {
+        var smod_it = shared_set.keyIterator();
+        while (smod_it.next()) |smod_key| {
+            const smod_name = smod_key.*;
+            var other_it = shared_set.keyIterator();
+            while (other_it.next()) |other_key| {
+                const other_name = other_key.*;
+                if (std.mem.eql(u8, smod_name, other_name)) continue;
+                const cross_chunk = try std.fmt.allocPrint(allocator,
+                    "    mod_{s}.addImport(\"{s}\", mod_{s});\n",
+                    .{ smod_name, other_name, other_name });
+                defer allocator.free(cross_chunk);
+                try buf.appendSlice(allocator, cross_chunk);
+            }
+        }
+    }
+
     // Pass 1: emit all lib targets in dependency order
     for (sorted_libs.items) |t| {
         const linkage: []const u8 = if (std.mem.eql(u8, t.build_type, "dynamic")) ".dynamic" else ".static";

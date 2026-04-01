@@ -14,7 +14,6 @@ const _zig_runner_discovery = @import("zig_runner_discovery.zig");
 
 // Re-exports for backward compatibility with pipeline.zig and other callers
 pub const MultiTarget = _zig_runner_multi.MultiTarget;
-pub const buildZigContent = _zig_runner_build.buildZigContent;
 pub const buildZigContentMulti = _zig_runner_multi.buildZigContentMulti;
 pub const findZig = _zig_runner_discovery.findZig;
 pub const generateSharedCImportFiles = _zig_runner_build.generateSharedCImportFiles;
@@ -335,7 +334,7 @@ pub const ZigRunner = struct {
     /// Run all test blocks in the generated Zig project
     pub fn runTests(self: *ZigRunner, module_name: []const u8, project_name: []const u8, bridge_modules: []const []const u8) !bool {
         // Generate build.zig with test step included
-        try self.generateBuildZigWithTests(module_name, "exe", project_name, null, &.{}, bridge_modules, &.{}, &.{}, &.{}, false, null);
+        try self.generateBuildZig(module_name, "exe", project_name, null, &.{}, bridge_modules, &.{}, &.{}, &.{}, false, null);
 
         var args: std.ArrayListUnmanaged([]const u8) = .{};
         defer args.deinit(self.allocator);
@@ -356,7 +355,15 @@ pub const ZigRunner = struct {
         return result.success;
     }
 
-    /// Generate the build.zig file for the generated Zig project
+    /// Generate the build.zig file for a single-target project.
+    /// Constructs a MultiTarget and routes through the unified multi-target path.
+    ///
+    /// Mapping from single-target params to multi-target model:
+    /// - bridge_modules contains ALL modules with bridges (root + non-root).
+    ///   The root module (matching module_name) sets has_bridges = true.
+    ///   Non-root bridge modules become extra_bridge_modules.
+    /// - shared_modules (direct imports) become mod_imports, extended with
+    ///   non-root bridge modules for transitive import resolution.
     pub fn generateBuildZig(
         self: *ZigRunner,
         module_name: []const u8,
@@ -371,39 +378,54 @@ pub const ZigRunner = struct {
         needs_cpp: bool,
         source_dir: ?[]const u8,
     ) !void {
-        return self.generateBuildZigWithTests(module_name, build_type, project_name, project_version, link_libs, bridge_modules, shared_modules, c_includes, c_source_files, needs_cpp, source_dir);
-    }
+        // Split bridge_modules: root module sets has_bridges, rest go as extra
+        var root_has_bridges = false;
+        var extra_bridges = std.ArrayListUnmanaged([]const u8){};
+        defer extra_bridges.deinit(self.allocator);
+        for (bridge_modules) |bmod| {
+            if (std.mem.eql(u8, bmod, module_name)) {
+                root_has_bridges = true;
+            } else {
+                try extra_bridges.append(self.allocator, bmod);
+            }
+        }
 
-    fn generateBuildZigWithTests(
-        self: *ZigRunner,
-        module_name: []const u8,
-        build_type: []const u8,
-        project_name: []const u8,
-        project_version: ?[3]u64,
-        link_libs: []const []const u8,
-        bridge_modules: []const []const u8,
-        shared_modules: []const []const u8,
-        c_includes: []const []const u8,
-        c_source_files: []const []const u8,
-        needs_cpp: bool,
-        source_dir: ?[]const u8,
-    ) !void {
-        const content = try _zig_runner_build.buildZigContent(self.allocator, module_name, build_type, project_name, project_version, link_libs, bridge_modules, shared_modules, c_includes, c_source_files, needs_cpp, source_dir);
+        // mod_imports = shared_modules + non-root bridge modules (deduped).
+        // The multi path creates mod_{name} for each, needed for transitive
+        // @import resolution inside bridge sidecars.
+        var mod_imports = std.ArrayListUnmanaged([]const u8){};
+        defer mod_imports.deinit(self.allocator);
+        for (shared_modules) |name| try mod_imports.append(self.allocator, name);
+        for (extra_bridges.items) |bmod| {
+            var already = false;
+            for (shared_modules) |s| {
+                if (std.mem.eql(u8, s, bmod)) { already = true; break; }
+            }
+            if (!already) try mod_imports.append(self.allocator, bmod);
+        }
+
+        const target = MultiTarget{
+            .module_name = module_name,
+            .project_name = project_name,
+            .build_type = build_type,
+            .lib_imports = &.{},
+            .mod_imports = mod_imports.items,
+            .version = project_version,
+            .link_libs = link_libs,
+            .c_includes = c_includes,
+            .c_source_files = c_source_files,
+            .needs_cpp = needs_cpp,
+            .has_bridges = root_has_bridges,
+            .source_dir = source_dir,
+        };
+        const targets = [1]MultiTarget{target};
+        const content = try _zig_runner_multi.buildZigContentMulti(self.allocator, &targets, extra_bridges.items);
         defer self.allocator.free(content);
         try cache.writeGeneratedZig("build", content, self.allocator);
 
-        // Generate shared @cImport wrapper files on disk (same as multi-target path)
+        // Generate shared @cImport wrapper files on disk
         if (c_includes.len > 0) {
-            const synthetic = [1]MultiTarget{.{
-                .module_name = module_name,
-                .project_name = module_name,
-                .build_type = build_type,
-                .lib_imports = &.{},
-                .c_includes = c_includes,
-                .c_source_files = c_source_files,
-                .needs_cpp = needs_cpp,
-            }};
-            try _zig_runner_build.generateSharedCImportFiles(self.allocator, &synthetic);
+            try _zig_runner_build.generateSharedCImportFiles(self.allocator, &targets);
         }
     }
 };
