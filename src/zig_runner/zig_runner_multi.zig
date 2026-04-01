@@ -537,80 +537,88 @@ pub fn buildZigContentMulti(
         try buf.appendSlice(allocator, install_chunk);
     }
 
-    // Test step — use the first exe target's module for tests
+    // Test step — prefer first exe target, fall back to first target for lib-only builds
+    var test_target: ?MultiTarget = null;
     for (targets) |t| {
         if (std.mem.eql(u8, t.build_type, "exe")) {
-            const test_chunk = try std.fmt.allocPrint(allocator,
-                \\    const unit_tests = b.addTest(.{{
-                \\        .root_module = b.createModule(.{{
-                \\            .root_source_file = b.path("{s}.zig"),
-                \\            .target = target,
-                \\            .optimize = optimize,
-                \\        }}),
-                \\    }});
-                \\
-            , .{t.module_name});
-            defer allocator.free(test_chunk);
-            try buf.appendSlice(allocator, test_chunk);
-
-            // Add bridge imports to test target
-            if (t.has_bridges) {
-                const test_bridge = try std.fmt.allocPrint(allocator,
-                    \\    unit_tests.root_module.addImport("{s}_bridge", bridge_{s});
-                    \\
-                , .{ t.module_name, t.module_name });
-                defer allocator.free(test_bridge);
-                try buf.appendSlice(allocator, test_bridge);
-            }
-            for (t.lib_imports) |lib_name| {
-                if (bridge_set.contains(lib_name)) {
-                    const test_dep_bridge = try std.fmt.allocPrint(allocator,
-                        \\    unit_tests.root_module.addImport("{s}_bridge", bridge_{s});
-                        \\
-                    , .{ lib_name, lib_name });
-                    defer allocator.free(test_dep_bridge);
-                    try buf.appendSlice(allocator, test_dep_bridge);
-                }
-            }
-
-            // Add imports for non-root bridge modules actually used by this target
-            for (extra_bridge_modules) |bmod_name| {
-                var uses_module = false;
-                for (t.mod_imports) |mod_name| {
-                    if (std.mem.eql(u8, mod_name, bmod_name)) {
-                        uses_module = true;
-                        break;
-                    }
-                }
-                if (!uses_module) continue;
-                const extra_test = try std.fmt.allocPrint(allocator,
-                    \\    unit_tests.root_module.addImport("{s}_bridge", bridge_{s});
-                    \\
-                , .{ bmod_name, bmod_name });
-                defer allocator.free(extra_test);
-                try buf.appendSlice(allocator, extra_test);
-            }
-
-            // Add shared module imports to test target
-            for (t.mod_imports) |mod_name| {
-                if (shared_set.contains(mod_name)) {
-                    const test_mod = try std.fmt.allocPrint(allocator,
-                        \\    unit_tests.root_module.addImport("{s}", mod_{s});
-                        \\
-                    , .{ mod_name, mod_name });
-                    defer allocator.free(test_mod);
-                    try buf.appendSlice(allocator, test_mod);
-                }
-            }
-
-            try buf.appendSlice(allocator,
-                \\    const run_tests = b.addRunArtifact(unit_tests);
-                \\    const test_step = b.step("test", "Run tests");
-                \\    test_step.dependOn(&run_tests.step);
-                \\
-            );
+            test_target = t;
             break;
         }
+    }
+    if (test_target == null and targets.len > 0) test_target = targets[0];
+
+    if (test_target) |t| {
+        const test_chunk = try std.fmt.allocPrint(allocator,
+            \\    const unit_tests = b.addTest(.{{
+            \\        .root_module = b.createModule(.{{
+            \\            .root_source_file = b.path("{s}.zig"),
+            \\            .target = target,
+            \\            .optimize = optimize,
+            \\        }}),
+            \\    }});
+            \\    unit_tests.root_module.addImport("_orhon_str", str_mod);
+            \\    unit_tests.root_module.addImport("_orhon_collections", coll_mod);
+            \\
+        , .{t.module_name});
+        defer allocator.free(test_chunk);
+        try buf.appendSlice(allocator, test_chunk);
+
+        // Add bridge imports to test target
+        if (t.has_bridges) {
+            const test_bridge = try std.fmt.allocPrint(allocator,
+                \\    unit_tests.root_module.addImport("{s}_bridge", bridge_{s});
+                \\
+            , .{ t.module_name, t.module_name });
+            defer allocator.free(test_bridge);
+            try buf.appendSlice(allocator, test_bridge);
+        }
+        for (t.lib_imports) |lib_name| {
+            if (bridge_set.contains(lib_name)) {
+                const test_dep_bridge = try std.fmt.allocPrint(allocator,
+                    \\    unit_tests.root_module.addImport("{s}_bridge", bridge_{s});
+                    \\
+                , .{ lib_name, lib_name });
+                defer allocator.free(test_dep_bridge);
+                try buf.appendSlice(allocator, test_dep_bridge);
+            }
+        }
+
+        // Add imports for non-root bridge modules actually used by this target
+        for (extra_bridge_modules) |bmod_name| {
+            var uses_module = false;
+            for (t.mod_imports) |mod_name| {
+                if (std.mem.eql(u8, mod_name, bmod_name)) {
+                    uses_module = true;
+                    break;
+                }
+            }
+            if (!uses_module) continue;
+            const extra_test = try std.fmt.allocPrint(allocator,
+                \\    unit_tests.root_module.addImport("{s}_bridge", bridge_{s});
+                \\
+            , .{ bmod_name, bmod_name });
+            defer allocator.free(extra_test);
+            try buf.appendSlice(allocator, extra_test);
+        }
+
+        // Add shared module imports to test target
+        for (t.mod_imports) |mod_name| {
+            if (shared_set.contains(mod_name)) {
+                const test_mod = try std.fmt.allocPrint(allocator,
+                    \\    unit_tests.root_module.addImport("{s}", mod_{s});
+                    \\
+                , .{ mod_name, mod_name });
+                defer allocator.free(test_mod);
+                try buf.appendSlice(allocator, test_mod);
+            }
+        }
+
+        try buf.appendSlice(allocator,
+            \\    const run_tests = b.addRunArtifact(unit_tests);
+            \\    const test_step = b.step("test", "Run tests");
+            \\    test_step.dependOn(&run_tests.step);
+            \\
+        );
     }
 
     try buf.appendSlice(allocator,
