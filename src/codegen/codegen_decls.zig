@@ -376,9 +376,9 @@ pub fn generateStructMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 const fname = child.name orelse continue;
                 try cg.emitIndent();
                 try cg.emitFmt("{s}: {s}", .{ fname, try cg.typeToZig(child.type_annotation orelse continue) });
-                if (child.default_value) |dv| {
+                if (child.defaultChild()) |dv_mir| {
                     try cg.emit(" = ");
-                    try cg.generateExpr(dv);
+                    try cg.generateExprMir(dv_mir);
                 }
                 try cg.emit(",\n");
             },

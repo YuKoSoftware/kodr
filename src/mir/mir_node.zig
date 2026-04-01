@@ -74,8 +74,6 @@ pub const MirNode = struct {
     return_type: ?*parser.Node = null,
     /// Backing type AST node (for enum/bitfield).
     backing_type: ?*parser.Node = null,
-    /// Default value AST node (for field_decl).
-    default_value: ?*parser.Node = null,
     /// Bitfield member names.
     bit_members: ?[][]const u8 = null,
     /// Named call argument names.
@@ -154,6 +152,13 @@ pub const MirNode = struct {
         return self.children[0 .. self.children.len - 1];
     }
 
+    /// First child as default value (for field_def and param_def kinds with defaults).
+    pub fn defaultChild(self: *const MirNode) ?*MirNode {
+        if ((self.kind == .field_def or self.kind == .param_def) and self.children.len > 0)
+            return self.children[0];
+        return null;
+    }
+
     /// children[1..] — match arms for match_stmt (children[0] = value).
     pub fn matchArms(self: *const MirNode) []*MirNode {
         return self.children[1..];
@@ -227,8 +232,9 @@ pub const MirKind = enum {
     // Injected nodes (no AST counterpart)
     temp_var,
     injected_defer,
-    // Struct/enum members
+    // Struct/enum members and function params
     field_def,
+    param_def,
     enum_variant_def,
     // Passthrough for unhandled/structural nodes
     passthrough,
