@@ -223,8 +223,6 @@ a precompiled library without its full source.
 - `func main()` used outside a `#build = exe` anchor file
 - `func main()` missing when `#build = exe`
 - Unknown import scope (only `std` is supported)
-- `bridge func` with a body — bridge functions must have no body
-- `bridge func` without a paired `.zig` file
 - `func main()` present when `#build = static` or `#build = dynamic`
 
 ---

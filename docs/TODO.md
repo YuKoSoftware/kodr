@@ -104,7 +104,7 @@ deleted. See `docs/14-zig-bridge.md` for the new system.
 
 ### Binding generator
 
-Auto-generate `.orh` bridge + `.zig` sidecar pairs from C headers:
+Auto-generate Zig module wrappers from C headers:
 ```bash
 orhon bindgen vulkan.h --module vulkan
 ```
@@ -134,7 +134,7 @@ source. See also: source mapping in Developer Experience section.
 
 ### Inlining (Phase 4b)
 
-Inline bridge wrappers, single-expression functions, coercion wrappers at call sites.
+Inline Zig module wrappers, single-expression functions, coercion wrappers at call sites.
 
 ### Dead code elimination (Phase 4c)
 

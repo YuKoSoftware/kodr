@@ -188,7 +188,7 @@ Returns the size of a type or value in bytes. Resolved at compile time whenever 
 ```
 
 ### `@align` — alignment in bytes
-Returns the alignment requirement of a type or value in bytes. Essential for custom [[09-memory#Memory Allocation|allocators]], [[14-zig-bridge|C interop]], hardware access, and SIMD operations.
+Returns the alignment requirement of a type or value in bytes. Essential for custom [[09-memory#Memory Allocation|allocators]], [[14-zig-bridge|Zig modules]], hardware access, and SIMD operations.
 ```
 @align(i32)         // 4 — must be on a 4 byte boundary
 @align(f64)         // 8

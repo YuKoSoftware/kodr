@@ -42,7 +42,7 @@ Every keyword in Orhon earns its place. No keyword exists for convenience alone.
 func, var, const, if, elif, else, for, while, return, import, use, pub,
 match, struct, enum, bitfield, blueprint, defer, thread, null, void, compt,
 any, module, test, and, or, not, as, type,
-break, continue, true, false, bridge, is, throw
+break, continue, true, false, is, throw
 ```
 
 Compiler functions (`@cast`, `@copy`, `@move`, `@swap`, `@assert`, `@size`, `@align`, `@typename`, `@typeid`) are not keywords — they are intrinsics called with the `@` prefix. See [[05-functions#Compiler Functions]].

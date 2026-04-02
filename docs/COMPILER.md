@@ -55,10 +55,10 @@ Two layers of cache invalidation:
 Zig 0.15.2 is the single backend. Generated Zig code is readable and debuggable. `compt` maps to Zig's comptime. Cross-compilation, linking, and optimization are all handled by Zig.
 
 ### Codegen philosophy (v0.4.0+)
-The codegen is a **pure 1:1 translator** — it maps Orhon syntax to Zig syntax with no domain knowledge of library types or methods. All stdlib functionality (collections, strings, allocators, etc.) lives in bridge modules (module + `.zig` sidecar), not in the codegen. This means adding new stdlib features never requires compiler changes.
+The codegen is a **pure 1:1 translator** — it maps Orhon syntax to Zig syntax with no domain knowledge of library types or methods. All stdlib functionality (collections, strings, allocators, etc.) lives in Zig modules (`.zig` files in `src/std/`), not in the codegen. This means adding new stdlib features never requires compiler changes.
 
 ### No runtime libraries (v0.9.6+)
-The compiler does **not** inject hardcoded runtime imports. All standard library functionality is accessed through the normal `import`/`use` bridge system:
+The compiler does **not** inject hardcoded runtime imports. All standard library functionality is accessed through the normal `import`/`use` system:
 - `import std::collections` — scoped access: `collections.List(i32).new()`
 - `use std::collections` — names in current scope: `List(i32).new()`
 
@@ -70,15 +70,15 @@ The codegen has no special-case name mapping for any library types. The only har
 
 ---
 
-## Bridge System
+## Zig-as-Module System
 
-Orhon interacts with Zig through the bridge. A module declares its interface using `bridge`, and a paired `.zig` sidecar provides the implementation. The codegen re-exports from the sidecar — no special cases.
+Orhon interacts with Zig through the zig-as-module system. Any `.zig` file placed in `src/` automatically becomes an Orhon module — the compiler auto-converts it. No special declarations or keywords needed.
 
-### Bridge safety rules
-- `T` (by value) — moves across the bridge
+### Type mapping rules
+- `T` (by value) — moves across the boundary
 - `const& T` — read-only borrow, both directions
-- `mut& T` (mutable ref) — **not allowed** across the bridge (except `self` on bridge struct methods)
-- Default arguments on bridge funcs are filled at the call site by the codegen
+- `mut& T` (mutable ref) — **not allowed** across the boundary (except `self` on struct methods)
+- Default arguments on Zig module funcs are filled at the call site by the codegen
 
 See [[14-zig-bridge]] for full documentation.
 
@@ -108,7 +108,6 @@ src/
         builder_exprs.zig   //   expression building
         builder_stmts.zig   //   statement building
         builder_types.zig   //   type building
-        builder_bridge.zig  //   bridge/context building
         token_map.zig       //   grammar literals → TokenKind mapping
     module.zig              // pass 3
     declarations.zig        // pass 4
@@ -142,7 +141,8 @@ src/
     constants.zig           // shared — constants
     cache.zig               // shared — incremental cache
     scope.zig               // shared — scope tracking for ownership/borrow passes
-    interface.zig           // bridge interface system
+    zig_module.zig          // zig-as-module auto-conversion
+    interface.zig           // public interface generation for library modules
     std_bundle.zig          // embedded stdlib file extraction
     formatter.zig           // orhon fmt
     docgen.zig              // orhon gendoc
@@ -157,7 +157,7 @@ src/
         lsp_view.zig        //   document view/hover information
         lsp_semantic.zig    //   semantic highlighting
         lsp_utils.zig       //   utility functions
-    std/                    // stdlib bridge modules (module + .zig sidecar)
+    std/                    // Zig implementations for stdlib modules
 ```
 
 ---

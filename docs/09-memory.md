@@ -183,7 +183,7 @@ var smp: allocator.SMP = allocator.SMP.create()
 defer { smp.deinit() }
 ```
 
-Every heap allocation is tied to an explicit allocator. No hidden allocations ever. Custom allocator *implementation* belongs in Zig via `bridge func` — Orhon code uses allocators but does not build them.
+Every heap allocation is tied to an explicit allocator. No hidden allocations ever. Custom allocator *implementation* belongs in Zig modules — Orhon code uses allocators but does not build them.
 
 ### Built-in Allocators
 
@@ -262,4 +262,4 @@ All allocators follow the same interface: `Type.create()` to instantiate, `.allo
 
 ### Custom Allocators
 
-Custom allocators must be implemented in Zig as bridge sidecars — Orhon code uses allocators but does not build them. See [[14-zig-bridge]] for the bridge pattern.
+Custom allocators must be implemented in Zig modules — Orhon code uses allocators but does not build them. See [[14-zig-bridge]] for the zig-as-module system.
