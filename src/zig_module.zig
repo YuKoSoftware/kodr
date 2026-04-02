@@ -162,6 +162,12 @@ fn extractFnInner(
     // Must be pub
     if (proto.visib_token == null) return null;
 
+    // Skip extern and export functions — C ABI, not for Orhon
+    if (proto.extern_export_inline_token) |t| {
+        const tag = tree.tokenTag(t);
+        if (tag == .keyword_extern or tag == .keyword_export) return null;
+    }
+
     // Get function name
     const name_token = proto.name_token orelse return null;
     const fn_name = tree.tokenSlice(name_token);
@@ -735,6 +741,16 @@ test "extractFn — pub fn with no params" {
 
 test "extractFn — non-pub fn skipped" {
     const result = try testExtractFn("fn helper() void {}");
+    try std.testing.expect(result == null);
+}
+
+test "extractFn — extern fn skipped" {
+    const result = try testExtractFn("pub extern \"c\" fn ext() void;");
+    try std.testing.expect(result == null);
+}
+
+test "extractFn — export fn skipped" {
+    const result = try testExtractFn("pub export fn exp() void {}");
     try std.testing.expect(result == null);
 }
 
