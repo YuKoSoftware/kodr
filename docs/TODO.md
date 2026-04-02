@@ -167,7 +167,7 @@ simplify coercion sequences.
 | Transparent (structural) type aliases | `Speed == i32`, not a distinct nominal type |
 | Allocator via `.new(alloc)`, not generic param | Keeps generics pure (types only) |
 | SMP as default allocator | GeneralPurposeAllocator optimized for general use |
-| Zig-as-module replaces bridge system | `.zig` files auto-convert; no bridge keyword needed |
+| Zig-as-module for Zig interop | `.zig` files auto-convert to Orhon modules |
 | `throw` not `try` for error propagation | Less noisy, less hidden control flow |
 | Parenthesized guard syntax `(x if expr)` | Consistent with syntax containment rule |
 | Hub + satellite split pattern | All large file splits use same pattern for consistency |
@@ -181,7 +181,7 @@ simplify coercion sequences.
 | Feature | Why Not |
 |---------|---------|
 | Macros | `compt` covers the use cases without readability costs |
-| Algebraic effects | Too complex. Union-based errors + bridge-based I/O is sufficient |
+| Algebraic effects | Too complex. Union-based errors + Zig module I/O is sufficient |
 | Row polymorphism / structural typing | Contradicts Orhon's nominal type system |
 | Garbage collection | Contradicts systems language positioning. Explicit allocators |
 | Exceptions | Union-based errors are better for compiled languages |
@@ -191,7 +191,7 @@ simplify coercion sequences.
 | Refinement types | Struct-validation pattern already covers this |
 | Full Polonius borrow checker | Overkill. NLL gives 85% of the benefit for 30% of the work |
 | Zig IR layer in codegen | Would model Zig semantics inside the compiler |
-| Arena allocator pairing syntax | `.new(alloc)` already covers composed allocators via bridge |
+| Arena allocator pairing syntax | `.new(alloc)` already covers composed allocators via Zig module |
 | `#derive` auto-generation | Blueprints require explicit implementation. No implicit anything |
 | `#extern` / `#packed` struct layout | `.zig` modules already support these natively |
 | `async` keyword | Wait for Zig's new async design, then map cleanly. `thread` + `Atomic` covers parallelism |

@@ -81,7 +81,7 @@ Common unmappable types:
 - `[*]T`, `[*c]T` — many-item and C pointers
 
 **To make a function available to Orhon:** adjust its signature to use mappable types.
-This is far less work than writing a full bridge declaration.
+This is far less work than writing a full interface declaration.
 
 ---
 
