@@ -30,12 +30,22 @@ pub fn generateBridgeReExport(cg: *CodeGen, name: []const u8, is_pub: bool) anye
     try cg.emitLineFmt("{s}const {s} = @import(\"{s}_bridge\").{s};", .{ vis, name, cg.module_name, name });
 }
 
+/// Emit a re-export for a zig-backed module declaration from the named zig module.
+/// Zig source files are registered as named Zig modules with a `_zig` suffix in the build graph.
+pub fn generateZigReExport(cg: *CodeGen, name: []const u8, is_pub: bool) anyerror!void {
+    const vis = if (is_pub) "pub " else "";
+    try cg.emitLineFmt("{s}const {s} = @import(\"{s}_zig\").{s};", .{ vis, name, cg.module_name, name });
+}
+
 /// MIR-path function codegen — reads all data from MirNode.
 pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const func_name = m.name orelse return;
 
     // Thread function — generate body + spawn wrapper
     if (m.is_thread) return cg.generateThreadFuncMir(m);
+
+    // zig-backed module — re-export from zig source module
+    if (cg.is_zig_module) return cg.generateZigReExport(func_name, m.is_pub);
 
     // bridge func — re-export from paired sidecar file
     if (m.is_bridge) return cg.generateBridgeReExport(func_name, m.is_pub);
@@ -286,6 +296,7 @@ pub fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 {
 /// MIR-path struct codegen — iterates MirNode children instead of AST members.
 pub fn generateStructMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const struct_name = m.name orelse return;
+    if (cg.is_zig_module) return cg.generateZigReExport(struct_name, m.is_pub);
     if (m.is_bridge) return cg.generateBridgeReExport(struct_name, m.is_pub);
 
     const tp = m.type_params;
@@ -471,6 +482,7 @@ pub fn isTypeAlias(type_annotation: ?*parser.Node) bool {
 /// MIR-path top-level var/const/compt declaration.
 pub fn generateTopLevelDeclMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const name = m.name orelse return;
+    if (cg.is_zig_module) return cg.generateZigReExport(name, m.is_pub);
     if (m.is_bridge) return cg.generateBridgeReExport(name, m.is_pub);
 
     // Type alias: const Name: type = T → const Name = ZigType;

@@ -146,6 +146,7 @@ pub fn runSemanticAndCodegen(
     module_builds: *std.StringHashMapUnmanaged(module.BuildType),
     reporter: *errors.Reporter,
     cli: *_cli.CliArgs,
+    is_zig_module: bool,
 ) !?[]const u8 {
     // ── Shared context for type resolution + validation passes 5–9 ──
     const sema_ctx = sema.SemanticContext{
@@ -219,6 +220,7 @@ pub fn runSemanticAndCodegen(
     cg.var_types = &mir_annotator.var_types;
     cg.const_ref_params = &mir_annotator.const_ref_params;
     cg.mir_root = mir_root;
+    cg.is_zig_module = is_zig_module;
 
     try cg.generate(ast, mod_name);
     if (reporter.hasErrors()) return null;

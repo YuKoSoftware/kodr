@@ -69,14 +69,6 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
     if (reporter.hasErrors()) return null;
 
-    // Mark discovered zig modules with is_zig_module flag and store original .zig path
-    for (zig_mod_names) |name| {
-        if (mod_resolver.modules.getPtr(name)) |mod_ptr| {
-            mod_ptr.is_zig_module = true;
-            mod_ptr.zig_source_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ cli.source_dir, name });
-        }
-    }
-
     // Check circular imports
     try mod_resolver.checkCircularImports();
     if (reporter.hasErrors()) return null;
@@ -95,6 +87,18 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     // Parse all modules — single pass (std modules already in module map)
     try mod_resolver.parseModules(allocator);
     if (reporter.hasErrors()) return null;
+
+    // Mark discovered zig modules with is_zig_module flag and store original .zig path.
+    // Done after parseModules so has_bridges is set — skip bridge modules whose .zig
+    // sidecar was picked up by discovery but should not be treated as zig-backed.
+    for (zig_mod_names) |name| {
+        if (mod_resolver.modules.getPtr(name)) |mod_ptr| {
+            if (!mod_ptr.has_bridges) {
+                mod_ptr.is_zig_module = true;
+                mod_ptr.zig_source_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ cli.source_dir, name });
+            }
+        }
+    }
 
     // Scan and parse any #dep directories declared in the root module
     try mod_resolver.scanAndParseDeps(allocator, cli.source_dir);
@@ -282,10 +286,29 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         if (try passes.copySidecar(allocator, mod_name, mod_ptr, cli, reporter, &sidecar_copied))
             return null;
 
+        // ── Zig Module Source Copy ──────────────────────────────
+        // Copy the original .zig file to .orh-cache/generated/{name}_zig.zig
+        // so the build system can register it as a named module.
+        if (mod_ptr.is_zig_module) {
+            if (mod_ptr.zig_source_path) |zig_src| {
+                try cache.ensureGeneratedDir();
+                const zig_dst = try std.fmt.allocPrint(allocator, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, mod_name });
+                defer allocator.free(zig_dst);
+
+                const content = try std.fs.cwd().readFileAlloc(allocator, zig_src, 1024 * 1024);
+                defer allocator.free(content);
+
+                const dst_file = try std.fs.cwd().createFile(zig_dst, .{});
+                defer dst_file.close();
+                try dst_file.writeAll(content);
+            }
+        }
+
         // ── Passes 5–11: Type Resolution through Zig Code Generation ──
         _ = try passes.runSemanticAndCodegen(
             allocator, ast, mod_name, decl_collector, &all_module_decls,
             locs_ptr, file_offsets, &module_builds, reporter, cli,
+            mod_ptr.is_zig_module,
         ) orelse return null;
 
         // Capture new warnings from this module for caching

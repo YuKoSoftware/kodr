@@ -53,6 +53,8 @@ pub const CodeGen = struct {
     const_ref_params: ?*const std.StringHashMapUnmanaged(std.AutoHashMapUnmanaged(usize, void)) = null,
     // MIR tree — Phase 3 lowered tree (available for incremental migration)
     mir_root: ?*mir.MirNode = null,
+    // Zig-backed module — all declarations are re-exported from {name}_zig
+    is_zig_module: bool = false,
     // MIR node for the current function — set by generateFuncMir/generateThreadFuncMir.
     current_func_mir: ?*mir.MirNode = null,
     // Pre-statement hoisting buffer — interpolation temp vars are appended here,
@@ -435,6 +437,9 @@ pub const CodeGen = struct {
     /// Bridge .zig files are registered as named Zig modules in the build graph,
     /// so we import by module name (no .zig extension).
     pub fn generateBridgeReExport(self: *CodeGen, name: []const u8, is_pub: bool) anyerror!void { return decls_impl.generateBridgeReExport(self, name, is_pub); }
+
+    /// Emit a re-export for a zig-backed module declaration from the named zig module.
+    pub fn generateZigReExport(self: *CodeGen, name: []const u8, is_pub: bool) anyerror!void { return decls_impl.generateZigReExport(self, name, is_pub); }
 
     /// MIR-path function codegen — reads all data from MirNode.
     pub fn generateFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateFuncMir(self, m); }
