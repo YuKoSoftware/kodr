@@ -63,6 +63,7 @@ pub fn build(b: *std.Build) void {
         "src/cache.zig",
         "src/formatter.zig",
         "src/peg.zig",
+        "src/zig_module.zig",
     };
 
     const test_step = b.step("test", "Run all compiler tests");
