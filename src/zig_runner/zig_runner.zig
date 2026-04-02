@@ -64,9 +64,10 @@ pub const ZigRunner = struct {
         optimize: []const u8,
         targets: []const MultiTarget,
         extra_bridge_modules: []const []const u8,
+        extra_zig_modules: []const []const u8,
     ) !bool {
         // Generate unified build.zig
-        const content = try _zig_runner_multi.buildZigContentMulti(self.allocator, targets, extra_bridge_modules);
+        const content = try _zig_runner_multi.buildZigContentMulti(self.allocator, targets, extra_bridge_modules, extra_zig_modules);
         defer self.allocator.free(content);
         try cache.writeGeneratedZig("build", content, self.allocator);
 
@@ -329,9 +330,9 @@ pub const ZigRunner = struct {
     }
 
     /// Run all test blocks in the generated Zig project
-    pub fn runTests(self: *ZigRunner, module_name: []const u8, project_name: []const u8, bridge_modules: []const []const u8) !bool {
+    pub fn runTests(self: *ZigRunner, module_name: []const u8, project_name: []const u8, bridge_modules: []const []const u8, zig_modules: []const []const u8) !bool {
         // Generate build.zig with test step included
-        try self.generateBuildZig(module_name, "exe", project_name, null, &.{}, bridge_modules, &.{}, &.{}, &.{}, false, null);
+        try self.generateBuildZig(module_name, "exe", project_name, null, &.{}, bridge_modules, &.{}, &.{}, &.{}, false, null, zig_modules);
 
         var args: std.ArrayListUnmanaged([]const u8) = .{};
         defer args.deinit(self.allocator);
@@ -374,6 +375,7 @@ pub const ZigRunner = struct {
         c_source_files: []const []const u8,
         needs_cpp: bool,
         source_dir: ?[]const u8,
+        zig_modules: []const []const u8,
     ) !void {
         // Split bridge_modules: root module sets has_bridges, rest go as extra
         var root_has_bridges = false;
@@ -416,7 +418,7 @@ pub const ZigRunner = struct {
             .source_dir = source_dir,
         };
         const targets = [1]MultiTarget{target};
-        const content = try _zig_runner_multi.buildZigContentMulti(self.allocator, &targets, extra_bridges.items);
+        const content = try _zig_runner_multi.buildZigContentMulti(self.allocator, &targets, extra_bridges.items, zig_modules);
         defer self.allocator.free(content);
         try cache.writeGeneratedZig("build", content, self.allocator);
 

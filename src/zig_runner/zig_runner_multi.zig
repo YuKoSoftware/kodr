@@ -29,6 +29,7 @@ pub fn buildZigContentMulti(
     allocator: std.mem.Allocator,
     targets: []const MultiTarget,
     extra_bridge_modules: []const []const u8,
+    extra_zig_modules: []const []const u8,
 ) ![]u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     errdefer buf.deinit(allocator);
@@ -165,6 +166,26 @@ pub fn buildZigContentMulti(
             \\    }});
             \\
         , .{ bmod_name, bmod_name });
+    }
+
+    // Build a lookup set for zig-backed modules
+    var zig_mod_set = std.StringHashMapUnmanaged(void){};
+    defer zig_mod_set.deinit(allocator);
+    for (extra_zig_modules) |zig_mod_name| {
+        try zig_mod_set.put(allocator, zig_mod_name, {});
+    }
+
+    // Zig module creation — register zig-backed .zig files as named Zig modules
+    // so that @import("module_zig") resolves through the build graph.
+    for (extra_zig_modules) |zig_mod_name| {
+        try _build.appendFmt(&buf, allocator,
+            \\    const zig_{s} = b.createModule(.{{
+            \\        .root_source_file = b.path("{s}_zig.zig"),
+            \\        .target = target,
+            \\        .optimize = optimize,
+            \\    }});
+            \\
+        , .{ zig_mod_name, zig_mod_name });
     }
 
     // Wire bridge-to-bridge imports: if target A has bridges and imports target B
@@ -365,6 +386,16 @@ pub fn buildZigContentMulti(
             }
         }
 
+        // Add zig-backed module imports
+        for (t.mod_imports) |mod_name| {
+            if (zig_mod_set.contains(mod_name)) {
+                try _build.appendFmt(&buf, allocator,
+                    \\    lib_{s}.root_module.addImport("{s}_zig", zig_{s});
+                    \\
+                , .{ t.module_name, mod_name, mod_name });
+            }
+        }
+
         // Apply #cimport link libs to this lib artifact
         if (t.link_libs.len > 0) {
             const lib_art_name = try std.fmt.allocPrint(allocator, "lib_{s}", .{t.module_name});
@@ -494,6 +525,16 @@ pub fn buildZigContentMulti(
             }
         }
 
+        // Add zig-backed module imports
+        for (t.mod_imports) |mod_name| {
+            if (zig_mod_set.contains(mod_name)) {
+                try _build.appendFmt(&buf, allocator,
+                    \\    exe_{s}.root_module.addImport("{s}_zig", zig_{s});
+                    \\
+                , .{ t.module_name, mod_name, mod_name });
+            }
+        }
+
         // Apply #cimport link libs to this exe artifact
         if (t.link_libs.len > 0) {
             const exe_art_name = try std.fmt.allocPrint(allocator, "exe_{s}", .{t.module_name});
@@ -594,6 +635,16 @@ pub fn buildZigContentMulti(
             }
         }
 
+        // Add zig-backed module imports to test target
+        for (t.mod_imports) |mod_name| {
+            if (zig_mod_set.contains(mod_name)) {
+                try _build.appendFmt(&buf, allocator,
+                    \\    unit_tests.root_module.addImport("{s}_zig", zig_{s});
+                    \\
+                , .{ mod_name, mod_name });
+            }
+        }
+
         try buf.appendSlice(allocator,
             \\    const run_tests = b.addRunArtifact(unit_tests);
             \\    const test_step = b.step("test", "Run tests");
@@ -617,7 +668,7 @@ test "buildZigContentMulti - exe with dynamic lib" {
         .{ .module_name = "mathlib", .project_name = "mathlib", .build_type = "dynamic", .lib_imports = &.{} },
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = @constCast(&[_][]const u8{lib_name}) },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     // Lib target present
@@ -639,7 +690,7 @@ test "buildZigContentMulti - exe with static lib" {
         .{ .module_name = "utils", .project_name = "utils", .build_type = "static", .lib_imports = &.{} },
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = @constCast(&[_][]const u8{lib_name}) },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, ".linkage = .static") != null);
@@ -652,7 +703,7 @@ test "buildZigContentMulti - single exe (no libs)" {
     const targets = [_]MultiTarget{
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") != null);
@@ -672,7 +723,7 @@ test "buildZigContentMulti - lib-to-lib imports added to prevent file-module con
         .{ .module_name = "tamga_vk3d", .project_name = "tamga_vk3d", .build_type = "static", .lib_imports = @constCast(&vk3d_imports) },
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     // lib_tamga_vk3d must have tamga_sdl3 as an addImport
@@ -696,7 +747,7 @@ test "buildZigContentMulti - bridge modules registered as named modules" {
         .{ .module_name = "tamga_vk3d", .project_name = "tamga_vk3d", .build_type = "static", .lib_imports = @constCast(&vk3d_imports), .has_bridges = true, .link_libs = @constCast(&vk_libs) },
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = @constCast(&exe_imports), .has_bridges = false },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     // Bridge modules created
@@ -731,7 +782,7 @@ test "buildZigContentMulti - shared cImport module for cross-module C type ident
         .{ .module_name = "tamga_vk3d", .project_name = "tamga_vk3d", .build_type = "static", .lib_imports = @constCast(&vk3d_imports), .has_bridges = true, .link_libs = @constCast(&vk_libs), .c_includes = @constCast(&vk_includes) },
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     // Shared cImport module created exactly once (not twice for the same header)
@@ -756,7 +807,7 @@ test "buildZigContentMulti - csource directive emits addCSourceFiles and linkLib
         .{ .module_name = "tamga_vma", .project_name = "tamga_vma", .build_type = "static", .lib_imports = &.{}, .c_source_files = @constCast(&csources), .needs_cpp = true },
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     // addCSourceFiles emitted for the lib artifact
@@ -774,7 +825,7 @@ test "buildZigContentMulti - single exe basic" {
     const targets = [_]MultiTarget{
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "addExecutable") != null);
@@ -790,7 +841,7 @@ test "buildZigContentMulti - single static lib" {
     const targets = [_]MultiTarget{
         .{ .module_name = "mylib", .project_name = "mylib", .build_type = "static", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") != null);
@@ -805,7 +856,7 @@ test "buildZigContentMulti - single dynamic lib" {
     const targets = [_]MultiTarget{
         .{ .module_name = "mylib", .project_name = "mylib", .build_type = "dynamic", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "addLibrary") != null);
@@ -820,7 +871,7 @@ test "buildZigContentMulti - project name in exe artifact" {
     const targets = [_]MultiTarget{
         .{ .module_name = "myapp", .project_name = "calculator", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
     try std.testing.expect(std.mem.indexOf(u8, content, "\"calculator\"") != null);
 }
@@ -831,7 +882,7 @@ test "buildZigContentMulti - single target cimport link libs" {
     const targets = [_]MultiTarget{
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{}, .link_libs = @constCast(&libs) },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "linkSystemLibrary(\"SDL3\"") != null);
@@ -843,7 +894,7 @@ test "buildZigContentMulti - single target no cimport means no linkLibC" {
     const targets = [_]MultiTarget{
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, &.{});
+    const content = try buildZigContentMulti(alloc, &targets, &.{}, &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "linkSystemLibrary") == null);
@@ -856,7 +907,7 @@ test "buildZigContentMulti - single target with bridge modules" {
     const targets = [_]MultiTarget{
         .{ .module_name = "myapp", .project_name = "myapp", .build_type = "exe", .lib_imports = &.{} },
     };
-    const content = try buildZigContentMulti(alloc, &targets, @constCast(&bridges));
+    const content = try buildZigContentMulti(alloc, &targets, @constCast(&bridges), &.{});
     defer alloc.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "bridge_console = b.createModule") != null);

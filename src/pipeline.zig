@@ -375,6 +375,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             // Collect bridge module names for test build.zig
             var test_bridge_mods = std.ArrayListUnmanaged([]const u8){};
             defer test_bridge_mods.deinit(allocator);
+            var test_zig_mods = std.ArrayListUnmanaged([]const u8){};
+            defer test_zig_mods.deinit(allocator);
             {
                 var bmod_it = mod_resolver.modules.iterator();
                 while (bmod_it.next()) |bmod_entry| {
@@ -382,9 +384,12 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                     if (bmod.has_bridges) {
                         try test_bridge_mods.append(allocator, bmod.name);
                     }
+                    if (bmod.is_zig_module) {
+                        try test_zig_mods.append(allocator, bmod.name);
+                    }
                 }
             }
-            const passed = try runner.runTests(mod.name, binary_name2, test_bridge_mods.items);
+            const passed = try runner.runTests(mod.name, binary_name2, test_bridge_mods.items, test_zig_mods.items);
             if (!passed) any_failed = true;
         }
         return if (!any_failed) try allocator.dupe(u8, last_binary_name) else null;
@@ -647,6 +652,9 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         // Collect non-root modules with bridges for named module registration
         var extra_bridge_mods = std.ArrayListUnmanaged([]const u8){};
         defer extra_bridge_mods.deinit(allocator);
+        // Collect non-root zig-backed modules for named module registration
+        var extra_zig_mods = std.ArrayListUnmanaged([]const u8){};
+        defer extra_zig_mods.deinit(allocator);
         {
             var bmod_it = mod_resolver.modules.iterator();
             while (bmod_it.next()) |bmod_entry| {
@@ -654,6 +662,9 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 if (bmod.is_root) continue;
                 if (bmod.has_bridges) {
                     try extra_bridge_mods.append(allocator, bmod.name);
+                }
+                if (bmod.is_zig_module) {
+                    try extra_zig_mods.append(allocator, bmod.name);
                 }
             }
         }
@@ -668,7 +679,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             }
 
             const use_subfolder = cli.targets.items.len > 1;
-            const built = try runner.buildAll(target_str, opt_str, multi_targets.items, extra_bridge_mods.items);
+            const built = try runner.buildAll(target_str, opt_str, multi_targets.items, extra_bridge_mods.items, extra_zig_mods.items);
             if (!built) return null;
 
             // Move artifacts to target subfolder if multi-target
@@ -839,11 +850,25 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 try shared_mods.append(allocator, imp_name);
             }
 
+            // Collect zig-backed modules for named module registration
+            var zig_mods = std.ArrayListUnmanaged([]const u8){};
+            defer zig_mods.deinit(allocator);
+            {
+                var zmod_it = mod_resolver.modules.iterator();
+                while (zmod_it.next()) |zmod_entry| {
+                    const zmod = zmod_entry.value_ptr;
+                    if (zmod.is_root) continue;
+                    if (zmod.is_zig_module) {
+                        try zig_mods.append(allocator, zmod.name);
+                    }
+                }
+            }
+
             const single_source_dir: ?[]const u8 = if (mod.sidecar_path) |sp|
                 std.fs.path.dirname(sp)
             else
                 null;
-            try runner.generateBuildZig(mod.name, build_type, binary_name, project_version, link_libs.items, bridge_mods.items, shared_mods.items, c_includes_st.items, c_sources_st.items, needs_cpp_st, single_source_dir);
+            try runner.generateBuildZig(mod.name, build_type, binary_name, project_version, link_libs.items, bridge_mods.items, shared_mods.items, c_includes_st.items, c_sources_st.items, needs_cpp_st, single_source_dir, zig_mods.items);
 
             for (cli.targets.items) |build_target| {
                 const target_str = build_target.toZigTriple();
