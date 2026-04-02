@@ -6,6 +6,7 @@ const std = @import("std");
 const Ast = std.zig.Ast;
 const Node = Ast.Node;
 const Allocator = std.mem.Allocator;
+const cache = @import("cache.zig");
 
 /// Primitives that pass through unchanged from Zig to Orhon.
 const PASSTHROUGH_PRIMITIVES = [_][]const u8{
@@ -460,6 +461,126 @@ pub fn generateModule(
 }
 
 // ---------------------------------------------------------------------------
+// File discovery and cache writing
+// ---------------------------------------------------------------------------
+
+/// A discovered .zig file with its relative path and derived module name.
+pub const ZigModuleEntry = struct {
+    file_path: []const u8, // relative path: "src/mylib.zig"
+    module_name: []const u8, // stem: "mylib"
+};
+
+/// Recursively discovers .zig files in `source_dir`, skipping underscore-prefixed files.
+/// Returns an owned slice of ZigModuleEntry. Caller owns all strings and the slice.
+pub fn discoverZigFiles(allocator: Allocator, source_dir: []const u8) ![]ZigModuleEntry {
+    var entries: std.ArrayList(ZigModuleEntry) = .{};
+    errdefer {
+        for (entries.items) |entry| {
+            allocator.free(entry.file_path);
+            allocator.free(entry.module_name);
+        }
+        entries.deinit(allocator);
+    }
+
+    var dir = std.fs.cwd().openDir(source_dir, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return try entries.toOwnedSlice(allocator),
+        else => return err,
+    };
+    defer dir.close();
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+
+        const basename = std.fs.path.basename(entry.path);
+
+        // Skip non-.zig files
+        if (!std.mem.endsWith(u8, basename, ".zig")) continue;
+
+        // Skip underscore-prefixed files
+        if (basename[0] == '_') continue;
+
+        // Module name = filename stem
+        const stem = basename[0 .. basename.len - 4];
+
+        // Build the full relative path: source_dir/entry.path
+        const file_path = try std.fs.path.join(allocator, &.{ source_dir, entry.path });
+        errdefer allocator.free(file_path);
+
+        const module_name = try allocator.dupe(u8, stem);
+
+        try entries.append(allocator, .{
+            .file_path = file_path,
+            .module_name = module_name,
+        });
+    }
+
+    return try entries.toOwnedSlice(allocator);
+}
+
+/// Discovers .zig files in `source_dir`, converts each to .orh, writes to cache.
+/// Returns an owned slice of successfully converted module names. Caller owns the slice and names.
+pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8) ![]const []const u8 {
+    const entries = try discoverZigFiles(allocator, source_dir);
+    defer {
+        for (entries) |entry| {
+            allocator.free(entry.file_path);
+            allocator.free(entry.module_name);
+        }
+        allocator.free(entries);
+    }
+
+    // Ensure output directory exists
+    std.fs.cwd().makePath(cache.ZIG_MODULES_DIR) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+
+    var converted: std.ArrayList([]const u8) = .{};
+    errdefer {
+        for (converted.items) |name| allocator.free(name);
+        converted.deinit(allocator);
+    }
+
+    for (entries) |entry| {
+        // Read the .zig file
+        const source_bytes = std.fs.cwd().readFileAlloc(allocator, entry.file_path, 10 * 1024 * 1024) catch continue;
+        defer allocator.free(source_bytes);
+
+        // Add sentinel for Ast.parse
+        const source_z = allocator.dupeZ(u8, source_bytes) catch continue;
+        defer allocator.free(source_z);
+
+        // Parse the Zig AST
+        var tree = std.zig.Ast.parse(allocator, source_z, .zig) catch continue;
+        defer tree.deinit(allocator);
+
+        // Generate the .orh module text
+        const orh_text = generateModule(entry.module_name, &tree, allocator) catch continue orelse continue;
+        defer allocator.free(orh_text);
+
+        // Write to cache directory
+        const out_filename = std.fmt.allocPrint(allocator, "{s}/{s}.orh", .{ cache.ZIG_MODULES_DIR, entry.module_name }) catch continue;
+        defer allocator.free(out_filename);
+
+        const out_file = std.fs.cwd().createFile(out_filename, .{}) catch continue;
+        defer out_file.close();
+        out_file.writeAll(orh_text) catch continue;
+
+        // Track the converted module name
+        const name_copy = allocator.dupe(u8, entry.module_name) catch continue;
+        converted.append(allocator, name_copy) catch {
+            allocator.free(name_copy);
+            continue;
+        };
+    }
+
+    return try converted.toOwnedSlice(allocator);
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -734,4 +855,92 @@ test "generateModule — empty file returns null" {
 test "generateModule — no pub declarations returns null" {
     const result = try testGenerateModule("priv", "fn helper() void {} const x = 5;");
     try std.testing.expect(result == null);
+}
+
+// ---------------------------------------------------------------------------
+// File discovery tests
+// ---------------------------------------------------------------------------
+
+test "discoverZigFiles — skips underscore-prefixed files" {
+    const allocator = std.testing.allocator;
+
+    // Create a temp directory with test files
+    const tmp_dir = "/tmp/orhon_test_discover";
+    std.fs.cwd().makePath(tmp_dir) catch {};
+    defer std.fs.cwd().deleteTree(tmp_dir) catch {};
+
+    // Create test .zig files
+    {
+        const f1 = try std.fs.cwd().createFile(tmp_dir ++ "/mylib.zig", .{});
+        defer f1.close();
+        try f1.writeAll("pub fn add(a: i32, b: i32) i32 { return a + b; }");
+    }
+    {
+        const f2 = try std.fs.cwd().createFile(tmp_dir ++ "/_private.zig", .{});
+        defer f2.close();
+        try f2.writeAll("fn secret() void {}");
+    }
+    {
+        const f3 = try std.fs.cwd().createFile(tmp_dir ++ "/utils.zig", .{});
+        defer f3.close();
+        try f3.writeAll("pub fn helper() void {}");
+    }
+
+    const entries = try discoverZigFiles(allocator, tmp_dir);
+    defer {
+        for (entries) |entry| {
+            allocator.free(entry.file_path);
+            allocator.free(entry.module_name);
+        }
+        allocator.free(entries);
+    }
+
+    // Should have 2 entries (mylib, utils), not _private
+    try std.testing.expectEqual(@as(usize, 2), entries.len);
+
+    // Verify no underscore-prefixed files
+    for (entries) |entry| {
+        try std.testing.expect(entry.module_name[0] != '_');
+    }
+}
+
+test "discoverZigFiles — nonexistent directory returns empty" {
+    const allocator = std.testing.allocator;
+    const entries = try discoverZigFiles(allocator, "/tmp/orhon_test_nonexistent_dir_xyz");
+    defer allocator.free(entries);
+    try std.testing.expectEqual(@as(usize, 0), entries.len);
+}
+
+test "discoverAndConvert — end-to-end" {
+    const allocator = std.testing.allocator;
+
+    const tmp_dir = "/tmp/orhon_test_convert";
+    std.fs.cwd().makePath(tmp_dir) catch {};
+    defer std.fs.cwd().deleteTree(tmp_dir) catch {};
+
+    // Create a .zig file with pub declarations
+    {
+        const f = try std.fs.cwd().createFile(tmp_dir ++ "/testmod.zig", .{});
+        defer f.close();
+        try f.writeAll("pub fn greet(name: []const u8) void { _ = name; }");
+    }
+
+    // Clean up any previous output
+    std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
+    defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
+
+    const names = try discoverAndConvert(allocator, tmp_dir);
+    defer {
+        for (names) |name| allocator.free(name);
+        allocator.free(names);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), names.len);
+    try std.testing.expectEqualStrings("testmod", names[0]);
+
+    // Verify the .orh file was written
+    const orh_path = cache.ZIG_MODULES_DIR ++ "/testmod.orh";
+    const content = try std.fs.cwd().readFileAlloc(allocator, orh_path, 1024 * 1024);
+    defer allocator.free(content);
+    try std.testing.expect(std.mem.startsWith(u8, content, "module testmod\n"));
 }

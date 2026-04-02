@@ -14,6 +14,7 @@ pub const HASHES_FILE = ".orh-cache/hashes";
 pub const DEPS_FILE = ".orh-cache/deps.graph";
 pub const WARNINGS_FILE = ".orh-cache/warnings";
 pub const INTERFACES_FILE = ".orh-cache/interfaces";
+pub const ZIG_MODULES_DIR = ".orh-cache/zig_modules";
 
 /// A module entry in the cache
 pub const ModuleEntry = struct {
