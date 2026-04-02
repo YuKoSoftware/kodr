@@ -153,6 +153,17 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         }
     }
 
+    // Track sidecar import destinations for collision detection
+    var sidecar_copied = std.StringHashMapUnmanaged([]const u8){};
+    defer {
+        var it = sidecar_copied.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        sidecar_copied.deinit(allocator);
+    }
+
     // Process each module in dependency order
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
@@ -394,6 +405,9 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 const dst_file = try std.fs.cwd().createFile(sidecar_dst, .{});
                 defer dst_file.close();
                 try dst_file.writeAll(result.items);
+
+                // Copy any additional .zig files imported by the sidecar
+                try cache.copySidecarImports(allocator, sidecar_src, cli.source_dir, mod_name, reporter, &sidecar_copied);
             }
         }
         if (reporter.hasErrors()) return null;
