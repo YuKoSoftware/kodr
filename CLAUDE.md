@@ -169,7 +169,7 @@ Everything in `std::*` (collections, str, json, fs, etc.) must go through the no
 import/use system — no hardcoded names, no shortcut recognition, no fallback lists.
 If a type requires `import std::collections` to use, the compiler must enforce that
 import. A user-defined `List` type in their own module must work identically to
-`std::collections.List`. The stdlib is just another set of bridge modules.
+`std::collections.List`. The stdlib is just another set of Zig modules.
 
 ### Documentation rule
 Each doc file has one specific purpose — no overlap between files. If information
@@ -212,7 +212,7 @@ files to understand what compiler issues need fixing.
 
 ## Languages
 - Zig 0.15.2+ — all compiler source (`src/*.zig`, `src/peg/*.zig`, `src/std/*.zig`)
-- Orhon (`.orh`) — stdlib bridge declarations (`src/std/*.orh`), example module (`src/templates/`), test fixtures (`test/fixtures/`)
+- Orhon (`.orh`) — example module (`src/templates/`), test fixtures (`test/fixtures/`)
 - JavaScript — VS Code extension client (`editors/vscode/extension.js`)
 - Shell (bash) — test runner scripts (`test/*.sh`, `testall.sh`)
 ## Runtime
@@ -266,7 +266,7 @@ files to understand what compiler issues need fixing.
 - Verb-first naming for methods: `checkNode`, `checkExpr`, `collectTopLevel`, `generateFunc`, `emitLine`
 - Private helper functions use the same `camelCase`, just without `pub`
 - `snake_case` for fields and local variables: `file_offsets`, `active_borrows`, `decl_table`, `is_debug`
-- Boolean fields start with `is_`, `has_`: `is_pub`, `is_compt`, `is_thread`, `has_bridges`
+- Boolean fields start with `is_`, `has_`: `is_pub`, `is_compt`, `is_thread`, `is_zig_module`
 - `SCREAMING_SNAKE_CASE` for module-level string/array constants: `BUILTIN_TYPES`, `COMPILER_FUNCS`, `CACHE_DIR`
 - Namespace constants inside structs also `SCREAMING_SNAKE_CASE`: `constants.Type.ERROR`, `constants.Ptr.VAR_REF`
 - `snake_case` for enum variants: `.owned`, `.moved`, `.error_union`, `.null_union`, `.kw_func`, `.lparen`
@@ -311,7 +311,7 @@ files to understand what compiler issues need fixing.
 - Passes run sequentially; each pass only proceeds if the previous reported no errors
 - Multiple errors per pass are collected before stopping (not fail-fast)
 - Incremental compilation: unchanged modules skip passes 4–12 and reuse cached `.zig` files
-- Codegen is a pure 1:1 translator — no library knowledge, all stdlib in bridge modules
+- Codegen is a pure 1:1 translator — no library knowledge, all stdlib in Zig modules
 - AST uses arena allocation — entire tree freed in one call
 ## Layers
 - Purpose: Parse command-line arguments, dispatch to commands, drive the pipeline
@@ -353,7 +353,7 @@ files to understand what compiler issues need fixing.
 - Location: `src/types.zig`, `src/errors.zig`, `src/builtins.zig`, `src/constants.zig`, `src/cache.zig`
 - Contains: `ResolvedType`, `Primitive`, `Reporter`, `OrhonError`, `SourceLoc`, `Cache`, language intrinsics
 - Used by: all pass modules
-- Purpose: Orhon `.orh` interface files + Zig `.zig` sidecars for stdlib modules
+- Purpose: Zig implementations for stdlib modules (auto-converted to Orhon modules)
 - Location: `src/std/`
 - Contains: Paired `.orh`/`.zig` files for each stdlib module (collections, str, json, fs, etc.)
 - Embedded via: `@embedFile` in `std_bundle.zig`, extracted to `.orh-cache/std/` at build time
@@ -392,9 +392,9 @@ files to understand what compiler issues need fixing.
 - Purpose: Error and warning accumulator used by all passes
 - Examples: `src/errors.zig`
 - Pattern: `report()` appends errors (owns strings); `flush()` prints all at end; `hasErrors()` gates each pass
-- Purpose: Orhon interface (`.orh`) + Zig implementation (`.zig` sidecar) pair
-- Examples: `src/std/collections.orh` + `src/std/collections.zig`
-- Pattern: Orhon `bridge` declarations; codegen re-exports from sidecar; no special-case name mapping in codegen
+- Purpose: `.zig` files auto-converted to Orhon modules; codegen emits re-exports
+- Examples: `src/std/collections.zig` → auto-generated `module collections`
+- Pattern: `std.zig.Ast` parses `.zig`, maps types to Orhon, generates `.orh` in cache
 ## Entry Points
 - Location: `src/main.zig` → `pub fn main()`
 - Triggers: User invoking the `orhon` binary

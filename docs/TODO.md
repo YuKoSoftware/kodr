@@ -76,40 +76,12 @@ Build a VS Code DAP adapter that reads these maps.
 
 ## Features — Language
 
-### Zig-as-module — replace bridge system
+### ~~Zig-as-module — replace bridge system~~ — DONE (v0.15.0)
 
-Eliminate the `bridge` keyword and the paired `.orh`/`.zig` sidecar system. Instead,
-the compiler auto-discovers `.zig` files in `src/` and converts them into regular
-Orhon modules.
-
-**Mechanism:**
-- New `src/zig_module.zig` — self-contained converter, uses `std.zig.Ast` to parse
-- Runs early in pipeline, before module resolution
-- Discovers `.zig` files in `src/` (and subfolders), generates `.orh` into `.orh-cache/zig_modules/`
-- Generated modules are regular Orhon modules — no `bridge` keyword, no special syntax
-- Module name = filename stem (`mylib.zig` → `module mylib`)
-- Module-level flag (`is_zig_module`) tells codegen to emit re-exports
-- Build.zig wires the original `.zig` as a named module
-
-**Type mapping (Zig → Orhon):**
-- Primitives: `u8`, `i32`, `f64`, `bool`, `void`, `usize` → same
-- `[]const u8` → `String`
-- `?T` → `NullUnion(T)`
-- `anyerror!T` → `ErrorUnion(T)`
-- `*T` → `mut& T`, `*const T` → `const& T`
-- `pub const X = struct { ... }` → `struct X { ... }` with `pub fn` methods
-- Incompatible signatures (`anytype`, `comptime`, complex generics) → silently skipped
-
-**What gets removed:**
-- `bridge` keyword from grammar, parser, declarations, codegen
-- All 27 `.orh` bridge files from `src/std/` (keep only `.zig` implementations)
-- Sidecar detection/copy logic in module_parse.zig and pipeline_passes.zig
-- Bridge-specific codegen in codegen_decls.zig
-
-**What stays the same:**
-- Module resolution, type resolution, semantic passes — see regular modules
-- Codegen re-export mechanism — triggered by module flag instead of per-decl `bridge`
-- Build.zig named module wiring — same pattern, different naming
+Replaced the `bridge` keyword with automatic Zig module conversion. `.zig` files in
+`src/` are auto-discovered, parsed with `std.zig.Ast`, and converted to Orhon modules.
+Bridge keyword, grammar, and all infrastructure removed. 27 stdlib `.orh` bridge files
+deleted. See `docs/14-zig-bridge.md` for the new system.
 
 ### Compiler simplifications
 
@@ -195,7 +167,7 @@ simplify coercion sequences.
 | Transparent (structural) type aliases | `Speed == i32`, not a distinct nominal type |
 | Allocator via `.new(alloc)`, not generic param | Keeps generics pure (types only) |
 | SMP as default allocator | GeneralPurposeAllocator optimized for general use |
-| Named bridge modules via build system | createModule/addImport eliminates file-path imports |
+| Zig-as-module replaces bridge system | `.zig` files auto-convert; no bridge keyword needed |
 | `throw` not `try` for error propagation | Less noisy, less hidden control flow |
 | Parenthesized guard syntax `(x if expr)` | Consistent with syntax containment rule |
 | Hub + satellite split pattern | All large file splits use same pattern for consistency |
@@ -221,6 +193,6 @@ simplify coercion sequences.
 | Zig IR layer in codegen | Would model Zig semantics inside the compiler |
 | Arena allocator pairing syntax | `.new(alloc)` already covers composed allocators via bridge |
 | `#derive` auto-generation | Blueprints require explicit implementation. No implicit anything |
-| `#extern` / `#packed` struct layout | Sidecar `.zig` files already support these via bridge |
+| `#extern` / `#packed` struct layout | `.zig` modules already support these natively |
 | `async` keyword | Wait for Zig's new async design, then map cleanly. `thread` + `Atomic` covers parallelism |
 | `capture()` / closures | No anonymous functions. State passed as arguments — explicit, obvious |
