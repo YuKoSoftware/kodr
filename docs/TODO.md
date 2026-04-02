@@ -78,21 +78,6 @@ Build a VS Code DAP adapter that reads these maps.
 
 ### Compiler simplifications
 
-**Dead code removal:**
-
-- `collectAssigned()` and `getRootIdent()` in `codegen_decls.zig` — AST-path
-  versions likely dead after MIR migration. MIR equivalents are the active callers.
-  Verify and delete.
-
-**Duplicated patterns:**
-
-- `"'main' is reserved for the executable entry point"` — 5+ occurrences across
-  `module.zig` and `pipeline.zig`. Centralize to `constants.zig`.
-- LSP `textDocument`/`uri` JSON extraction — 13+ identical blocks across LSP files.
-  Extract `extractTextDocumentUri()` helper in `lsp_utils.zig`.
-- Duplicate `throw` error path in `propagation.zig:255-262` — two branches emit
-  the same error message. Merge into single report.
-
 **Hub+satellite splits (files over 1000 lines):**
 
 - `resolver.zig` (1785 lines) — split validation, match exhaustiveness, identifier
@@ -154,11 +139,6 @@ simplify coercion sequences.
 ---
 
 ## Testing Improvements
-
-### Codegen snapshot tests
-
-Capture generated `.zig` output for representative programs and diff against expected
-output. Catches subtle codegen regressions that runtime tests miss.
 
 ### Property-based pipeline testing
 
