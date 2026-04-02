@@ -192,4 +192,54 @@ else
     fail "multi-file sidecar copies helper.zig" "$OUTPUT"
 fi
 
+section "User .zig module"
+
+cd "$TESTDIR"
+cp -r "$FIXTURES/zig_module" "$TESTDIR/zig_module"
+cd "$TESTDIR/zig_module"
+
+OUTPUT=$("$ORHON" build 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Built: bin/zig_module"; then
+    pass "zig module project compiles"
+else
+    fail "zig module project compiles" "$OUTPUT"
+fi
+
+# Verify the auto-generated .orh was created in cache
+if [ -f ".orh-cache/zig_modules/zigmath.orh" ]; then
+    pass "zigmath.orh auto-generated from .zig"
+else
+    fail "zigmath.orh auto-generated from .zig"
+fi
+
+# Verify the generated .orh contains expected declarations
+GEN_ORH=".orh-cache/zig_modules/zigmath.orh"
+if grep -q "pub func add" "$GEN_ORH" 2>/dev/null; then pass "generated .orh has add function"
+else fail "generated .orh has add function"; fi
+
+if grep -q "pub func mul" "$GEN_ORH" 2>/dev/null; then pass "generated .orh has mul function"
+else fail "generated .orh has mul function"; fi
+
+# Private helper function should NOT appear
+if grep -q "helper" "$GEN_ORH" 2>/dev/null; then fail "private fn excluded from generated .orh"
+else pass "private fn excluded from generated .orh"; fi
+
+# Verify the zig source was copied to generated dir
+if [ -f ".orh-cache/generated/zigmath_zig.zig" ]; then
+    pass "zigmath.zig copied to generated dir"
+else
+    fail "zigmath.zig copied to generated dir"
+fi
+
+# Run the binary and check output
+BINOUT=$(./bin/zig_module 2>&1 || true)
+if echo "$BINOUT" | grep -q "PASS zig_module_add"; then pass "runtime: zig_module_add"
+else fail "runtime: zig_module_add" "$BINOUT"; fi
+
+if echo "$BINOUT" | grep -q "PASS zig_module_mul"; then pass "runtime: zig_module_mul"
+else fail "runtime: zig_module_mul" "$BINOUT"; fi
+
+if echo "$BINOUT" | grep -q "ZIGMOD:DONE"; then pass "zig module binary ran to completion"
+else fail "zig module binary ran to completion" "$BINOUT"; fi
+
 report_results

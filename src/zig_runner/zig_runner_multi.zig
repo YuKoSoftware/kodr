@@ -292,6 +292,15 @@ pub fn buildZigContentMulti(
                         \\
                     , .{ mod_name, mod_name, mod_name });
                 }
+
+                // If this shared module is zig-backed, add self _zig import
+                // so its generated re-export code can @import("name_zig")
+                if (zig_mod_set.contains(mod_name)) {
+                    try _build.appendFmt(&buf, allocator,
+                        \\    mod_{s}.addImport("{s}_zig", zig_{s});
+                        \\
+                    , .{ mod_name, mod_name, mod_name });
+                }
             }
         }
     }
