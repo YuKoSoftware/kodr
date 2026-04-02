@@ -89,20 +89,58 @@ Replaced `#cimport` with paired `.zon` files. C build config now lives in the Zi
 ecosystem. `#cimport` grammar, parser, and pipeline extraction removed.
 See `docs/14-zig-bridge.md` for `.zon` config reference.
 
-### Compiler simplifications
+### Compiler cleanup — string-to-enum conversions
 
-**Hub+satellite splits (files over 1000 lines):**
+Replace string-based dispatch with enums throughout the compiler. Gives exhaustiveness
+checking, typo safety, and better performance.
 
-- ~~`resolver.zig`~~ — DONE (v0.14.5): split into hub + resolver_exprs.zig + resolver_validation.zig
-- ~~`pipeline.zig`~~ — DONE (v0.14.6): split into hub + pipeline_passes.zig
-- ~~`mir_annotator.zig`~~ — DONE (v0.17): split into hub + satellites
-- ~~`module.zig`~~ — DONE (v0.17): split into hub + module_parse.zig
-- ~~`borrow.zig`~~ — DONE: split into hub + borrow_checks.zig
-- ~~`ownership.zig`~~ — DONE: split into hub + ownership_checks.zig
+**Metadata field enum:**
+- 11 locations use `std.mem.eql(u8, meta.metadata.field, "build")` etc.
+- Create `MetadataField` enum with `.build`, `.name`, `.version`, `.dep`
+- Use `StaticStringMap` for string→enum lookup
+- Store enum in parser Metadata struct instead of string
+- Files: parser.zig, pipeline.zig, module_parse.zig, interface.zig, builder_decls.zig
 
-**Dead code:**
+**Operator enum:**
+- Operators flow through the entire compiler as strings (`"+"`, `"=="`, `K.Op.EQ`)
+- Create `Operator` enum with all operators
+- Add `toZigOp()`, `precedence()`, `isComparison()` methods
+- Replace string comparisons in codegen_exprs.zig, codegen_match.zig, resolver
+- Files: constants.zig, codegen_exprs.zig, codegen_match.zig, resolver_exprs.zig
 
-- `collectAssigned()`/`getRootIdent()` in codegen_decls.zig — AST-path remnants
+**Build type enum in pipeline:**
+- `"exe"`, `"static"`, `"dynamic"` compared as strings in pipeline.zig (6 locations)
+- `MultiTarget.build_type` is `[]const u8` — should be an enum
+- Module already has `BuildType` enum — reuse it in MultiTarget
+- Files: pipeline.zig, zig_runner_multi.zig
+
+**PEG rule dispatch:**
+- 60+ sequential `if std.mem.eql(u8, rule, "...")` in peg/builder.zig
+- Replace with `Rule` enum + `StaticStringMap` + function pointer table
+- Files: peg/builder.zig
+
+### Compiler cleanup — deduplication and extraction
+
+**Pipeline multi/single-target unification:**
+- Multi-target and single-target build paths are ~200 lines of near-identical code
+- Extract shared metadata extraction, module collection, and build dispatch
+- The single-target path should just be the multi-target path with one target
+- Files: pipeline.zig
+
+**`stripQuotes()` utility:**
+- `if (raw.len >= 2 and raw[0] == '"') raw[1..raw.len-1]` repeated 5 times
+- Create a single utility function, replace all occurrences
+- Files: pipeline.zig, module_parse.zig, zig_module.zig, builder_decls.zig
+
+**Break up oversized functions:**
+- `generateExprMir()` in codegen_exprs.zig — 537 lines, one giant switch
+- Split into per-expression-kind functions (binary, call, field, index, etc.)
+- Files: codegen/codegen_exprs.zig
+
+### ~~Compiler simplifications — hub+satellite splits~~ — ALL DONE
+
+All files under 1000 lines. Resolver, pipeline, mir_annotator, module, borrow,
+ownership all split into hub + satellite files.
 
 ---
 
