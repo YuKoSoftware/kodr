@@ -37,15 +37,16 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     // Convert stdlib .zig files (in .orh-cache/std/) to .orh declarations,
     // writing generated .orh back to .orh-cache/std/ so preScanImports finds them.
     const std_dir = cache.CACHE_DIR ++ "/std";
-    const std_zig_names = try zig_module.discoverAndConvert(allocator, std_dir, std_dir);
+    const std_zig_converted = try zig_module.discoverAndConvert(allocator, std_dir, std_dir);
     defer {
-        for (std_zig_names) |name| allocator.free(name);
-        allocator.free(std_zig_names);
+        for (std_zig_converted) |*cm| cm.deinit(allocator);
+        allocator.free(std_zig_converted);
     }
 
     // Copy stdlib .zig files to .orh-cache/generated/{name}_zig.zig for the build system
     try cache.ensureGeneratedDir();
-    for (std_zig_names) |name| {
+    for (std_zig_converted) |cm| {
+        const name = cm.name;
         const src_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ std_dir, name });
         defer allocator.free(src_path);
         const dst_path = try std.fmt.allocPrint(allocator, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, name });
@@ -61,10 +62,23 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
     // ── Zig Module Discovery ─────────────────────────────────
     // Discover .zig files in src/, parse them, generate .orh into .orh-cache/zig_modules/
-    const zig_mod_names = try zig_module.discoverAndConvert(allocator, cli.source_dir, null);
+    const zig_mod_converted = try zig_module.discoverAndConvert(allocator, cli.source_dir, null);
     defer {
-        for (zig_mod_names) |name| allocator.free(name);
-        allocator.free(zig_mod_names);
+        for (zig_mod_converted) |*cm| cm.deinit(allocator);
+        allocator.free(zig_mod_converted);
+    }
+
+    // Build a map from module name → zon config for use when assembling build targets.
+    // Includes both user zig modules and stdlib zig modules.
+    var zon_configs = std.StringHashMapUnmanaged(zig_module.ZonConfig){};
+    defer zon_configs.deinit(allocator);
+    // Note: we do NOT deinit the ZonConfig values here — they are borrowed from
+    // std_zig_converted / zig_mod_converted which own them via their defer blocks.
+    for (std_zig_converted) |cm| {
+        try zon_configs.put(allocator, cm.name, cm.config);
+    }
+    for (zig_mod_converted) |cm| {
+        try zon_configs.put(allocator, cm.name, cm.config);
     }
 
     // ── Pass 3: Module Resolution ──────────────────────────────
@@ -118,7 +132,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     // Done after parseModules. Skip modules that have user-authored .orh files — those
     // are Orhon modules, and any co-located .zig file is just additional source, not a
     // zig-as-module replacement. Only pure .zig modules (no user .orh files) get marked.
-    for (zig_mod_names) |name| {
+    for (zig_mod_converted) |cm| {
+        const name = cm.name;
         if (mod_resolver.modules.getPtr(name)) |mod_ptr| {
             // Check if the module has user-authored .orh files outside the zig_modules cache.
             // The auto-generated .orh from zig discovery lives in .orh-cache/zig_modules/.
@@ -136,7 +151,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     }
 
     // Mark stdlib zig modules (auto-generated from .zig files in .orh-cache/std/)
-    for (std_zig_names) |name| {
+    for (std_zig_converted) |cm| {
+        const name = cm.name;
         if (mod_resolver.modules.getPtr(name)) |mod_ptr| {
             mod_ptr.is_zig_module = true;
             mod_ptr.zig_source_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ std_dir, name });
@@ -653,6 +669,10 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 }
             }
 
+            // Merge .zon configs from zig-backed modules (this module and its imports)
+            try mergeZonConfigs(allocator, mod.name, mod.imports, &zon_configs,
+                &mt_link_libs, &mt_c_includes, &mt_c_sources, &mt_needs_cpp);
+
             const link_slice = try allocator.dupe([]const u8, mt_link_libs.items);
             try link_lib_lists.append(allocator, link_slice);
             const c_include_slice = try allocator.dupe([]const u8, mt_c_includes.items);
@@ -838,6 +858,10 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 }
             }
 
+            // Merge .zon configs from zig-backed modules (this module and its imports)
+            try mergeZonConfigs(allocator, mod.name, mod.imports, &zon_configs,
+                &link_libs, &c_includes_st, &c_sources_st, &needs_cpp_st);
+
             const binary_name = if (project_name.len > 0) project_name else mod.name;
 
             // Collect shared (non-root, non-lib) modules transitively imported by this root.
@@ -923,6 +947,67 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
     // Return exe name for `orhon run`; empty string signals lib-only success
     return exe_binary_name orelse try allocator.dupe(u8, "");
+}
+
+/// Merges .zon build configs from zig-backed modules into the accumulator lists.
+/// Checks the module itself and all its imports against the zon_configs map.
+/// Appends link, include, and source entries (deduplicating), and sets needs_cpp
+/// when C++ source files are present.
+fn mergeZonConfigs(
+    allocator: std.mem.Allocator,
+    mod_name: []const u8,
+    mod_imports: [][]const u8,
+    zon_configs: *const std.StringHashMapUnmanaged(zig_module.ZonConfig),
+    link_libs: *std.ArrayListUnmanaged([]const u8),
+    c_includes: *std.ArrayListUnmanaged([]const u8),
+    c_sources: *std.ArrayListUnmanaged([]const u8),
+    needs_cpp: *bool,
+) !void {
+    // Helper to merge a single config
+    const mergeOne = struct {
+        fn run(
+            alloc: std.mem.Allocator,
+            config: zig_module.ZonConfig,
+            libs: *std.ArrayListUnmanaged([]const u8),
+            incs: *std.ArrayListUnmanaged([]const u8),
+            srcs: *std.ArrayListUnmanaged([]const u8),
+            cpp: *bool,
+        ) !void {
+            for (config.link) |lib| {
+                if (!contains(libs.items, lib)) try libs.append(alloc, lib);
+            }
+            for (config.include) |inc| {
+                if (!contains(incs.items, inc)) try incs.append(alloc, inc);
+            }
+            for (config.source) |src| {
+                if (!contains(srcs.items, src)) try srcs.append(alloc, src);
+                if (std.mem.endsWith(u8, src, ".cpp") or
+                    std.mem.endsWith(u8, src, ".cc") or
+                    std.mem.endsWith(u8, src, ".cxx"))
+                {
+                    cpp.* = true;
+                }
+            }
+        }
+
+        fn contains(slice: []const []const u8, needle: []const u8) bool {
+            for (slice) |item| {
+                if (std.mem.eql(u8, item, needle)) return true;
+            }
+            return false;
+        }
+    }.run;
+
+    // Check the module itself
+    if (zon_configs.get(mod_name)) |config| {
+        try mergeOne(allocator, config, link_libs, c_includes, c_sources, needs_cpp);
+    }
+    // Check all imports
+    for (mod_imports) |imp_name| {
+        if (zon_configs.get(imp_name)) |config| {
+            try mergeOne(allocator, config, link_libs, c_includes, c_sources, needs_cpp);
+        }
+    }
 }
 
 // Satellite modules

@@ -522,10 +522,28 @@ pub fn discoverZigFiles(allocator: Allocator, source_dir: []const u8) ![]ZigModu
     return try entries.toOwnedSlice(allocator);
 }
 
+/// A successfully converted zig module with its name and optional .zon build config.
+pub const ConvertedModule = struct {
+    name: []const u8,
+    config: ZonConfig,
+
+    pub fn deinit(self: *const ConvertedModule, allocator: Allocator) void {
+        allocator.free(self.name);
+        self.config.deinit(allocator);
+    }
+};
+
+/// C/C++ source file extensions recognised during auto-detection.
+const C_SOURCE_EXTENSIONS = [_][]const u8{ ".c", ".cpp", ".cc", ".cxx" };
+/// Extensions that indicate C++ (sets needs_cpp on the config).
+const CPP_EXTENSIONS = [_][]const u8{ ".cpp", ".cc", ".cxx" };
+
 /// Discovers .zig files in `source_dir`, converts each to .orh, writes to `output_dir`.
 /// If `output_dir` is null, defaults to `cache.ZIG_MODULES_DIR`.
-/// Returns an owned slice of successfully converted module names. Caller owns the slice and names.
-pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_dir: ?[]const u8) ![]const []const u8 {
+/// For each converted module, reads a paired `.zon` config (if present) and auto-detects
+/// adjacent C/C++ source files.
+/// Returns an owned slice of ConvertedModule. Caller owns the slice and all inner allocations.
+pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_dir: ?[]const u8) ![]ConvertedModule {
     const entries = try discoverZigFiles(allocator, source_dir);
     defer {
         for (entries) |entry| {
@@ -543,9 +561,9 @@ pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_d
         else => return err,
     };
 
-    var converted: std.ArrayList([]const u8) = .{};
+    var converted: std.ArrayList(ConvertedModule) = .{};
     errdefer {
-        for (converted.items) |name| allocator.free(name);
+        for (converted.items) |*cm| cm.deinit(allocator);
         converted.deinit(allocator);
     }
 
@@ -574,15 +592,97 @@ pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_d
         defer out_file.close();
         out_file.writeAll(orh_text) catch continue;
 
-        // Track the converted module name
+        // Read paired .zon config (replace .zig extension with .zon)
+        var config = readZonForZigFile(allocator, entry.file_path) catch ZonConfig{};
+
+        // Auto-detect adjacent C/C++ source files and merge into config
+        mergeAdjacentCSources(allocator, entry.file_path, &config) catch {};
+
+        // Track the converted module
         const name_copy = allocator.dupe(u8, entry.module_name) catch continue;
-        converted.append(allocator, name_copy) catch {
+        converted.append(allocator, .{
+            .name = name_copy,
+            .config = config,
+        }) catch {
             allocator.free(name_copy);
+            config.deinit(allocator);
             continue;
         };
     }
 
     return try converted.toOwnedSlice(allocator);
+}
+
+/// Reads a `.zon` file paired with a `.zig` file (same directory, same stem).
+/// Returns a default empty config if no `.zon` file exists.
+fn readZonForZigFile(allocator: Allocator, zig_path: []const u8) !ZonConfig {
+    // Replace .zig extension with .zon
+    if (!std.mem.endsWith(u8, zig_path, ".zig")) return .{};
+    const stem = zig_path[0 .. zig_path.len - 4];
+    const zon_path = try std.fmt.allocPrint(allocator, "{s}.zon", .{stem});
+    defer allocator.free(zon_path);
+
+    const zon_bytes = std.fs.cwd().readFileAlloc(allocator, zon_path, 1024 * 1024) catch return .{};
+    defer allocator.free(zon_bytes);
+
+    const zon_z = try allocator.dupeZ(u8, zon_bytes);
+    defer allocator.free(zon_z);
+
+    return try parseZonConfig(allocator, zon_z);
+}
+
+/// Scans the directory containing `zig_path` for C/C++ source files and merges
+/// any found into `config.source`, avoiding duplicates. Sets `needs_cpp` via
+/// a flag stored on the config (tracked externally by the caller through CPP_EXTENSIONS).
+fn mergeAdjacentCSources(allocator: Allocator, zig_path: []const u8, config: *ZonConfig) !void {
+    const dir_path = std.fs.path.dirname(zig_path) orelse ".";
+
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return;
+    defer dir.close();
+
+    var new_sources: std.ArrayListUnmanaged([]const u8) = .{};
+    defer new_sources.deinit(allocator);
+
+    // Copy existing sources to the new list
+    for (config.source) |s| {
+        try new_sources.append(allocator, s);
+    }
+
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .file) continue;
+        const name = entry.name;
+
+        const is_c_source = for (C_SOURCE_EXTENSIONS) |ext| {
+            if (std.mem.endsWith(u8, name, ext)) break true;
+        } else false;
+        if (!is_c_source) continue;
+
+        // Build path relative to project root (dir_path/filename)
+        const full_path = try std.fs.path.join(allocator, &.{ dir_path, name });
+
+        // Check for duplicate
+        var already = false;
+        for (new_sources.items) |existing| {
+            if (std.mem.eql(u8, existing, full_path)) {
+                already = true;
+                break;
+            }
+        }
+        if (already) {
+            allocator.free(full_path);
+            continue;
+        }
+
+        try new_sources.append(allocator, full_path);
+    }
+
+    // Only replace if we added new entries
+    if (new_sources.items.len > config.source.len) {
+        // Free the old slice (but not the individual strings — they are now in new_sources)
+        if (config.source.len > 0) allocator.free(config.source);
+        config.source = try new_sources.toOwnedSlice(allocator);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1031,20 +1131,105 @@ test "discoverAndConvert — end-to-end" {
     std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
     defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
 
-    const names = try discoverAndConvert(allocator, tmp_dir, null);
+    const modules = try discoverAndConvert(allocator, tmp_dir, null);
     defer {
-        for (names) |name| allocator.free(name);
-        allocator.free(names);
+        for (modules) |*cm| cm.deinit(allocator);
+        allocator.free(modules);
     }
 
-    try std.testing.expectEqual(@as(usize, 1), names.len);
-    try std.testing.expectEqualStrings("testmod", names[0]);
+    try std.testing.expectEqual(@as(usize, 1), modules.len);
+    try std.testing.expectEqualStrings("testmod", modules[0].name);
 
     // Verify the .orh file was written
     const orh_path = cache.ZIG_MODULES_DIR ++ "/testmod.orh";
     const content = try std.fs.cwd().readFileAlloc(allocator, orh_path, 1024 * 1024);
     defer allocator.free(content);
     try std.testing.expect(std.mem.startsWith(u8, content, "module testmod\n"));
+}
+
+test "discoverAndConvert — reads paired .zon config" {
+    const allocator = std.testing.allocator;
+
+    const tmp_dir = "/tmp/orhon_test_zon_pair";
+    std.fs.cwd().makePath(tmp_dir) catch {};
+    defer std.fs.cwd().deleteTree(tmp_dir) catch {};
+
+    // Create a .zig file
+    {
+        const f = try std.fs.cwd().createFile(tmp_dir ++ "/mylib.zig", .{});
+        defer f.close();
+        try f.writeAll("pub fn init() void {}");
+    }
+    // Create a paired .zon config
+    {
+        const f = try std.fs.cwd().createFile(tmp_dir ++ "/mylib.zon", .{});
+        defer f.close();
+        try f.writeAll(".{\n    .link = .{ \"SDL2\" },\n    .include = .{ \"vendor/\" },\n}");
+    }
+
+    std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
+    defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
+
+    const modules = try discoverAndConvert(allocator, tmp_dir, null);
+    defer {
+        for (modules) |*cm| cm.deinit(allocator);
+        allocator.free(modules);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), modules.len);
+    try std.testing.expectEqualStrings("mylib", modules[0].name);
+    try std.testing.expectEqual(@as(usize, 1), modules[0].config.link.len);
+    try std.testing.expectEqualStrings("SDL2", modules[0].config.link[0]);
+    try std.testing.expectEqual(@as(usize, 1), modules[0].config.include.len);
+    try std.testing.expectEqualStrings("vendor/", modules[0].config.include[0]);
+}
+
+test "discoverAndConvert — auto-detects adjacent C files" {
+    const allocator = std.testing.allocator;
+
+    const tmp_dir = "/tmp/orhon_test_c_detect";
+    std.fs.cwd().makePath(tmp_dir) catch {};
+    defer std.fs.cwd().deleteTree(tmp_dir) catch {};
+
+    // Create a .zig file
+    {
+        const f = try std.fs.cwd().createFile(tmp_dir ++ "/native.zig", .{});
+        defer f.close();
+        try f.writeAll("pub fn run() void {}");
+    }
+    // Create adjacent C/C++ files
+    {
+        const f = try std.fs.cwd().createFile(tmp_dir ++ "/helper.c", .{});
+        defer f.close();
+        try f.writeAll("void helper() {}");
+    }
+    {
+        const f = try std.fs.cwd().createFile(tmp_dir ++ "/bridge.cpp", .{});
+        defer f.close();
+        try f.writeAll("void bridge() {}");
+    }
+
+    std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
+    defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
+
+    const modules = try discoverAndConvert(allocator, tmp_dir, null);
+    defer {
+        for (modules) |*cm| cm.deinit(allocator);
+        allocator.free(modules);
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), modules.len);
+    // Should have auto-detected 2 C/C++ source files
+    try std.testing.expectEqual(@as(usize, 2), modules[0].config.source.len);
+    // Verify both files are found (order may vary)
+    var found_c = false;
+    var found_cpp = false;
+    for (modules[0].config.source) |src| {
+        if (std.mem.endsWith(u8, src, "helper.c")) found_c = true;
+        if (std.mem.endsWith(u8, src, "bridge.cpp")) found_cpp = true;
+    }
+    try std.testing.expect(found_c);
+    try std.testing.expect(found_cpp);
 }
 
 // ---------------------------------------------------------------------------
