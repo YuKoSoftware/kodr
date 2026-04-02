@@ -50,12 +50,15 @@ compt func double(n: i32) i32 {
 // --- C Library Dependencies (.zon config) ----------------------------------
 
 // Modules that call C code declare dependencies via a paired .zon file.
-// Place a .zon file next to the .zig sidecar with the same name.
+// Place a .zon file next to the .zig file with the same name.
 // The .zon file specifies link libraries, include paths, and source files.
 //
 // Example my_module.zon:
-//   .{ .link = "SDL3", .include = "SDL3/SDL.h" }
-//   .{ .link = "vma", .include = "vk_mem_alloc.h", .source = "vma_impl.cpp" }
+//   .{
+//       .link = .{ "SDL3" },
+//       .include = .{ "vendor/" },
+//       .source = .{ "vendor/vma_impl.cpp" },
+//   }
 //
 // C++ linking is auto-detected from .cpp/.cc/.cxx file extensions.
 
