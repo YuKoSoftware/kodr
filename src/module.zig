@@ -577,6 +577,9 @@ pub const Resolver = struct {
                             "{s}/{s}_bridge.zig", .{ cache.GENERATED_DIR, decl.path });
                         defer self.allocator.free(sidecar_dst);
                         try std.fs.cwd().copyFile(sidecar_src, std.fs.cwd(), sidecar_dst, .{});
+                        // Note: no copySidecarImports here — stdlib sidecars are embedded
+                        // single files that don't use multi-file @import. Project-local
+                        // sidecars are handled in pipeline.zig during the codegen phase.
                     }
 
                     // Add to the file map so it gets parsed and compiled

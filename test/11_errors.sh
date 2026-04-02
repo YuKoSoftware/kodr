@@ -646,4 +646,19 @@ NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "func main.*only allowed in executable"; then pass "rejects func main() in library"
 else fail "rejects func main() in library" "$NEG_OUT"; fi
 
+# multi-file sidecar: reject imports escaping source directory
+cd "$TESTDIR"
+mkdir -p neg_sidecar_escape/src
+cp "$FIXTURES/multizig_escape_main.orh" neg_sidecar_escape/src/multizig_escape.orh
+cp "$FIXTURES/multizig_escape.zig" neg_sidecar_escape/src/multizig_escape.zig
+# Create the target file outside src/ so the path resolves but escapes
+echo "pub fn dummy() void {}" > neg_sidecar_escape/escape.zig
+cd neg_sidecar_escape
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -q "escapes project source directory"; then
+    pass "rejects sidecar import escaping source dir"
+else
+    fail "rejects sidecar import escaping source dir" "$NEG_OUT"
+fi
+
 report_results

@@ -1,0 +1,5 @@
+module multizig_escape
+#name    = "multizig_escape"
+#version = Version(1, 0, 0)
+#build   = static
+bridge func bad_func() i32
