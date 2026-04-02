@@ -9,6 +9,7 @@ const K = @import("../constants.zig");
 const builtins = @import("../builtins.zig");
 const mir_types = @import("mir_types.zig");
 const mir_registry = @import("mir_registry.zig");
+const nodes_impl = @import("mir_annotator_nodes.zig");
 
 const RT = mir_types.RT;
 const TypeClass = mir_types.TypeClass;
@@ -81,332 +82,21 @@ pub const MirAnnotator = struct {
         }
     }
 
-    fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
-        switch (node.*) {
-            .func_decl => |f| {
-                // Annotate the function declaration itself
-                if (self.decls.funcs.get(f.name)) |sig| {
-                    try self.recordNode(node, sig.return_type);
-                }
-                // Annotate parameters
-                for (f.params) |param| {
-                    if (param.* == .param) {
-                        const t = try types.resolveTypeNode(self.decls.typeAllocator(), param.param.type_annotation);
-                        try self.recordNode(param, t);
-                    }
-                }
-                // Track current function for return coercions
-                const prev_func = self.current_func_name;
-                self.current_func_name = f.name;
-                defer self.current_func_name = prev_func;
-                // Populate promoted_params from const_ref_params for this function.
-                // This prevents double-borrow when forwarding const-ref params (Pitfall 3).
-                self.promoted_params.clearRetainingCapacity();
-                if (self.const_ref_params.get(f.name)) |param_indices| {
-                    if (self.decls.funcs.get(f.name)) |sig| {
-                        var idx_it = param_indices.keyIterator();
-                        while (idx_it.next()) |idx| {
-                            if (idx.* < sig.params.len) {
-                                try self.promoted_params.put(self.allocator, sig.params[idx.*].name, {});
-                            }
-                        }
-                    }
-                }
-                defer self.promoted_params.clearRetainingCapacity();
-                // Annotate body
-                try self.annotateNode(f.body);
-            },
-
-            .struct_decl => |s| {
-                try self.recordNode(node, RT{ .named = s.name });
-                for (s.members) |member| {
-                    try self.annotateNode(member);
-                }
-            },
-
-            .enum_decl => |e| {
-                try self.recordNode(node, RT{ .named = e.name });
-            },
-
-            .bitfield_decl => |b| {
-                try self.recordNode(node, RT{ .named = b.name });
-            },
-
-            .block => |b| {
-                for (b.statements) |stmt| {
-                    try self.annotateNode(stmt);
-                }
-            },
-
-            .var_decl => |v| {
-                const t = self.lookupType(node) orelse blk: {
-                    // Fall back: resolve from annotation or value
-                    if (v.type_annotation) |ta| {
-                        break :blk try types.resolveTypeNode(self.decls.typeAllocator(), ta);
-                    }
-                    // Infer from function call return type
-                    if (v.value.* == .call_expr) {
-                        if (self.lookupType(v.value)) |ct| break :blk ct;
-                        const callee = v.value.call_expr.callee;
-                        if (callee.* == .identifier) {
-                            if (self.decls.funcs.get(callee.identifier)) |sig| {
-                                break :blk sig.return_type;
-                            }
-                        }
-                    }
-                    break :blk RT.unknown;
-                };
-                const info = NodeInfo{ .resolved_type = t, .type_class = classifyType(t) };
-                try self.recordNode(node, t);
-                try self.var_types.put(self.allocator, v.name, info);
-                // Track const variables for const auto-borrow at call sites
-                if (v.mutability == .constant) {
-                    try self.const_vars.put(self.allocator, v.name, {});
-                }
-
-                // Canonicalize arb union types
-                if (t == .union_type) {
-                    var members = try self.allocator.alloc([]const u8, t.union_type.len);
-                    defer self.allocator.free(members);
-                    for (t.union_type, 0..) |m, i| {
-                        members[i] = m.name();
-                    }
-                    _ = try self.union_registry.canonicalize(members);
-                }
-
-                // Annotate the value expression
-                try self.annotateNode(v.value);
-                // Coercion pass: detect wrapping needed for declarations
-                try self.annotateDeclCoercions(v.value, t);
-            },
-
-            .return_stmt => |r| {
-                if (r.value) |val| {
-                    try self.annotateNode(val);
-                    // Coercion pass: detect wrapping needed for return values
-                    try self.annotateReturnCoercions(val);
-                }
-            },
-
-            .if_stmt => |i| {
-                try self.annotateNode(i.condition);
-                try self.annotateNode(i.then_block);
-                if (i.else_block) |e| try self.annotateNode(e);
-            },
-
-            .while_stmt => |w| {
-                try self.annotateNode(w.condition);
-                if (w.continue_expr) |ce| try self.annotateNode(ce);
-                try self.annotateNode(w.body);
-            },
-
-            .for_stmt => |fs| {
-                try self.annotateNode(fs.iterable);
-                try self.annotateNode(fs.body);
-            },
-
-            .defer_stmt => |d| {
-                try self.annotateNode(d.body);
-            },
-
-            .match_stmt => |m| {
-                try self.annotateNode(m.value);
-                for (m.arms) |arm| {
-                    if (arm.* == .match_arm) {
-                        try self.annotateNode(arm.match_arm.pattern);
-                        if (arm.match_arm.guard) |g| {
-                            try self.annotateNode(g);
-                        }
-                        try self.annotateNode(arm.match_arm.body);
-                    }
-                }
-            },
-
-            .assignment => |a| {
-                try self.annotateNode(a.left);
-                try self.annotateNode(a.right);
-                // Coerce RHS when assigning to a null_union or error_union variable
-                if (self.lookupType(a.left)) |lhs_type| {
-                    try self.annotateDeclCoercions(a.right, lhs_type);
-                }
-            },
-
-            .test_decl => |td| {
-                try self.annotateNode(td.body);
-            },
-
-            .destruct_decl => |d| {
-                try self.annotateNode(d.value);
-            },
-
-
-            // Expressions
-            .binary_expr => |b| {
-                try self.annotateExpr(node);
-                try self.annotateNode(b.left);
-                try self.annotateNode(b.right);
-            },
-            .unary_expr => |u| {
-                try self.annotateExpr(node);
-                try self.annotateNode(u.operand);
-            },
-            .call_expr => |c| {
-                try self.annotateExpr(node);
-                try self.annotateNode(c.callee);
-                for (c.args) |arg| try self.annotateNode(arg);
-                // Coercion pass: compare arg types with param types
-                try self.annotateCallCoercions(c);
-            },
-            .field_expr => |f| {
-                try self.annotateExpr(node);
-                try self.annotateNode(f.object);
-            },
-            .index_expr => |i| {
-                try self.annotateExpr(node);
-                try self.annotateNode(i.object);
-                try self.annotateNode(i.index);
-            },
-            .slice_expr => |s| {
-                try self.annotateExpr(node);
-                try self.annotateNode(s.object);
-                try self.annotateNode(s.low);
-                try self.annotateNode(s.high);
-            },
-            .array_literal => |elems| {
-                try self.annotateExpr(node);
-                for (elems) |elem| try self.annotateNode(elem);
-            },
-            .tuple_literal => |t| {
-                try self.annotateExpr(node);
-                for (t.fields) |f| try self.annotateNode(f);
-            },
-            .compiler_func => |cf| {
-                try self.annotateExpr(node);
-                for (cf.args) |arg| try self.annotateNode(arg);
-            },
-            .mut_borrow_expr => |b| {
-                try self.annotateExpr(node);
-                try self.annotateNode(b);
-            },
-            .const_borrow_expr => |b| {
-                try self.annotateExpr(node);
-                try self.annotateNode(b);
-            },
-            .collection_expr => |c| {
-                try self.annotateExpr(node);
-                for (c.type_args) |arg| try self.annotateNode(arg);
-                if (c.alloc_arg) |a| try self.annotateNode(a);
-            },
-            .range_expr => |r| {
-                try self.annotateExpr(node);
-                try self.annotateNode(r.left);
-                try self.annotateNode(r.right);
-            },
-
-            .interpolated_string => |interp| {
-                try self.annotateExpr(node);
-                for (interp.parts) |part| {
-                    switch (part) {
-                        .expr => |expr_node| try self.annotateNode(expr_node),
-                        .literal => {},
-                    }
-                }
-            },
-
-            // Leaf expressions
-            .int_literal,
-            .float_literal,
-            .string_literal,
-            .bool_literal,
-            .null_literal,
-            .error_literal,
-            .identifier,
-            => try self.annotateExpr(node),
-
-            else => {},
-        }
+    pub fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
+        return nodes_impl.annotateNode(self, node);
     }
 
-    fn annotateExpr(self: *MirAnnotator, node: *parser.Node) !void {
-        const t = self.lookupType(node) orelse RT.unknown;
-        try self.recordNode(node, t);
+    pub fn annotateExpr(self: *MirAnnotator, node: *parser.Node) !void {
+        return nodes_impl.annotateExpr(self, node);
     }
 
-    /// Detect coercions in function call arguments.
-    /// Compares arg types with param types and marks coercion annotations.
-    /// Also applies const auto-borrow: const non-primitive args passed to by-value params
-    /// get value_to_const_ref coercion and are recorded in const_ref_params.
-    /// Const auto-borrow is limited to same-module direct calls (c.callee is an identifier).
-    /// Cross-module calls (field_expr callee) are excluded — function signature promotion
-    /// must match across module boundaries, which requires cross-module coordination.
-    fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
-        const sig = self.resolveCallSig(c) orelse return;
-        // Resolve the callee name for const_ref_params tracking.
-        // Only direct calls (identifier callee) qualify for const auto-borrow.
-        const is_direct_call = c.callee.* == .identifier;
-        const func_name: ?[]const u8 = if (c.callee.* == .identifier)
-            c.callee.identifier
-        else if (c.callee.* == .field_expr)
-            c.callee.field_expr.field
-        else
-            null;
-        // Instance method calls (field_expr callee) do not pass the receiver as an explicit arg.
-        // Bridge method sigs include 'self' as params[0] — skip it when matching call args.
-        const param_offset: usize = if (c.callee.* == .field_expr and sig.params.len > 0 and
-            std.mem.eql(u8, sig.params[0].name, "self")) 1 else 0;
-        const effective_params = sig.params[param_offset..];
-        const param_count = @min(c.args.len, effective_params.len);
-        var idx: usize = 0;
-        for (c.args[0..param_count], effective_params[0..param_count]) |arg, param| {
-            defer idx += 1;
-            const arg_type = self.lookupType(arg) orelse continue;
-            const coercion = detectCoercion(arg_type, param.type_);
-            if (coercion.kind) |kind| {
-                try self.node_map.put(self.allocator, arg, .{
-                    .resolved_type = arg_type,
-                    .type_class = classifyType(arg_type),
-                    .coercion = kind,
-                    .coerce_tag = coercion.tag,
-                });
-            } else {
-                // Const auto-borrow: annotate const non-primitive args with value_to_const_ref.
-                // Only applies to same-module direct calls (Pitfall 5: cross-module skipped).
-                // Bridge functions are excluded — the sidecar .zig defines param types, so the
-                // Orhon compiler must not promote their parameters; the const & case is handled
-                // by detectCoercion above when the declared param type is already `const &`.
-                // This guard covers all bridge call forms: direct calls (processTexture(tex)),
-                // struct method calls (ren.createMaterial(tex)), and error-union-returning bridge
-                // functions — all excluded via sig.context != .bridge regardless of return type.
-                if (is_direct_call and arg.* == .identifier and sig.context != .bridge) {
-                    const name = arg.identifier;
-                    // Skip promoted params (already *const T — prevents double-borrow)
-                    if (!self.promoted_params.contains(name) and self.const_vars.contains(name)) {
-                        // Only non-primitive, non-value-type args qualify.
-                        // Enums and bitfields are small value types — exclude them.
-                        const is_enum_or_bitfield = if (arg_type == .named) blk: {
-                            const n = arg_type.named;
-                            break :blk self.decls.enums.contains(n) or self.decls.bitfields.contains(n);
-                        } else false;
-                        if (isNonPrimitiveType(arg_type) and !is_enum_or_bitfield) {
-                            try self.node_map.put(self.allocator, arg, .{
-                                .resolved_type = arg_type,
-                                .type_class = classifyType(arg_type),
-                                .coercion = .value_to_const_ref,
-                            });
-                            // Record (func_name, param_index) for Zig signature promotion
-                            if (func_name) |fname| {
-                                try self.recordConstRefParam(fname, idx);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    pub fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
+        return nodes_impl.annotateCallCoercions(self, c);
     }
 
     /// Returns true if the type requires a reference rather than a value copy.
     /// Primitives (i32, f32, bool, String, etc.) and value types (Vector) are excluded.
-    fn isNonPrimitiveType(t: RT) bool {
+    pub fn isNonPrimitiveType(t: RT) bool {
         return switch (t) {
             .primitive => false,
             .generic => |g| !builtins.isValueType(g.name),
@@ -416,7 +106,7 @@ pub const MirAnnotator = struct {
     }
 
     /// Record that a function parameter at the given index needs *const T in Zig output.
-    fn recordConstRefParam(self: *MirAnnotator, func_name: []const u8, param_idx: usize) !void {
+    pub fn recordConstRefParam(self: *MirAnnotator, func_name: []const u8, param_idx: usize) !void {
         const gop = try self.const_ref_params.getOrPut(self.allocator, func_name);
         if (!gop.found_existing) {
             gop.value_ptr.* = .{};
@@ -430,51 +120,17 @@ pub const MirAnnotator = struct {
         return param_set.contains(param_idx);
     }
 
-    /// Detect coercions for variable/const declarations.
-    /// When the declared type differs from the value type, mark the value node.
-    fn annotateDeclCoercions(self: *MirAnnotator, value: *parser.Node, decl_type: RT) !void {
-        const val_type = self.lookupType(value) orelse {
-            // null_literal has no type in the type_map — handle directly
-            if (value.* == .null_literal and classifyType(decl_type) == .null_union) {
-                try self.node_map.put(self.allocator, value, .{
-                    .resolved_type = .null_type,
-                    .type_class = .plain,
-                    .coercion = .null_wrap,
-                });
-            }
-            return;
-        };
-        const coercion = detectCoercion(val_type, decl_type);
-        if (coercion.kind) |kind| {
-            try self.node_map.put(self.allocator, value, .{
-                .resolved_type = val_type,
-                .type_class = classifyType(val_type),
-                .coercion = kind,
-                .coerce_tag = coercion.tag,
-            });
-        }
+    pub fn annotateDeclCoercions(self: *MirAnnotator, value: *parser.Node, decl_type: RT) !void {
+        return nodes_impl.annotateDeclCoercions(self, value, decl_type);
     }
 
-    /// Detect coercions for return statements.
-    /// When the return value type differs from the function's return type, mark the value node.
-    fn annotateReturnCoercions(self: *MirAnnotator, value: *parser.Node) !void {
-        const func_name = self.current_func_name orelse return;
-        const sig = self.decls.funcs.get(func_name) orelse return;
-        const val_type = self.lookupType(value) orelse return;
-        const coercion = detectCoercion(val_type, sig.return_type);
-        if (coercion.kind) |kind| {
-            try self.node_map.put(self.allocator, value, .{
-                .resolved_type = val_type,
-                .type_class = classifyType(val_type),
-                .coercion = kind,
-                .coerce_tag = coercion.tag,
-            });
-        }
+    pub fn annotateReturnCoercions(self: *MirAnnotator, value: *parser.Node) !void {
+        return nodes_impl.annotateReturnCoercions(self, value);
     }
 
     /// Core coercion detection: given a source type and a target type,
     /// determine if a coercion is needed and which kind.
-    fn detectCoercion(src: RT, dst: RT) CoercionResult {
+    pub fn detectCoercion(src: RT, dst: RT) CoercionResult {
         // Can't determine coercion without concrete types
         if (src == .unknown or src == .inferred or dst == .unknown or dst == .inferred)
             return .{ .kind = null };
@@ -528,7 +184,7 @@ pub const MirAnnotator = struct {
     }
 
     /// Check if two resolved types are structurally equivalent for coercion purposes.
-    fn typesMatch(a: RT, b: RT) bool {
+    pub fn typesMatch(a: RT, b: RT) bool {
         if (a == .primitive and b == .primitive) return a.primitive == b.primitive;
         if (a == .named and b == .named) return std.mem.eql(u8, a.named, b.named);
         if (a == .generic and b == .generic) return std.mem.eql(u8, a.generic.name, b.generic.name);
@@ -536,13 +192,13 @@ pub const MirAnnotator = struct {
         return false;
     }
 
-    const CoercionResult = struct {
+    pub const CoercionResult = struct {
         kind: ?Coercion = null,
         tag: ?[]const u8 = null,
     };
 
     /// Look up a FuncSig for a call expression's callee.
-    fn resolveCallSig(self: *const MirAnnotator, c: parser.CallExpr) ?declarations.FuncSig {
+    pub fn resolveCallSig(self: *const MirAnnotator, c: parser.CallExpr) ?declarations.FuncSig {
         // Direct call: func_name(args)
         if (c.callee.* == .identifier) {
             return self.decls.funcs.get(c.callee.identifier);
@@ -605,11 +261,11 @@ pub const MirAnnotator = struct {
         return null;
     }
 
-    fn lookupType(self: *const MirAnnotator, node: *parser.Node) ?RT {
+    pub fn lookupType(self: *const MirAnnotator, node: *parser.Node) ?RT {
         return self.type_map.get(node);
     }
 
-    fn recordNode(self: *MirAnnotator, node: *parser.Node, t: RT) !void {
+    pub fn recordNode(self: *MirAnnotator, node: *parser.Node, t: RT) !void {
         try self.node_map.put(self.allocator, node, .{
             .resolved_type = t,
             .type_class = classifyType(t),
