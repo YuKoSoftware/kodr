@@ -186,15 +186,8 @@ fn extractFnInner(
         }
         try params.appendSlice(allocator, ": ");
 
-        // Check for comptime keyword
-        const is_comptime = if (param.comptime_noalias) |cn_tok|
-            tree.tokenTag(cn_tok) == .keyword_comptime
-        else
-            false;
-
-        if (is_comptime) {
-            try params.appendSlice(allocator, "compt ");
-        }
+        // Note: Zig `comptime` parameters are not emitted as `compt` here.
+        // In Orhon, `type` as a parameter type already implies comptime semantics.
 
         // Parameter type
         if (param.anytype_ellipsis3 != null) {
@@ -523,9 +516,10 @@ pub fn discoverZigFiles(allocator: Allocator, source_dir: []const u8) ![]ZigModu
     return try entries.toOwnedSlice(allocator);
 }
 
-/// Discovers .zig files in `source_dir`, converts each to .orh, writes to cache.
+/// Discovers .zig files in `source_dir`, converts each to .orh, writes to `output_dir`.
+/// If `output_dir` is null, defaults to `cache.ZIG_MODULES_DIR`.
 /// Returns an owned slice of successfully converted module names. Caller owns the slice and names.
-pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8) ![]const []const u8 {
+pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_dir: ?[]const u8) ![]const []const u8 {
     const entries = try discoverZigFiles(allocator, source_dir);
     defer {
         for (entries) |entry| {
@@ -535,8 +529,10 @@ pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8) ![]const
         allocator.free(entries);
     }
 
+    const out_dir = output_dir orelse cache.ZIG_MODULES_DIR;
+
     // Ensure output directory exists
-    std.fs.cwd().makePath(cache.ZIG_MODULES_DIR) catch |err| switch (err) {
+    std.fs.cwd().makePath(out_dir) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
@@ -564,8 +560,8 @@ pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8) ![]const
         const orh_text = generateModule(entry.module_name, &tree, allocator) catch continue orelse continue;
         defer allocator.free(orh_text);
 
-        // Write to cache directory
-        const out_filename = std.fmt.allocPrint(allocator, "{s}/{s}.orh", .{ cache.ZIG_MODULES_DIR, entry.module_name }) catch continue;
+        // Write to output directory
+        const out_filename = std.fmt.allocPrint(allocator, "{s}/{s}.orh", .{ out_dir, entry.module_name }) catch continue;
         defer allocator.free(out_filename);
 
         const out_file = std.fs.cwd().createFile(out_filename, .{}) catch continue;
@@ -742,11 +738,11 @@ test "extractFn — non-pub fn skipped" {
     try std.testing.expect(result == null);
 }
 
-test "extractFn — comptime param mapped to compt" {
+test "extractFn — comptime param (type implies comptime)" {
     const result = try testExtractFn("pub fn create(comptime T: type) void {}");
     if (result) |actual| {
         defer std.testing.allocator.free(actual);
-        try std.testing.expectEqualStrings("pub func create(T: compt type) void", actual);
+        try std.testing.expectEqualStrings("pub func create(T: type) void", actual);
     } else return error.TestUnexpectedResult;
 }
 
@@ -932,7 +928,7 @@ test "discoverAndConvert — end-to-end" {
     std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
     defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
 
-    const names = try discoverAndConvert(allocator, tmp_dir);
+    const names = try discoverAndConvert(allocator, tmp_dir, null);
     defer {
         for (names) |name| allocator.free(name);
         allocator.free(names);

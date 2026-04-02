@@ -33,9 +33,35 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         try file.writeAll(_std_bundle.COLLECTIONS_ZIG);
     }
 
+    // ── Stdlib Zig Conversion ────────────────────────────────
+    // Convert stdlib .zig files (in .orh-cache/std/) to .orh declarations,
+    // writing generated .orh back to .orh-cache/std/ so preScanImports finds them.
+    const std_dir = cache.CACHE_DIR ++ "/std";
+    const std_zig_names = try zig_module.discoverAndConvert(allocator, std_dir, std_dir);
+    defer {
+        for (std_zig_names) |name| allocator.free(name);
+        allocator.free(std_zig_names);
+    }
+
+    // Copy stdlib .zig files to .orh-cache/generated/{name}_zig.zig for the build system
+    try cache.ensureGeneratedDir();
+    for (std_zig_names) |name| {
+        const src_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ std_dir, name });
+        defer allocator.free(src_path);
+        const dst_path = try std.fmt.allocPrint(allocator, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, name });
+        defer allocator.free(dst_path);
+
+        const content = std.fs.cwd().readFileAlloc(allocator, src_path, 1024 * 1024) catch continue;
+        defer allocator.free(content);
+
+        const dst_file = std.fs.cwd().createFile(dst_path, .{}) catch continue;
+        defer dst_file.close();
+        dst_file.writeAll(content) catch {};
+    }
+
     // ── Zig Module Discovery ─────────────────────────────────
     // Discover .zig files in src/, parse them, generate .orh into .orh-cache/zig_modules/
-    const zig_mod_names = try zig_module.discoverAndConvert(allocator, cli.source_dir);
+    const zig_mod_names = try zig_module.discoverAndConvert(allocator, cli.source_dir, null);
     defer {
         for (zig_mod_names) |name| allocator.free(name);
         allocator.free(zig_mod_names);
@@ -97,6 +123,14 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 mod_ptr.is_zig_module = true;
                 mod_ptr.zig_source_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ cli.source_dir, name });
             }
+        }
+    }
+
+    // Mark stdlib zig modules (auto-generated from .zig files in .orh-cache/std/)
+    for (std_zig_names) |name| {
+        if (mod_resolver.modules.getPtr(name)) |mod_ptr| {
+            mod_ptr.is_zig_module = true;
+            mod_ptr.zig_source_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ std_dir, name });
         }
     }
 
@@ -502,27 +536,35 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 }
             }
 
-            // Find which of this module's imports are lib targets — deduplicate to
-            // prevent multiple .orh files in the same module from adding the same
-            // lib import multiple times (which would emit duplicate addImport calls).
+            // Find which of this module's imports are lib targets and collect
+            // shared modules transitively. Deduplicate to prevent duplicate addImport calls.
             var lib_imports = std.ArrayListUnmanaged([]const u8){};
             defer lib_imports.deinit(allocator);
             var mod_imports = std.ArrayListUnmanaged([]const u8){};
             defer mod_imports.deinit(allocator);
             var seen_imports = std.StringHashMapUnmanaged(void){};
             defer seen_imports.deinit(allocator);
-            for (mod.imports) |imp_name| {
+            // Transitive closure: follow imports of imports
+            var mt_work_queue = std.ArrayListUnmanaged([]const u8){};
+            defer mt_work_queue.deinit(allocator);
+            for (mod.imports) |imp_name| try mt_work_queue.append(allocator, imp_name);
+            while (mt_work_queue.pop()) |imp_name| {
                 if (seen_imports.contains(imp_name)) continue;
                 try seen_imports.put(allocator, imp_name, {});
                 if (module_builds.get(imp_name)) |bt| {
                     if (bt == .static or bt == .dynamic) {
                         try lib_imports.append(allocator, imp_name);
+                        continue;
                     }
-                } else {
-                    // Non-lib, non-root module — needs named module registration
-                    const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
-                    if (!dep_mod.is_root) {
-                        try mod_imports.append(allocator, imp_name);
+                }
+                // Non-lib, non-root module — needs named module registration
+                const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
+                if (dep_mod.is_root) continue;
+                try mod_imports.append(allocator, imp_name);
+                // Enqueue transitive imports
+                for (dep_mod.imports) |sub_imp| {
+                    if (!seen_imports.contains(sub_imp)) {
+                        try mt_work_queue.append(allocator, sub_imp);
                     }
                 }
             }
@@ -838,16 +880,33 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 }
             }
 
-            // Collect shared (non-root, non-lib) modules imported by this root
+            // Collect shared (non-root, non-lib) modules transitively imported by this root.
+            // Transitive closure: follow imports of imports to capture all needed modules.
             var shared_mods = std.ArrayListUnmanaged([]const u8){};
             defer shared_mods.deinit(allocator);
-            for (mod.imports) |imp_name| {
-                const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
-                if (dep_mod.is_root) continue;
-                if (module_builds.get(imp_name)) |bt| {
-                    if (bt == .static or bt == .dynamic) continue;
+            {
+                var shared_seen = std.StringHashMapUnmanaged(void){};
+                defer shared_seen.deinit(allocator);
+                var work_queue = std.ArrayListUnmanaged([]const u8){};
+                defer work_queue.deinit(allocator);
+                // Seed with root's direct imports
+                for (mod.imports) |imp_name| try work_queue.append(allocator, imp_name);
+                while (work_queue.pop()) |imp_name| {
+                    if (shared_seen.contains(imp_name)) continue;
+                    try shared_seen.put(allocator, imp_name, {});
+                    const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
+                    if (dep_mod.is_root) continue;
+                    if (module_builds.get(imp_name)) |bt| {
+                        if (bt == .static or bt == .dynamic) continue;
+                    }
+                    try shared_mods.append(allocator, imp_name);
+                    // Enqueue the dependency's imports for transitive closure
+                    for (dep_mod.imports) |sub_imp| {
+                        if (!shared_seen.contains(sub_imp)) {
+                            try work_queue.append(allocator, sub_imp);
+                        }
+                    }
                 }
-                try shared_mods.append(allocator, imp_name);
             }
 
             // Collect zig-backed modules for named module registration

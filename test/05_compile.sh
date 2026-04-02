@@ -73,11 +73,11 @@ else fail "generates buildproj.zig"; fi
 if [ -f .orh-cache/generated/example.zig ]; then pass "generates example.zig"
 else fail "generates example.zig"; fi
 
-if grep -q "pub fn print" .orh-cache/generated/console_bridge.zig && \
-   grep -q "console_bridge\")" .orh-cache/generated/console.zig; then
-    pass "sidecar preserved"
+if grep -q "pub fn print" .orh-cache/generated/console_zig.zig && \
+   grep -q "console_zig\")" .orh-cache/generated/console.zig; then
+    pass "zig module wired"
 else
-    fail "sidecar preserved"
+    fail "zig module wired"
 fi
 
 BINOUT=$(./bin/buildproj 2>&1)

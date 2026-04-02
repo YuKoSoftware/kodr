@@ -175,17 +175,27 @@ pub fn buildZigContentMulti(
         try zig_mod_set.put(allocator, zig_mod_name, {});
     }
 
-    // Zig module creation — register zig-backed .zig files as named Zig modules
-    // so that @import("module_zig") resolves through the build graph.
-    for (extra_zig_modules) |zig_mod_name| {
-        try _build.appendFmt(&buf, allocator,
-            \\    const zig_{s} = b.createModule(.{{
-            \\        .root_source_file = b.path("{s}_zig.zig"),
-            \\        .target = target,
-            \\        .optimize = optimize,
-            \\    }});
-            \\
-        , .{ zig_mod_name, zig_mod_name });
+    // Zig module creation — only emit zig-backed module declarations for modules
+    // that are actually referenced by at least one target's mod_imports.
+    // This avoids unused local constant errors in the generated build.zig.
+    {
+        var needed_zig = std.StringHashMapUnmanaged(void){};
+        defer needed_zig.deinit(allocator);
+        for (targets) |t| {
+            for (t.mod_imports) |mod_name| {
+                if (zig_mod_set.contains(mod_name) and !needed_zig.contains(mod_name)) {
+                    try needed_zig.put(allocator, mod_name, {});
+                    try _build.appendFmt(&buf, allocator,
+                        \\    const zig_{s} = b.createModule(.{{
+                        \\        .root_source_file = b.path("{s}_zig.zig"),
+                        \\        .target = target,
+                        \\        .optimize = optimize,
+                        \\    }});
+                        \\
+                    , .{ mod_name, mod_name });
+                }
+            }
+        }
     }
 
     // Wire bridge-to-bridge imports: if target A has bridges and imports target B

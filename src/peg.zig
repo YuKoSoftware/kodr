@@ -411,58 +411,13 @@ test "peg - validate test/fixtures/tester_main.orh" {
     try std.testing.expect(valid);
 }
 
-// Stdlib bridge files (must all pass)
-test "peg - validate std/console.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/console.orh"), alloc);
-    try std.testing.expect(valid);
-}
+// Stdlib .orh files are now auto-generated from .zig at build time —
+// validated at runtime by the pipeline, not at compile time by embed tests.
 
-test "peg - validate std/collections.orh" {
+// Pure Orhon stdlib files (no .zig backing)
+test "peg - validate std/linear.orh" {
     const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/collections.orh"), alloc);
-    try std.testing.expect(valid);
-}
-
-test "peg - validate std/math.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/math.orh"), alloc);
-    try std.testing.expect(valid);
-}
-
-test "peg - validate std/str.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/str.orh"), alloc);
-    try std.testing.expect(valid);
-}
-
-test "peg - validate std/fs.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/fs.orh"), alloc);
-    try std.testing.expect(valid);
-}
-
-test "peg - validate std/json.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/json.orh"), alloc);
-    try std.testing.expect(valid);
-}
-
-test "peg - validate std/system.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/system.orh"), alloc);
-    try std.testing.expect(valid);
-}
-
-test "peg - validate std/time.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/time.orh"), alloc);
-    try std.testing.expect(valid);
-}
-
-test "peg - validate std/async.orh" {
-    const alloc = std.testing.allocator;
-    const valid = try validateSource(@embedFile("std/async.orh"), alloc);
+    const valid = try validateSource(@embedFile("std/linear.orh"), alloc);
     try std.testing.expect(valid);
 }
 

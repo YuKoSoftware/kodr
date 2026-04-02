@@ -1,5 +1,5 @@
 // console.zig — terminal I/O implementation for Orhon's std::console
-// Hand-written implementation. Paired with console.orh.
+// Hand-written implementation. .orh declarations auto-generated from this file.
 // Do not edit the generated console.zig in .orh-cache/generated/ —
 // edit this source file — embedded into the compiler at build time.
 
@@ -29,10 +29,6 @@ pub fn debugPrint(msg: []const u8) void {
     stderr.writeAll(msg) catch {}; // fire-and-forget: I/O in void fn
 }
 
-// GetResult mirrors ErrorUnion(String) as the codegen expects: .ok and .err tags
-const GetError = struct { message: []const u8 };
-const GetResult = union(enum) { ok: []const u8, err: GetError };
-
 var get_buf: [4096]u8 = undefined;
 
 pub fn supportsColor() bool {
@@ -53,14 +49,20 @@ pub const MAGENTA = "\x1b[35m";
 pub const CYAN = "\x1b[36m";
 pub const WHITE = "\x1b[37m";
 
-pub fn get() GetResult {
+pub fn printColored(color: []const u8, msg: []const u8) void {
+    print(color);
+    print(msg);
+    print(RESET);
+}
+
+pub fn printColoredLn(color: []const u8, msg: []const u8) void {
+    print(color);
+    print(msg);
+    println(RESET);
+}
+
+pub fn get() anyerror![]const u8 {
     const stdin = std.fs.File{ .handle = std.posix.STDIN_FILENO };
-    const line = stdin.reader().readUntilDelimiterOrEof(&get_buf, '\n') catch {
-        return .{ .err = .{ .message = "stdin read error" } };
-    };
-    if (line) |l| {
-        return .{ .ok = l };
-    } else {
-        return .{ .err = .{ .message = "end of input" } };
-    }
+    const line = try stdin.reader().readUntilDelimiterOrEof(&get_buf, '\n');
+    return line orelse error.EndOfInput;
 }
