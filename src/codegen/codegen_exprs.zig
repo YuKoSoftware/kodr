@@ -509,19 +509,15 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             try cg.emit("}");
         },
         .type_expr => {
-            // Type nodes are structural — emit via typeToZig, except struct_type which needs field-by-field emission
             if (m.ast.* == .struct_type) {
+                // Anonymous struct — emit full body (fields, methods, constants) via MIR children
                 try cg.emit("struct {\n");
                 cg.indent += 1;
-                for (m.ast.struct_type) |f| {
-                    if (f.* == .field_decl) {
-                        try cg.emitIndent();
-                        try cg.emitFmt("{s}: {s},\n", .{
-                            f.field_decl.name,
-                            try cg.typeToZig(f.field_decl.type_annotation),
-                        });
-                    }
-                }
+                // Set generic_struct_name so Self → @This() inside methods
+                const prev_gsn = cg.generic_struct_name;
+                cg.generic_struct_name = "_anon";
+                defer cg.generic_struct_name = prev_gsn;
+                try cg.emitStructBody(m.children);
                 cg.indent -= 1;
                 try cg.emitIndent();
                 try cg.emit("}");
