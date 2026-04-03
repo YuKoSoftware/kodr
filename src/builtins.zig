@@ -152,7 +152,7 @@ pub fn isBuiltinValue(name: []const u8) bool {
 /// Map Orhon primitive type name to Zig equivalent
 pub fn primitiveToZig(orhon_type: []const u8) []const u8 {
     const mappings = [_][2][]const u8{
-        .{ "String", "[]const u8" },
+        .{ "str", "[]const u8" },
         .{ "bool", "bool" },
         .{ "i8", "i8" },
         .{ "i16", "i16" },
@@ -219,7 +219,7 @@ test "CompilerFunc.fromName" {
 }
 
 test "primitive mapping" {
-    try std.testing.expectEqualStrings("[]const u8", primitiveToZig("String"));
+    try std.testing.expectEqualStrings("[]const u8", primitiveToZig("str"));
     try std.testing.expectEqualStrings("i32", primitiveToZig("i32"));
     try std.testing.expectEqualStrings("f16", primitiveToZig("bf16"));
 }

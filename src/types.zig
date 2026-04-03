@@ -56,7 +56,7 @@ pub const Primitive = enum {
             .{ "f64", .f64 },
             .{ "f128", .f128 },
             .{ "bool", .bool },
-            .{ "String", .string },
+            .{ "str", .string },
             .{ "void", .void },
             .{ "type", .@"type" },
             .{ "numeric_literal", .numeric_literal },
@@ -86,7 +86,7 @@ pub const Primitive = enum {
             .f64 => "f64",
             .f128 => "f128",
             .bool => "bool",
-            .string => "String",
+            .string => "str",
             .void => "void",
             .@"type" => "type",
             .numeric_literal => "numeric_literal",
@@ -472,7 +472,7 @@ test "classifyNamed" {
 
 test "isPrimitiveName" {
     try std.testing.expect(isPrimitiveName("i32"));
-    try std.testing.expect(isPrimitiveName("String"));
+    try std.testing.expect(isPrimitiveName("str"));
     try std.testing.expect(!isPrimitiveName("Player"));
     try std.testing.expect(!isPrimitiveName("List"));
 }

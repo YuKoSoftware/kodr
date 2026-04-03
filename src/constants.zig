@@ -5,7 +5,7 @@
 pub const Type = struct {
     pub const ERROR = "Error";
     pub const NULL = "null";
-    pub const STRING = "String";
+    pub const STRING = "str";
     pub const VOID = "void";
     pub const ANY = "any";
     pub const TYPE = "type";

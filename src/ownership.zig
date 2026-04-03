@@ -338,7 +338,7 @@ test "ownership - string is copy type" {
     defer scope.deinit();
 
     // Define 'name' as string (primitive — copies, never moves)
-    try scope.define("name", types.isPrimitiveName("String"));
+    try scope.define("name", types.isPrimitiveName("str"));
 
     var id1 = parser.Node{ .identifier = "name" };
     try checker.checkExpr(&id1, &scope, false);

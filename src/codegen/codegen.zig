@@ -791,7 +791,7 @@ test "codegen - type to zig" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    var str_type = parser.Node{ .type_named = "String" };
+    var str_type = parser.Node{ .type_named = "str" };
     try std.testing.expectEqualStrings("[]const u8", try gen.typeToZig(&str_type));
 
     var i32_type = parser.Node{ .type_named = "i32" };
