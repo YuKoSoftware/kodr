@@ -7,14 +7,14 @@ module fixture
 // duplicate field name in struct
 
 struct BadStruct {
-    pub name: String
+    pub name: str
     pub name: i32
 }
 
 // missing required field in constructor
 
 struct Config {
-    pub host: String
+    pub host: str
     pub port: i32
 }
 

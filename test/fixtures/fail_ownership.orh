@@ -7,7 +7,7 @@ module fixture
 import std::console
 
 struct Data {
-    pub name: String
+    pub name: str
 }
 
 // use after move

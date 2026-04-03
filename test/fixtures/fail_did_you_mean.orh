@@ -6,11 +6,11 @@ module fixture
 
 import std::console
 
-func greet(name: String) void {
+func greet(name: str) void {
     console.println(name)
 }
 
 func main() void {
-    const message: String = "hello"
+    const message: str = "hello"
     console.println(mesage)
 }

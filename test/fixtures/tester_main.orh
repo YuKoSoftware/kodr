@@ -5,6 +5,7 @@ module comptest
 #build   = exe
 
 import std::console
+import std::string
 import tester
 
 func main() void {
@@ -113,15 +114,15 @@ func main() void {
         console.println("FAIL defer")
     }
 
-    const greet_result: String = tester.greeting()
-    if(greet_result.contains("hello world")) {
+    const greet_result: str = tester.greeting()
+    if(string.contains(greet_result, "hello world")) {
         console.println("PASS greeting")
     } else {
         console.println("FAIL greeting")
     }
 
-    const concat_result: String = tester.concat_test()
-    if(concat_result.contains("foobar")) {
+    const concat_result: str = tester.concat_test()
+    if(string.contains(concat_result, "foobar")) {
         console.println("PASS concat")
     } else {
         console.println("FAIL concat")

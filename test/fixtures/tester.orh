@@ -8,6 +8,7 @@ module tester
 
 import std::console
 import std::allocator
+import std::string
 use std::collections
 use std::async
 
@@ -25,11 +26,11 @@ pub struct Vec2 {
 
 struct Internal {
     value: i32
-    name: String
+    name: str
 }
 
 pub struct WithDefaults {
-    pub name: String
+    pub name: str
     pub value: i32 = 42
     pub flag: bool = true
 }
@@ -116,9 +117,9 @@ pub func add_default(a: i32, b: i32 = 10) i32 {
     return a + b
 }
 
-// function with String
+// function with str
 
-pub func greeting() String {
+pub func greeting() str {
     return "hello" ++ " " ++ "world"
 }
 
@@ -352,9 +353,9 @@ pub func first_over(limit: i32) i32 {
 
 // ─── Concatenation ───────────────────────────────────────────
 
-pub func concat_test() String {
-    const a: String = "foo"
-    const b: String = "bar"
+pub func concat_test() str {
+    const a: str = "foo"
+    const b: str = "bar"
     return a ++ b
 }
 
@@ -781,7 +782,7 @@ test "match_range" {
 
 // ─── Match — strings ─────────────────────────────────────────
 
-pub func match_string(s: String) i32 {
+pub func match_string(s: str) i32 {
     match(s) {
         "hello" => {
             return 1
@@ -866,7 +867,7 @@ pub func test_list_len() i32 {
 }
 
 pub func test_map() i32 {
-    var scores: Map(String, i32) = Map(String, i32).new()
+    var scores: Map(str, i32) = Map(str, i32).new()
     defer { scores.free() }
     scores.put("alice", 42)
     scores.put("bob", 99)
@@ -1000,7 +1001,7 @@ pub func test_alloc_external() i32 {
 // ─── Arbitrary union return ──────────────────────────────────
 
 pub func test_arb_union_return() i32 {
-    const val: (i32 | String) = 42
+    const val: (i32 | str) = 42
     if(val is i32) {
         return 1
     }
@@ -1010,11 +1011,11 @@ pub func test_arb_union_return() i32 {
 // Match on arbitrary union — type arms dispatch to ._tag
 
 pub func test_arb_union_match() i32 {
-    const val: (i32 | String) = 42
+    const val: (i32 | str) = 42
     var result: i32 = 0
     match(val) {
         i32    => { result = 1 }
-        String => { result = 2 }
+        str => { result = 2 }
     }
     return result
 }
@@ -1022,16 +1023,16 @@ pub func test_arb_union_match() i32 {
 // Field access — extract inner value via .type syntax
 
 pub func test_arb_union_field() i32 {
-    const val: (i32 | String) = 99
+    const val: (i32 | str) = 99
     return val.i32
 }
 
 // Variable reassignment — auto-wraps new value
 
 pub func test_arb_union_assign() i32 {
-    var val: (i32 | String) = 10
+    var val: (i32 | str) = 10
     val = "changed"
-    if(val is String) {
+    if(val is str) {
         return 1
     }
     return 0
@@ -1040,8 +1041,8 @@ pub func test_arb_union_assign() i32 {
 // .value unwrap with narrowing — positive is check with early exit
 
 pub func test_arb_value_positive() i32 {
-    const val: (i32 | String) = 42
-    if(val is String) {
+    const val: (i32 | str) = 42
+    if(val is str) {
         return 0
     }
     return val.value
@@ -1050,7 +1051,7 @@ pub func test_arb_value_positive() i32 {
 // .value unwrap with narrowing — negative is check with early exit
 
 pub func test_arb_value_negative() i32 {
-    const val: (i32 | String) = 42
+    const val: (i32 | str) = 42
     if(val is not i32) {
         return 0
     }
@@ -1060,7 +1061,7 @@ pub func test_arb_value_negative() i32 {
 // .value unwrap inside is check then-block
 
 pub func test_arb_value_inside() i32 {
-    const val: (i32 | String) = 42
+    const val: (i32 | str) = 42
     if(val is i32) {
         return val.value
     }
@@ -1070,10 +1071,10 @@ pub func test_arb_value_inside() i32 {
 // .value unwrap inside match arm
 
 pub func test_arb_value_match() i32 {
-    const val: (i32 | String) = 42
+    const val: (i32 | str) = 42
     match(val) {
         i32    => { return val.value }
-        String => { return 0 }
+        str => { return 0 }
     }
     return 0
 }
@@ -1097,12 +1098,12 @@ pub func test_arb_union_three() i32 {
 
 // Cross-function arb union — function returns same union type
 
-func make_union_val() (i32 | String) {
+func make_union_val() (i32 | str) {
     return 42
 }
 
 pub func test_arb_union_cross() i32 {
-    const result: (i32 | String) = make_union_val()
+    const result: (i32 | str) = make_union_val()
     if(result is i32) {
         return result.value
     }
@@ -1121,55 +1122,55 @@ pub func test_arb_union_inferred() i32 {
 
 // ─── Allocating string methods ──────────────────────────────
 
-// toUpper — returns new uppercase String
+// toUpper — returns new uppercase str
 
 pub func test_str_upper() i32 {
-    const s: String = "hello"
-    const upper: String = s.toUpper()
-    if(upper.contains("HELLO")) { return 1 }
+    const s: str = "hello"
+    const upper: str = string.toUpper(s)
+    if(string.contains(upper, "HELLO")) { return 1 }
     return 0
 }
 
-// toLower — returns new lowercase String
+// toLower — returns new lowercase str
 
 pub func test_str_lower() i32 {
-    const s: String = "WORLD"
-    const lower: String = s.toLower()
-    if(lower.contains("world")) { return 1 }
+    const s: str = "WORLD"
+    const lower: str = string.toLower(s)
+    if(string.contains(lower, "world")) { return 1 }
     return 0
 }
 
-// replace — returns new String with substitution
+// replace — returns new str with substitution
 
 pub func test_str_replace() i32 {
-    const s: String = "hello world"
-    const r: String = s.replace("world", "orhon")
-    if(r.contains("orhon")) { return 1 }
+    const s: str = "hello world"
+    const r: str = string.replace(s, "world", "orhon")
+    if(string.contains(r, "orhon")) { return 1 }
     return 0
 }
 
 // repeat — returns string repeated n times
 
 pub func test_str_repeat() i32 {
-    const s: String = "ha"
-    const r: String = s.repeat(3)
-    if(r.contains("hahaha")) { return 1 }
+    const s: str = "ha"
+    const r: str = string.repeat(s, 3)
+    if(string.contains(r, "hahaha")) { return 1 }
     return 0
 }
 
 // parseInt — parse string to integer
 
 pub func test_str_parse_int() i32 {
-    const s: String = "42"
-    const n: i32 = s.parseInt()
+    const s: str = "42"
+    const n: i32 = string.parseInt(s)
     return n
 }
 
 // parseFloat — parse string to float
 
 pub func test_str_parse_float() i32 {
-    const s: String = "3.14"
-    const f: f64 = s.parseFloat()
+    const s: str = "3.14"
+    const f: f64 = string.parseFloat(s)
     if(f > 3.0) { return 1 }
     return 0
 }
@@ -1203,15 +1204,15 @@ test "str parseFloat" {
 
 pub func test_tostring_int() i32 {
     const x: i32 = 42
-    const s: String = x.toString()
-    if(s.contains("42")) { return 1 }
+    const s: str = string.toString(x)
+    if(string.contains(s, "42")) { return 1 }
     return 0
 }
 
 pub func test_tostring_bool() i32 {
     const b: bool = true
-    const s: String = b.toString()
-    if(s.contains("true")) { return 1 }
+    const s: str = string.toString(b)
+    if(string.contains(s, "true")) { return 1 }
     return 0
 }
 
@@ -1226,16 +1227,16 @@ test "toString bool" {
 // ─── String Interpolation ───────────────────────────────────
 
 pub func test_interpolation() i32 {
-    const name: String = "world"
-    const msg: String = "hello @{name}!"
-    if(msg.contains("hello world!")) { return 1 }
+    const name: str = "world"
+    const msg: str = "hello @{name}!"
+    if(string.contains(msg, "hello world!")) { return 1 }
     return 0
 }
 
 pub func test_interpolation_int() i32 {
     const x: i32 = 42
-    const msg: String = "value is @{x}"
-    if(msg.contains("value is 42")) { return 1 }
+    const msg: str = "value is @{x}"
+    if(string.contains(msg, "value is 42")) { return 1 }
     return 0
 }
 
@@ -1251,27 +1252,27 @@ test "interpolation int" {
 // ─── String Comparison ──────────────────────────────────────
 
 pub func test_string_eq() i32 {
-    const a: String = "hello"
-    const b: String = "hello"
-    if(a == b) { return 1 }
+    const a: str = "hello"
+    const b: str = "hello"
+    if(string.equals(a, b)) { return 1 }
     return 0
 }
 
 pub func test_string_ne() i32 {
-    const a: String = "hello"
-    const b: String = "world"
+    const a: str = "hello"
+    const b: str = "world"
     if(a != b) { return 1 }
     return 0
 }
 
 pub func test_string_eq_literal() i32 {
-    const a: String = "hello"
-    if(a == "hello") { return 1 }
+    const a: str = "hello"
+    if(string.equals(a, "hello")) { return 1 }
     return 0
 }
 
-pub func test_string_eq_param(a: String, b: String) i32 {
-    if(a == b) { return 1 }
+pub func test_string_eq_param(a: str, b: str) i32 {
+    if(string.equals(a, b)) { return 1 }
     return 0
 }
 
@@ -1305,7 +1306,7 @@ bitfield(u32) Perms {
 // Map.get returns NullUnion(V) — test value extraction
 
 pub func test_map_get() i32 {
-    var m: Map(String, i32) = Map(String, i32).new()
+    var m: Map(str, i32) = Map(str, i32).new()
     defer { m.free() }
     m.put("x", 77)
     const result: NullUnion(i32) = m.get("x")

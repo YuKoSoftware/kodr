@@ -79,7 +79,7 @@ func index_bool() void {
 
 // match arm with wrong type name
 
-func get_val(flag: bool) (i32 | String) {
+func get_val(flag: bool) (i32 | str) {
     if(flag) { return 42 }
     return "hello"
 }
