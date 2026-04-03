@@ -350,7 +350,6 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             const field = m.name orelse "";
             const obj_mir = m.children[0];
             const obj_tc = obj_mir.type_class;
-            // Ptr/RawPtr dereference uses @deref() — no .value field rewriting
             if (std.mem.eql(u8, field, K.Type.ERROR)) {
                 // result.Error → @errorName(captured_err) (native Zig error)
                 if (obj_mir.kind == .identifier) {
@@ -358,7 +357,6 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     if (cg.error_capture_var.get(obj_name)) |cap| {
                         try cg.emitFmt("@errorName({s})", .{cap});
                     } else {
-                        // Use if/else pattern — `catch |_e| expr` returns T, not []const u8
                         try cg.emit("(if (");
                         try cg.generateExprMir(obj_mir);
                         try cg.emit(") |_| unreachable else |_e| @errorName(_e))");
@@ -368,63 +366,19 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     try cg.generateExprMir(obj_mir);
                     try cg.emit(") |_| unreachable else |_e| @errorName(_e))");
                 }
-            } else if (std.mem.eql(u8, field, "value") and
-                (obj_tc == .arbitrary_union or obj_tc == .null_union or obj_tc == .error_union))
-            {
-                if (obj_tc == .arbitrary_union) {
-                    try cg.generateExprMir(obj_mir);
-                    if (obj_mir.kind == .identifier) {
-                        if (obj_mir.narrowed_to) |narrowed| {
-                            try cg.emitFmt("._{s}", .{narrowed});
-                        } else {
-                            const obj_name = obj_mir.name orelse "";
-                            const members_rt = if (obj_mir.resolved_type == .union_type) obj_mir.resolved_type.union_type else
-                                if (cg.getVarUnionMembers(obj_name)) |m2| m2 else null;
-                            if (members_rt) |members| {
-                                for (members) |mem| {
-                                    const n = mem.name();
-                                    if (!std.mem.eql(u8, n, K.Type.ERROR) and !std.mem.eql(u8, n, K.Type.NULL)) {
-                                        try cg.emitFmt("._{s}", .{n});
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (obj_tc == .null_union) {
-                    // (null | T) → ?T: result.value → result.?
-                    try cg.generateExprMir(obj_mir);
-                    try cg.emit(".?");
-                } else if (obj_tc == .error_union) {
-                    // (Error | T) → anyerror!T: result.value → result catch unreachable
-                    try cg.generateExprMir(obj_mir);
-                    try cg.emit(" catch unreachable");
-                }
-            } else if (obj_tc == .arbitrary_union and codegen.isResultValueField(field, cg.decls)) {
-                try cg.generateExprMir(obj_mir);
-                try cg.emitFmt("._{s}", .{field});
             } else if (codegen.isResultValueField(field, cg.decls)) {
-                if (obj_tc == .null_union) {
-                    // (null | T) → ?T: result.value → result.?
-                    try cg.generateExprMir(obj_mir);
-                    try cg.emit(".?");
-                } else {
-                    // (Error | T) → anyerror!T: result.value → result catch unreachable
+                if (obj_tc == .error_union) {
                     try cg.generateExprMir(obj_mir);
                     try cg.emit(" catch unreachable");
-                }
-            } else if (std.mem.eql(u8, field, "value") and obj_mir.kind == .identifier) {
-                // Fallback `.value` unwrap using narrowing info
-                const obj_name = obj_mir.name orelse "";
-                if (cg.error_narrowed.contains(obj_name)) {
-                    try cg.generateExprMir(obj_mir);
-                    try cg.emit(" catch unreachable");
-                } else if (cg.null_narrowed.contains(obj_name)) {
+                } else if (obj_tc == .null_union) {
                     try cg.generateExprMir(obj_mir);
                     try cg.emit(".?");
+                } else if (obj_tc == .arbitrary_union) {
+                    try cg.generateExprMir(obj_mir);
+                    try cg.emitFmt("._{s}", .{field});
                 } else {
                     try cg.generateExprMir(obj_mir);
-                    try cg.emit(".value");
+                    try cg.emitFmt(".{s}", .{field});
                 }
             } else {
                 try cg.generateExprMir(obj_mir);
