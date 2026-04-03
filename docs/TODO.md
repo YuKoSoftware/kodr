@@ -6,6 +6,25 @@ Items ordered by importance and how much they unblock future work.
 
 ## Bugs
 
+### `void` not valid as generic argument `medium`
+
+`Thread(void)`, `List(void)`, any `Type(void)` fails to parse. The PEG grammar
+doesn't treat `void` as an expression in argument position. Affects any generic
+type instantiated with `void`.
+
+### var-not-reassigned false positive for method calls `medium`
+
+`var t = Thread.spawn(...)` triggers "use const" warning because the compiler sees
+no reassignment. But calling `t.join()` — a method taking `*Self` — requires mutable
+access. The compiler doesn't account for method calls that need `mut&` self when
+deciding whether `var` should be `const`. Affects any Zig-backed struct with `*Self`
+methods called from Orhon.
+
+### Empty-body void functions dropped by codegen `easy`
+
+`func noop() void {}` produces no output in the generated Zig. The codegen skips
+functions with empty blocks entirely. Workaround: add `return` to the body.
+
 ---
 
 ### Review metadata directives (`#name`, `#version`, `#build`, `#dep`) `medium`
@@ -35,18 +54,12 @@ Ptr/RawPtr/VolatilePtr moved from compiler builtins to `std::ptr`. @deref remove
 
 ### std::thread limitations `medium`
 
-Known issues from Zig comptime friction with Orhon codegen:
+Known Zig comptime friction with Orhon codegen:
 - **No top-level `spawn()` convenience** — Zig-to-Orhon converter can't handle `anytype` params.
   Users must write `thread.Thread(i32).spawn(func, arg)` instead of `thread.spawn(func, arg)`.
 - **spawn/spawn2 arity split** — `spawn(func, arg)` for 1-arg, `spawn2(func, a, b)` for 2-arg.
   Zig's `@call` needs a tuple but Orhon passes individual values. Needs spawn3+ for more args.
-- **`void` not valid as generic argument** — `Thread(void)` doesn't parse. PEG grammar doesn't
-  treat `void` as an expression in argument position.
-- **var-not-reassigned false positive** — `var t = Thread.spawn(...)` triggers "use const" warning
-  because the compiler doesn't see reassignment, but `join()` needs mutable access. Workaround:
-  `join()` takes `*const Self` and copies the handle.
-- **Empty-body void functions not generated** — codegen drops functions with empty blocks,
-  so `func noop() void {}` doesn't appear in output. Needs a body like `return`.
+- Also affected by Bugs: `void` generic arg, var-not-reassigned false positive, empty-body functions.
 
 ### Bitfield as pure Orhon std module `hard` — DEFERRED
 
