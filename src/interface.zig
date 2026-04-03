@@ -210,20 +210,6 @@ fn emitInterfaceDecl(node: *parser.Node, buf: *std.ArrayListUnmanaged(u8), alloc
             }
             try buf.appendSlice(alloc, "}\n\n");
         },
-        .bitfield_decl => |b| {
-            if (!b.is_pub) return;
-            try buf.appendSlice(alloc, "pub bitfield ");
-            try buf.appendSlice(alloc, b.name);
-            try buf.append(alloc, '(');
-            try formatType(b.backing_type, buf, alloc);
-            try buf.appendSlice(alloc, ") {\n");
-            for (b.members) |flag| {
-                try buf.appendSlice(alloc, "    ");
-                try buf.appendSlice(alloc, flag);
-                try buf.append(alloc, '\n');
-            }
-            try buf.appendSlice(alloc, "}\n\n");
-        },
         .var_decl => |v| {
             if (!v.is_pub) return;
             const kw = if (v.mutability == .constant) "const " else "var ";

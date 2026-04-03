@@ -259,23 +259,4 @@ test "codegen - enum with match" {
     try std.testing.expect(std.mem.indexOf(u8, out, "switch") != null);
 }
 
-test "codegen - bitfield declaration" {
-    const alloc = std.testing.allocator;
-    var reporter = errors.Reporter.init(alloc, .debug);
-    defer reporter.deinit();
-    const out = try codegenSource(alloc,
-        \\module testmod
-        \\bitfield(u8) Perms {
-        \\    Read
-        \\    Write
-        \\    Execute
-        \\}
-        \\
-    , &reporter);
-    defer alloc.free(out);
-    try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expect(std.mem.indexOf(u8, out, "Read") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "Write") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "Execute") != null);
-}
 

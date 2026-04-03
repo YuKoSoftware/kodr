@@ -621,18 +621,6 @@ func main() void {
         console.println("FAIL map_get")
     }
 
-    if(tester.test_bitfield_constructor() == 1) {
-        console.println("PASS bitfield_constructor")
-    } else {
-        console.println("FAIL bitfield_constructor")
-    }
-
-    if(tester.test_bitfield_methods() == 1) {
-        console.println("PASS bitfield_methods")
-    } else {
-        console.println("FAIL bitfield_methods")
-    }
-
     // Test: const auto-borrow (CBOR-01) — const struct auto-borrows as *const T
     if(tester.test_const_auto_borrow() == 7.0) {
         console.println("PASS const_auto_borrow")

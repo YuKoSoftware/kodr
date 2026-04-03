@@ -70,10 +70,8 @@ pub const MirNode = struct {
     type_params: ?[]*parser.Node = null,
     /// Return type AST node (for func_decl).
     return_type: ?*parser.Node = null,
-    /// Backing type AST node (for enum/bitfield).
+    /// Backing type AST node (for enum).
     backing_type: ?*parser.Node = null,
-    /// Bitfield member names.
-    bit_members: ?[][]const u8 = null,
     /// Named call argument names.
     arg_names: ?[][]const u8 = null,
     /// Named tuple flag.
@@ -192,7 +190,6 @@ pub const MirKind = enum {
     func,
     struct_def,
     enum_def,
-    bitfield_def,
     var_decl,
     test_def,
     destruct,

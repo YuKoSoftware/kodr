@@ -360,7 +360,6 @@ pub fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8
         .{ "match", "(keyword) pattern matching" },
         .{ "struct", "(keyword) composite data type" },
         .{ "enum", "(keyword) enumerated type" },
-        .{ "bitfield", "(keyword) bit-level flag type" },
         .{ "import", "(keyword) import a module (namespaced)" },
         .{ "use", "(keyword) use a module (flat, dumps symbols into scope)" },
         .{ "module", "(keyword) module declaration" },

@@ -116,7 +116,6 @@ fn writeModuleDoc(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8)
             .func_decl => |f| if (f.is_pub) try functions.append(allocator, node),
             .struct_decl => |s| if (s.is_pub) try types_list.append(allocator, node),
             .enum_decl => |e| if (e.is_pub) try types_list.append(allocator, node),
-            .bitfield_decl => |b| if (b.is_pub) try types_list.append(allocator, node),
             .var_decl => |v| if (v.is_pub and v.mutability == .constant) try constants.append(allocator, node),
             else => {},
         }
@@ -167,7 +166,6 @@ fn writeModuleDoc(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8)
             switch (node.*) {
                 .struct_decl => |s| try writeStructDoc(allocator, buf, s),
                 .enum_decl => |e| try writeEnumDoc(allocator, buf, e),
-                .bitfield_decl => |b| try writeBitfieldDoc(allocator, buf, b),
                 else => {},
             }
         }
@@ -351,29 +349,6 @@ fn writeEnumDoc(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), 
         }
     }
     if (has_methods) try buf.append(allocator, '\n');
-
-    try buf.appendSlice(allocator, "---\n\n");
-}
-
-fn writeBitfieldDoc(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), b: parser.BitfieldDecl) !void {
-    try buf.appendSlice(allocator, "### `bitfield ");
-    try buf.appendSlice(allocator, b.name);
-    try buf.appendSlice(allocator, "`\n\n");
-
-    if (b.doc) |doc| {
-        try buf.appendSlice(allocator, doc);
-        try buf.appendSlice(allocator, "\n\n");
-    }
-
-    if (b.members.len > 0) {
-        try buf.appendSlice(allocator, "**Flags:**\n\n");
-        for (b.members) |flag| {
-            try buf.appendSlice(allocator, "- `");
-            try buf.appendSlice(allocator, flag);
-            try buf.appendSlice(allocator, "`\n");
-        }
-        try buf.append(allocator, '\n');
-    }
 
     try buf.appendSlice(allocator, "---\n\n");
 }

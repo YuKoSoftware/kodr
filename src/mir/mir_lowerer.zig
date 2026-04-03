@@ -113,9 +113,6 @@ pub const MirLowerer = struct {
                     mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
                 }
             },
-            .bitfield_decl => {
-                mir_node_ptr.children = &.{};
-            },
             .block => |b| {
                 // Process block statements — hoist interpolation temps
                 mir_node_ptr.children = try self.lowerBlock(b.statements);
@@ -553,12 +550,6 @@ fn populateData(m: *MirNode, node: *parser.Node) void {
             m.is_pub = e.is_pub;
             m.backing_type = e.backing_type;
         },
-        .bitfield_decl => |b| {
-            m.name = b.name;
-            m.is_pub = b.is_pub;
-            m.backing_type = b.backing_type;
-            m.bit_members = b.members;
-        },
         .var_decl => |v| {
             m.name = v.name;
             m.is_pub = v.is_pub;
@@ -666,7 +657,6 @@ fn astToMirKind(node: *parser.Node) MirKind {
         .func_decl => .func,
         .struct_decl => .struct_def,
         .enum_decl => .enum_def,
-        .bitfield_decl => .bitfield_def,
         .field_decl => .field_def,
         .param => .param_def,
         .enum_variant => .enum_variant_def,

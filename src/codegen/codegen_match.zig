@@ -911,7 +911,6 @@ pub fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) boo
     if (decls) |d| {
         if (d.structs.contains(name)) return true;
         if (d.enums.contains(name)) return true;
-        if (d.bitfields.contains(name)) return true;
     }
     // Builtin types that can appear in unions
     if (builtins.isBuiltinType(name)) return true;

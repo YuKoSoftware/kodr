@@ -60,11 +60,6 @@ pub fn validateMainReserved(
                     try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), constants.Err.MAIN_RESERVED, .{});
                 }
             },
-            .bitfield_decl => |bf| {
-                if (std.mem.eql(u8, bf.name, "main")) {
-                    try reporter.reportFmt(module.resolveNodeLoc(locs_ptr, file_offsets, node), constants.Err.MAIN_RESERVED, .{});
-                }
-            },
             .func_decl => |f| {
                 if (std.mem.eql(u8, f.name, "main")) {
                     if (!is_exe) {

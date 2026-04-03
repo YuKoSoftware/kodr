@@ -27,7 +27,6 @@ pub const LITERAL_MAP = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "match", .kw_match },
     .{ "struct", .kw_struct },
     .{ "enum", .kw_enum },
-    .{ "bitfield", .kw_bitfield },
     .{ "defer", .kw_defer },
     .{ "thread", .kw_thread },
     .{ "null", .kw_null },

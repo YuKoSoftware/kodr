@@ -118,7 +118,6 @@ pub const PropagationChecker = struct {
                 try self.checkNode(t.body, &scope);
                 try self.checkScopeExit(&scope);
             },
-            .bitfield_decl => {},
             else => {},
         }
     }

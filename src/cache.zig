@@ -421,25 +421,6 @@ pub fn hashInterface(decls: *const declarations.DeclTable) u64 {
         }
     }.hash);
 
-    // Category 0x04: public bitfields
-    const bitfield_names = collectPublicNames(declarations.BitfieldSig, &decls.bitfields);
-    seed = hashCategory(seed, 0x04, bitfield_names.get(), decls.bitfields, struct {
-        fn hash(s: u64, sig: declarations.BitfieldSig) u64 {
-            var h = hashResolvedType(s, sig.backing_type);
-            var fnames: [256][]const u8 = undefined;
-            var fc: usize = 0;
-            for (sig.flags) |flag| {
-                if (fc < 256) {
-                    fnames[fc] = flag;
-                    fc += 1;
-                }
-            }
-            sortNames(fnames[0..fc]);
-            for (fnames[0..fc]) |flag| h = XxHash3.hash(h, flag);
-            return h;
-        }
-    }.hash);
-
     // Category 0x05: public variables/constants
     const var_names = collectPublicNames(declarations.VarSig, &decls.vars);
     seed = hashCategory(seed, 0x05, var_names.get(), decls.vars, struct {
@@ -770,7 +751,6 @@ fn freeTestTable(alloc: std.mem.Allocator, table: *declarations.DeclTable) void 
     table.funcs.deinit();
     table.structs.deinit();
     table.enums.deinit();
-    table.bitfields.deinit();
     table.vars.deinit();
     table.types.deinit();
     table.struct_methods.deinit(alloc);

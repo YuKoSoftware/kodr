@@ -2,7 +2,7 @@
 // Contains: buildProgram, buildModuleDecl, buildImport, buildMetadata,
 //           buildFuncDecl, buildParam, buildConstDecl, buildVarDecl,
 //           buildStructDecl, buildBlueprintDecl, buildEnumDecl, buildFieldDecl,
-//           buildEnumVariant, buildDestructDecl, buildBitfieldDecl, buildTestDecl
+//           buildEnumVariant, buildDestructDecl, buildTestDecl
 // All functions receive *BuildContext as first parameter.
 
 const std = @import("std");
@@ -486,41 +486,6 @@ fn buildDestructFromTail(ctx: *BuildContext, cap: *const CaptureNode, dt: *const
         .names = try names.toOwnedSlice(ctx.alloc()),
         .is_const = is_const,
         .value = value,
-    } });
-}
-
-pub fn buildBitfieldDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // bitfield_decl <- 'bitfield' '(' type ')' IDENTIFIER '{' _ bitfield_body _ '}'
-    const backing = if (cap.findChild("type")) |t| try builder.buildNode(ctx, t) else try ctx.newNode(.{ .type_named = "u32" });
-
-    // Name is the identifier after ')'
-    var name: []const u8 = "";
-    for (cap.start_pos..cap.end_pos) |i| {
-        if (i > 0 and i < ctx.tokens.len and ctx.tokens[i].kind == .identifier and ctx.tokens[i - 1].kind == .rparen) {
-            name = ctx.tokens[i].text;
-            break;
-        }
-    }
-
-    // Collect flag names (just identifiers inside the body)
-    var members = std.ArrayListUnmanaged([]const u8){};
-    // Find the lbrace, then collect identifiers until rbrace
-    var in_body = false;
-    for (cap.start_pos..cap.end_pos) |i| {
-        if (i < ctx.tokens.len) {
-            if (ctx.tokens[i].kind == .lbrace) { in_body = true; continue; }
-            if (ctx.tokens[i].kind == .rbrace) break;
-            if (in_body and ctx.tokens[i].kind == .identifier) {
-                try members.append(ctx.alloc(), ctx.tokens[i].text);
-            }
-        }
-    }
-
-    return ctx.newNode(.{ .bitfield_decl = .{
-        .name = name,
-        .backing_type = backing,
-        .members = try members.toOwnedSlice(ctx.alloc()),
-        .is_pub = false,
     } });
 }
 

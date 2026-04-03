@@ -256,18 +256,6 @@ const SYNTAX_DOC =
     \\
     \\---
     \\
-    \\## Bitfields
-    \\
-    \\```orhon
-    \\bitfield(u8) Flags {
-    \\    read
-    \\    write
-    \\    execute
-    \\}
-    \\```
-    \\
-    \\---
-    \\
     \\## Statements
     \\
     \\### If / elif / else
@@ -520,7 +508,7 @@ const SYNTAX_DOC =
     \\## Keywords
     \\
     \\`func` `var` `const` `if` `else` `elif` `for` `while` `return` `throw`
-    \\`import` `use` `pub` `match` `struct` `enum` `bitfield` `defer` `thread`
+    \\`import` `use` `pub` `match` `struct` `enum` `defer` `thread`
     \\`null` `void` `compt` `any` `module` `test` `and` `or` `not` `as`
     \\`break` `continue` `true` `false` `is` `type` `blueprint`
     \\

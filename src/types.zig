@@ -144,7 +144,7 @@ pub const OwnershipState = enum {
 pub const ResolvedType = union(enum) {
     /// Primitive types: i32, f64, bool, String, void, etc.
     primitive: Primitive,
-    /// User-defined types: struct/enum/bitfield names
+    /// User-defined types: struct/enum names
     named: []const u8,
     /// Error type
     err,
@@ -394,7 +394,7 @@ fn classifyNamed(n: []const u8) ResolvedType {
     if (std.mem.eql(u8, n, K.Type.NULL)) return .null_type;
     // Check primitives
     if (Primitive.fromName(n)) |prim| return .{ .primitive = prim };
-    // Everything else is a named type (struct/enum/bitfield/etc.)
+    // Everything else is a named type (struct/enum/etc.)
     return .{ .named = n };
 }
 

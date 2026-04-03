@@ -87,7 +87,7 @@ pub fn handleSemanticTokens(allocator: std.mem.Allocator, root: std.json.Value, 
 pub fn classifyToken(kind: lexer.TokenKind) TokenClassification {
     return switch (kind) {
         // Keywords
-        .kw_func, .kw_var, .kw_const, .kw_struct, .kw_enum, .kw_bitfield,
+        .kw_func, .kw_var, .kw_const, .kw_struct, .kw_enum,
         .kw_module, .kw_import, .kw_use, .kw_pub, .kw_compt, .kw_test,
         .kw_if, .kw_elif, .kw_else, .kw_for, .kw_while, .kw_return, .kw_match,
         .kw_break, .kw_continue, .kw_defer, .kw_thread, .kw_any,

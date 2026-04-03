@@ -120,7 +120,7 @@ fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Val
     // Keywords
     const keywords = [_][]const u8{
         "func", "var", "const", "if", "elif", "else", "for", "while", "return",
-        "import", "pub", "match", "struct", "enum", "bitfield", "defer",
+        "import", "pub", "match", "struct", "enum", "defer",
         "thread", "null", "void", "compt", "any", "module", "test",
         "and", "or", "not", "as", "break", "continue", "true", "false",
         "is",

@@ -218,53 +218,12 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         .call => {
             const callee_mir = m.getCallee();
             const callee_is_ident = callee_mir.kind == .identifier;
-            const callee_is_field = callee_mir.kind == .field_access;
             const callee_name = callee_mir.name orelse "";
             const call_args = m.callArgs();
             // Handle(value) in thread return — just emit the value (Handle is a type wrapper, not a runtime call)
             if (callee_is_ident and std.mem.eql(u8, callee_name, builtins.BT.HANDLE) and call_args.len == 1) {
                 try cg.generateExprMir(call_args[0]);
                 return;
-            }
-            // Bitfield constructor
-            if (callee_is_ident) {
-                if (cg.decls) |d| {
-                    if (d.bitfields.get(callee_name)) |_| {
-                        try cg.emitFmt("{s}{{ .value = ", .{callee_name});
-                        if (call_args.len == 0) {
-                            try cg.emit("0");
-                        } else {
-                            for (call_args, 0..) |arg, i| {
-                                if (i > 0) try cg.emit(" | ");
-                                if (arg.kind == .identifier) {
-                                    try cg.emitFmt("{s}.{s}", .{ callee_name, arg.name orelse "" });
-                                } else {
-                                    try cg.generateExprMir(arg);
-                                }
-                            }
-                        }
-                        try cg.emit(" }");
-                        return;
-                    }
-                }
-            }
-            // Bitfield method: p.has(Read) → p.has(Permissions.Read)
-            if (callee_is_field) {
-                const obj_mir = callee_mir.children[0]; // field_access.children[0] = object
-                if (mirGetBitfieldName(obj_mir, cg.decls)) |bf_name| {
-                    try cg.generateExprMir(callee_mir);
-                    try cg.emit("(");
-                    for (call_args, 0..) |arg, i| {
-                        if (i > 0) try cg.emit(", ");
-                        if (arg.kind == .identifier) {
-                            try cg.emitFmt("{s}.{s}", .{ bf_name, arg.name orelse "" });
-                        } else {
-                            try cg.generateExprMir(arg);
-                        }
-                    }
-                    try cg.emit(")");
-                    return;
-                }
             }
             // Clean call generation
             const call_arg_names = m.arg_names;
@@ -558,15 +517,6 @@ pub fn mirIsVector(m: *const mir.MirNode) bool {
         return std.mem.eql(u8, m.resolved_type.generic.name, builtins.BT.VECTOR);
     }
     return false;
-}
-
-/// Check if a MirNode is typed as a bitfield, return the bitfield name.
-pub fn mirGetBitfieldName(m: *const mir.MirNode, decls_opt: ?*declarations.DeclTable) ?[]const u8 {
-    const d = decls_opt orelse return null;
-    if (m.resolved_type == .named) {
-        if (d.bitfields.contains(m.resolved_type.named)) return m.resolved_type.named;
-    }
-    return null;
 }
 
 // Generate a while continue expression — same as assignment but no trailing semicolon.

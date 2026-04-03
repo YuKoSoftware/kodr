@@ -145,7 +145,6 @@ const rule_dispatch = std.StaticStringMap(BuilderFn).initComptime(.{
     .{ "enum_decl", decls_impl.buildEnumDecl },
     .{ "field_decl", decls_impl.buildFieldDecl },
     .{ "enum_variant", decls_impl.buildEnumVariant },
-    .{ "bitfield_decl", decls_impl.buildBitfieldDecl },
     .{ "destruct_decl", decls_impl.buildDestructDecl },
     .{ "test_decl", decls_impl.buildTestDecl },
     .{ "import_decl", decls_impl.buildImport },
@@ -430,7 +429,6 @@ pub fn setPub(node: *Node, value: bool) void {
         .struct_decl => |*d| d.is_pub = value,
         .blueprint_decl => |*d| d.is_pub = value,
         .enum_decl => |*d| d.is_pub = value,
-        .bitfield_decl => |*d| d.is_pub = value,
         .var_decl => |*d| d.is_pub = value,
         .field_decl => |*d| d.is_pub = value,
         else => {},
@@ -458,7 +456,6 @@ pub fn setDoc(node: *Node, doc: ?[]const u8) void {
         .struct_decl => |*d| d.doc = doc,
         .blueprint_decl => |*d| d.doc = doc,
         .enum_decl => |*d| d.doc = doc,
-        .bitfield_decl => |*d| d.doc = doc,
         .var_decl => |*d| d.doc = doc,
         .field_decl => |*d| d.doc = doc,
         .enum_variant => |*d| d.doc = doc,
@@ -470,7 +467,7 @@ pub fn setDoc(node: *Node, doc: ?[]const u8) void {
 // NOTE: All declaration, statement, expression, and type builder functions have
 // been extracted to their respective satellite files:
 //   builder_decls.zig  — program, module, import, metadata, func, param, const, var,
-//                        struct, enum, field, enum_variant, destruct, bitfield, test
+//                        struct, enum, field, enum_variant, destruct, test
 //   (pub_decl, compt_decl, thread_decl are in builder_decls.zig)
 //   builder_stmts.zig  — block, return, throw, if, elif, while, for, defer, match, match_arm,
 //                        expr_or_assignment

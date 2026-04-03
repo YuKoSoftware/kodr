@@ -136,12 +136,6 @@ pub const TypeResolver = struct {
                     }
                 }
             },
-            .bitfield_decl => |b| {
-                try scope.define(b.name, RT{ .named = b.name });
-                for (b.members) |flag_name| {
-                    try scope.define(flag_name, RT{ .named = b.name });
-                }
-            },
             .blueprint_decl => |b| {
                 try scope.define(b.name, RT{ .named = b.name });
             },
@@ -423,19 +417,13 @@ pub const TypeResolver = struct {
         return validation_impl.checkAssignCompat(self, expected, actual, node);
     }
 
-    /// Returns true if `name` is a variant of any declared enum or a flag of any declared bitfield.
+    /// Returns true if `name` is a variant of any declared enum.
     /// Used to suppress false "unknown identifier" errors for enum variants used as match patterns.
-    pub fn isEnumVariantOrBitfieldFlag(self: *const TypeResolver, name: []const u8) bool {
+    pub fn isEnumVariant(self: *const TypeResolver, name: []const u8) bool {
         var enum_it = self.ctx.decls.enums.valueIterator();
         while (enum_it.next()) |sig| {
             for (sig.variants) |v| {
                 if (std.mem.eql(u8, v, name)) return true;
-            }
-        }
-        var bf_it = self.ctx.decls.bitfields.valueIterator();
-        while (bf_it.next()) |sig| {
-            for (sig.flags) |f| {
-                if (std.mem.eql(u8, f, name)) return true;
             }
         }
         return false;

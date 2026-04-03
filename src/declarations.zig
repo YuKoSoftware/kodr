@@ -49,14 +49,6 @@ pub const EnumSig = struct {
     is_pub: bool,
 };
 
-/// A bitfield declaration summary
-pub const BitfieldSig = struct {
-    name: []const u8,
-    backing_type: types.ResolvedType,
-    flags: [][]const u8,
-    is_pub: bool,
-};
-
 pub const BlueprintMethodSig = struct {
     name: []const u8,
     params: []ParamSig,
@@ -83,7 +75,6 @@ pub const DeclTable = struct {
     funcs: std.StringHashMap(FuncSig),
     structs: std.StringHashMap(StructSig),
     enums: std.StringHashMap(EnumSig),
-    bitfields: std.StringHashMap(BitfieldSig),
     vars: std.StringHashMap(VarSig),
     types: std.StringHashMap([]const u8), // type aliases and compt types
     blueprints: std.StringHashMap(BlueprintSig),
@@ -103,7 +94,6 @@ pub const DeclTable = struct {
             .funcs = std.StringHashMap(FuncSig).init(allocator),
             .structs = std.StringHashMap(StructSig).init(allocator),
             .enums = std.StringHashMap(EnumSig).init(allocator),
-            .bitfields = std.StringHashMap(BitfieldSig).init(allocator),
             .vars = std.StringHashMap(VarSig).init(allocator),
             .types = std.StringHashMap([]const u8).init(allocator),
             .blueprints = std.StringHashMap(BlueprintSig).init(allocator),
@@ -134,12 +124,6 @@ pub const DeclTable = struct {
             self.allocator.free(entry.value_ptr.variants);
         }
         self.enums.deinit();
-        // Free owned slices stored in BitfieldSig values
-        var bitfield_it = self.bitfields.iterator();
-        while (bitfield_it.next()) |entry| {
-            self.allocator.free(entry.value_ptr.flags);
-        }
-        self.bitfields.deinit();
         self.vars.deinit();
         self.types.deinit();
         // Free owned slices stored in BlueprintSig values
@@ -166,7 +150,6 @@ pub const DeclTable = struct {
         return self.funcs.contains(name) or
                self.structs.contains(name) or
                self.enums.contains(name) or
-               self.bitfields.contains(name) or
                self.vars.contains(name) or
                self.types.contains(name);
     }
@@ -220,7 +203,6 @@ pub const DeclCollector = struct {
             .struct_decl => |s| try self.collectStruct(s, loc),
             .blueprint_decl => |b| try self.collectBlueprint(b, loc),
             .enum_decl => |e| try self.collectEnum(e, loc),
-            .bitfield_decl => |b| try self.collectBitfield(b, loc),
             .var_decl => |v| {
                 if (v.mutability == .mutable) {
                     try self.reporter.reportFmt(loc, "module-level 'var' is not allowed — use 'const' for module-level declarations", .{});
@@ -429,21 +411,6 @@ pub const DeclCollector = struct {
         }
 
         try self.table.enums.put(e.name, sig);
-    }
-
-    fn collectBitfield(self: *DeclCollector, b: parser.BitfieldDecl, loc: ?errors.SourceLoc) anyerror!void {
-        _ = loc;
-        var flags: std.ArrayListUnmanaged([]const u8) = .{};
-        for (b.members) |flag_name| {
-            try flags.append(self.allocator, flag_name);
-        }
-        const sig = BitfieldSig{
-            .name = b.name,
-            .backing_type = try types.resolveTypeNode(self.table.typeAllocator(), b.backing_type),
-            .flags = try flags.toOwnedSlice(self.allocator),
-            .is_pub = b.is_pub,
-        };
-        try self.table.bitfields.put(b.name, sig);
     }
 
     fn collectVar(self: *DeclCollector, v: parser.VarDecl, is_const: bool, is_compt: bool, loc: ?errors.SourceLoc) anyerror!void {

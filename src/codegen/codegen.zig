@@ -139,17 +139,6 @@ pub const CodeGen = struct {
         return try self.allocTypeStr("{s}", .{buf.items});
     }
 
-    /// If a node is typed as a bitfield, return the bitfield name. Uses MIR + decls.
-    pub fn getBitfieldName(self: *const CodeGen, node: *parser.Node) ?[]const u8 {
-        const d = self.decls orelse return null;
-        if (self.getNodeInfo(node)) |info| {
-            if (info.resolved_type == .named) {
-                if (d.bitfields.contains(info.resolved_type.named)) return info.resolved_type.named;
-            }
-        }
-        return null;
-    }
-
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.Reporter, is_debug: bool) CodeGen {
         return .{
             .reporter = reporter,
@@ -374,10 +363,6 @@ pub const CodeGen = struct {
                     while (enum_iter.next()) |entry| {
                         try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
                     }
-                    var bitfield_iter = dt.bitfields.iterator();
-                    while (bitfield_iter.next()) |entry| {
-                        try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
-                    }
                     var var_iter = dt.vars.iterator();
                     while (var_iter.next()) |entry| {
                         try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
@@ -403,7 +388,6 @@ pub const CodeGen = struct {
             },
             .struct_def => try self.generateStructMir(m),
             .enum_def => try self.generateEnumMir(m),
-            .bitfield_def => try self.generateBitfieldMir(m),
             .var_decl => try self.generateTopLevelDeclMir(m),
             .test_def => try self.generateTestMir(m),
             .import => {}, // imports handled separately in generate()
@@ -446,14 +430,6 @@ pub const CodeGen = struct {
     pub fn generateEnumMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateEnumMir(self, m); }
 
     // ============================================================
-    // BITFIELDS
-    // ============================================================
-
-    pub fn generateBitfield(self: *CodeGen, b: parser.BitfieldDecl) anyerror!void { return decls_impl.generateBitfield(self, b); }
-
-    pub fn generateBitfieldMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return decls_impl.generateBitfieldMir(self, m); }
-
-    // ============================================================
     // VAR / CONST DECLARATIONS
     // ============================================================
 
@@ -490,8 +466,6 @@ pub const CodeGen = struct {
     pub fn mirIsString(m: *const mir.MirNode) bool { return exprs_impl.mirIsString(m); }
 
     pub fn mirIsVector(m: *const mir.MirNode) bool { return exprs_impl.mirIsVector(m); }
-
-    pub fn mirGetBitfieldName(m: *const mir.MirNode, decls_opt: ?*declarations.DeclTable) ?[]const u8 { return exprs_impl.mirGetBitfieldName(m, decls_opt); }
 
     pub fn generateContinueExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return exprs_impl.generateContinueExprMir(self, m); }
 
@@ -776,9 +750,6 @@ pub fn mirIsString(m: *const mir.MirNode) bool { return exprs_impl.mirIsString(m
 
 /// File-scope mirIsVector for helper modules.
 pub fn mirIsVector(m: *const mir.MirNode) bool { return exprs_impl.mirIsVector(m); }
-
-/// File-scope mirGetBitfieldName for helper modules.
-pub fn mirGetBitfieldName(m: *const mir.MirNode, decls_opt: ?*declarations.DeclTable) ?[]const u8 { return exprs_impl.mirGetBitfieldName(m, decls_opt); }
 
 /// Check if a type annotation is a pointer wrapper type (Ptr/RawPtr/VolatilePtr) with an inner type.
 /// Returns the wrapper name and inner type arg, or null if not a pointer coercion target.

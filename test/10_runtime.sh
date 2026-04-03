@@ -49,7 +49,6 @@ for TEST_NAME in \
     thread thread_multi thread_params thread_void thread_done thread_join \
     atomic atomic_fetch atomic_swap atomic_bool \
     map_get \
-    bitfield_constructor bitfield_methods \
     const_auto_borrow var_caller_promoted const_copy \
     is_qualified is_not_qualified \
     error_void_ok error_void_fail \

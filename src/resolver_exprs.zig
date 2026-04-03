@@ -60,11 +60,11 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 if (ad.contains(id_name)) return RT.unknown;
             }
 
-            // Enum variants, bitfield flags, and the 'else' match pattern are used as bare
+            // Enum variants and the 'else' match pattern are used as bare
             // identifiers in match patterns. They are not in the scope chain — silently
             // return unknown to avoid false errors.
             if (std.mem.eql(u8, id_name, "else")) return RT.unknown;
-            if (self.isEnumVariantOrBitfieldFlag(id_name)) return RT.unknown;
+            if (self.isEnumVariant(id_name)) return RT.unknown;
 
             // Build candidate list from scope chain + module declarations for suggestion
             var candidates: std.ArrayListUnmanaged([]const u8) = .{};
@@ -135,7 +135,6 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                     } else if (!self.ctx.decls.funcs.contains(name) and
                         !self.ctx.decls.structs.contains(name) and
                         !self.ctx.decls.enums.contains(name) and
-                        !self.ctx.decls.bitfields.contains(name) and
                         !builtins.isBuiltinType(name) and
                         !self.isIncludedType(name))
                     {

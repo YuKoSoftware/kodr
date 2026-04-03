@@ -38,7 +38,7 @@ error_skip
 
 # Token lookahead for top-level declaration starts (used by error_skip to resync)
 top_level_start
-    <- 'func' / 'pub' / 'struct' / 'blueprint' / 'enum' / 'bitfield' / 'const' / 'var'
+    <- 'func' / 'pub' / 'struct' / 'blueprint' / 'enum' / 'const' / 'var'
      / 'thread' / 'compt' / 'test' / 'import' / '#'
 
 module_decl
@@ -76,7 +76,6 @@ top_level_decl
      / struct_decl
      / blueprint_decl
      / enum_decl
-     / bitfield_decl
      / const_decl
      / var_decl
      / test_decl
@@ -87,7 +86,6 @@ pub_decl
             / struct_decl
             / blueprint_decl
             / enum_decl
-            / bitfield_decl
             / const_decl
             / compt_decl)
 
@@ -170,18 +168,6 @@ enum_member
 
 enum_variant
     <- IDENTIFIER ('=' int_literal / '(' _ param_list _ ')')? TERM
-
-
-# ============================================================
-# BITFIELD DECLARATIONS
-# ============================================================
-
-bitfield_decl
-    <- 'bitfield' '(' type ')' IDENTIFIER '{' _ bitfield_body _ '}'  {label: "bitfield declaration"}
-
-bitfield_body
-    <- (IDENTIFIER TERM _)*
-
 
 
 # ============================================================
@@ -581,7 +567,7 @@ _               <- ([ \t\n] / '//' (!'\n' .)* '\n')*
 # KEYWORDS (reserved — cannot be used as identifiers)
 # ============================================================
 # func var const if else elif for while return throw import use
-# pub match struct enum bitfield defer thread null void compt
+# pub match struct enum defer thread null void compt
 # any module test and or not as break continue true false
 # is type blueprint
 # Compound borrow tokens: const& mut&

@@ -81,7 +81,6 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             const is_known = is_qualified or is_primitive or
                 self.ctx.decls.structs.contains(type_name) or
                 self.ctx.decls.enums.contains(type_name) or
-                self.ctx.decls.bitfields.contains(type_name) or
                 self.ctx.decls.types.contains(type_name) or // type aliases
                 builtins.isBuiltinType(type_name) or
                 self.isIncludedType(type_name) or
@@ -101,8 +100,6 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 while (sti.next()) |k| try candidates.append(self.ctx.allocator, k.*);
                 var eni = self.ctx.decls.enums.keyIterator();
                 while (eni.next()) |k| try candidates.append(self.ctx.allocator, k.*);
-                var bfi = self.ctx.decls.bitfields.keyIterator();
-                while (bfi.next()) |k| try candidates.append(self.ctx.allocator, k.*);
                 var tyi = self.ctx.decls.types.keyIterator();
                 while (tyi.next()) |k| try candidates.append(self.ctx.allocator, k.*);
                 for (&resolver_mod.PRIMITIVE_NAMES) |pn| try candidates.append(self.ctx.allocator, pn);

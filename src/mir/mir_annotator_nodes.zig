@@ -60,10 +60,6 @@ pub fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
             try self.recordNode(node, RT{ .named = e.name });
         },
 
-        .bitfield_decl => |b| {
-            try self.recordNode(node, RT{ .named = b.name });
-        },
-
         .block => |b| {
             for (b.statements) |stmt| {
                 try annotateNode(self, stmt);
@@ -303,12 +299,9 @@ pub fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
                 // Skip promoted params (already *const T — prevents double-borrow)
                 if (!self.promoted_params.contains(name) and self.const_vars.contains(name)) {
                     // Only non-primitive, non-value-type args qualify.
-                    // Enums and bitfields are small value types — exclude them.
-                    const is_enum_or_bitfield = if (arg_type == .named) blk: {
-                        const n = arg_type.named;
-                        break :blk self.decls.enums.contains(n) or self.decls.bitfields.contains(n);
-                    } else false;
-                    if (MirAnnotator.isNonPrimitiveType(arg_type) and !is_enum_or_bitfield) {
+                    // Enums are small value types — exclude them.
+                    const is_enum = if (arg_type == .named) self.decls.enums.contains(arg_type.named) else false;
+                    if (MirAnnotator.isNonPrimitiveType(arg_type) and !is_enum) {
                         try self.node_map.put(self.allocator, arg, .{
                             .resolved_type = arg_type,
                             .type_class = classifyType(arg_type),

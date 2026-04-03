@@ -1,5 +1,5 @@
 // codegen_decls.zig — MIR-path declaration generators for the Orhon code generator
-// Contains: struct, enum, bitfield, var/const/compt, test, and func declaration codegen (MIR path).
+// Contains: struct, enum, var/const/compt, test, and func declaration codegen (MIR path).
 // All functions receive *CodeGen as first parameter — cross-file calls route through stubs in codegen.zig.
 
 const std = @import("std");
@@ -396,68 +396,6 @@ pub fn generateEnumMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             else => {},
         }
     }
-
-    cg.indent -= 1;
-    try cg.emit("};\n");
-}
-
-pub fn generateBitfield(cg: *CodeGen, b: parser.BitfieldDecl) anyerror!void {
-    if (b.is_pub) try cg.emit("pub ");
-    const backing = try cg.typeToZig(b.backing_type);
-
-    try cg.emitFmt("const {s} = struct {{\n", .{b.name});
-    cg.indent += 1;
-
-    // Named flag constants — powers of 2
-    for (b.members, 0..) |flag_name, i| {
-        try cg.emitIndent();
-        try cg.emitFmt("pub const {s}: {s} = {d};\n", .{ flag_name, backing, @as(u64, 1) << @intCast(i) });
-    }
-
-    // value field
-    try cg.emitIndent();
-    try cg.emitFmt("value: {s} = 0,\n", .{backing});
-
-    // methods
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn has(self: {s}, flag: {s}) bool {{ return (self.value & flag) != 0; }}\n", .{ b.name, backing });
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn set(self: *{s}, flag: {s}) void {{ self.value |= flag; }}\n", .{ b.name, backing });
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn clear(self: *{s}, flag: {s}) void {{ self.value &= ~flag; }}\n", .{ b.name, backing });
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn toggle(self: *{s}, flag: {s}) void {{ self.value ^= flag; }}\n", .{ b.name, backing });
-
-    cg.indent -= 1;
-    try cg.emit("};\n");
-}
-
-/// MIR-path bitfield codegen.
-pub fn generateBitfieldMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
-    const bf_name = m.name orelse return;
-    if (m.is_pub) try cg.emit("pub ");
-    const backing = try cg.typeToZig(m.backing_type orelse return);
-
-    try cg.emitFmt("const {s} = struct {{\n", .{bf_name});
-    cg.indent += 1;
-
-    const members = m.bit_members orelse &.{};
-    for (members, 0..) |flag_name, i| {
-        try cg.emitIndent();
-        try cg.emitFmt("pub const {s}: {s} = {d};\n", .{ flag_name, backing, @as(u64, 1) << @intCast(i) });
-    }
-
-    try cg.emitIndent();
-    try cg.emitFmt("value: {s} = 0,\n", .{backing});
-
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn has(self: {s}, flag: {s}) bool {{ return (self.value & flag) != 0; }}\n", .{ bf_name, backing });
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn set(self: *{s}, flag: {s}) void {{ self.value |= flag; }}\n", .{ bf_name, backing });
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn clear(self: *{s}, flag: {s}) void {{ self.value &= ~flag; }}\n", .{ bf_name, backing });
-    try cg.emitIndent();
-    try cg.emitFmt("pub fn toggle(self: *{s}, flag: {s}) void {{ self.value ^= flag; }}\n", .{ bf_name, backing });
 
     cg.indent -= 1;
     try cg.emit("};\n");

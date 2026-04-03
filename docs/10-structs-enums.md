@@ -179,31 +179,4 @@ enum(u32) Shape {
 
 ## Bitfields
 
-A `bitfield` is its own declaration keyword — distinct from `enum`. Use it for named bit flags backed by an integer. The compiler assigns powers of 2 to each flag automatically.
-
-```
-bitfield(u32) Permissions {
-    Read      // 0b0001
-    Write     // 0b0010
-    Execute   // 0b0100
-    Delete    // 0b1000
-}
-```
-
-### Instantiation
-Pass any combination of flags to the constructor — order does not matter:
-```
-var p: Permissions = Permissions(Read, Write)
-var q: Permissions = Permissions()             // empty — all flags off
-```
-
-### Operations
-Four methods, no bitwise operators needed:
-```
-p.has(Read)       // bool — is this flag set?
-p.set(Execute)    // add a flag
-p.clear(Write)    // remove a flag
-p.toggle(Read)    // flip a flag
-```
-
-Type safe — passing a flag from a different `bitfield` type is a hard compiler error.
+Bitfields are now provided by `std::bitfield` — a pure Zig comptime library. See `use std::bitfield` for the `Bitfield` function.
