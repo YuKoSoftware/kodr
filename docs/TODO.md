@@ -10,6 +10,51 @@ Items ordered by importance and how much they unblock future work.
 
 ## Core — Language Ergonomics
 
+### Remove magic codegen — move to stdlib structs or compiler functions
+
+The compiler has hardcoded special cases that detect specific method/field names and
+rewrite them. These violate the "no special treatment" rule. Each should either become
+a proper `@` compiler function or move to a stdlib `.zig` struct with real fields/methods.
+
+**1. `.new()` constructor rewriting** `medium`
+- Location: `codegen_exprs.zig:286-301`
+- Magic: `Type.new()` → `.{}`, `Type.new(alloc)` → `.{ .alloc = alloc }`
+- Detects `.new` by name on type expressions and collections
+- Fix: Collections already have `.new()` in their `.zig` files — investigate whether
+  codegen still needs this rewrite or if the real Zig method handles it. If needed,
+  make `.new()` a language-level constructor pattern (not stdlib-specific).
+
+**2. `wrap()`, `sat()`, `overflow()` should be `@wrap`, `@sat`, `@overflow`** `easy`
+- Location: `codegen_exprs.zig:304-316`
+- Magic: Parsed as regular function calls, detected by name string comparison
+- Fix: Add to PEG grammar `compiler_func_name`, `builtins.CompilerFunc` enum,
+  and `generateCompilerFuncMir`. Same pattern as `@splitAt` migration.
+
+**3. `.value` field rewriting on core types** `medium`
+- Location: `codegen_exprs.zig:376-449`
+- Magic: `.value` is rewritten differently per type class:
+  - `thread_handle.value` → `.getValue()`
+  - `thread_handle.done` → `.done()`
+  - `safe_ptr.value` → `.*` (dereference)
+  - `raw_ptr.value` → `[0]` (index)
+  - `error_union.value` → `catch unreachable`
+  - `null_union.value` → `.?`
+  - `arbitrary_union.value` → `._{tag_name}`
+  - `result.Error` → `@errorName(captured_err)`
+- Fix: For Ptr/Handle — consider making these real Zig structs with a `.value` field
+  or method so codegen doesn't need special cases. For ErrorUnion/NullUnion — these
+  map to Zig's `anyerror!T` and `?T` which have no `.value` field, so some codegen
+  desugaring is unavoidable. This needs design work to decide what's language-level
+  vs what can be a struct.
+
+**4. Bitfield auto-generated methods** `easy`
+- Location: `codegen_decls.zig:416-423, 447-454`
+- Magic: Codegen injects `has()`, `set()`, `clear()`, `toggle()` into every bitfield
+- These are legitimate — bitfield is a language construct, not a stdlib type. The
+  methods are part of what "bitfield" means. But they're hardcoded strings, not
+  defined anywhere the user can see. Consider: is this the right design, or should
+  bitfield methods be visible in a stdlib file?
+
 ---
 
 ## Core — Compiler Architecture
