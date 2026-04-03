@@ -8,6 +8,18 @@ Items ordered by importance and how much they unblock future work.
 
 ---
 
+### Review metadata directives (`#name`, `#version`, `#build`, `#dep`) `medium`
+
+All metadata directives need to be looked at together. Questions:
+- Should `#dep` move to `.zon` files (like C deps already do)?
+- Is `#dep` tested? (Currently zero tests)
+- Are `#name`, `#version`, `#build` the right set, or should some move to `.zon`?
+- Should metadata be unified into one system instead of split between `#` directives and `.zon`?
+
+Not blocking zero-magic work — metadata doesn't touch codegen. But needs a design pass.
+
+---
+
 ## Core — Language Ergonomics
 
 ### Zero magic — remove all special-case codegen `hard`
