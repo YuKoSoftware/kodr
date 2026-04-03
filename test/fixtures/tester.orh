@@ -978,7 +978,7 @@ pub func test_alloc_default() i32 {
 pub func test_alloc_arena() i32 {
     var arena: allocator.Arena = allocator.Arena.create()
     defer { arena.deinit() }
-    var items: List(i32) = List(i32).new(arena.allocator())
+    var items: List(i32) = List(i32).withAlloc(arena.allocator())
     items.add(10)
     items.add(20)
     return items.get(0) + items.get(1)
@@ -990,7 +990,7 @@ pub func test_alloc_external() i32 {
     var smp: allocator.SMP = allocator.SMP.create()
     defer { smp.deinit() }
     var a = smp.allocator()
-    var items: List(i32) = List(i32).new(a)
+    var items: List(i32) = List(i32).withAlloc(a)
     items.add(5)
     items.add(7)
     defer { items.free() }
