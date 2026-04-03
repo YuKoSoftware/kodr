@@ -100,23 +100,40 @@ We will break things along the way — that's expected. Fix forward, don't look 
 - Fix: bitfield backing logic moves to `src/std/bitfield.zig`. Generated bitfield struct
   uses the std implementation. Methods are real, visible, testable.
 
-**Phase C — ErrorUnion/NullUnion `.value` unwrapping**
+**Phase C — Unify unions: remove ErrorUnion/NullUnion, use regular union syntax**
 
-**C1. Design unwrap API for ErrorUnion/NullUnion** `hard`
-- Location: `codegen_exprs.zig:388-449`
-- `.value` rewrites to `catch unreachable` (error), `.?` (null), `._{tag}` (union)
-- `.Error` rewrites to `@errorName()`
-- These map to Zig's `anyerror!T` and `?T` which have no fields
-- Fix: needs design — either `@unwrap` compiler function, or wrapper structs in std
-  that expose `.value` as a real method. The wrapper approach adds overhead; the
-  `@unwrap` approach keeps it lean. Decision needed before implementation.
-- Depends on: clear on which approach
+**C1. Union redesign — `(Error | T)` replaces `ErrorUnion(T)`** `hard`
+- `ErrorUnion(T)` and `NullUnion(T)` are removed as special types
+- Regular union syntax handles everything:
+  - `(Error | i32)` → `anyerror!i32` in Zig (compiler sees Error member)
+  - `(null | i32)` → `?i32` in Zig (compiler sees null member)
+  - `(Error | null | i32)` → `?anyerror!i32` in Zig (both)
+  - `(i32 | f64 | str)` → `union(enum) { ... }` in Zig (regular)
+- Order doesn't matter: `(i32 | Error)` same as `(Error | i32)`
+- Error/null stripped out, rest becomes inner type (or union if multiple)
+- `(i32 | Error | f64)` → `anyerror!union(enum) { _i32: i32, _f64: f64 }`
+- No duplicate types allowed (already enforced)
+- Removes: `ErrorUnion`, `NullUnion` from BUILTIN_TYPES, `.error_union`/`.null_union`
+  CoreType kinds, all special-case handling in resolver/MIR/codegen
 
-**C2. Remove `.Error` field magic** `medium`
-- Location: `codegen_exprs.zig:388-404`
-- `result.Error` → `@errorName(captured_err)`
-- Fix: depends on C1 design. If ErrorUnion becomes a std struct, `.Error` is a real
-  field. If it stays as `anyerror!T`, need `@errorName` as explicit compiler function.
+**C2. Unified unwrap syntax — access by type name, not `.value`** `hard`
+- `.value` magic goes away entirely
+- All union variants accessed by type name: `result.i32`, `result.str`, `result.MyStruct`
+- `is` checks work uniformly: `result is Error`, `result is null`, `result is i32`
+- Narrowing after `is` checks works same as today
+- Consistent: no more "use `.value` for error/null but `.i32` for arbitrary unions"
+- `.Error` field magic replaced by normal `is Error` check + error name access TBD
+
+**C3. Remove `.Error` field magic** `medium`
+- `result.Error` → `@errorName(captured_err)` — this is codegen string detection
+- Fix: `result is Error` for checking, `@errorName(result)` for getting the name
+  as an explicit compiler function call. No magic field access.
+
+**Type system summary (after redesign):**
+- **Tuples** — product type (all fields): named `(x: 10, y: 20)` or anonymous `(10, 20)`
+- **Unions** — sum type (one variant): unnamed, access by type name `(Error | i32)`
+- **Structs** — named product type with methods
+- No overlap, no confusion, no special wrapper types
 
 **Phase D — Collection grammar removal (biggest change)**
 
