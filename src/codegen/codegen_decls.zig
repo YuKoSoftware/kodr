@@ -36,10 +36,12 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (cg.is_zig_module) return cg.generateZigReExport(func_name, m.is_pub);
 
     // Body-less declaration — skip codegen.
-    // Never skip main (it can legitimately have an empty body).
+    // Never skip main or void functions (they can legitimately have empty bodies).
     const body_m = m.body();
+    const is_void_ret = if (m.return_type) |rt| rt.* == .type_named and
+        std.mem.eql(u8, rt.type_named, K.Type.VOID) else false;
     if (body_m.kind == .block and body_m.children.len == 0 and
-        !std.mem.eql(u8, func_name, "main")) return;
+        !std.mem.eql(u8, func_name, "main") and !is_void_ret) return;
 
     // Track current function for MIR return type queries
     const prev_func_mir = cg.current_func_mir;

@@ -20,13 +20,6 @@ access. The compiler doesn't account for method calls that need `mut&` self when
 deciding whether `var` should be `const`. Affects any Zig-backed struct with `*Self`
 methods called from Orhon.
 
-### Empty-body void functions dropped by codegen `easy`
-
-`func noop() void {}` produces no output in the generated Zig. The codegen skips
-functions with empty blocks entirely. Workaround: add `return` to the body.
-
----
-
 ### Review metadata directives (`#name`, `#version`, `#build`, `#dep`) `medium`
 
 All metadata directives need to be looked at together. Questions:
@@ -48,7 +41,7 @@ Known Zig comptime friction with Orhon codegen:
   Users must write `thread.Thread(i32).spawn(func, arg)` instead of `thread.spawn(func, arg)`.
 - **spawn/spawn2 arity split** — `spawn(func, arg)` for 1-arg, `spawn2(func, a, b)` for 2-arg.
   Zig's `@call` needs a tuple but Orhon passes individual values. Needs spawn3+ for more args.
-- Also affected by Bugs: `void` generic arg, var-not-reassigned false positive, empty-body functions.
+- Also affected by Bugs: `void` generic arg, var-not-reassigned false positive.
 
 ### Bitfield as pure Orhon std module `hard` — DEFERRED
 
