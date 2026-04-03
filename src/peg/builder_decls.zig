@@ -2,7 +2,7 @@
 // Contains: buildProgram, buildModuleDecl, buildImport, buildMetadata,
 //           buildFuncDecl, buildParam, buildConstDecl, buildVarDecl,
 //           buildStructDecl, buildBlueprintDecl, buildEnumDecl, buildFieldDecl,
-//           buildEnumVariant, buildDestructDecl, buildTestDecl
+//           buildEnumVariant, buildDestructDecl, buildTestDecl, buildPubDecl, buildComptDecl
 // All functions receive *BuildContext as first parameter.
 
 const std = @import("std");
@@ -514,27 +514,6 @@ pub fn buildComptDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
         return node;
     }
     return error.NoComptChild;
-}
-
-pub fn buildThreadDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // thread_decl <- 'thread' func_name '(' _ param_list _ ')' type block
-    var name: []const u8 = "";
-    if (cap.findChild("func_name")) |fn_cap| {
-        name = builder.tokenText(ctx, fn_cap.start_pos);
-    }
-    var params_list = std.ArrayListUnmanaged(*Node){};
-    try builder.collectParamsRecursive(ctx, cap, &params_list);
-    const ret_type = if (cap.findChild("type")) |t| try builder.buildNode(ctx, t) else try ctx.newNode(.{ .type_named = "void" });
-    const body = if (cap.findChild("block")) |b| try builder.buildNode(ctx, b) else try ctx.newNode(.{ .block = .{ .statements = &.{} } });
-
-    return ctx.newNode(.{ .func_decl = .{
-        .name = name,
-        .params = try params_list.toOwnedSlice(ctx.alloc()),
-        .return_type = ret_type,
-        .body = body,
-        .context = .thread,
-        .is_pub = false,
-    } });
 }
 
 pub fn buildTestDecl(ctx: *BuildContext, cap: *const CaptureNode) !*Node {

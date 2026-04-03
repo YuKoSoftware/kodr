@@ -166,9 +166,6 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                             if (var_type.unionInnerType()) |inner| {
                                 if (inner == .named) break :blk inner.named;
                             }
-                            if (var_type.coreInner()) |ci| {
-                                if (ci.* == .named) break :blk ci.named;
-                            }
                         }
                         break :blk "";
                     };
@@ -233,7 +230,6 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             // This lets the resolver track variables assigned via `var x = result.value`.
             if (std.mem.eql(u8, f.field, "value")) {
                 if (obj_type.unionInnerType()) |inner| return inner;
-                if (obj_type.coreInner()) |ci| return ci.*;
             }
             const obj_name = obj_type.name();
             if (self.ctx.decls.structs.get(obj_name)) |sig| {

@@ -472,15 +472,6 @@ pub fn typesMatchWithSubstitution(struct_type: RT, bp_type: RT, bp_name: []const
                 else => false,
             };
         },
-        .core_type => |bp_ct| {
-            return switch (struct_type) {
-                .core_type => |si_ct| {
-                    if (bp_ct.kind != si_ct.kind) return false;
-                    return typesMatchWithSubstitution(si_ct.inner.*, bp_ct.inner.*, bp_name, struct_name);
-                },
-                else => false,
-            };
-        },
         .inferred => return struct_type == .inferred,
         .unknown => return true,
         else => {
@@ -533,19 +524,6 @@ pub fn typesCompatible(a: RT, b: RT) bool {
     // Integer-to-integer and float-to-float are compatible (Zig handles coercion)
     if (a == .primitive and b == .primitive and a.primitive.isInteger() and b.primitive.isInteger()) return true;
     if (a == .primitive and b == .primitive and a.primitive.isFloat() and b.primitive.isFloat()) return true;
-    // CoreType wrappers: compatible with their bare named type, inner type, or special values
-    if (a == .core_type) {
-        const wrapper_name = coreTypeName(a.core_type.kind);
-        if (std.mem.eql(u8, b_name, wrapper_name)) return true;
-        if (b == .inferred or b == .unknown) return true;
-        return typesCompatible(a.core_type.inner.*, b) or isLiteralCompatible(b, a.core_type.inner.*);
-    }
-    if (b == .core_type) {
-        const wrapper_name = coreTypeName(b.core_type.kind);
-        if (std.mem.eql(u8, a_name, wrapper_name)) return true;
-        if (a == .inferred or a == .unknown) return true;
-        return typesCompatible(a, b.core_type.inner.*) or isLiteralCompatible(a, b.core_type.inner.*);
-    }
     // Unions accept any of their members, or unresolved literals matching any member.
     // This includes (Error | T) accepting Error/T and (null | T) accepting null/T.
     if (b == .union_type) {
@@ -567,13 +545,6 @@ pub fn typesCompatible(a: RT, b: RT) bool {
     // func_ptr / func returns are hard to check without full inference — allow
     if (a == .func_ptr or b == .func_ptr) return true;
     return false;
-}
-
-/// Map CoreType.Kind to its Orhon wrapper type name
-pub fn coreTypeName(kind: types.ResolvedType.CoreType.Kind) []const u8 {
-    return switch (kind) {
-        .handle => "Handle",
-    };
 }
 
 /// Check if an unresolved literal type is compatible with a target type

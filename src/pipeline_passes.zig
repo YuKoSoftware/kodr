@@ -9,7 +9,6 @@ const declarations = @import("declarations.zig");
 const resolver = @import("resolver.zig");
 const ownership = @import("ownership.zig");
 const borrow = @import("borrow.zig");
-const thread_safety = @import("thread_safety.zig");
 const propagation = @import("propagation.zig");
 const sema = @import("sema.zig");
 const mir = @import("mir/mir.zig");
@@ -124,13 +123,7 @@ pub fn runSemanticAndCodegen(
     try borrow_checker.check(ast);
     if (reporter.hasErrors()) return null;
 
-    // ── Pass 8: Thread Safety ──────────────────────────────
-    var thread_checker = thread_safety.ThreadSafetyChecker.init(allocator, &sema_ctx);
-    defer thread_checker.deinit();
-    try thread_checker.check(ast);
-    if (reporter.hasErrors()) return null;
-
-    // ── Pass 9: Error Propagation ──────────────────────────
+    // ── Pass 8: Error Propagation ──────────────────────────
     var prop_checker = propagation.PropagationChecker.init(allocator, &sema_ctx);
     try prop_checker.check(ast);
     if (reporter.hasErrors()) return null;

@@ -3,7 +3,6 @@
 const std = @import("std");
 const parser = @import("../parser.zig");
 const types = @import("../types.zig");
-const builtins = @import("../builtins.zig");
 
 pub const RT = types.ResolvedType;
 
@@ -17,7 +16,6 @@ pub const TypeClass = enum {
     null_union,
     arbitrary_union,
     string,
-    thread_handle,
 };
 
 /// Classify a resolved type into a codegen category.
@@ -30,14 +28,6 @@ pub fn classifyType(t: RT) TypeClass {
             return .arbitrary_union;
         },
         .primitive => |p| if (p == .string) .string else .plain,
-        .generic => |g| {
-            if (std.mem.eql(u8, g.name, builtins.BT.HANDLE))
-                return .thread_handle;
-            return .plain;
-        },
-        .core_type => |ct| switch (ct.kind) {
-            .handle => .thread_handle,
-        },
         // .ptr is a const &T or mut &T reference — field access auto-derefs in Zig
         .ptr => .plain,
         else => .plain,

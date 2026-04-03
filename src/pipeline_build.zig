@@ -9,7 +9,6 @@ const declarations = @import("declarations.zig");
 const resolver = @import("resolver.zig");
 const ownership = @import("ownership.zig");
 const borrow = @import("borrow.zig");
-const thread_safety = @import("thread_safety.zig");
 const propagation = @import("propagation.zig");
 const sema = @import("sema.zig");
 const mir = @import("mir/mir.zig");
@@ -76,7 +75,6 @@ test "pipeline - imports all passes" {
     _ = resolver;
     _ = ownership;
     _ = borrow;
-    _ = thread_safety;
     _ = propagation;
     _ = mir;
     _ = codegen;
@@ -148,12 +146,6 @@ test "full pipeline - hello world" {
     var borrow_checker = borrow.BorrowChecker.init(alloc, &sema_ctx);
     defer borrow_checker.deinit();
     try borrow_checker.check(ast);
-    try std.testing.expect(!reporter.hasErrors());
-
-    // Thread safety
-    var thread_checker = thread_safety.ThreadSafetyChecker.init(alloc, &sema_ctx);
-    defer thread_checker.deinit();
-    try thread_checker.check(ast);
     try std.testing.expect(!reporter.hasErrors());
 
     // Propagation

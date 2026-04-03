@@ -39,7 +39,7 @@ error_skip
 # Token lookahead for top-level declaration starts (used by error_skip to resync)
 top_level_start
     <- 'func' / 'pub' / 'struct' / 'blueprint' / 'enum' / 'const' / 'var'
-     / 'thread' / 'compt' / 'test' / 'import' / '#'
+     / 'compt' / 'test' / 'import' / '#'
 
 module_decl
     <- doc_block? _ 'module' IDENTIFIER NL  {label: "module declaration"}
@@ -71,7 +71,6 @@ top_level
 top_level_decl
     <- pub_decl
      / func_decl
-     / thread_decl
      / compt_decl
      / struct_decl
      / blueprint_decl
@@ -82,7 +81,6 @@ top_level_decl
 
 pub_decl
     <- 'pub' (func_decl
-            / thread_decl
             / struct_decl
             / blueprint_decl
             / enum_decl
@@ -96,9 +94,6 @@ pub_decl
 
 func_decl
     <- 'func' func_name '(' _ param_list _ ')' type (block / TERM)  {label: "function declaration"}
-
-thread_decl
-    <- 'thread' func_name '(' _ param_list _ ')' type block  {label: "thread declaration"}
 
 func_name
     <- IDENTIFIER
@@ -566,7 +561,7 @@ _               <- ([ \t\n] / '//' (!'\n' .)* '\n')*
 # KEYWORDS (reserved — cannot be used as identifiers)
 # ============================================================
 # func var const if else elif for while return throw import use
-# pub match struct enum defer thread null void compt
+# pub match struct enum defer null void compt
 # any module test and or not as break continue true false
 # is type blueprint
 # Compound borrow tokens: const& mut&

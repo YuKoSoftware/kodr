@@ -149,7 +149,6 @@ const rule_dispatch = std.StaticStringMap(BuilderFn).initComptime(.{
     .{ "test_decl", decls_impl.buildTestDecl },
     .{ "import_decl", decls_impl.buildImport },
     .{ "metadata", decls_impl.buildMetadata },
-    .{ "thread_decl", decls_impl.buildThreadDecl },
     .{ "pub_decl", decls_impl.buildPubDecl },
     .{ "compt_decl", decls_impl.buildComptDecl },
     // Statements
@@ -335,7 +334,7 @@ pub fn collectCallArgs(ctx: *BuildContext, cap: *const CaptureNode, args: *std.A
 }
 
 /// Recursively collect param nodes from a capture tree.
-/// Stops at nested func_decl / thread_decl / compt_decl boundaries to avoid
+/// Stops at nested func_decl / compt_decl boundaries to avoid
 /// picking up params from functions nested inside (e.g. methods in struct_expr).
 pub fn collectParamsRecursive(ctx: *BuildContext, cap: *const CaptureNode, out: *std.ArrayListUnmanaged(*Node)) anyerror!void {
     for (cap.children) |*child| {
@@ -343,7 +342,6 @@ pub fn collectParamsRecursive(ctx: *BuildContext, cap: *const CaptureNode, out: 
             if (std.mem.eql(u8, r, "param")) {
                 try out.append(ctx.alloc(), try buildNode(ctx, child));
             } else if (std.mem.eql(u8, r, "func_decl") or
-                std.mem.eql(u8, r, "thread_decl") or
                 std.mem.eql(u8, r, "compt_decl"))
             {
                 // Do not recurse into nested function declarations — their params
@@ -467,8 +465,7 @@ pub fn setDoc(node: *Node, doc: ?[]const u8) void {
 // NOTE: All declaration, statement, expression, and type builder functions have
 // been extracted to their respective satellite files:
 //   builder_decls.zig  — program, module, import, metadata, func, param, const, var,
-//                        struct, enum, field, enum_variant, destruct, test
-//   (pub_decl, compt_decl, thread_decl are in builder_decls.zig)
+//                        struct, enum, field, enum_variant, destruct, test, pub_decl, compt_decl
 //   builder_stmts.zig  — block, return, throw, if, elif, while, for, defer, match, match_arm,
 //                        expr_or_assignment
 //   builder_exprs.zig  — int/float/string/bool literals, identifier, error, compiler_func,

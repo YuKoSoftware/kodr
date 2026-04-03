@@ -4,7 +4,6 @@
 const std = @import("std");
 const parser = @import("parser.zig");
 const K = @import("constants.zig");
-const builtins = @import("builtins.zig");
 
 /// Primitive type enum — replaces string-based primitive type identification.
 /// Exhaustive switching, zero-cost comparison, no typo risk.
@@ -164,8 +163,6 @@ pub const ResolvedType = union(enum) {
     generic: Generic,
     /// Borrow reference: const &T, mut &T
     ptr: Ptr,
-    /// Core language wrapper type: Handle(T)
-    core_type: CoreType,
     /// Type not yet resolved (e.g. inferred from context)
     inferred,
     /// Type from another module or otherwise unknown
@@ -194,15 +191,6 @@ pub const ResolvedType = union(enum) {
     pub const Ptr = struct {
         kind: parser.PtrKind,
         elem: *const ResolvedType,
-    };
-
-    pub const CoreType = struct {
-        kind: Kind,
-        inner: *const ResolvedType,
-
-        pub const Kind = enum {
-            handle, // Handle(T) → _orhon_async.Handle(T)
-        };
     };
 
     /// Returns true if this type is a primitive (copy semantics, no ownership transfer)
@@ -251,22 +239,6 @@ pub const ResolvedType = union(enum) {
         return inner;
     }
 
-    /// Returns true if this is a specific core type kind
-    pub fn isCoreType(self: ResolvedType, kind: CoreType.Kind) bool {
-        return switch (self) {
-            .core_type => |ct| ct.kind == kind,
-            else => false,
-        };
-    }
-
-    /// Get the inner type of a core type wrapper, or null
-    pub fn coreInner(self: ResolvedType) ?*const ResolvedType {
-        return switch (self) {
-            .core_type => |ct| ct.inner,
-            else => null,
-        };
-    }
-
     /// String representation for backwards compatibility and error messages
     pub fn name(self: ResolvedType) []const u8 {
         return switch (self) {
@@ -281,9 +253,6 @@ pub const ResolvedType = union(enum) {
             .func_ptr => "func(T) U",
             .generic => |g| g.name,
             .ptr => |p| if (p.kind == .mut_ref) "mut&" else "const&",
-            .core_type => |ct| switch (ct.kind) {
-                .handle => "Handle(T)",
-            },
             .inferred => "inferred",
             .unknown => "unknown",
         };
@@ -342,22 +311,7 @@ pub fn resolveTypeNode(alloc: std.mem.Allocator, node: *parser.Node) anyerror!Re
         },
 
         .type_generic => |g| {
-            // Core language wrapper types → CoreType
-            const core_kind: ?ResolvedType.CoreType.Kind = if (std.mem.eql(u8, g.name, builtins.BT.HANDLE))
-                .handle
-            else
-                null;
-
-            if (core_kind) |kind| {
-                if (g.args.len > 0) {
-                    const inner = try alloc.create(ResolvedType);
-                    inner.* = try resolveTypeNode(alloc, g.args[0]);
-                    return .{ .core_type = .{ .kind = kind, .inner = inner } };
-                }
-                return .unknown;
-            }
-
-            // User-defined generics: List(T), Map(K,V), etc.
+            // Generic type: List(T), Map(K,V), Vector(N, T), etc.
             var args = try alloc.alloc(ResolvedType, g.args.len);
             for (g.args, 0..) |a, i| {
                 args[i] = try resolveTypeNode(alloc, a);
@@ -483,19 +437,6 @@ test "isPrimitiveName" {
     try std.testing.expect(isPrimitiveName("str"));
     try std.testing.expect(!isPrimitiveName("Player"));
     try std.testing.expect(!isPrimitiveName("List"));
-}
-
-test "CoreType - isCoreType helper" {
-    const alloc = std.testing.allocator;
-    const inner = try alloc.create(ResolvedType);
-    defer alloc.destroy(inner);
-    inner.* = .{ .primitive = .i32 };
-
-    const handle = ResolvedType{ .core_type = .{ .kind = .handle, .inner = inner } };
-    try std.testing.expect(handle.isCoreType(.handle));
-
-    const plain = ResolvedType{ .primitive = .i32 };
-    try std.testing.expect(!plain.isCoreType(.handle));
 }
 
 test "resolveUnion - allows Error in union" {

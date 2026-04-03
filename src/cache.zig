@@ -568,11 +568,6 @@ fn hashResolvedType(seed: u64, rt: types.ResolvedType) u64 {
             s = XxHash3.hash(s, &[_]u8{kind_val});
             s = hashResolvedType(s, p.elem.*);
         },
-        .core_type => |ct| {
-            const kind_val: u8 = @intCast(@intFromEnum(ct.kind));
-            s = XxHash3.hash(s, &[_]u8{kind_val});
-            s = hashResolvedType(s, ct.inner.*);
-        },
     }
     return s;
 }

@@ -11,7 +11,6 @@ const errors = @import("../errors.zig");
 const K = @import("../constants.zig");
 const module = @import("../module.zig");
 const RT = @import("../types.zig").ResolvedType;
-const builtins = @import("../builtins.zig");
 
 const CodeGen = codegen.CodeGen;
 
@@ -32,9 +31,6 @@ pub fn generateZigReExport(cg: *CodeGen, name: []const u8, is_pub: bool) anyerro
 /// MIR-path function codegen — reads all data from MirNode.
 pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const func_name = m.name orelse return;
-
-    // Thread function — generate body + spawn wrapper
-    if (m.is_thread) return cg.generateThreadFuncMir(m);
 
     // zig-backed module — re-export from zig source module
     if (cg.is_zig_module) return cg.generateZigReExport(func_name, m.is_pub);
@@ -126,94 +122,6 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     // Body
     try cg.generateBlockMir(body_m);
     try cg.emit("\n");
-}
-
-/// MIR-path thread function codegen.
-pub fn generateThreadFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
-    const func_name = m.name orelse return;
-    const ret_type = m.return_type orelse return;
-
-    // Extract inner type T from Handle(T) return type
-    const inner_type = if (ret_type.* == .type_generic and
-        std.mem.eql(u8, ret_type.type_generic.name, builtins.BT.HANDLE) and
-        ret_type.type_generic.args.len > 0)
-        ret_type.type_generic.args[0]
-    else
-        ret_type;
-
-    const inner_zig = try cg.typeToZig(inner_type);
-    const handle_zig = try cg.typeToZig(ret_type);
-
-    // Body function
-    {
-        const prev_func_mir = cg.current_func_mir;
-        cg.current_func_mir = m;
-        const prev_assigned = cg.reassigned_vars;
-        cg.reassigned_vars = .{};
-        try collectAssignedMir(m.body(), &cg.reassigned_vars, cg.allocator);
-        defer {
-            cg.current_func_mir = prev_func_mir;
-            cg.reassigned_vars.deinit(cg.allocator);
-            cg.reassigned_vars = prev_assigned;
-        }
-
-        try cg.emitFmt("fn _{s}_body(", .{func_name});
-        for (m.params(), 0..) |param_m, i| {
-            if (i > 0) try cg.emit(", ");
-            const pname = param_m.name orelse continue;
-            const pta = param_m.type_annotation orelse continue;
-            try cg.emitFmt("{s}: {s}", .{ pname, try cg.typeToZig(pta) });
-        }
-        try cg.emitFmt(") {s} ", .{inner_zig});
-        try cg.generateBlockMir(m.body());
-        try cg.emit("\n\n");
-    }
-
-    // Spawn wrapper
-    if (m.is_pub) try cg.emit("pub ");
-    try cg.emitFmt("fn {s}(", .{func_name});
-    for (m.params(), 0..) |param_m, i| {
-        if (i > 0) try cg.emit(", ");
-        const pname = param_m.name orelse continue;
-        const pta = param_m.type_annotation orelse continue;
-        try cg.emitFmt("{s}: {s}", .{ pname, try cg.typeToZig(pta) });
-    }
-    try cg.emitFmt(") {s} ", .{handle_zig});
-    try cg.emit("{\n");
-    cg.indent += 1;
-
-    try cg.emitIndent();
-    try cg.emitFmt("const _state = std.heap.page_allocator.create({s}.SharedState) catch @panic(\"Out of memory: thread state allocation\");\n", .{handle_zig});
-    try cg.emitIndent();
-    try cg.emit("_state.* = .{};\n");
-
-    try cg.emitIndent();
-    try cg.emitFmt("return .{{ .thread = std.Thread.spawn(.{{}}, struct {{ fn run(_s: *{s}.SharedState", .{handle_zig});
-    for (m.params()) |param_m| {
-        const pname = param_m.name orelse continue;
-        const pta = param_m.type_annotation orelse continue;
-        try cg.emitFmt(", _{s}: {s}", .{ pname, try cg.typeToZig(pta) });
-    }
-    try cg.emit(") void { ");
-
-    const is_void = std.mem.eql(u8, inner_zig, "void");
-    if (!is_void) try cg.emit("_s.result = ");
-    try cg.emitFmt("_{s}_body(", .{func_name});
-    for (m.params(), 0..) |param_m, i| {
-        if (i > 0) try cg.emit(", ");
-        const pname = param_m.name orelse continue;
-        try cg.emitFmt("_{s}", .{pname});
-    }
-    try cg.emit("); _s.completed.store(true, .release); } }.run, .{ _state");
-    for (m.params()) |param_m| {
-        const pname = param_m.name orelse continue;
-        try cg.emitFmt(", {s}", .{pname});
-    }
-    try cg.emit(" }) catch |e| @panic(@errorName(e)), .state = _state };\n");
-
-    cg.indent -= 1;
-    try cg.emitIndent();
-    try cg.emit("}\n");
 }
 
 /// MIR-path collectAssigned — traverses MirNode tree.

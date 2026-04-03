@@ -281,9 +281,6 @@ pub const CodeGen = struct {
 
         try self.emit("\n");
 
-        // Handle(T) is now in std::async — no injected helper needed
-        try self.emit("const _orhon_async = @import(\"_orhon_async\");\n");
-
         // Generate top-level declarations from MIR tree
         const root = self.mir_root orelse return error.CompileError;
         for (root.children) |m| {
@@ -603,15 +600,7 @@ pub const CodeGen = struct {
                     .{ params_str.items, ret });
             },
             .type_generic => |g| blk: {
-                if (std.mem.eql(u8, g.name, "Thread")) {
-                    break :blk "std.Thread"; // Thread handle type
-                } else if (std.mem.eql(u8, g.name, builtins.BT.HANDLE)) {
-                    // Handle(T) → _orhon_async.Handle(zigT) (from std::async)
-                    if (g.args.len > 0) {
-                        const inner = try self.typeToZig(g.args[0]);
-                        break :blk try self.allocTypeStr("_orhon_async.Handle({s})", .{inner});
-                    }
-                } else if (std.mem.eql(u8, g.name, builtins.BT.VECTOR)) {
+                if (std.mem.eql(u8, g.name, builtins.BT.VECTOR)) {
                     // Vector(N, T) → @Vector(N, T)
                     if (g.args.len >= 2) {
                         const size_str = if (g.args[0].* == .int_literal) g.args[0].int_literal else "0";

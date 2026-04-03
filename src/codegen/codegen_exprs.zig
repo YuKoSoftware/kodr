@@ -220,11 +220,6 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             const callee_is_ident = callee_mir.kind == .identifier;
             const callee_name = callee_mir.name orelse "";
             const call_args = m.callArgs();
-            // Handle(value) in thread return — just emit the value (Handle is a type wrapper, not a runtime call)
-            if (callee_is_ident and std.mem.eql(u8, callee_name, builtins.BT.HANDLE) and call_args.len == 1) {
-                try cg.generateExprMir(call_args[0]);
-                return;
-            }
             // Clean call generation
             const call_arg_names = m.arg_names;
             if (call_arg_names != null and call_arg_names.?.len > 0) {

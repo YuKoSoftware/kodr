@@ -54,7 +54,6 @@ pub fn build(b: *std.Build) void {
         "src/resolver.zig",
         "src/ownership.zig",
         "src/borrow.zig",
-        "src/thread_safety.zig",
         "src/propagation.zig",
         "src/scope.zig",
         "src/types.zig",

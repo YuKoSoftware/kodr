@@ -9,7 +9,6 @@ const declarations = @import("../declarations.zig");
 const resolver = @import("../resolver.zig");
 const ownership = @import("../ownership.zig");
 const borrow = @import("../borrow.zig");
-const thread_safety = @import("../thread_safety.zig");
 const propagation = @import("../propagation.zig");
 const sema = @import("../sema.zig");
 const errors = @import("../errors.zig");
@@ -53,14 +52,6 @@ pub fn formatType(allocator: std.mem.Allocator, t: types.ResolvedType) anyerror!
             break :blk std.fmt.allocPrint(allocator, "func(...) {s}", .{ret_s});
         },
         .ptr => |p| try allocator.dupe(u8, if (p.kind == .mut_ref) "mut&" else "const&"),
-        .core_type => |ct| blk: {
-            const inner_s = try formatType(allocator, ct.inner.*);
-            defer allocator.free(inner_s);
-            const wrapper = switch (ct.kind) {
-                .handle => "Handle",
-            };
-            break :blk std.fmt.allocPrint(allocator, "{s}({s})", .{ wrapper, inner_s });
-        },
         .inferred => allocator.dupe(u8, "inferred"),
         .unknown => allocator.dupe(u8, "unknown"),
         .tuple, .union_type => allocator.dupe(u8, t.name()),
@@ -272,12 +263,7 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
         bc.check(ast) catch {};
         if (reporter.errors.items.len > errors_before) continue;
 
-        // Pass 8: Thread Safety (uses scratch arena)
-        var tc = thread_safety.ThreadSafetyChecker.init(a, &sema_ctx);
-        tc.check(ast) catch {};
-        if (reporter.errors.items.len > errors_before) continue;
-
-        // Pass 9: Error Propagation (uses scratch arena)
+        // Pass 8: Error Propagation (uses scratch arena)
         var prop_checker = propagation.PropagationChecker.init(a, &sema_ctx);
         prop_checker.check(ast) catch {};
     }

@@ -186,7 +186,6 @@ pub const Metadata = struct {
 pub const FuncContext = enum {
     normal,
     compt,
-    thread, // thread declaration — generates spawn wrapper + body
 };
 
 pub const FuncDecl = struct {

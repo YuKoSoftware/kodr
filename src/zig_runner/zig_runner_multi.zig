@@ -52,11 +52,6 @@ pub fn buildZigContentMulti(
         \\        .target = target,
         \\        .optimize = optimize,
         \\    });
-        \\    const async_mod = b.createModule(.{
-        \\        .root_source_file = b.path("_orhon_async.zig"),
-        \\        .target = target,
-        \\        .optimize = optimize,
-        \\    });
         \\
     );
 
@@ -217,7 +212,6 @@ pub fn buildZigContentMulti(
                     \\    }});
                     \\    mod_{s}.addImport("_orhon_string", string_mod);
                     \\    mod_{s}.addImport("_orhon_collections", coll_mod);
-                    \\    mod_{s}.addImport("_orhon_async", async_mod);
                     \\
                 , .{ mod_name, mod_name, mod_name, mod_name, mod_name });
 
@@ -267,7 +261,6 @@ pub fn buildZigContentMulti(
             \\    }});
             \\    lib_{s}.root_module.addImport("_orhon_string", string_mod);
             \\    lib_{s}.root_module.addImport("_orhon_collections", coll_mod);
-            \\    lib_{s}.root_module.addImport("_orhon_async", async_mod);
             \\
         , .{ t.module_name, t.project_name, linkage, t.module_name, t.module_name, t.module_name, t.module_name });
 
@@ -360,7 +353,6 @@ pub fn buildZigContentMulti(
             \\    }});
             \\    exe_{s}.root_module.addImport("_orhon_string", string_mod);
             \\    exe_{s}.root_module.addImport("_orhon_collections", coll_mod);
-            \\    exe_{s}.root_module.addImport("_orhon_async", async_mod);
             \\
         , .{ t.module_name, t.project_name, ver_line, t.module_name, t.module_name, t.module_name, t.module_name });
 
@@ -458,7 +450,6 @@ pub fn buildZigContentMulti(
             \\    }});
             \\    unit_tests.root_module.addImport("_orhon_string", string_mod);
             \\    unit_tests.root_module.addImport("_orhon_collections", coll_mod);
-            \\    unit_tests.root_module.addImport("_orhon_async", async_mod);
             \\
         , .{t.module_name});
 

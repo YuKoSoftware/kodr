@@ -6,7 +6,6 @@ const std = @import("std");
 const codegen = @import("codegen.zig");
 const parser = @import("../parser.zig");
 const mir = @import("../mir/mir.zig");
-const builtins = @import("../builtins.zig");
 
 const CodeGen = codegen.CodeGen;
 
@@ -67,11 +66,7 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             } else if (m.is_const) {
                 try cg.generateStmtDeclMir(m, "const");
             } else {
-                const is_handle = if (m.type_annotation) |ta|
-                    ta.* == .type_generic and std.mem.eql(u8, ta.type_generic.name, builtins.BT.HANDLE)
-                else
-                    false;
-                const is_mutated = is_handle or cg.reassigned_vars.contains(var_name);
+                const is_mutated = cg.reassigned_vars.contains(var_name);
                 const decl_keyword: []const u8 = if (is_mutated) "var" else "const";
                 if (!is_mutated) {
                     const msg = try std.fmt.allocPrint(cg.allocator,

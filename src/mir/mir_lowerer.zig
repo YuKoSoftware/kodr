@@ -536,7 +536,6 @@ fn populateData(m: *MirNode, node: *parser.Node) void {
         .func_decl => |f| {
             m.name = f.name;
             m.is_pub = f.is_pub;
-            m.is_thread = (f.context == .thread);
             m.is_compt = (f.context == .compt);
             m.return_type = f.return_type;
         },

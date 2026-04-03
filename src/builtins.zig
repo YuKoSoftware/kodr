@@ -6,14 +6,12 @@ const std = @import("std");
 
 /// Builtin type names — language intrinsics the compiler knows about
 pub const BUILTIN_TYPES = [_][]const u8{
-    "Handle",
     "Error",
     "Vector",
 };
 
 /// Named constants for builtin type names used in comparisons across the compiler.
 pub const BT = struct {
-    pub const HANDLE = "Handle";
     pub const ERROR = "Error";
     pub const VECTOR = "Vector";
 };
@@ -181,6 +179,7 @@ test "builtin type detection" {
     try std.testing.expect(!isBuiltinType("Version"));
     try std.testing.expect(!isBuiltinType("Dependency"));
     try std.testing.expect(isBuiltinType("Vector"));
+    try std.testing.expect(!isBuiltinType("Handle"));
 }
 
 test "compiler func detection" {
