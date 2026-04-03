@@ -237,6 +237,10 @@ pub struct Box(T: type) {
 compt func Wrapper(T: type) type {
     return struct {
         inner: T
+
+        pub func get(self: const& Self) T {
+            return self.inner
+        }
     }
 }
 
@@ -244,6 +248,11 @@ compt func Wrapper(T: type) type {
 
 test "add works" {
     @assert(add(2, 3) == 5)
+}
+
+test "compt struct with method" {
+    const w: Wrapper(i32) = Wrapper(i32)(inner: 42)
+    @assert(w.get() == 42)
 }
 
 test "fibonacci" {

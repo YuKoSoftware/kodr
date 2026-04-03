@@ -89,6 +89,8 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 std.mem.eql(u8, type_name, K.Type.VOID) or
                 std.mem.eql(u8, type_name, K.Type.NULL) or
                 std.mem.eql(u8, type_name, "type") or
+                // Self is valid inside any struct method — maps to @This() in codegen
+                std.mem.eql(u8, type_name, "Self") or
                 scope.lookup(type_name) != null;
 
             if (!is_known) {

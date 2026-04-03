@@ -776,5 +776,12 @@ func main() void {
         console.println("FAIL field_names")
     }
 
+    // Test: compt func returning anonymous struct with method
+    if(tester.test_compt_struct() == 42) {
+        console.println("PASS compt_struct")
+    } else {
+        console.println("FAIL compt_struct")
+    }
+
     console.println("TESTER:DONE")
 }

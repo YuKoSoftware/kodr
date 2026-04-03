@@ -549,6 +549,8 @@ pub const CodeGen = struct {
                 // Inside a generic struct, self-references use @This()
                 if (self.generic_struct_name) |gsn| {
                     if (std.mem.eql(u8, name, gsn)) return "@This()";
+                    // Self is always @This() inside any struct (named or anonymous)
+                    if (std.mem.eql(u8, name, "Self")) return "@This()";
                 }
                 return builtins.primitiveToZig(name);
             },

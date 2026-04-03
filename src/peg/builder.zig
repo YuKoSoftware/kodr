@@ -335,12 +335,20 @@ pub fn collectCallArgs(ctx: *BuildContext, cap: *const CaptureNode, args: *std.A
     }
 }
 
-/// Recursively collect param nodes from a capture tree
+/// Recursively collect param nodes from a capture tree.
+/// Stops at nested func_decl / thread_decl / compt_decl boundaries to avoid
+/// picking up params from functions nested inside (e.g. methods in struct_expr).
 pub fn collectParamsRecursive(ctx: *BuildContext, cap: *const CaptureNode, out: *std.ArrayListUnmanaged(*Node)) anyerror!void {
     for (cap.children) |*child| {
         if (child.rule) |r| {
             if (std.mem.eql(u8, r, "param")) {
                 try out.append(ctx.alloc(), try buildNode(ctx, child));
+            } else if (std.mem.eql(u8, r, "func_decl") or
+                std.mem.eql(u8, r, "thread_decl") or
+                std.mem.eql(u8, r, "compt_decl"))
+            {
+                // Do not recurse into nested function declarations — their params
+                // belong to them, not to the enclosing function being built.
             } else {
                 try collectParamsRecursive(ctx, child, out);
             }

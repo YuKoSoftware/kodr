@@ -1614,6 +1614,24 @@ test "const borrow expr as call argument" {
     @assert(test_const_borrow_arg() == 42)
 }
 
+// ─── Compt struct return ─────────────────────────────────────
+
+compt func Pair(A: type, B: type) type {
+    return struct {
+        first: A
+        second: B
+
+        pub func sum(self: const& Self) A {
+            return self.first + self.second
+        }
+    }
+}
+
+pub func test_compt_struct() i32 {
+    const p: Pair(i32, i32) = Pair(i32, i32)(first: 10, second: 32)
+    return p.sum()
+}
+
 // ─── Struct Introspection ────────────────────────────────────
 
 pub func test_has_field() i32 {
@@ -1666,4 +1684,8 @@ pub func test_field_names() i32 {
         return 1
     }
     return 0
+}
+
+test "compt struct with method" {
+    @assert(test_compt_struct() == 42)
 }
