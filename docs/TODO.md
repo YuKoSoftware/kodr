@@ -160,17 +160,37 @@ We will break things along the way — that's expected. Fix forward, don't look 
 - Import allocator from `allocator.zig` for the default — one source of truth
 - Depends on: D1 (build system must support cross-imports between std modules)
 
-**Phase E — Verify and clean up**
+**Phase E — Language features**
 
-**E1. Audit: grep for remaining string comparisons in codegen** `easy`
+**E0. Anonymous structs for compt type generation** `medium`
+- `compt` functions need to return full struct definitions (fields + methods)
+- Named tuples can't do this — they don't have methods
+- Anonymous structs = full struct without a pre-assigned name, caller names via type alias
+- Maps 1:1 to Zig's pattern: `fn List(comptime T: type) type { return struct { ... }; }`
+- AST node `struct_type` already exists in parser but not fully implemented
+- Example:
+  ```
+  compt func makeCounter(start: i32) type {
+      return struct {
+          value: i32 = start
+          pub func increment(self: mut& Self) void { self.value += 1 }
+      }
+  }
+  const MyCounter: type = makeCounter(0)
+  ```
+- Needed for: compt type generators, generic data structures, metaprogramming
+
+**Phase F — Verify and clean up**
+
+**F1. Audit: grep for remaining string comparisons in codegen** `easy`
 - After all phases, grep `eql(u8,` in `src/codegen/` — nothing should match specific
   type/method/field names except language keywords (`"else"`, `"self"`, `"main"`).
 
-**E2. Remove stale type_class values from MIR** `medium`
+**F2. Remove stale type_class values from MIR** `medium`
 - After B1-B3 and C1-C2, several `type_class` enum values may be unused:
   `.thread_handle`, `.safe_ptr`, `.raw_ptr` — evaluate if they're still needed.
 
-**E3. Update all docs, CLAUDE.md, examples** `easy`
+**F3. Update all docs, CLAUDE.md, examples** `easy`
 - Reflect the new APIs: `collections.List(i32).new()`, `handle.getValue()`, etc.
 - Remove mentions of magic behavior from docs.
 
