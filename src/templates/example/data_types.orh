@@ -85,7 +85,7 @@ func compound_demo() i32 {
 func read_via_ptr(n: i32) i32 {
     const x: i32 = n
     const p: Ptr(i32) = mut& x
-    return p.value
+    return @deref(p)
 }
 
 // RawPtr(T) — unsafe pointer, no bounds checking, emits compiler warning

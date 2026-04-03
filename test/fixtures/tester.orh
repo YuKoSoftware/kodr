@@ -707,7 +707,7 @@ pub func raw_ptr_index() i32 {
 pub func safe_ptr_read() i32 {
     const x: i32 = 77
     const p: Ptr(i32) = mut& x
-    return p.value
+    return @deref(p)
 }
 
 test "safe ptr" {

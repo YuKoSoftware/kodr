@@ -108,9 +108,9 @@ Compiler tracked. Always `const` — the pointer cannot be reassigned. Points to
 var x: i32 = 10
 const ptr: Ptr(i32) = mut& x
 
-ptr.value          // read the pointed-to value
+@deref(ptr)        // read the pointed-to value
 
-var x2: i32 = x   // x moved — compiler error if ptr.value is used after this
+var x2: i32 = x   // x moved — compiler error if @deref(ptr) is used after this
 ```
 
 ### `RawPtr(T)` — Unsafe Pointer, No Restrictions

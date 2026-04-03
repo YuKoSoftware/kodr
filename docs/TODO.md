@@ -62,11 +62,9 @@ We will break things along the way — that's expected. Fix forward, don't look 
   library function like `async.spawn()` that the codegen just calls.
 - `h.value` → `h.value()` syntax change in all fixtures/templates
 
-**B3. `.value` field rewriting on Ptr/RawPtr — move to std** `medium`
-- Location: `codegen_exprs.zig:382-387`
-- `Ptr(T).value` → `.*`, `RawPtr(T).value` → `[0]`
-- Fix: make Ptr/RawPtr real Zig structs in std with a `value` field or `get()` method.
-  Or use `@deref` compiler function. Design decision needed.
+**~~B3. Ptr/RawPtr `.value` → `@deref` compiler function~~** — DONE
+- `@deref(p)` → `p.*` for Ptr, `p[0]` for RawPtr
+- Removed `.value` field rewriting from codegen_exprs.zig
 
 **B4. Bitfield auto-methods → std** `medium`
 - Location: `codegen_decls.zig:416-423, 447-454`

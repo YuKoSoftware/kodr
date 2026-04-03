@@ -733,6 +733,17 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         .overflow => {
             if (args.len > 0) try cg.generateOverflowExprMir(args[0]);
         },
+        .deref => {
+            // @deref(ptr) → ptr.* (Ptr) or ptr[0] (RawPtr)
+            if (args.len > 0) {
+                try cg.generateExprMir(args[0]);
+                if (args[0].type_class == .raw_ptr) {
+                    try cg.emit("[0]");
+                } else {
+                    try cg.emit(".*");
+                }
+            }
+        },
     }
 }
 

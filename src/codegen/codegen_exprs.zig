@@ -350,14 +350,8 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             const field = m.name orelse "";
             const obj_mir = m.children[0];
             const obj_tc = obj_mir.type_class;
-            // handle.value() and handle.done() are real methods on _orhon_async.Handle(T) — no rewriting needed
-            if (std.mem.eql(u8, field, "value") and obj_tc == .safe_ptr) {
-                try cg.generateExprMir(obj_mir);
-                try cg.emit(".*");
-            } else if (std.mem.eql(u8, field, "value") and obj_tc == .raw_ptr) {
-                try cg.generateExprMir(obj_mir);
-                try cg.emit("[0]");
-            } else if (std.mem.eql(u8, field, K.Type.ERROR)) {
+            // Ptr/RawPtr dereference uses @deref() — no .value field rewriting
+            if (std.mem.eql(u8, field, K.Type.ERROR)) {
                 // result.Error → @errorName(captured_err) (native Zig error)
                 if (obj_mir.kind == .identifier) {
                     const obj_name = obj_mir.name orelse "";

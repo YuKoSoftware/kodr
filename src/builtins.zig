@@ -57,6 +57,7 @@ pub const COMPILER_FUNCS = [_][]const u8{
     "wrap",
     "sat",
     "overflow",
+    "deref",
 };
 
 /// Typed enum for compiler functions — use `fromName()` to convert AST string names.
@@ -80,6 +81,7 @@ pub const CompilerFunc = enum {
     wrap,
     sat,
     overflow,
+    deref,
 
     pub fn fromName(name: []const u8) ?CompilerFunc {
         const map = std.StaticStringMap(CompilerFunc).initComptime(.{
@@ -101,6 +103,7 @@ pub const CompilerFunc = enum {
             .{ "wrap", .wrap },
             .{ "sat", .sat },
             .{ "overflow", .overflow },
+            .{ "deref", .deref },
         });
         return map.get(name);
     }
