@@ -716,7 +716,7 @@ pub const CodeGen = struct {
             // Binary expr in type alias context: (null | T) or (Error | T) parsed as binary '|'
             // Try to detect error/null union patterns.
             .binary_expr => |b| blk: {
-                if (!std.mem.eql(u8, b.op, "|")) break :blk "anyopaque";
+                if (b.op != .bit_or) break :blk "anyopaque";
                 // Check for (Error | T) or (null | T) patterns
                 const left_is_error = b.left.* == .identifier and std.mem.eql(u8, b.left.identifier, builtins.BT.ERROR);
                 const left_is_null = b.left.* == .null_literal;
@@ -735,7 +735,7 @@ pub const CodeGen = struct {
     }
 };
 
-pub fn opToZig(op: []const u8) []const u8 { return match_impl.opToZig(op); }
+pub fn opToZig(op: parser.Operator) []const u8 { return match_impl.opToZig(op); }
 
 /// Check if a field name is a type name used for union value access (result.i32, result.User)
 pub fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) bool { return match_impl.isResultValueField(name, decls); }

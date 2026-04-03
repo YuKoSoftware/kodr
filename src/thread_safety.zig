@@ -675,7 +675,7 @@ test "thread safety - collectUsedVars walks unary and index" {
 
     // Build: -x
     var x_id = parser.Node{ .identifier = "x" };
-    var neg = parser.Node{ .unary_expr = .{ .op = "-", .operand = &x_id } };
+    var neg = parser.Node{ .unary_expr = .{ .op = .negate, .operand = &x_id } };
 
     var used = std.StringHashMap(void).init(alloc);
     defer used.deinit();
@@ -792,7 +792,7 @@ test "thread safety - const borrow arg freezes variable" {
     var assignment = parser.Node{ .assignment = .{
         .left = &x_left,
         .right = &lit,
-        .op = "=",
+        .op = .assign,
     } };
     try checker.checkStatement(&assignment);
     try std.testing.expect(reporter.hasErrors());

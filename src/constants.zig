@@ -16,24 +16,6 @@ pub const Err = struct {
     pub const MAIN_RESERVED = "'main' is reserved for the executable entry point";
 };
 
-/// Operator strings used in cross-file comparisons.
-/// The AST stores operators as strings; these constants centralize the literals.
-pub const Op = struct {
-    pub const AND = "and";
-    pub const OR = "or";
-    pub const NOT = "not";
-    pub const EQ = "==";
-    pub const NE = "!=";
-    pub const LT = "<";
-    pub const GT = ">";
-    pub const LE = "<=";
-    pub const GE = ">=";
-    pub const CONCAT = "++";
-    pub const RANGE = "..";
-    pub const DIV = "/";
-    pub const MOD = "%";
-    pub const DIV_ASSIGN = "/=";
-};
 
 /// Strip surrounding double quotes from a string literal.
 /// Returns the inner content, or the original string if not quoted.

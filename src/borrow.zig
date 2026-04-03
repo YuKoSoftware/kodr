@@ -858,7 +858,7 @@ test "NLL - collectIdentifiers finds all variable references" {
     var bin = parser.Node{ .binary_expr = .{
         .left = &id_y,
         .right = &id_x2,
-        .op = "+",
+        .op = .add,
     } };
 
     var stmts = [_]*parser.Node{ &id_x, &bin };

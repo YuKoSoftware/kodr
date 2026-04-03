@@ -6,7 +6,6 @@ const std = @import("std");
 const codegen = @import("codegen.zig");
 const parser = @import("../parser.zig");
 const mir = @import("../mir/mir.zig");
-const K = @import("../constants.zig");
 const builtins = @import("../builtins.zig");
 
 const CodeGen = codegen.CodeGen;
@@ -132,22 +131,22 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             }
         },
         .assignment => {
-            const assign_op = m.op orelse "=";
-            if (std.mem.eql(u8, assign_op, K.Op.DIV_ASSIGN)) {
+            const assign_op = m.op orelse .assign;
+            if (assign_op == .div_assign) {
                 try cg.generateExprMir(m.lhs());
                 try cg.emit(" = @divTrunc(");
                 try cg.generateExprMir(m.lhs());
                 try cg.emit(", ");
                 try cg.generateExprMir(m.rhs());
                 try cg.emit(");");
-            } else if (std.mem.eql(u8, assign_op, "=") and
+            } else if (assign_op == .assign and
                 m.lhs().type_class == .null_union)
             {
                 try cg.generateExprMir(m.lhs());
                 try cg.emit(" = ");
                 try cg.generateCoercedExprMir(m.rhs());
                 try cg.emit(";");
-            } else if (std.mem.eql(u8, assign_op, "=") and
+            } else if (assign_op == .assign and
                 m.lhs().type_class == .arbitrary_union)
             {
                 const members_rt = if (m.lhs().resolved_type == .union_type)
@@ -159,7 +158,7 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 try cg.emit(";");
             } else {
                 try cg.generateExprMir(m.lhs());
-                try cg.emitFmt(" {s} ", .{assign_op});
+                try cg.emitFmt(" {s} ", .{assign_op.toZig()});
                 try cg.generateExprMir(m.rhs());
                 try cg.emit(";");
             }

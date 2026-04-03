@@ -143,20 +143,40 @@ pub fn runDebug(allocator: std.mem.Allocator, cli: *const _cli.CliArgs) !void {
 }
 
 pub fn runGendoc(allocator: std.mem.Allocator, cli: *const _cli.CliArgs) !void {
-    const docgen = @import("docgen.zig");
+    // No flags = generate all; flags = generate only selected
+    const gen_all = !cli.gen_api and !cli.gen_std and !cli.gen_syntax;
 
     // Ensure std files are available (parsing may discover std imports)
     try _std_bundle.ensureStdFiles(allocator);
 
-    if (cli.gen_std) {
-        // Generate stdlib docs from embedded .orh-cache/std/
+    // Syntax reference
+    if (gen_all or cli.gen_syntax) {
+        const syntaxgen = @import("syntaxgen.zig");
+        try syntaxgen.generateSyntaxDoc(allocator, "docs/syntax.md");
+    }
+
+    // Stdlib reference
+    if (gen_all or cli.gen_std) {
+        const zig_docgen = @import("zig_docgen.zig");
+        try zig_docgen.generateStdDocs(allocator, cache.CACHE_DIR ++ "/std", "docs/std");
+    }
+
+    // Project API docs
+    if (gen_all or cli.gen_api) {
+        const docgen = @import("docgen.zig");
+
+        std.fs.cwd().access(cli.source_dir, .{}) catch {
+            if (!gen_all) std.debug.print("error: source directory '{s}' not found\n", .{cli.source_dir});
+            return;
+        };
+
         var reporter = errors.Reporter.init(allocator, .debug);
         defer reporter.deinit();
 
         var mod_resolver = module.Resolver.init(allocator, &reporter);
         defer mod_resolver.deinit();
 
-        try mod_resolver.scanDirectory(cache.CACHE_DIR ++ "/std");
+        try mod_resolver.scanDirectory(cli.source_dir);
 
         if (reporter.hasErrors()) {
             try reporter.flush();
@@ -168,54 +188,25 @@ pub fn runGendoc(allocator: std.mem.Allocator, cli: *const _cli.CliArgs) !void {
             try reporter.flush();
             return;
         }
-
-        try docgen.generateDocs(allocator, &mod_resolver, "docs/std");
-        return;
-    }
-
-    // Check source dir exists
-    std.fs.cwd().access(cli.source_dir, .{}) catch {
-        std.debug.print("error: source directory '{s}' not found\n", .{cli.source_dir});
-        return;
-    };
-
-    var reporter = errors.Reporter.init(allocator, .debug);
-    defer reporter.deinit();
-
-    var mod_resolver = module.Resolver.init(allocator, &reporter);
-    defer mod_resolver.deinit();
-
-    try mod_resolver.scanDirectory(cli.source_dir);
-
-    if (reporter.hasErrors()) {
-        try reporter.flush();
-        return;
-    }
-
-    // Parse all modules (two passes for std imports)
-    try mod_resolver.parseModules(allocator);
-    if (reporter.hasErrors()) {
-        try reporter.flush();
-        return;
-    }
-    // Second pass: parse any newly discovered std modules
-    {
-        var has_unparsed = false;
-        var check_it = mod_resolver.modules.iterator();
-        while (check_it.next()) |entry| {
-            if (entry.value_ptr.ast == null) { has_unparsed = true; break; }
+        // Second pass: parse any newly discovered std modules
+        {
+            var has_unparsed = false;
+            var check_it = mod_resolver.modules.iterator();
+            while (check_it.next()) |entry| {
+                if (entry.value_ptr.ast == null) { has_unparsed = true; break; }
+            }
+            if (has_unparsed) {
+                try mod_resolver.parseModules(allocator);
+            }
         }
-        if (has_unparsed) {
-            try mod_resolver.parseModules(allocator);
+
+        if (reporter.hasErrors()) {
+            try reporter.flush();
+            return;
         }
-    }
 
-    if (reporter.hasErrors()) {
-        try reporter.flush();
-        return;
+        try docgen.generateDocs(allocator, &mod_resolver, "docs/api");
     }
-
-    try docgen.generateDocs(allocator, &mod_resolver, "docs/api");
 }
 
 pub fn addToPath(allocator: std.mem.Allocator) !void {

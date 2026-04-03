@@ -164,7 +164,7 @@ pub fn buildStructExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 
 /// Binary expression builder — handles the left-associative precedence tower.
 /// Grammar: left_operand (OP right_operand)*
-pub fn buildBinaryExpr(ctx: *BuildContext, cap: *const CaptureNode, _: []const u8) !*Node {
+pub fn buildBinaryExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     // The children are the operand sub-rules (e.g., and_expr children for or_expr)
     if (cap.children.len == 0) return error.NoBinaryChildren;
     if (cap.children.len == 1) return builder.buildNode(ctx, &cap.children[0]);
@@ -177,12 +177,12 @@ pub fn buildBinaryExpr(ctx: *BuildContext, cap: *const CaptureNode, _: []const u
         // Find operator token between prev child end and this child start
         const prev_end = cap.children[i - 1].end_pos;
         const next_start = cap.children[i].start_pos;
-        var op: []const u8 = "+";
+        var op: parser.Operator = .add;
         var j = prev_end;
         while (j < next_start) : (j += 1) {
             const tok = ctx.tokens[j];
             if (tok.kind != .newline) {
-                op = tok.text;
+                op = parser.Operator.parse(tok.text);
                 break;
             }
         }
@@ -218,7 +218,7 @@ pub fn buildCompareExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 
             // Check for 'not' after 'is'
             const negated = is_pos + 1 < cap.end_pos and ctx.tokens[is_pos + 1].kind == .kw_not;
-            const cmp_op: []const u8 = if (negated) "!=" else "==";
+            const cmp_op: parser.Operator = if (negated) .ne else .eq;
 
             // Find the type name (last identifier, dotted path, or null keyword)
             var rhs: *Node = try ctx.newNode(.{ .identifier = "unknown" });
@@ -261,11 +261,11 @@ pub fn buildCompareExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 
     // Regular comparison: bitor_expr compare_op bitor_expr
     var operands = std.ArrayListUnmanaged(*const CaptureNode){};
-    var op: []const u8 = "==";
+    var op: parser.Operator = .eq;
     for (cap.children) |*child| {
         if (child.rule) |r| {
             if (std.mem.eql(u8, r, "compare_op")) {
-                op = builder.tokenText(ctx, child.start_pos);
+                op = parser.Operator.parse(builder.tokenText(ctx, child.start_pos));
             } else if (!std.mem.eql(u8, r, "_") and !std.mem.eql(u8, r, "TERM")) {
                 operands.append(ctx.alloc(), child) catch {};
             }
@@ -288,14 +288,14 @@ pub fn buildRangeExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     }
     const left = try builder.buildNode(ctx, &cap.children[0]);
     const right = try builder.buildNode(ctx, &cap.children[1]);
-    return ctx.newNode(.{ .range_expr = .{ .op = "..", .left = left, .right = right } });
+    return ctx.newNode(.{ .range_expr = .{ .op = .range, .left = left, .right = right } });
 }
 
 pub fn buildNotExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     // not_expr <- 'not' not_expr / compare_expr
     if (ctx.tokens[cap.start_pos].kind == .kw_not) {
         const operand = if (cap.children.len > 0) try builder.buildNode(ctx, &cap.children[0]) else return error.NoOperand;
-        return ctx.newNode(.{ .unary_expr = .{ .op = "not", .operand = operand } });
+        return ctx.newNode(.{ .unary_expr = .{ .op = .not, .operand = operand } });
     }
     if (cap.children.len > 0) return builder.buildNode(ctx, &cap.children[0]);
     return error.NoNotChildren;
@@ -306,11 +306,11 @@ pub fn buildUnaryExpr(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
     const first_tok = ctx.tokens[cap.start_pos];
     if (first_tok.kind == .bang) {
         const operand = if (cap.children.len > 0) try builder.buildNode(ctx, &cap.children[0]) else return error.NoOperand;
-        return ctx.newNode(.{ .unary_expr = .{ .op = "!", .operand = operand } });
+        return ctx.newNode(.{ .unary_expr = .{ .op = .bang, .operand = operand } });
     }
     if (first_tok.kind == .minus) {
         const operand = if (cap.children.len > 0) try builder.buildNode(ctx, &cap.children[0]) else return error.NoOperand;
-        return ctx.newNode(.{ .unary_expr = .{ .op = "-", .operand = operand } });
+        return ctx.newNode(.{ .unary_expr = .{ .op = .negate, .operand = operand } });
     }
     if (first_tok.kind == .const_borrow) {
         // const& — explicit const borrow expression

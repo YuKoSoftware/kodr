@@ -49,7 +49,7 @@ pub const MirNode = struct {
     /// Name: func name, struct name, enum name, var name, identifier, test description, param name.
     name: ?[]const u8 = null,
     /// Operator: binary op, unary op, assignment op.
-    op: ?[]const u8 = null,
+    op: ?@import("../parser.zig").Operator = null,
     /// Literal value text: int, float, string literals.
     literal: ?[]const u8 = null,
     /// Bool literal value.

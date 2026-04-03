@@ -6,102 +6,125 @@ const std = @import("std");
 
 // ── Basic ──
 
+/// Returns the absolute value of x.
 pub fn abs(x: anytype) @TypeOf(x) {
     return @abs(x);
 }
 
+/// Returns the smaller of a and b.
 pub fn min(a: anytype, b: anytype) @TypeOf(a, b) {
     return @min(a, b);
 }
 
+/// Returns the larger of a and b.
 pub fn max(a: anytype, b: anytype) @TypeOf(a, b) {
     return @max(a, b);
 }
 
+/// Clamps x to the range [lo, hi].
 pub fn clamp(x: anytype, lo: anytype, hi: anytype) @TypeOf(x, lo, hi) {
     return @max(lo, @min(x, hi));
 }
 
 // ── Rounding (float types) ──
 
+/// Rounds x down to the nearest integer toward negative infinity.
 pub fn floor(x: anytype) @TypeOf(x) {
     return @floor(x);
 }
 
+/// Rounds x up to the nearest integer toward positive infinity.
 pub fn ceil(x: anytype) @TypeOf(x) {
     return @ceil(x);
 }
 
+/// Rounds x to the nearest integer, ties away from zero.
 pub fn round(x: anytype) @TypeOf(x) {
     return @round(x);
 }
 
 // ── Powers and roots (float types) ──
 
+/// Returns the square root of x.
 pub fn sqrt(x: anytype) @TypeOf(x) {
     return @sqrt(x);
 }
 
+/// Returns base raised to the power of exponent.
 pub fn pow(base: anytype, exponent: anytype) @TypeOf(base, exponent) {
     return std.math.pow(@TypeOf(base, exponent), base, exponent);
 }
 
+/// Returns the natural logarithm of x.
 pub fn log(x: anytype) @TypeOf(x) {
     return @log(x);
 }
 
+/// Returns the base-2 logarithm of x.
 pub fn log2(x: anytype) @TypeOf(x) {
     return @log2(x);
 }
 
+/// Returns the base-10 logarithm of x.
 pub fn log10(x: anytype) @TypeOf(x) {
     return @log10(x);
 }
 
+/// Returns e raised to the power of x.
 pub fn exp(x: anytype) @TypeOf(x) {
     return @exp(x);
 }
 
 // ── Trigonometry (float types) ──
 
+/// Returns the sine of x in radians.
 pub fn sin(x: anytype) @TypeOf(x) {
     return @sin(x);
 }
 
+/// Returns the cosine of x in radians.
 pub fn cos(x: anytype) @TypeOf(x) {
     return @cos(x);
 }
 
+/// Returns the tangent of x in radians.
 pub fn tan(x: anytype) @TypeOf(x) {
     return @tan(x);
 }
 
+/// Returns the arc sine of x in radians.
 pub fn asin(x: anytype) @TypeOf(x) {
     return std.math.asin(x);
 }
 
+/// Returns the arc cosine of x in radians.
 pub fn acos(x: anytype) @TypeOf(x) {
     return std.math.acos(x);
 }
 
+/// Returns the arc tangent of x in radians.
 pub fn atan(x: anytype) @TypeOf(x) {
     return std.math.atan(x);
 }
 
+/// Returns the arc tangent of y/x, using signs to determine the quadrant.
 pub fn atan2(y: anytype, x: anytype) @TypeOf(x, y) {
     return std.math.atan2(y, x);
 }
 
 // ── Constants ──
 
+/// Returns the mathematical constant pi.
 pub fn pi() f64 {
     return std.math.pi;
 }
 
+/// Returns Euler's number (e).
 pub fn e() f64 {
     return std.math.e;
 }
 
+/// Returns positive infinity as f64.
 pub fn inf() f64 {
     return std.math.inf(f64);
 }

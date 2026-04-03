@@ -103,7 +103,7 @@ pub fn generateGuardedMatchMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             try cg.emitIndent();
             try cg.emit("}");
             guard_counter += 1;
-        } else if (pat_m.kind == .binary and std.mem.eql(u8, pat_m.op orelse "", K.Op.RANGE)) {
+        } else if (pat_m.kind == .binary and (pat_m.op orelse .eq) == .range) {
             // Range pattern: (1..10)
             try cg.emit("if (_m >= ");
             try cg.generateExprMir(pat_m.lhs());
@@ -198,7 +198,7 @@ pub fn generateMatchMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", "else")) {
                 has_wildcard = true;
                 try cg.emit("else");
-            } else if (pat_m.kind == .binary and std.mem.eql(u8, pat_m.op orelse "", K.Op.RANGE)) {
+            } else if (pat_m.kind == .binary and (pat_m.op orelse .eq) == .range) {
                 try cg.generateExprMir(pat_m.lhs());
                 try cg.emit("...");
                 try cg.generateExprMir(pat_m.rhs());
@@ -724,32 +724,38 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
 
 // ── Operator maps for arithmetic builtins ───────────────────────
 
-fn mapWrappingOp(op: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, op, "+")) return "+%";
-    if (std.mem.eql(u8, op, "-")) return "-%";
-    if (std.mem.eql(u8, op, "*")) return "*%";
-    return null;
+fn mapWrappingOp(op: parser.Operator) ?[]const u8 {
+    return switch (op) {
+        .add => "+%",
+        .sub => "-%",
+        .mul => "*%",
+        else => null,
+    };
 }
 
-fn mapSaturatingOp(op: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, op, "+")) return "+|";
-    if (std.mem.eql(u8, op, "-")) return "-|";
-    if (std.mem.eql(u8, op, "*")) return "*|";
-    return null;
+fn mapSaturatingOp(op: parser.Operator) ?[]const u8 {
+    return switch (op) {
+        .add => "+|",
+        .sub => "-|",
+        .mul => "*|",
+        else => null,
+    };
 }
 
-fn mapOverflowBuiltin(op: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, op, "+")) return "@addWithOverflow";
-    if (std.mem.eql(u8, op, "-")) return "@subWithOverflow";
-    if (std.mem.eql(u8, op, "*")) return "@mulWithOverflow";
-    return null;
+fn mapOverflowBuiltin(op: parser.Operator) ?[]const u8 {
+    return switch (op) {
+        .add => "@addWithOverflow",
+        .sub => "@subWithOverflow",
+        .mul => "@mulWithOverflow",
+        else => null,
+    };
 }
 
 // ── Wrapping / saturating / overflow: MIR paths ────────────────────
 
 pub fn generateWrappingExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (m.kind == .binary) {
-        if (mapWrappingOp(m.op orelse "")) |op| {
+        if (mapWrappingOp(m.op orelse .assign)) |op| {
             try cg.generateExprMir(m.lhs());
             try cg.emitFmt(" {s} ", .{op});
             try cg.generateExprMir(m.rhs());
@@ -761,7 +767,7 @@ pub fn generateWrappingExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
 
 pub fn generateSaturatingExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (m.kind == .binary) {
-        if (mapSaturatingOp(m.op orelse "")) |op| {
+        if (mapSaturatingOp(m.op orelse .assign)) |op| {
             try cg.generateExprMir(m.lhs());
             try cg.emitFmt(" {s} ", .{op});
             try cg.generateExprMir(m.rhs());
@@ -795,7 +801,7 @@ fn emitOverflowTail(cg: *CodeGen, type_str: ?[]const u8) anyerror!void {
 
 pub fn generateOverflowExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (m.kind == .binary) {
-        if (mapOverflowBuiltin(m.op orelse "")) |builtin| {
+        if (mapOverflowBuiltin(m.op orelse .assign)) |builtin| {
             const left_is_literal = m.lhs().literal_kind == .int or m.lhs().literal_kind == .float;
             const type_str = try resolveOverflowTypeStr(cg, left_is_literal);
 
@@ -865,11 +871,8 @@ fn findFuncMir(cg: *CodeGen, func_name: []const u8) ?*mir.MirNode {
 // FREE FUNCTIONS (file-scope, not methods)
 // ============================================================
 
-pub fn opToZig(op: []const u8) []const u8 {
-    if (std.mem.eql(u8, op, K.Op.AND)) return "and";
-    if (std.mem.eql(u8, op, K.Op.OR)) return "or";
-    if (std.mem.eql(u8, op, K.Op.NOT)) return "!";
-    return op; // most operators are the same in Zig
+pub fn opToZig(op: parser.Operator) []const u8 {
+    return op.toZig();
 }
 
 /// Check if a field name is a type name used for union value access (result.i32, result.User)

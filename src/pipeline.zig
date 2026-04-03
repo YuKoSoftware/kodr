@@ -450,8 +450,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     // Build every root module (all those with a #build declaration).
     // A project can have multiple build targets — e.g. an exe + a dynamic lib.
 
-    // Count root modules and collect target descriptors
-    var root_count: usize = 0;
+    // Collect target descriptors for all root modules — unified path for single and multi-target.
     var multi_targets = std.ArrayListUnmanaged(zig_runner.MultiTarget){};
     defer multi_targets.deinit(allocator);
     // Temporary storage for lib_imports and link_libs slices
@@ -472,8 +471,19 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     }
     var c_source_lists = std.ArrayListUnmanaged([]const []const u8){};
     defer {
-        for (c_source_lists.items) |li| allocator.free(li);
+        for (c_source_lists.items) |li| {
+            for (li) |s| allocator.free(s);
+            allocator.free(li);
+        }
         c_source_lists.deinit(allocator);
+    }
+    var include_dir_lists = std.ArrayListUnmanaged([]const []const u8){};
+    defer {
+        for (include_dir_lists.items) |li| {
+            for (li) |s| allocator.free(s);
+            allocator.free(li);
+        }
+        include_dir_lists.deinit(allocator);
     }
     var mod_import_lists = std.ArrayListUnmanaged([]const []const u8){};
     defer {
@@ -482,18 +492,10 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     }
 
     var exe_binary_name: ?[]const u8 = null; // tracked for `orhon run`
+    errdefer if (exe_binary_name) |n| allocator.free(n);
 
+    // Collect a MultiTarget descriptor for each root module
     {
-        var mod_it = mod_resolver.modules.iterator();
-        while (mod_it.next()) |entry| {
-            const mod = entry.value_ptr;
-            if (!mod.is_root) continue;
-            root_count += 1;
-        }
-    }
-
-    if (root_count > 1) {
-        // Multi-target build: collect all targets, build once
         var mod_it = mod_resolver.modules.iterator();
         while (mod_it.next()) |entry| {
             const mod = entry.value_ptr;
@@ -532,15 +534,13 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 }
             }
 
-            // Find which of this module's imports are lib targets and collect
-            // shared modules transitively. Deduplicate to prevent duplicate addImport calls.
+            // Transitive closure over imports: classify lib vs shared module imports
             var lib_imports = std.ArrayListUnmanaged([]const u8){};
             defer lib_imports.deinit(allocator);
             var mod_imports = std.ArrayListUnmanaged([]const u8){};
             defer mod_imports.deinit(allocator);
             var seen_imports = std.StringHashMapUnmanaged(void){};
             defer seen_imports.deinit(allocator);
-            // Transitive closure: follow imports of imports
             var mt_work_queue = std.ArrayListUnmanaged([]const u8){};
             defer mt_work_queue.deinit(allocator);
             for (mod.imports) |imp_name| try mt_work_queue.append(allocator, imp_name);
@@ -553,11 +553,9 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                         continue;
                     }
                 }
-                // Non-lib, non-root module — needs named module registration
                 const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
                 if (dep_mod.is_root) continue;
                 try mod_imports.append(allocator, imp_name);
-                // Enqueue transitive imports
                 for (dep_mod.imports) |sub_imp| {
                     if (!seen_imports.contains(sub_imp)) {
                         try mt_work_queue.append(allocator, sub_imp);
@@ -575,21 +573,11 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             var mt_c_includes: std.ArrayListUnmanaged([]const u8) = .{};
             defer mt_c_includes.deinit(allocator);
             var mt_c_sources: std.ArrayListUnmanaged([]const u8) = .{};
-            defer {
-                // Free ../../-prefixed strings allocated by mergeZonConfigs
-                for (mt_c_sources.items) |s| {
-                    if (std.mem.startsWith(u8, s, "../../")) allocator.free(s);
-                }
-                mt_c_sources.deinit(allocator);
-            }
+            defer mt_c_sources.deinit(allocator);
             var mt_include_dirs: std.ArrayListUnmanaged([]const u8) = .{};
-            defer {
-                for (mt_include_dirs.items) |s| allocator.free(s);
-                mt_include_dirs.deinit(allocator);
-            }
+            defer mt_include_dirs.deinit(allocator);
             var mt_needs_cpp = false;
 
-            // Merge .zon configs from zig-backed modules (this module and its imports)
             try mergeZonConfigs(allocator, mod.name, mod.imports, &zon_configs,
                 &mt_link_libs, &mt_c_sources, &mt_include_dirs, &mt_needs_cpp);
 
@@ -600,6 +588,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             const c_source_slice = try allocator.dupe([]const u8, mt_c_sources.items);
             try c_source_lists.append(allocator, c_source_slice);
             const include_dir_slice = try allocator.dupe([]const u8, mt_include_dirs.items);
+            try include_dir_lists.append(allocator, include_dir_slice);
 
             try multi_targets.append(allocator, .{
                 .module_name = mod.name,
@@ -615,179 +604,46 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 .include_dirs = include_dir_slice,
             });
         }
+    }
 
-        // Collect non-root zig-backed modules for named module registration
-        var extra_zig_mods = std.ArrayListUnmanaged([]const u8){};
-        defer extra_zig_mods.deinit(allocator);
-        {
-            var bmod_it = mod_resolver.modules.iterator();
-            while (bmod_it.next()) |bmod_entry| {
-                const bmod = bmod_entry.value_ptr;
-                if (bmod.is_root) continue;
-                if (bmod.is_zig_module) {
-                    try extra_zig_mods.append(allocator, bmod.name);
-                }
+    // Collect non-root zig-backed modules for named module registration
+    var extra_zig_mods = std.ArrayListUnmanaged([]const u8){};
+    defer extra_zig_mods.deinit(allocator);
+    {
+        var bmod_it = mod_resolver.modules.iterator();
+        while (bmod_it.next()) |bmod_entry| {
+            const bmod = bmod_entry.value_ptr;
+            if (bmod.is_root) continue;
+            if (bmod.is_zig_module) {
+                try extra_zig_mods.append(allocator, bmod.name);
             }
         }
+    }
 
-        for (cli.targets.items) |build_target| {
-            const target_str = build_target.toZigTriple();
+    // Build all targets via unified multi-target path
+    for (cli.targets.items) |build_target| {
+        const target_str = build_target.toZigTriple();
 
-            // -zig target: copy generated Zig source to bin/zig/
-            if (build_target == .zig) {
-                try _commands.emitZigProject(allocator);
-                continue;
-            }
-
-            const use_subfolder = cli.targets.items.len > 1;
-            const built = try runner.buildAll(target_str, opt_str, multi_targets.items, extra_zig_mods.items);
-            if (!built) return null;
-
-            // Move artifacts to target subfolder if multi-target
-            if (use_subfolder) {
-                try _commands.moveArtifactsToSubfolder(allocator, build_target.folderName());
-            }
+        if (build_target == .zig) {
+            try _commands.emitZigProject(allocator);
+            continue;
         }
 
-        // Generate interface files for lib targets
-        for (multi_targets.items) |t| {
-            if (t.build_type != .exe) {
-                const mod = mod_resolver.modules.get(t.module_name) orelse continue;
-                if (mod.ast) |ast| {
-                    try _interface.generateInterface(allocator, t.module_name, t.project_name, ast);
-                }
-            }
+        const use_subfolder = cli.targets.items.len > 1;
+        const built = try runner.buildAll(target_str, opt_str, multi_targets.items, extra_zig_mods.items);
+        if (!built) return null;
+
+        if (use_subfolder) {
+            try _commands.moveArtifactsToSubfolder(allocator, build_target.folderName());
         }
-    } else {
-        // Single-target build: use existing path (no behavior change)
-        var mod_it = mod_resolver.modules.iterator();
-        while (mod_it.next()) |entry| {
-            const mod = entry.value_ptr;
-            if (!mod.is_root) continue;
+    }
 
-            var build_type: module.BuildType = .exe;
-            var project_name: []const u8 = "";
-            var project_version: ?[3]u64 = null;
-            var link_libs: std.ArrayListUnmanaged([]const u8) = .{};
-            defer link_libs.deinit(allocator);
-            var c_includes_st: std.ArrayListUnmanaged([]const u8) = .{};
-            defer c_includes_st.deinit(allocator);
-            var c_sources_st: std.ArrayListUnmanaged([]const u8) = .{};
-            defer {
-                for (c_sources_st.items) |s| {
-                    if (std.mem.startsWith(u8, s, "../../")) allocator.free(s);
-                }
-                c_sources_st.deinit(allocator);
-            }
-            var include_dirs_st: std.ArrayListUnmanaged([]const u8) = .{};
-            defer {
-                for (include_dirs_st.items) |s| allocator.free(s);
-                include_dirs_st.deinit(allocator);
-            }
-            var needs_cpp_st = false;
-
-            // Collect build/name/version from root module metadata.
+    // Generate interface files for lib targets
+    for (multi_targets.items) |t| {
+        if (t.build_type != .exe) {
+            const mod = mod_resolver.modules.get(t.module_name) orelse continue;
             if (mod.ast) |ast| {
-                for (ast.program.metadata) |meta| {
-                    if (meta.metadata.field == .build) {
-                        if (meta.metadata.value.* == .identifier) {
-                            build_type = module.parseBuildType(meta.metadata.value.identifier);
-                        }
-                    }
-                    if (meta.metadata.field == .name) {
-                        if (meta.metadata.value.* == .string_literal) {
-                            project_name = constants.stripQuotes(meta.metadata.value.string_literal);
-                        }
-                    }
-                    if (meta.metadata.field == .version) {
-                        project_version = module.extractVersion(meta.metadata.value);
-                    }
-                }
-            }
-
-            // Merge .zon configs from zig-backed modules (this module and its imports)
-            try mergeZonConfigs(allocator, mod.name, mod.imports, &zon_configs,
-                &link_libs, &c_sources_st, &include_dirs_st, &needs_cpp_st);
-
-            const binary_name = if (project_name.len > 0) project_name else mod.name;
-
-            // Collect shared (non-root, non-lib) modules transitively imported by this root.
-            // Transitive closure: follow imports of imports to capture all needed modules.
-            var shared_mods = std.ArrayListUnmanaged([]const u8){};
-            defer shared_mods.deinit(allocator);
-            {
-                var shared_seen = std.StringHashMapUnmanaged(void){};
-                defer shared_seen.deinit(allocator);
-                var work_queue = std.ArrayListUnmanaged([]const u8){};
-                defer work_queue.deinit(allocator);
-                // Seed with root's direct imports
-                for (mod.imports) |imp_name| try work_queue.append(allocator, imp_name);
-                while (work_queue.pop()) |imp_name| {
-                    if (shared_seen.contains(imp_name)) continue;
-                    try shared_seen.put(allocator, imp_name, {});
-                    const dep_mod = mod_resolver.modules.get(imp_name) orelse continue;
-                    if (dep_mod.is_root) continue;
-                    if (module_builds.get(imp_name)) |bt| {
-                        if (bt == .static or bt == .dynamic) continue;
-                    }
-                    try shared_mods.append(allocator, imp_name);
-                    // Enqueue the dependency's imports for transitive closure
-                    for (dep_mod.imports) |sub_imp| {
-                        if (!shared_seen.contains(sub_imp)) {
-                            try work_queue.append(allocator, sub_imp);
-                        }
-                    }
-                }
-            }
-
-            // Collect zig-backed modules for named module registration
-            var zig_mods = std.ArrayListUnmanaged([]const u8){};
-            defer zig_mods.deinit(allocator);
-            {
-                var zmod_it = mod_resolver.modules.iterator();
-                while (zmod_it.next()) |zmod_entry| {
-                    const zmod = zmod_entry.value_ptr;
-                    if (zmod.is_root) continue;
-                    if (zmod.is_zig_module) {
-                        try zig_mods.append(allocator, zmod.name);
-                    }
-                }
-            }
-
-            try runner.generateBuildZig(mod.name, build_type, binary_name, project_version, link_libs.items, shared_mods.items, c_includes_st.items, c_sources_st.items, needs_cpp_st, zig_mods.items, include_dirs_st.items);
-
-            for (cli.targets.items) |build_target| {
-                const target_str = build_target.toZigTriple();
-
-                if (build_target == .zig) {
-                    try _commands.emitZigProject(allocator);
-                    continue;
-                }
-
-                const use_subfolder = cli.targets.items.len > 1;
-                const built = if (build_type == .exe)
-                    try runner.build(target_str, opt_str, mod.name, binary_name)
-                else
-                    try runner.buildLib(target_str, opt_str, mod.name, binary_name, build_type);
-                if (!built) return null;
-
-                if (use_subfolder) {
-                    try _commands.moveArtifactsToSubfolder(allocator, build_target.folderName());
-                }
-            }
-
-            if (build_type == .exe) {
-                // Primary module (name matches folder) gets priority for orhon run
-                if (std.mem.eql(u8, mod.name, project_folder_name)) {
-                    if (exe_binary_name) |old| allocator.free(old);
-                    exe_binary_name = try allocator.dupe(u8, binary_name);
-                } else if (exe_binary_name == null) {
-                    exe_binary_name = try allocator.dupe(u8, binary_name);
-                }
-            } else {
-                if (mod.ast) |ast| {
-                    try _interface.generateInterface(allocator, mod.name, binary_name, ast);
-                }
+                try _interface.generateInterface(allocator, t.module_name, t.project_name, ast);
             }
         }
     }

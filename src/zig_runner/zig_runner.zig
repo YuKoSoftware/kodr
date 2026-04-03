@@ -111,23 +111,30 @@ pub const ZigRunner = struct {
             return false;
         }
 
+        // Determine platform-specific artifact extensions from target triple
+        const is_windows = std.mem.indexOf(u8, target, "windows") != null;
+        const exe_ext: []const u8 = if (is_windows) ".exe" else "";
+        const static_ext: []const u8 = if (is_windows) ".lib" else ".a";
+        const dynamic_ext: []const u8 = if (is_windows) ".dll" else ".so";
+        const lib_prefix: []const u8 = if (is_windows) "" else "lib";
+
         // Copy all artifacts to bin/
         try std.fs.cwd().makePath("bin");
 
         for (targets) |t| {
             const is_lib = t.build_type != .exe;
-            const ext: []const u8 = if (t.build_type == .dynamic) ".so" else ".a";
+            const ext: []const u8 = if (t.build_type == .dynamic) dynamic_ext else static_ext;
 
             const src_bin = if (is_lib)
-                try std.fmt.allocPrint(self.allocator, "{s}/zig-out/lib/lib{s}{s}", .{ cache.GENERATED_DIR, t.project_name, ext })
+                try std.fmt.allocPrint(self.allocator, "{s}/zig-out/lib/{s}{s}{s}", .{ cache.GENERATED_DIR, lib_prefix, t.project_name, ext })
             else
-                try std.fs.path.join(self.allocator, &.{ cache.GENERATED_DIR, "zig-out", "bin", t.project_name });
+                try std.fmt.allocPrint(self.allocator, "{s}/zig-out/bin/{s}{s}", .{ cache.GENERATED_DIR, t.project_name, exe_ext });
             defer self.allocator.free(src_bin);
 
             const dst_name = if (is_lib)
-                try std.fmt.allocPrint(self.allocator, "bin/lib{s}{s}", .{ t.project_name, ext })
+                try std.fmt.allocPrint(self.allocator, "bin/{s}{s}{s}", .{ lib_prefix, t.project_name, ext })
             else
-                try std.fs.path.join(self.allocator, &.{ "bin", t.project_name });
+                try std.fmt.allocPrint(self.allocator, "bin/{s}{s}", .{ t.project_name, exe_ext });
             defer self.allocator.free(dst_name);
 
             try std.fs.cwd().copyFile(src_bin, std.fs.cwd(), dst_name, .{});
@@ -197,24 +204,27 @@ pub const ZigRunner = struct {
             return false;
         }
 
-        // Determine source and destination paths based on build type.
-        // exe  → zig-out/bin/<name>     → bin/<name>
-        // static/dynamic → zig-out/lib/lib<name>.a → bin/lib<name>.a
+        // Determine source and destination paths based on build type + target platform.
         const is_lib = build_type != .exe;
-        const ext: []const u8 = if (build_type == .dynamic) ".so" else ".a";
+        const is_windows = std.mem.indexOf(u8, target, "windows") != null;
+        const exe_ext: []const u8 = if (is_windows) ".exe" else "";
+        const static_ext: []const u8 = if (is_windows) ".lib" else ".a";
+        const dynamic_ext: []const u8 = if (is_windows) ".dll" else ".so";
+        const lib_prefix: []const u8 = if (is_windows) "" else "lib";
+        const ext: []const u8 = if (build_type == .dynamic) dynamic_ext else static_ext;
 
         const src_bin = if (is_lib)
-            try std.fmt.allocPrint(self.allocator, "{s}/zig-out/lib/lib{s}{s}", .{ cache.GENERATED_DIR, project_name, ext })
+            try std.fmt.allocPrint(self.allocator, "{s}/zig-out/lib/{s}{s}{s}", .{ cache.GENERATED_DIR, lib_prefix, project_name, ext })
         else
-            try std.fs.path.join(self.allocator, &.{ cache.GENERATED_DIR, "zig-out", "bin", project_name });
+            try std.fmt.allocPrint(self.allocator, "{s}/zig-out/bin/{s}{s}", .{ cache.GENERATED_DIR, project_name, exe_ext });
         defer self.allocator.free(src_bin);
 
         try std.fs.cwd().makePath("bin");
 
         const dst_name = if (is_lib)
-            try std.fmt.allocPrint(self.allocator, "bin/lib{s}{s}", .{ project_name, ext })
+            try std.fmt.allocPrint(self.allocator, "bin/{s}{s}{s}", .{ lib_prefix, project_name, ext })
         else
-            try std.fs.path.join(self.allocator, &.{ "bin", project_name });
+            try std.fmt.allocPrint(self.allocator, "bin/{s}{s}", .{ project_name, exe_ext });
         defer self.allocator.free(dst_name);
 
         try std.fs.cwd().copyFile(src_bin, std.fs.cwd(), dst_name, .{});

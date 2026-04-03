@@ -7,12 +7,14 @@ const alloc = std.heap.smp_allocator;
 
 // ── Integer sorting ──
 
+/// Returns a new slice with i32 elements sorted in ascending order.
 pub fn intAsc(items: []const i32) []const i32 {
     const copy = alloc.dupe(i32, items) catch return items;
     std.mem.sort(i32, copy, {}, std.sort.asc(i32));
     return copy;
 }
 
+/// Returns a new slice with i32 elements sorted in descending order.
 pub fn intDesc(items: []const i32) []const i32 {
     const copy = alloc.dupe(i32, items) catch return items;
     std.mem.sort(i32, copy, {}, std.sort.desc(i32));
@@ -21,12 +23,14 @@ pub fn intDesc(items: []const i32) []const i32 {
 
 // ── Float sorting ──
 
+/// Returns a new slice with f64 elements sorted in ascending order.
 pub fn floatAsc(items: []const f64) []const f64 {
     const copy = alloc.dupe(f64, items) catch return items;
     std.mem.sort(f64, copy, {}, std.sort.asc(f64));
     return copy;
 }
 
+/// Returns a new slice with f64 elements sorted in descending order.
 pub fn floatDesc(items: []const f64) []const f64 {
     const copy = alloc.dupe(f64, items) catch return items;
     std.mem.sort(f64, copy, {}, std.sort.desc(f64));
@@ -35,6 +39,7 @@ pub fn floatDesc(items: []const f64) []const f64 {
 
 // ── String sorting ──
 
+/// Returns a new slice with string elements sorted in lexicographic ascending order.
 pub fn strAsc(items: []const []const u8) []const []const u8 {
     const copy = alloc.dupe([]const u8, items) catch return items;
     std.mem.sort([]const u8, copy, {}, struct {
@@ -47,6 +52,7 @@ pub fn strAsc(items: []const []const u8) []const []const u8 {
 
 // ── Reverse ──
 
+/// Returns a new slice with elements in reverse order.
 pub fn reverse(items: anytype) @TypeOf(items) {
     const T = std.meta.Elem(@TypeOf(items));
     const copy = alloc.dupe(T, items) catch return items;

@@ -16,24 +16,29 @@ fn hexDigest(comptime Hash: type, data: []const u8) []const u8 {
 
 // ── Hashing ──
 
+/// Returns the SHA-256 hex digest of the given data.
 pub fn sha256(data: []const u8) []const u8 {
     return hexDigest(std.crypto.hash.sha2.Sha256, data);
 }
 
+/// Returns the SHA-512 hex digest of the given data.
 pub fn sha512(data: []const u8) []const u8 {
     return hexDigest(std.crypto.hash.sha2.Sha512, data);
 }
 
+/// Returns the MD5 hex digest of the given data.
 pub fn md5(data: []const u8) []const u8 {
     return hexDigest(std.crypto.hash.Md5, data);
 }
 
+/// Returns the BLAKE3 hex digest of the given data.
 pub fn blake3(data: []const u8) []const u8 {
     return hexDigest(std.crypto.hash.Blake3, data);
 }
 
 // ── HMAC ──
 
+/// Returns the HMAC-SHA256 hex digest of data using the given key.
 pub fn hmacSha256(data: []const u8, key: []const u8) []const u8 {
     const Hmac = std.crypto.auth.hmac.sha2.HmacSha256;
     var mac: [Hmac.mac_length]u8 = undefined;
@@ -45,6 +50,7 @@ pub fn hmacSha256(data: []const u8, key: []const u8) []const u8 {
 
 const Aes256Gcm = std.crypto.aead.aes_gcm.Aes256Gcm;
 
+/// Encrypts plaintext with AES-256-GCM using a 32-byte key, returns base64-encoded ciphertext.
 pub fn encrypt(plaintext: []const u8, key: []const u8) anyerror![]const u8 {
     if (key.len != 32) {
         return error.key_must_be_exactly_32_bytes;
@@ -81,6 +87,7 @@ pub fn encrypt(plaintext: []const u8, key: []const u8) anyerror![]const u8 {
     return encoded;
 }
 
+/// Decrypts base64-encoded AES-256-GCM ciphertext using a 32-byte key, returns plaintext.
 pub fn decrypt(ciphertext: []const u8, key: []const u8) anyerror![]const u8 {
     if (key.len != 32) {
         return error.key_must_be_exactly_32_bytes;
@@ -122,6 +129,7 @@ pub fn decrypt(ciphertext: []const u8, key: []const u8) anyerror![]const u8 {
 
 // ── UUID v4 ──
 
+/// Generates a random UUID v4 string in 8-4-4-4-12 format.
 pub fn uuid() []const u8 {
     var bytes: [16]u8 = undefined;
     std.crypto.random.bytes(&bytes);

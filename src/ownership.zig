@@ -582,7 +582,7 @@ test "ownership - assignment restores ownership" {
     const right = try a.create(parser.Node);
     right.* = .{ .int_literal = "42" }; // value doesn't matter for ownership
     const assign = try a.create(parser.Node);
-    assign.* = .{ .assignment = .{ .op = "=", .left = left, .right = right } };
+    assign.* = .{ .assignment = .{ .op = .assign, .left = left, .right = right } };
 
     try checker.checkStatement(assign, &scope);
 
@@ -706,7 +706,7 @@ test "ownership - inferPrimitiveFromValue" {
     // Binary expr result is primitive
     var left = parser.Node{ .int_literal = "1" };
     var right = parser.Node{ .int_literal = "2" };
-    var bin = parser.Node{ .binary_expr = .{ .op = "+", .left = &left, .right = &right } };
+    var bin = parser.Node{ .binary_expr = .{ .op = .add, .left = &left, .right = &right } };
     try std.testing.expect(inferPrimitiveFromValue(&bin, &scope));
 
     // Unknown call → conservative false

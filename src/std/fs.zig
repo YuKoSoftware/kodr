@@ -7,6 +7,7 @@ const alloc = std.heap.smp_allocator;
 
 // ── Read ──
 
+/// Reads the entire contents of a file at the given path into memory.
 pub fn readFile(path: []const u8) anyerror![]const u8 {
     const file = std.fs.cwd().openFile(path, .{}) catch {
         return error.could_not_open_file;
@@ -20,6 +21,7 @@ pub fn readFile(path: []const u8) anyerror![]const u8 {
 
 // ── Write ──
 
+/// Creates or overwrites a file at the given path with the provided content.
 pub fn writeFile(path: []const u8, content: []const u8) anyerror!void {
     const file = std.fs.cwd().createFile(path, .{}) catch {
         return error.could_not_create_file;
@@ -32,6 +34,7 @@ pub fn writeFile(path: []const u8, content: []const u8) anyerror!void {
 
 // ── Append ──
 
+/// Appends content to the end of an existing file, or creates it if it does not exist.
 pub fn appendFile(path: []const u8, content: []const u8) anyerror!void {
     const file = std.fs.cwd().openFile(path, .{ .mode = .write_only }) catch {
         // File doesn't exist — create it
@@ -47,6 +50,7 @@ pub fn appendFile(path: []const u8, content: []const u8) anyerror!void {
 
 // ── Exists ──
 
+/// Returns true if a file or directory exists at the given path.
 pub fn exists(path: []const u8) bool {
     std.fs.cwd().access(path, .{}) catch return false;
     return true;
@@ -54,6 +58,7 @@ pub fn exists(path: []const u8) bool {
 
 // ── Remove ──
 
+/// Deletes the file at the given path.
 pub fn remove(path: []const u8) anyerror!void {
     std.fs.cwd().deleteFile(path) catch {
         return error.could_not_delete_file;
@@ -62,6 +67,7 @@ pub fn remove(path: []const u8) anyerror!void {
 
 // ── Size ──
 
+/// Returns the size of the file at the given path in bytes.
 pub fn fileSize(path: []const u8) anyerror!i64 {
     const file = std.fs.cwd().openFile(path, .{}) catch {
         return error.could_not_open_file;
@@ -75,6 +81,7 @@ pub fn fileSize(path: []const u8) anyerror!i64 {
 
 // ── Mkdir ──
 
+/// Creates a directory at the given path, including any missing parent directories.
 pub fn mkdir(path: []const u8) anyerror!void {
     std.fs.cwd().makePath(path) catch {
         return error.could_not_create_directory;
@@ -84,6 +91,7 @@ pub fn mkdir(path: []const u8) anyerror!void {
 // ── ReadDir ──
 // Returns newline-separated list of entry names
 
+/// Lists the entries in a directory, returned as a newline-separated string of names.
 pub fn readDir(path: []const u8) anyerror![]const u8 {
     var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch {
         return error.could_not_open_directory;
@@ -101,24 +109,28 @@ pub fn readDir(path: []const u8) anyerror![]const u8 {
 
 // ── Path: Join ──
 
+/// Joins two path components with the platform path separator.
 pub fn joinPath(a: []const u8, b: []const u8) []const u8 {
     return std.fs.path.join(alloc, &.{ a, b }) catch return "";
 }
 
 // ── Path: Dirname ──
 
+/// Returns the directory portion of a path, or empty string if none.
 pub fn dirname(path: []const u8) []const u8 {
     return std.fs.path.dirname(path) orelse "";
 }
 
 // ── Path: Basename ──
 
+/// Returns the final component of a path (the file or directory name).
 pub fn basename(path: []const u8) []const u8 {
     return std.fs.path.basename(path);
 }
 
 // ── Path: Extension ──
 
+/// Returns the file extension including the leading dot, or empty string if none.
 pub fn extension(path: []const u8) []const u8 {
     return std.fs.path.extension(path);
 }

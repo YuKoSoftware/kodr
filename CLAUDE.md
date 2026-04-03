@@ -199,7 +199,7 @@ Tests live in the same file as the code they test (Zig `test` blocks).
 
 ## Tamga — Companion Project
 
-Location: `/home/yunus/Projects/orhon/tamga_framework/`
+Location: `/home/yunus/Projects/orhon/tamga/`
 
 A game/multimedia framework written in pure Orhon that doubles as a real-world
 stress test for the compiler.

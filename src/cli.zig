@@ -73,7 +73,9 @@ pub const CliArgs = struct {
     source_dir: []const u8,
     project_name: []const u8, // for init command
     init_in_place: bool, // orhon init (no name) — init in current dir
-    gen_std: bool, // -std flag for gendoc (generate stdlib docs)
+    gen_api: bool, // -api flag for gendoc (generate project API docs only)
+    gen_std: bool, // -std flag for gendoc (generate stdlib docs only)
+    gen_syntax: bool, // -syntax flag for gendoc (generate syntax reference only)
     allocator: std.mem.Allocator, // owns duped strings
 
     pub fn deinit(self: *const CliArgs) void {
@@ -104,7 +106,9 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         .source_dir = "src",
         .project_name = "",
         .init_in_place = false,
+        .gen_api = false,
         .gen_std = false,
+        .gen_syntax = false,
         .allocator = allocator,
     };
 
@@ -159,28 +163,46 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
     var i: usize = 2;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "-linux_x64")) {
-            try cli.targets.append(allocator, .linux_x64);
-        } else if (std.mem.eql(u8, arg, "-linux_arm")) {
-            try cli.targets.append(allocator, .linux_arm);
-        } else if (std.mem.eql(u8, arg, "-win_x64")) {
-            try cli.targets.append(allocator, .win_x64);
-        } else if (std.mem.eql(u8, arg, "-mac_x64")) {
-            try cli.targets.append(allocator, .mac_x64);
-        } else if (std.mem.eql(u8, arg, "-mac_arm")) {
-            try cli.targets.append(allocator, .mac_arm);
-        } else if (std.mem.eql(u8, arg, "-wasm")) {
-            try cli.targets.append(allocator, .wasm);
-        } else if (std.mem.eql(u8, arg, "-zig")) {
-            try cli.targets.append(allocator, .zig);
+        const is_target_flag = std.mem.eql(u8, arg, "-linux_x64") or
+            std.mem.eql(u8, arg, "-linux_arm") or
+            std.mem.eql(u8, arg, "-win_x64") or
+            std.mem.eql(u8, arg, "-mac_x64") or
+            std.mem.eql(u8, arg, "-mac_arm") or
+            std.mem.eql(u8, arg, "-wasm") or
+            std.mem.eql(u8, arg, "-zig");
+
+        if (is_target_flag) {
+            if (cli.command != .build) {
+                std.debug.print("warning: target flag '{s}' ignored (only valid with 'build')\n", .{arg});
+                continue;
+            }
+            if (std.mem.eql(u8, arg, "-linux_x64")) {
+                try cli.targets.append(allocator, .linux_x64);
+            } else if (std.mem.eql(u8, arg, "-linux_arm")) {
+                try cli.targets.append(allocator, .linux_arm);
+            } else if (std.mem.eql(u8, arg, "-win_x64")) {
+                try cli.targets.append(allocator, .win_x64);
+            } else if (std.mem.eql(u8, arg, "-mac_x64")) {
+                try cli.targets.append(allocator, .mac_x64);
+            } else if (std.mem.eql(u8, arg, "-mac_arm")) {
+                try cli.targets.append(allocator, .mac_arm);
+            } else if (std.mem.eql(u8, arg, "-wasm")) {
+                try cli.targets.append(allocator, .wasm);
+            } else if (std.mem.eql(u8, arg, "-zig")) {
+                try cli.targets.append(allocator, .zig);
+            }
         } else if (std.mem.eql(u8, arg, "-fast")) {
             cli.optimize = .fast;
         } else if (std.mem.eql(u8, arg, "-small")) {
             cli.optimize = .small;
         } else if (std.mem.eql(u8, arg, "-verbose")) {
             cli.verbose = true;
+        } else if (std.mem.eql(u8, arg, "-api")) {
+            cli.gen_api = true;
         } else if (std.mem.eql(u8, arg, "-std")) {
             cli.gen_std = true;
+        } else if (std.mem.eql(u8, arg, "-syntax")) {
+            cli.gen_syntax = true;
         } else {
             // Treat as source directory
             cli.source_dir = try allocator.dupe(u8, arg);
@@ -210,8 +232,10 @@ pub fn printHelp() void {
         \\  test                Run all test { } blocks in the project
         \\  init [name]         Create a new project (in ./<name>/ or current dir if no name)
         \\  fmt                 Format all .orh files in the project
-        \\  gendoc              Generate Markdown docs from /// comments (pub items)
-        \\                        -std  Generate stdlib reference docs
+        \\  gendoc              Generate all docs (api + std + syntax)
+        \\                        -api     Project API docs only (docs/api/)
+        \\                        -std     Stdlib reference only (docs/std/)
+        \\                        -syntax  Syntax reference only (docs/syntax.md)
         \\  lsp                 Start the language server (for editor integration)
         \\  addtopath           Add orhon to your shell PATH
         \\  debug               Show project info — modules, files, source directory

@@ -75,6 +75,7 @@ fn dupeSlice(src: []const []const u8) []const []const u8 {
 
 // ── GetField ──
 
+/// Returns the value of a single CSV field at the given row and column indices.
 pub fn getField(source: []const u8, row: i32, col: i32) anyerror![]const u8 {
     const csv = parseCsv(source);
     const r: usize = std.math.cast(usize, row) orelse return error.invalid_row;
@@ -87,6 +88,7 @@ pub fn getField(source: []const u8, row: i32, col: i32) anyerror![]const u8 {
 
 // ── GetRow ──
 
+/// Returns all fields of a CSV row as a tab-separated string.
 pub fn getRow(source: []const u8, row: i32) anyerror![]const u8 {
     const csv = parseCsv(source);
     const r: usize = std.math.cast(usize, row) orelse return error.invalid_row;
@@ -103,6 +105,7 @@ pub fn getRow(source: []const u8, row: i32) anyerror![]const u8 {
 
 // ── RowCount ──
 
+/// Returns the total number of rows in the CSV source.
 pub fn rowCount(source: []const u8) i32 {
     const csv = parseCsv(source);
     return @intCast(csv.rows.len);
@@ -110,6 +113,7 @@ pub fn rowCount(source: []const u8) i32 {
 
 // ── ColCount ──
 
+/// Returns the number of columns in the first row of the CSV source.
 pub fn colCount(source: []const u8) i32 {
     const csv = parseCsv(source);
     if (csv.rows.len == 0) return 0;

@@ -6,22 +6,26 @@ const alloc = std.heap.smp_allocator;
 
 // ── Now ──
 
+/// Returns the current time in milliseconds since the Unix epoch.
 pub fn now() i64 {
     return @divTrunc(std.time.milliTimestamp(), 1);
 }
 
+/// Returns the current time in nanoseconds since the Unix epoch.
 pub fn nowNano() i64 {
     return @intCast(@as(i128, std.time.nanoTimestamp()));
 }
 
 // ── Sleep ──
 
+/// Sleeps for the given number of milliseconds.
 pub fn sleepMs(ms: i32) void {
     if (ms <= 0) return;
     const ns: u64 = @intCast(ms);
     std.time.sleep(ns * std.time.ns_per_ms);
 }
 
+/// Sleeps for the given number of seconds.
 pub fn sleepSec(sec: i32) void {
     if (sec <= 0) return;
     const ns: u64 = @intCast(sec);
@@ -30,6 +34,7 @@ pub fn sleepSec(sec: i32) void {
 
 // ── Elapsed ──
 
+/// Returns nanoseconds elapsed since the given nanosecond timestamp.
 pub fn elapsed(start: i64) i64 {
     const now_ns: i64 = @intCast(@as(i128, std.time.nanoTimestamp()));
     return now_ns - start;
@@ -38,6 +43,7 @@ pub fn elapsed(start: i64) i64 {
 // ── Format ──
 // Simple ISO 8601 date/time from milliseconds since epoch
 
+/// Formats a millisecond timestamp as an ISO 8601 UTC string.
 pub fn format(ms: i64) []const u8 {
     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(@divTrunc(ms, 1000)) };
     const day = epoch.getDaySeconds();
@@ -60,6 +66,7 @@ fn epochFromMs(ms: i64) std.time.epoch.EpochSeconds {
     return .{ .secs = @intCast(@divTrunc(ms, 1000)) };
 }
 
+/// Parses a date string ("YYYY-MM-DD" or "YYYY-MM-DDTHH:MM:SSZ") into milliseconds since epoch.
 pub fn parseDate(date: []const u8) anyerror!i64 {
     // Parse "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM:SSZ"
     if (date.len < 10) return error.invalid_date_format;
@@ -97,12 +104,14 @@ pub fn parseDate(date: []const u8) anyerror!i64 {
     return total_secs * 1000;
 }
 
+/// Extracts the year from a millisecond timestamp.
 pub fn year(ms: i64) i32 {
     const es = epochFromMs(ms);
     const yd = es.getEpochDay().calculateYearDay();
     return @intCast(yd.year);
 }
 
+/// Extracts the month (1-12) from a millisecond timestamp.
 pub fn month(ms: i64) i32 {
     const es = epochFromMs(ms);
     const yd = es.getEpochDay().calculateYearDay();
@@ -110,6 +119,7 @@ pub fn month(ms: i64) i32 {
     return @intCast(md.month.numeric());
 }
 
+/// Extracts the day of the month (1-31) from a millisecond timestamp.
 pub fn day(ms: i64) i32 {
     const es = epochFromMs(ms);
     const yd = es.getEpochDay().calculateYearDay();
@@ -117,6 +127,7 @@ pub fn day(ms: i64) i32 {
     return @intCast(md.day_index + 1);
 }
 
+/// Returns the day of the week (0=Monday, 6=Sunday) from a millisecond timestamp.
 pub fn weekday(ms: i64) i32 {
     // 1970-01-01 was a Thursday (3). Days since epoch mod 7.
     const days = @divTrunc(ms, 86400 * 1000);
@@ -124,14 +135,17 @@ pub fn weekday(ms: i64) i32 {
     return @intCast(wd);
 }
 
+/// Adds the given number of days to a millisecond timestamp.
 pub fn addDays(ms: i64, days: i32) i64 {
     return ms + @as(i64, days) * 86400 * 1000;
 }
 
+/// Adds the given number of hours to a millisecond timestamp.
 pub fn addHours(ms: i64, hours: i32) i64 {
     return ms + @as(i64, hours) * 3600 * 1000;
 }
 
+/// Returns the difference in whole days between two millisecond timestamps.
 pub fn diffDays(a: i64, b: i64) i32 {
     const diff = @divTrunc(a - b, 86400 * 1000);
     return @intCast(diff);

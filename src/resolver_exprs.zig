@@ -7,7 +7,6 @@ const parser = @import("parser.zig");
 const types = @import("types.zig");
 const builtins = @import("builtins.zig");
 const errors = @import("errors.zig");
-const K = @import("constants.zig");
 
 const TypeResolver = resolver_mod.TypeResolver;
 const Scope = resolver_mod.Scope;
@@ -93,15 +92,8 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
         .binary_expr => |b| {
             const left = try resolveExpr(self, b.left, scope);
             _ = try resolveExpr(self, b.right, scope);
-            if (std.mem.eql(u8, b.op, K.Op.AND) or
-                std.mem.eql(u8, b.op, K.Op.OR) or
-                std.mem.eql(u8, b.op, K.Op.EQ) or
-                std.mem.eql(u8, b.op, K.Op.NE) or
-                std.mem.eql(u8, b.op, K.Op.LT) or
-                std.mem.eql(u8, b.op, K.Op.GT) or
-                std.mem.eql(u8, b.op, K.Op.LE) or
-                std.mem.eql(u8, b.op, K.Op.GE)) return RT{ .primitive = .bool };
-            if (std.mem.eql(u8, b.op, K.Op.CONCAT)) return left;
+            if (b.op.isLogical() or b.op.isComparison()) return RT{ .primitive = .bool };
+            if (b.op == .concat) return left;
             return left;
         },
 

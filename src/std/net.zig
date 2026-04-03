@@ -7,15 +7,18 @@ const alloc = std.heap.smp_allocator;
 
 // ── Connection ──
 
+/// A TCP connection that wraps a network stream for sending and receiving data.
 pub const Connection = struct {
     stream: std.net.Stream,
 
+    /// Send data over the connection.
     pub fn send(self: *Connection, data: []const u8) anyerror!void {
         self.stream.writeAll(data) catch {
             return error.send_failed;
         };
     }
 
+    /// Receive up to n bytes from the connection.
     pub fn recv(self: *Connection, n: i32) anyerror![]const u8 {
         const count: usize = @intCast(@max(0, n));
         const buf = alloc.alloc(u8, count) catch {
@@ -32,6 +35,7 @@ pub const Connection = struct {
         return buf[0..bytes_read];
     }
 
+    /// Close the connection.
     pub fn close(self: *Connection) void {
         self.stream.close();
     }
@@ -39,9 +43,11 @@ pub const Connection = struct {
 
 // ── Listener ──
 
+/// A TCP server listener that accepts incoming connections.
 pub const Listener = struct {
     server: std.net.Server,
 
+    /// Accept an incoming connection and return it.
     pub fn accept(self: *Listener) anyerror!Connection {
         const conn = self.server.accept() catch {
             return error.accept_failed;
@@ -49,6 +55,7 @@ pub const Listener = struct {
         return .{ .stream = conn.stream };
     }
 
+    /// Stop listening and release the server socket.
     pub fn close(self: *Listener) void {
         self.server.deinit();
     }
@@ -56,6 +63,7 @@ pub const Listener = struct {
 
 // ── TCP Connect ──
 
+/// Open a TCP connection to the given host and port.
 pub fn tcpConnect(host: []const u8, port: i32) anyerror!Connection {
     const p: u16 = std.math.cast(u16, port) orelse return error.invalid_port;
     const stream = std.net.tcpConnectToHost(alloc, host, p) catch {
@@ -66,6 +74,7 @@ pub fn tcpConnect(host: []const u8, port: i32) anyerror!Connection {
 
 // ── TCP Listen ──
 
+/// Start a TCP listener on the given host and port.
 pub fn tcpListen(host: []const u8, port: i32) anyerror!Listener {
     const p: u16 = std.math.cast(u16, port) orelse return error.invalid_port;
     const address = std.net.Address.resolveIp(host, p) catch {

@@ -46,6 +46,7 @@ fn valueToString(val: std.json.Value) anyerror![]const u8 {
 // ── Get ──
 // Extract a value at a dot-path as a string.
 
+/// Extracts a value at a dot-separated path from a JSON string, returned as a string.
 pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, source, .{}) catch {
         return error.invalid_json;
@@ -60,6 +61,7 @@ pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
 
 // ── GetInt ──
 
+/// Extracts an integer value at a dot-separated path from a JSON string.
 pub fn getInt(source: []const u8, path: []const u8) anyerror!i64 {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, source, .{}) catch {
         return error.invalid_json;
@@ -78,6 +80,7 @@ pub fn getInt(source: []const u8, path: []const u8) anyerror!i64 {
 
 // ── GetFloat ──
 
+/// Extracts a float value at a dot-separated path from a JSON string.
 pub fn getFloat(source: []const u8, path: []const u8) anyerror!f64 {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, source, .{}) catch {
         return error.invalid_json;
@@ -96,6 +99,7 @@ pub fn getFloat(source: []const u8, path: []const u8) anyerror!f64 {
 
 // ── GetBool ──
 
+/// Extracts a boolean value at a dot-separated path from a JSON string.
 pub fn getBool(source: []const u8, path: []const u8) anyerror!bool {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, source, .{}) catch {
         return error.invalid_json;
@@ -114,6 +118,7 @@ pub fn getBool(source: []const u8, path: []const u8) anyerror!bool {
 // ── GetArray ──
 // Returns newline-separated string representations of array elements.
 
+/// Extracts an array at a dot-separated path and returns its elements as a newline-separated string.
 pub fn getArray(source: []const u8, path: []const u8) anyerror![]const u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, source, .{}) catch {
         return error.invalid_json;
@@ -139,6 +144,7 @@ pub fn getArray(source: []const u8, path: []const u8) anyerror![]const u8 {
 
 // ── HasKey ──
 
+/// Returns true if the top-level JSON object contains the given key.
 pub fn hasKey(source: []const u8, key: []const u8) bool {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, source, .{}) catch return false;
     defer parsed.deinit();
@@ -152,6 +158,7 @@ pub fn hasKey(source: []const u8, key: []const u8) bool {
 // Build a JSON object string from parallel key/value slices.
 // Values are auto-detected: numbers, booleans, null stay unquoted.
 
+/// Builds a JSON object string from parallel key and value slices, auto-detecting literal types.
 pub fn object(keys: anytype, values: anytype) []const u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     buf.append(alloc, '{') catch return "{}";
@@ -193,6 +200,7 @@ fn isJsonLiteral(val: []const u8) bool {
 
 // ── Stringify ──
 
+/// Converts any value to its string representation.
 pub fn stringify(value: anytype) []const u8 {
     return std.fmt.allocPrint(alloc, "{any}", .{value}) catch return "";
 }
@@ -200,6 +208,7 @@ pub fn stringify(value: anytype) []const u8 {
 // ── Pretty ──
 // Re-parse and emit with 4-space indentation.
 
+/// Re-parses a JSON string and returns it pretty-printed with 4-space indentation.
 pub fn pretty(source: []const u8) anyerror![]const u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, alloc, source, .{}) catch {
         return error.invalid_json;

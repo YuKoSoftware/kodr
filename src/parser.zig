@@ -335,14 +335,133 @@ pub const InterpolatedString = struct {
     parts: []InterpolatedPart,
 };
 
+pub const Operator = enum {
+    // arithmetic
+    add,        // +
+    sub,        // -
+    mul,        // *
+    div,        // /
+    mod,        // %
+    // string
+    concat,     // ++
+    // range
+    range,      // ..
+    // logical
+    @"and",     // and
+    @"or",      // or
+    not,        // not
+    // comparison
+    eq,         // ==
+    ne,         // !=
+    lt,         // <
+    gt,         // >
+    le,         // <=
+    ge,         // >=
+    // bitwise
+    bit_or,     // |
+    bit_xor,    // ^
+    bit_and,    // &
+    shl,        // <<
+    shr,        // >>
+    // unary
+    negate,     // - (unary)
+    bang,       // !
+    // assignment
+    assign,     // =
+    add_assign, // +=
+    sub_assign, // -=
+    mul_assign, // *=
+    div_assign, // /=
+
+    const map = std.StaticStringMap(Operator).initComptime(.{
+        .{ "+", .add },
+        .{ "-", .sub },
+        .{ "*", .mul },
+        .{ "/", .div },
+        .{ "%", .mod },
+        .{ "++", .concat },
+        .{ "..", .range },
+        .{ "and", .@"and" },
+        .{ "or", .@"or" },
+        .{ "not", .not },
+        .{ "==", .eq },
+        .{ "!=", .ne },
+        .{ "<", .lt },
+        .{ ">", .gt },
+        .{ "<=", .le },
+        .{ ">=", .ge },
+        .{ "|", .bit_or },
+        .{ "^", .bit_xor },
+        .{ "&", .bit_and },
+        .{ "<<", .shl },
+        .{ ">>", .shr },
+        .{ "!", .bang },
+        .{ "=", .assign },
+        .{ "+=", .add_assign },
+        .{ "-=", .sub_assign },
+        .{ "*=", .mul_assign },
+        .{ "/=", .div_assign },
+    });
+
+    pub fn parse(raw: []const u8) Operator {
+        return map.get(raw) orelse .assign;
+    }
+
+    /// Convert to Zig source text for codegen emission.
+    pub fn toZig(self: Operator) []const u8 {
+        return switch (self) {
+            .add => "+",
+            .sub, .negate => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            .concat => "++",
+            .range => "..",
+            .@"and" => "and",
+            .@"or" => "or",
+            .not, .bang => "!",
+            .eq => "==",
+            .ne => "!=",
+            .lt => "<",
+            .gt => ">",
+            .le => "<=",
+            .ge => ">=",
+            .bit_or => "|",
+            .bit_xor => "^",
+            .bit_and => "&",
+            .shl => "<<",
+            .shr => ">>",
+            .assign => "=",
+            .add_assign => "+=",
+            .sub_assign => "-=",
+            .mul_assign => "*=",
+            .div_assign => "/=",
+        };
+    }
+
+    pub fn isComparison(self: Operator) bool {
+        return switch (self) {
+            .eq, .ne, .lt, .gt, .le, .ge => true,
+            else => false,
+        };
+    }
+
+    pub fn isLogical(self: Operator) bool {
+        return switch (self) {
+            .@"and", .@"or", .not => true,
+            else => false,
+        };
+    }
+};
+
 pub const BinaryOp = struct {
-    op: []const u8,
+    op: Operator,
     left: *Node,
     right: *Node,
 };
 
 pub const UnaryOp = struct {
-    op: []const u8,
+    op: Operator,
     operand: *Node,
 };
 

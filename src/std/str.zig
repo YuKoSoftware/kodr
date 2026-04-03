@@ -7,20 +7,24 @@ const alloc = std.heap.smp_allocator;
 
 // ── Search ──
 
+/// Check if a string contains a substring.
 pub fn contains(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
 }
 
+/// Check if a string starts with the given prefix.
 pub fn startsWith(s: []const u8, prefix: []const u8) bool {
     return std.mem.startsWith(u8, s, prefix);
 }
 
+/// Check if a string ends with the given suffix.
 pub fn endsWith(s: []const u8, suffix: []const u8) bool {
     return std.mem.endsWith(u8, s, suffix);
 }
 
 const NullableI32 = union(enum) { some: i32, none: void };
 
+/// Return the first index of a substring, or none if not found.
 pub fn indexOf(haystack: []const u8, needle: []const u8) NullableI32 {
     if (std.mem.indexOf(u8, haystack, needle)) |pos| {
         return .{ .some = @intCast(pos) };
@@ -28,6 +32,7 @@ pub fn indexOf(haystack: []const u8, needle: []const u8) NullableI32 {
     return .{ .none = {} };
 }
 
+/// Return the last index of a substring, or none if not found.
 pub fn lastIndexOf(haystack: []const u8, needle: []const u8) NullableI32 {
     if (std.mem.lastIndexOf(u8, haystack, needle)) |pos| {
         return .{ .some = @intCast(pos) };
@@ -37,6 +42,7 @@ pub fn lastIndexOf(haystack: []const u8, needle: []const u8) NullableI32 {
 
 // ── Case ──
 
+/// Convert all ASCII characters in the string to uppercase.
 pub fn toUpper(s: []const u8) []const u8 {
     const buf = alloc.alloc(u8, s.len) catch return s;
     for (s, 0..) |c, i| {
@@ -45,6 +51,7 @@ pub fn toUpper(s: []const u8) []const u8 {
     return buf;
 }
 
+/// Convert all ASCII characters in the string to lowercase.
 pub fn toLower(s: []const u8) []const u8 {
     const buf = alloc.alloc(u8, s.len) catch return s;
     for (s, 0..) |c, i| {
@@ -55,11 +62,13 @@ pub fn toLower(s: []const u8) []const u8 {
 
 // ── Transform ──
 
+/// Replace all occurrences of a substring with another string.
 pub fn replace(s: []const u8, old: []const u8, new: []const u8) []const u8 {
     const result = std.mem.replaceOwned(u8, alloc, s, old, new) catch return s;
     return result;
 }
 
+/// Repeat a string the given number of times.
 pub fn repeat(s: []const u8, times: i32) []const u8 {
     if (times <= 0) return "";
     const n: usize = @intCast(times);
@@ -70,54 +79,61 @@ pub fn repeat(s: []const u8, times: i32) []const u8 {
     return buf;
 }
 
+/// Strip leading and trailing whitespace from the string.
 pub fn trim(s: []const u8) []const u8 {
     return std.mem.trim(u8, s, " \t\n\r");
 }
 
+/// Strip leading whitespace from the string.
 pub fn trimLeft(s: []const u8) []const u8 {
     return std.mem.trimLeft(u8, s, " \t\n\r");
 }
 
+/// Strip trailing whitespace from the string.
 pub fn trimRight(s: []const u8) []const u8 {
     return std.mem.trimRight(u8, s, " \t\n\r");
 }
 
 // ── Join ──
 
+/// Join a slice of strings with the given separator.
 pub fn join(parts: anytype, separator: []const u8) []const u8 {
     return std.mem.join(alloc, separator, parts) catch return "";
 }
 
 // ── Parse ──
 
+/// Parse a decimal integer string, returning 0 on failure.
 pub fn parseInt(s: []const u8) i32 {
     return std.fmt.parseInt(i32, s, 10) catch 0;
 }
 
+/// Parse a floating-point string, returning 0.0 on failure.
 pub fn parseFloat(s: []const u8) f64 {
     return std.fmt.parseFloat(f64, s) catch 0.0;
 }
 
 // ── Convert ──
 
+/// Convert any value to its string representation.
 pub fn toString(value: anytype) []const u8 {
     return std.fmt.allocPrint(alloc, "{any}", .{value}) catch return "";
 }
 
 // ── Length ──
 
-// Returns codepoint count (not byte count)
+/// Return the codepoint count of a UTF-8 string (not byte count).
 pub fn len(s: []const u8) i32 {
     const count = std.unicode.utf8CountCodepoints(s) catch return @intCast(s.len);
     return @intCast(count);
 }
 
-// Returns byte count
+/// Return the byte length of the string.
 pub fn byteLen(s: []const u8) i32 {
     return @intCast(s.len);
 }
 
-// Returns the nth codepoint as a string slice (0-based)
+/// Return the nth codepoint as a string slice (0-based index).
 pub fn charAt(s: []const u8, index: i32) []const u8 {
     if (index < 0) return "";
     const target: usize = @intCast(index);
@@ -133,6 +149,7 @@ pub fn charAt(s: []const u8, index: i32) []const u8 {
 
 // ── Formatting ──
 
+/// Pad the string on the left to the given width using the fill character.
 pub fn padLeft(s: []const u8, width: i32, fill: []const u8) []const u8 {
     const w: usize = @intCast(@max(0, width));
     const cp_count = std.unicode.utf8CountCodepoints(s) catch return s;
@@ -145,6 +162,7 @@ pub fn padLeft(s: []const u8, width: i32, fill: []const u8) []const u8 {
     return buf;
 }
 
+/// Pad the string on the right to the given width using the fill character.
 pub fn padRight(s: []const u8, width: i32, fill: []const u8) []const u8 {
     const w: usize = @intCast(@max(0, width));
     const cp_count = std.unicode.utf8CountCodepoints(s) catch return s;
@@ -157,7 +175,7 @@ pub fn padRight(s: []const u8, width: i32, fill: []const u8) []const u8 {
     return buf;
 }
 
-// Truncate to max codepoints, snapping to codepoint boundary, adding "..." if truncated
+/// Truncate to max codepoints, appending "..." if the string was shortened.
 pub fn truncate(s: []const u8, max_len: i32) []const u8 {
     if (max_len <= 0) return "";
     const m: usize = @intCast(max_len);
@@ -175,7 +193,7 @@ pub fn truncate(s: []const u8, max_len: i32) []const u8 {
     return buf;
 }
 
-// Reverse by codepoints (not bytes) — preserves multi-byte characters
+/// Reverse the string by codepoints, preserving multi-byte characters.
 pub fn reverse(s: []const u8) []const u8 {
     if (s.len == 0) return "";
     // Collect codepoint slices
@@ -197,6 +215,7 @@ pub fn reverse(s: []const u8) []const u8 {
     return buf;
 }
 
+/// Split the string by a separator and return parts joined by newlines.
 pub fn splitBy(s: []const u8, sep: []const u8) []const u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     var first = true;
@@ -209,6 +228,7 @@ pub fn splitBy(s: []const u8, sep: []const u8) []const u8 {
     return if (buf.items.len > 0) buf.items else "";
 }
 
+/// Count the number of non-overlapping occurrences of a substring.
 pub fn countOccurrences(s: []const u8, sub: []const u8) i32 {
     if (sub.len == 0) return 0;
     var n: i32 = 0;

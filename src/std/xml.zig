@@ -236,6 +236,7 @@ fn resolveAll(root: XmlNode, path: []const u8) []const XmlNode {
 
 // ── Public API ──
 
+/// Returns the text content of the XML element at the given dot-separated path.
 pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
     const root = parseDocument(source) orelse {
         return error.invalid_xml;
@@ -249,6 +250,7 @@ pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
     return "";
 }
 
+/// Returns the value of a named attribute on the XML element at the given path.
 pub fn getAttr(source: []const u8, path: []const u8, attr: []const u8) anyerror![]const u8 {
     const root = parseDocument(source) orelse {
         return error.invalid_xml;
@@ -264,6 +266,7 @@ pub fn getAttr(source: []const u8, path: []const u8, attr: []const u8) anyerror!
     return error.attribute_not_found;
 }
 
+/// Returns the text content of all matching elements at the given path, newline-separated.
 pub fn getAll(source: []const u8, path: []const u8) anyerror![]const u8 {
     const root = parseDocument(source) orelse {
         return error.invalid_xml;
@@ -281,6 +284,7 @@ pub fn getAll(source: []const u8, path: []const u8) anyerror![]const u8 {
     return if (buf.items.len > 0) buf.items else "";
 }
 
+/// Returns true if an XML element exists at the given dot-separated path.
 pub fn hasTag(source: []const u8, path: []const u8) bool {
     const root = parseDocument(source) orelse return false;
     return resolveNode(root, path) != null;

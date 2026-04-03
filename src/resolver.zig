@@ -907,7 +907,7 @@ test "resolver - for range capture is usize" {
     // Range expressions produce usize captures
     var low = parser.Node{ .int_literal = "0" };
     var high = parser.Node{ .int_literal = "10" };
-    var range_node = parser.Node{ .range_expr = .{ .op = "..", .left = &low, .right = &high } };
+    var range_node = parser.Node{ .range_expr = .{ .op = .range, .left = &low, .right = &high } };
     const capture_type = inferCaptureType(&range_node, RT.inferred);
     try std.testing.expectEqualStrings("usize", capture_type.name());
     _ = &resolver;

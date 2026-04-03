@@ -463,8 +463,8 @@ pub const MirLowerer = struct {
     fn extractNarrowing(self: *const MirLowerer, condition: *parser.Node, then_block: *parser.Node) ?IfNarrowing {
         if (condition.* != .binary_expr) return null;
         const b = condition.binary_expr;
-        const is_eq = std.mem.eql(u8, b.op, "==");
-        const is_ne = std.mem.eql(u8, b.op, "!=");
+        const is_eq = b.op == .eq;
+        const is_ne = b.op == .ne;
         if (!is_eq and !is_ne) return null;
         if (b.left.* != .compiler_func) return null;
         if (!std.mem.eql(u8, b.left.compiler_func.name, K.Type.TYPE)) return null;
@@ -601,7 +601,7 @@ fn populateData(m: *MirNode, node: *parser.Node) void {
             m.op = a.op;
         },
         .range_expr => {
-            m.op = "..";
+            m.op = .range;
         },
         .int_literal => |v| {
             m.literal = v;

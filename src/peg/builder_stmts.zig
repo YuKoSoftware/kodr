@@ -208,11 +208,11 @@ pub fn buildExprOrAssignment(ctx: *BuildContext, cap: *const CaptureNode) !*Node
             const lhs = try builder.buildNode(ctx, exprs.items[0]);
             const rhs = try builder.buildNode(ctx, exprs.items[1]);
             // Find the operator token
-            var op: []const u8 = "=";
+            var op: parser.Operator = .assign;
             for (cap.children) |*child| {
                 if (child.rule) |r| {
                     if (std.mem.eql(u8, r, "assign_op")) {
-                        op = builder.tokenText(ctx, child.start_pos);
+                        op = parser.Operator.parse(builder.tokenText(ctx, child.start_pos));
                         break;
                     }
                 }

@@ -7,6 +7,7 @@ const alloc = std.heap.smp_allocator;
 
 // ── Gzip Compress ──
 
+/// Compresses data using gzip and returns the compressed bytes.
 pub fn gzipCompress(data: []const u8) anyerror![]const u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     var compressor = std.compress.gzip.compressor(.write_to_buffer, &buf, .{
@@ -25,6 +26,7 @@ pub fn gzipCompress(data: []const u8) anyerror![]const u8 {
 
 // ── Gzip Decompress ──
 
+/// Decompresses gzip-compressed data and returns the original bytes.
 pub fn gzipDecompress(data: []const u8) anyerror![]const u8 {
     var stream = std.io.fixedBufferStream(data);
     var decompressor = std.compress.gzip.decompressor(stream.reader()) catch {
@@ -38,6 +40,7 @@ pub fn gzipDecompress(data: []const u8) anyerror![]const u8 {
 
 // ── Zlib Compress ──
 
+/// Compresses data using zlib and returns the compressed bytes.
 pub fn zlibCompress(data: []const u8) anyerror![]const u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     var compressor = std.compress.zlib.compressor(.write_to_buffer, &buf, .{
@@ -56,6 +59,7 @@ pub fn zlibCompress(data: []const u8) anyerror![]const u8 {
 
 // ── Zlib Decompress ──
 
+/// Decompresses zlib-compressed data and returns the original bytes.
 pub fn zlibDecompress(data: []const u8) anyerror![]const u8 {
     var stream = std.io.fixedBufferStream(data);
     var decompressor = std.compress.zlib.decompressor(stream.reader());

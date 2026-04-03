@@ -15,6 +15,7 @@ fn ensureInit() void {
 
 // ── Integer ──
 
+/// Returns a random integer in the inclusive range [lo, hi].
 pub fn int(lo: i32, hi: i32) i32 {
     ensureInit();
     if (lo >= hi) return lo;
@@ -25,11 +26,13 @@ pub fn int(lo: i32, hi: i32) i32 {
 
 // ── Float ──
 
+/// Returns a random f64 in the range [0.0, 1.0).
 pub fn float() f64 {
     ensureInit();
     return rng.random().float(f64);
 }
 
+/// Returns a random f64 in the range [lo, hi).
 pub fn floatRange(lo: f64, hi: f64) f64 {
     ensureInit();
     return lo + rng.random().float(f64) * (hi - lo);
@@ -37,6 +40,7 @@ pub fn floatRange(lo: f64, hi: f64) f64 {
 
 // ── Bool ──
 
+/// Returns a random boolean value.
 pub fn boolean() bool {
     ensureInit();
     return rng.random().boolean();
@@ -44,6 +48,7 @@ pub fn boolean() bool {
 
 // ── Seed ──
 
+/// Seeds the PRNG with the given value. Pass 0 to seed from system entropy.
 pub fn seed(s: u64) void {
     if (s == 0) {
         rng = std.Random.Xoshiro256.init(@truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))));

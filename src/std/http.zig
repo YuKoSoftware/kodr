@@ -9,6 +9,7 @@ const max_body = 10 * 1024 * 1024; // 10 MB
 
 // ── GET ──
 
+/// Perform an HTTP GET request and return the response body.
 pub fn get(url: []const u8) anyerror![]const u8 {
     const uri = std.Uri.parse(url) catch {
         return error.invalid_url;
@@ -43,6 +44,7 @@ pub fn get(url: []const u8) anyerror![]const u8 {
 
 // ── POST ──
 
+/// Perform an HTTP POST request with the given body and content type, returning the response body.
 pub fn post(url: []const u8, body: []const u8, content_type: []const u8) anyerror![]const u8 {
     const uri = std.Uri.parse(url) catch {
         return error.invalid_url;
@@ -87,12 +89,14 @@ fn parseUri(url: []const u8) ?std.Uri {
     return std.Uri.parse(url) catch return null;
 }
 
+/// Extract the scheme component (e.g. "https") from a URL.
 pub fn urlScheme(url: []const u8) anyerror![]const u8 {
     const uri = parseUri(url) orelse return error.invalid_url;
     const scheme = uri.scheme;
     return alloc.dupe(u8, scheme) catch return error.out_of_memory;
 }
 
+/// Extract the host component (e.g. "example.com") from a URL.
 pub fn urlHost(url: []const u8) anyerror![]const u8 {
     const uri = parseUri(url) orelse return error.invalid_url;
     const host = uri.host orelse return error.no_host_in_url;
@@ -100,12 +104,14 @@ pub fn urlHost(url: []const u8) anyerror![]const u8 {
     return alloc.dupe(u8, raw) catch return error.out_of_memory;
 }
 
+/// Extract the port number from a URL, returning 0 if none is specified.
 pub fn urlPort(url: []const u8) anyerror!i32 {
     const uri = parseUri(url) orelse return error.invalid_url;
     if (uri.port) |p| return @intCast(p);
     return 0;
 }
 
+/// Extract the path component from a URL, defaulting to "/" if empty.
 pub fn urlPath(url: []const u8) anyerror![]const u8 {
     const uri = parseUri(url) orelse return error.invalid_url;
     const raw = uri.path.toRawSlice();
@@ -113,6 +119,7 @@ pub fn urlPath(url: []const u8) anyerror![]const u8 {
     return alloc.dupe(u8, raw) catch return error.out_of_memory;
 }
 
+/// Extract the query string from a URL, returning "" if none is present.
 pub fn urlQuery(url: []const u8) anyerror![]const u8 {
     const uri = parseUri(url) orelse return error.invalid_url;
     if (uri.query) |q| {
@@ -122,6 +129,7 @@ pub fn urlQuery(url: []const u8) anyerror![]const u8 {
     return "";
 }
 
+/// Build a URL string from its individual components.
 pub fn urlBuild(scheme: []const u8, host: []const u8, port: i32, path: []const u8, query: []const u8) []const u8 {
     var buf = std.ArrayListUnmanaged(u8){};
     buf.appendSlice(alloc, scheme) catch return "";

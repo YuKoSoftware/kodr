@@ -4,32 +4,39 @@
 
 const std = @import("std");
 
+/// Lock-free atomic wrapper over type T using sequential consistency.
 pub fn Atomic(comptime T: type) type {
     return struct {
         inner: std.atomic.Value(T),
 
         const Self = @This();
 
+        /// Creates a new atomic with the given initial value.
         pub fn new(initial: T) Self {
             return .{ .inner = std.atomic.Value(T).init(initial) };
         }
 
+        /// Atomically loads and returns the current value.
         pub fn load(self: *const Self) T {
             return self.inner.load(.seq_cst);
         }
 
+        /// Atomically stores a new value.
         pub fn store(self: *Self, val: T) void {
             self.inner.store(val, .seq_cst);
         }
 
+        /// Atomically swaps the value and returns the previous one.
         pub fn exchange(self: *Self, val: T) T {
             return self.inner.swap(val, .seq_cst);
         }
 
+        /// Atomically adds val and returns the previous value.
         pub fn fetchAdd(self: *Self, val: T) T {
             return self.inner.fetchAdd(val, .seq_cst);
         }
 
+        /// Atomically subtracts val and returns the previous value.
         pub fn fetchSub(self: *Self, val: T) T {
             return self.inner.fetchSub(val, .seq_cst);
         }

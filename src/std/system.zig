@@ -6,6 +6,7 @@ const alloc = std.heap.smp_allocator;
 
 // ── RunResult ──
 
+/// Result of a subprocess execution, containing exit code and captured output.
 pub const RunResult = struct {
     code: i32,
     stdout: []const u8,
@@ -14,6 +15,7 @@ pub const RunResult = struct {
 
 // ── Run ──
 
+/// Run a subprocess with the given command and arguments, capturing stdout and stderr.
 pub fn run(cmd: []const u8, args: []const []const u8) RunResult {
     var argv = std.ArrayListUnmanaged([]const u8){};
     argv.append(alloc, cmd) catch return .{ .code = -1, .stdout = "", .stderr = "out of memory" };
@@ -46,6 +48,7 @@ pub fn run(cmd: []const u8, args: []const []const u8) RunResult {
 
 // ── GetEnv ──
 
+/// Get the value of an environment variable by name.
 pub fn getEnv(name: []const u8) anyerror![]const u8 {
     const env = std.process.getEnvMap(alloc) catch {
         return error.could_not_read_environment;
@@ -58,6 +61,7 @@ pub fn getEnv(name: []const u8) anyerror![]const u8 {
 
 // ── SetEnv ──
 
+/// Set an environment variable to the given value.
 pub fn setEnv(name: []const u8, value: []const u8) anyerror!void {
     // Convert to null-terminated strings for POSIX setenv
     const name_z = alloc.dupeZ(u8, name) catch return error.out_of_memory;
@@ -68,6 +72,7 @@ pub fn setEnv(name: []const u8, value: []const u8) anyerror!void {
 
 // ── HasEnv ──
 
+/// Check whether an environment variable exists.
 pub fn hasEnv(name: []const u8) bool {
     const env = std.process.getEnvMap(alloc) catch return false;
     return env.get(name) != null;
@@ -75,6 +80,7 @@ pub fn hasEnv(name: []const u8) bool {
 
 // ── AllEnv ──
 
+/// Return all environment variables as a newline-separated "KEY=VALUE" string.
 pub fn allEnv() []const u8 {
     const env = std.process.getEnvMap(alloc) catch return "";
     var buf = std.ArrayListUnmanaged(u8){};
@@ -92,6 +98,7 @@ pub fn allEnv() []const u8 {
 
 // ── Cwd ──
 
+/// Return the current working directory path.
 pub fn cwd() []const u8 {
     var buf: [4096]u8 = undefined;
     const path = std.fs.cwd().realpath(".", &buf) catch return ".";
@@ -100,6 +107,7 @@ pub fn cwd() []const u8 {
 
 // ── Exit ──
 
+/// Terminate the process with the given exit code.
 pub fn exit(code: i32) void {
     std.process.exit(@intCast(code));
 }
@@ -117,6 +125,7 @@ fn signalHandler(sig: i32) callconv(.c) void {
     }
 }
 
+/// Install a signal handler that sets a flag when the given signal is received.
 pub fn trapSignal(sig: i32) void {
     const s: u6 = @intCast(sig);
     const act = posix.Sigaction{
@@ -127,6 +136,7 @@ pub fn trapSignal(sig: i32) void {
     posix.sigaction(s, &act, null) catch {}; // fire-and-forget: signal handler
 }
 
+/// Check whether the given signal has been received since last clear.
 pub fn checkSignal(sig: i32) bool {
     const idx: usize = @intCast(sig);
     if (idx < signal_flags.len) {
@@ -135,6 +145,7 @@ pub fn checkSignal(sig: i32) bool {
     return false;
 }
 
+/// Reset the signal flag for the given signal number.
 pub fn clearSignal(sig: i32) void {
     const idx: usize = @intCast(sig);
     if (idx < signal_flags.len) {
@@ -142,6 +153,7 @@ pub fn clearSignal(sig: i32) void {
     }
 }
 
+/// Send a signal to the current process.
 pub fn raise(sig: i32) void {
     const s: u6 = @intCast(sig);
     _ = posix.raise(s) catch {}; // fire-and-forget: signal handler

@@ -98,29 +98,25 @@ checking, typo safety, and better performance.
 - Added `parser.MetadataField` enum (`.build`, `.name`, `.version`, `.dep`, `.description`, `.unknown`)
 - `StaticStringMap` lookup in `parse()`. All 12 string comparisons replaced across 5 files.
 
-**Operator enum:** `medium`
-- Operators flow through the entire compiler as strings (`"+"`, `"=="`, `K.Op.EQ`)
-- Create `Operator` enum with all operators
-- Add `toZigOp()`, `precedence()`, `isComparison()` methods
-- Replace string comparisons in codegen_exprs.zig, codegen_match.zig, resolver
-- Files: constants.zig, codegen_exprs.zig, codegen_match.zig, resolver_exprs.zig
+**~~Operator enum~~** — DONE
+- Added `parser.Operator` enum (30 variants) with `parse()`, `toZig()`, `isComparison()`, `isLogical()`
+- Replaced `op: []const u8` in BinaryOp, UnaryOp, and MirNode with `Operator`
+- Removed `constants.Op` struct — all string comparisons replaced across 14 files
 
 **~~Build type enum in pipeline~~** — DONE
 - `MultiTarget.build_type` changed from `[]const u8` to `module.BuildType` enum
 - Added `module.parseBuildType()` with `StaticStringMap`. All string comparisons replaced.
 
-**PEG rule dispatch:** `medium`
-- 60+ sequential `if std.mem.eql(u8, rule, "...")` in peg/builder.zig
-- Replace with `Rule` enum + `StaticStringMap` + function pointer table
-- Files: peg/builder.zig
+**~~PEG rule dispatch~~** — DONE
+- Replaced 70+ sequential string comparisons with `StaticStringMap(BuilderFn)` dispatch table
+- 3 inline builders for break/continue/null. `buildBinaryExpr` third param removed (was unused).
 
 ### Compiler cleanup — deduplication and extraction
 
-**Pipeline multi/single-target unification:** `medium`
-- Multi-target and single-target build paths are ~200 lines of near-identical code
-- Extract shared metadata extraction, module collection, and build dispatch
-- The single-target path should just be the multi-target path with one target
-- Files: pipeline.zig
+**~~Pipeline multi/single-target unification~~** — DONE
+- Removed duplicate single-target build path (~130 lines). All builds now use unified
+  multi-target path — single-target is just one entry in the `MultiTarget` slice.
+- Fixed latent use-after-free: `../../`-prefixed strings now outlive `buildAll` call.
 
 **~~`stripQuotes()` utility~~** — DONE
 - Extracted to `constants.stripQuotes()`, replaced 6 call sites across 4 files
@@ -150,10 +146,10 @@ orhon bindgen vulkan.h --module vulkan
 
 Enables syntax highlighting in Neovim, Helix, Zed, and other editors beyond VS Code.
 
-### PEG syntax documentation generator `easy`
+### ~~PEG syntax documentation generator~~ — DONE
 
-Auto-generate a formatted syntax reference from `src/orhon.peg`. Keeps syntax
-docs always in sync with the grammar.
+`orhon syntax` command generates `docs/syntax.md` from the embedded PEG grammar.
+Parses sections, rules, comments, and `{label:}` annotations. 1040-line reference.
 
 ### Web playground `hard`
 

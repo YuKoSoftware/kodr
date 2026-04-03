@@ -318,13 +318,13 @@ pub const PropagationChecker = struct {
         switch (node.*) {
             .binary_expr => |be| {
                 // Compound conditions: walk both sides of `and` / `or`
-                if (std.mem.eql(u8, be.op, K.Op.AND) or std.mem.eql(u8, be.op, K.Op.OR)) {
+                if (be.op == .@"and" or be.op == .@"or") {
                     self.extractTypeChecks(be.left, scope);
                     self.extractTypeChecks(be.right, scope);
                     return;
                 }
                 // Direct type check: @type(x) == Error / @type(x) != null
-                if (std.mem.eql(u8, be.op, K.Op.EQ) or std.mem.eql(u8, be.op, K.Op.NE)) {
+                if (be.op == .eq or be.op == .ne) {
                     if (be.left.* == .compiler_func and std.mem.eql(u8, be.left.compiler_func.name, K.Type.TYPE)) {
                         if (be.left.compiler_func.args.len > 0) {
                             const checked_var = be.left.compiler_func.args[0];
@@ -601,7 +601,7 @@ test "propagation - is not check marks union as handled" {
     var type_args_arr = [_]*parser.Node{&result_id};
     var type_call = parser.Node{ .compiler_func = .{ .name = K.Type.TYPE, .args = &type_args_arr } };
     var null_node = parser.Node{ .type_named = K.Type.NULL };
-    var condition = parser.Node{ .binary_expr = .{ .left = &type_call, .op = "!=", .right = &null_node } };
+    var condition = parser.Node{ .binary_expr = .{ .left = &type_call, .op = .ne, .right = &null_node } };
     var ret_stmt = parser.Node{ .return_stmt = .{ .value = null } };
     var body_stmts = [_]*parser.Node{&ret_stmt};
     var body_block = parser.Node{ .block = .{ .statements = &body_stmts } };
@@ -723,7 +723,7 @@ test "propagation - reassignment resets handled status" {
         .args = &[_]*parser.Node{},
         .arg_names = &.{},
     } };
-    var assign = parser.Node{ .assignment = .{ .op = "=", .left = &result_id, .right = &call_node } };
+    var assign = parser.Node{ .assignment = .{ .op = .assign, .left = &result_id, .right = &call_node } };
     try checker.checkStatement(&assign, &scope);
 
     try std.testing.expect(!scope.base.vars.get("result").?.handled);
@@ -751,15 +751,15 @@ test "propagation - compound condition handles multiple unions" {
     var x_args = [_]*parser.Node{&x_id};
     var x_type = parser.Node{ .compiler_func = .{ .name = K.Type.TYPE, .args = &x_args } };
     var error_node = parser.Node{ .type_named = K.Type.ERROR };
-    var left_cond = parser.Node{ .binary_expr = .{ .left = &x_type, .op = "==", .right = &error_node } };
+    var left_cond = parser.Node{ .binary_expr = .{ .left = &x_type, .op = .eq, .right = &error_node } };
 
     var y_id = parser.Node{ .identifier = "y" };
     var y_args = [_]*parser.Node{&y_id};
     var y_type = parser.Node{ .compiler_func = .{ .name = K.Type.TYPE, .args = &y_args } };
     var null_node = parser.Node{ .type_named = K.Type.NULL };
-    var right_cond = parser.Node{ .binary_expr = .{ .left = &y_type, .op = "!=", .right = &null_node } };
+    var right_cond = parser.Node{ .binary_expr = .{ .left = &y_type, .op = .ne, .right = &null_node } };
 
-    var compound = parser.Node{ .binary_expr = .{ .left = &left_cond, .op = "and", .right = &right_cond } };
+    var compound = parser.Node{ .binary_expr = .{ .left = &left_cond, .op = .@"and", .right = &right_cond } };
     var ret_stmt = parser.Node{ .return_stmt = .{ .value = null } };
     var body_stmts = [_]*parser.Node{&ret_stmt};
     var body_block = parser.Node{ .block = .{ .statements = &body_stmts } };

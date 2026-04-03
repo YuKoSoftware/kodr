@@ -287,6 +287,7 @@ fn matchRegex(regex: Regex, text: []const u8, pos: usize) ?usize {
 
 // ── Public API ──
 
+/// Returns true if the entire text matches the given regex pattern.
 pub fn matches(pattern: []const u8, text: []const u8) bool {
     var p = Parser.init(pattern);
     const regex = p.parseRegex() orelse return false;
@@ -294,6 +295,7 @@ pub fn matches(pattern: []const u8, text: []const u8) bool {
     return end == text.len;
 }
 
+/// Returns the first substring matching the pattern, or error.no_match.
 pub fn find(pattern: []const u8, text: []const u8) anyerror![]const u8 {
     var p = Parser.init(pattern);
     const regex = p.parseRegex() orelse return error.invalid_pattern;
@@ -310,6 +312,7 @@ pub fn find(pattern: []const u8, text: []const u8) anyerror![]const u8 {
     return error.no_match;
 }
 
+/// Returns all non-overlapping matches joined by newlines, or error.no_matches.
 pub fn findAll(pattern: []const u8, text: []const u8) anyerror![]const u8 {
     var p = Parser.init(pattern);
     const regex = p.parseRegex() orelse return error.invalid_pattern;
@@ -332,6 +335,7 @@ pub fn findAll(pattern: []const u8, text: []const u8) anyerror![]const u8 {
     return buf.items;
 }
 
+/// Replaces the first match of the pattern with the replacement string.
 pub fn replace(pattern: []const u8, text: []const u8, replacement: []const u8) anyerror![]const u8 {
     var p = Parser.init(pattern);
     const regex = p.parseRegex() orelse return error.invalid_pattern;
@@ -351,6 +355,7 @@ pub fn replace(pattern: []const u8, text: []const u8, replacement: []const u8) a
     return alloc.dupe(u8, text) catch return error.out_of_memory;
 }
 
+/// Replaces all non-overlapping matches of the pattern with the replacement string.
 pub fn replaceAll(pattern: []const u8, text: []const u8, replacement: []const u8) anyerror![]const u8 {
     var p = Parser.init(pattern);
     const regex = p.parseRegex() orelse return error.invalid_pattern;

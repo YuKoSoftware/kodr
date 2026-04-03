@@ -163,6 +163,7 @@ fn valueToString(val: Value) []const u8 {
 
 // ── Public API ──
 
+/// Returns the string value at the given dot-separated TOML key path.
 pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
     const root = parseToml(source);
     const val = resolveValue(root, path) orelse return error.key_not_found;
@@ -171,6 +172,7 @@ pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
     return s;
 }
 
+/// Returns the integer value at the given TOML key path.
 pub fn getInt(source: []const u8, path: []const u8) anyerror!i64 {
     const root = parseToml(source);
     const val = resolveValue(root, path) orelse return error.key_not_found;
@@ -181,6 +183,7 @@ pub fn getInt(source: []const u8, path: []const u8) anyerror!i64 {
     };
 }
 
+/// Returns the float value at the given TOML key path.
 pub fn getFloat(source: []const u8, path: []const u8) anyerror!f64 {
     const root = parseToml(source);
     const val = resolveValue(root, path) orelse return error.key_not_found;
@@ -191,6 +194,7 @@ pub fn getFloat(source: []const u8, path: []const u8) anyerror!f64 {
     };
 }
 
+/// Returns the boolean value at the given TOML key path.
 pub fn getBool(source: []const u8, path: []const u8) anyerror!bool {
     const root = parseToml(source);
     const val = resolveValue(root, path) orelse return error.key_not_found;
@@ -200,6 +204,7 @@ pub fn getBool(source: []const u8, path: []const u8) anyerror!bool {
     };
 }
 
+/// Returns the array elements at the given TOML key path as a newline-separated string.
 pub fn getArray(source: []const u8, path: []const u8) anyerror![]const u8 {
     const root = parseToml(source);
     const val = resolveValue(root, path) orelse return error.key_not_found;
@@ -213,11 +218,13 @@ pub fn getArray(source: []const u8, path: []const u8) anyerror![]const u8 {
     return if (buf.items.len > 0) buf.items else "";
 }
 
+/// Returns true if the given dot-separated key path exists in the TOML source.
 pub fn hasKey(source: []const u8, path: []const u8) bool {
     const root = parseToml(source);
     return resolveValue(root, path) != null;
 }
 
+/// Returns all direct key names within the given TOML table, newline-separated.
 pub fn getKeys(source: []const u8, table: []const u8) anyerror![]const u8 {
     const root = parseToml(source);
 

@@ -7,6 +7,7 @@ const alloc = std.heap.smp_allocator;
 
 // ── Base64 Encode ──
 
+/// Encodes a byte slice to a base64 string.
 pub fn base64Encode(data: []const u8) []const u8 {
     const size = std.base64.standard.Encoder.calcSize(data.len);
     const dest = alloc.alloc(u8, size) catch return "";
@@ -16,6 +17,7 @@ pub fn base64Encode(data: []const u8) []const u8 {
 
 // ── Base64 Decode ──
 
+/// Decodes a base64 string back to raw bytes.
 pub fn base64Decode(data: []const u8) anyerror![]const u8 {
     const size = std.base64.standard.Decoder.calcSizeForSlice(data) catch {
         return error.invalid_base64_length;
@@ -32,12 +34,14 @@ pub fn base64Decode(data: []const u8) anyerror![]const u8 {
 
 // ── Hex Encode ──
 
+/// Encodes a byte slice to a lowercase hex string.
 pub fn hexEncode(data: []const u8) []const u8 {
     return std.fmt.allocPrint(alloc, "{}", .{std.fmt.fmtSliceHexLower(data)}) catch return "";
 }
 
 // ── Hex Decode ──
 
+/// Decodes a hex string back to raw bytes.
 pub fn hexDecode(data: []const u8) anyerror![]const u8 {
     if (data.len % 2 != 0) {
         return error.hex_string_must_have_even_length;

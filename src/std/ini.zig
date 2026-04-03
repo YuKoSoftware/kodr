@@ -84,6 +84,7 @@ fn findValue(ini: IniMap, section: []const u8, key: []const u8) ?[]const u8 {
 
 // ── Get ──
 
+/// Returns the value for a "section.key" path in the INI source.
 pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
     const dot = std.mem.indexOfScalar(u8, path, '.') orelse {
         return error.path_must_be_section_dot_key;
@@ -99,6 +100,7 @@ pub fn get(source: []const u8, path: []const u8) anyerror![]const u8 {
 
 // ── HasKey ──
 
+/// Returns true if the given "section.key" path exists in the INI source.
 pub fn hasKey(source: []const u8, path: []const u8) bool {
     const dot = std.mem.indexOfScalar(u8, path, '.') orelse return false;
     const section = path[0..dot];
@@ -109,6 +111,7 @@ pub fn hasKey(source: []const u8, path: []const u8) bool {
 
 // ── GetKeys ──
 
+/// Returns all key names in the given section, newline-separated.
 pub fn getKeys(source: []const u8, section: []const u8) anyerror![]const u8 {
     const ini = parseIni(source);
     for (ini.sections) |sec| {
@@ -126,6 +129,7 @@ pub fn getKeys(source: []const u8, section: []const u8) anyerror![]const u8 {
 
 // ── GetSections ──
 
+/// Returns all section names in the INI source, newline-separated.
 pub fn getSections(source: []const u8) []const u8 {
     const ini = parseIni(source);
     var buf = std.ArrayListUnmanaged(u8){};

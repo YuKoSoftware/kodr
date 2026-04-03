@@ -129,94 +129,108 @@ pub fn buildASTWithArena(cap: *const CaptureNode, tokens: []const Token, arena: 
 // NODE DISPATCH
 // ============================================================
 
+const BuilderFn = *const fn (*BuildContext, *const CaptureNode) anyerror!*Node;
+
+/// Comptime dispatch table mapping PEG rule names to builder functions.
+const rule_dispatch = std.StaticStringMap(BuilderFn).initComptime(.{
+    // Declarations
+    .{ "program", decls_impl.buildProgram },
+    .{ "module_decl", decls_impl.buildModuleDecl },
+    .{ "const_decl", decls_impl.buildConstDecl },
+    .{ "var_decl", decls_impl.buildVarDecl },
+    .{ "func_decl", decls_impl.buildFuncDecl },
+    .{ "param", decls_impl.buildParam },
+    .{ "struct_decl", decls_impl.buildStructDecl },
+    .{ "blueprint_decl", decls_impl.buildBlueprintDecl },
+    .{ "enum_decl", decls_impl.buildEnumDecl },
+    .{ "field_decl", decls_impl.buildFieldDecl },
+    .{ "enum_variant", decls_impl.buildEnumVariant },
+    .{ "bitfield_decl", decls_impl.buildBitfieldDecl },
+    .{ "destruct_decl", decls_impl.buildDestructDecl },
+    .{ "test_decl", decls_impl.buildTestDecl },
+    .{ "import_decl", decls_impl.buildImport },
+    .{ "metadata", decls_impl.buildMetadata },
+    .{ "thread_decl", decls_impl.buildThreadDecl },
+    .{ "pub_decl", decls_impl.buildPubDecl },
+    .{ "compt_decl", decls_impl.buildComptDecl },
+    // Statements
+    .{ "block", stmts_impl.buildBlock },
+    .{ "return_stmt", stmts_impl.buildReturn },
+    .{ "if_stmt", stmts_impl.buildIf },
+    .{ "elif_chain", stmts_impl.buildElifChain },
+    .{ "while_stmt", stmts_impl.buildWhile },
+    .{ "for_stmt", stmts_impl.buildFor },
+    .{ "defer_stmt", stmts_impl.buildDefer },
+    .{ "match_stmt", stmts_impl.buildMatch },
+    .{ "match_arm", stmts_impl.buildMatchArm },
+    .{ "break_stmt", buildBreakStmt },
+    .{ "continue_stmt", buildContinueStmt },
+    .{ "throw_stmt", stmts_impl.buildThrowStmt },
+    .{ "expr_or_assignment", stmts_impl.buildExprOrAssignment },
+    .{ "assign_expr", stmts_impl.buildExprOrAssignment },
+    // Expressions
+    .{ "int_literal", exprs_impl.buildIntLiteral },
+    .{ "float_literal", exprs_impl.buildFloatLiteral },
+    .{ "string_literal", exprs_impl.buildStringLiteral },
+    .{ "bool_literal", exprs_impl.buildBoolLiteral },
+    .{ "null_literal", buildNullLiteral },
+    .{ "identifier_expr", exprs_impl.buildIdentifier },
+    .{ "compiler_func", exprs_impl.buildCompilerFunc },
+    .{ "error_literal", exprs_impl.buildErrorLiteral },
+    .{ "array_literal", exprs_impl.buildArrayLiteral },
+    .{ "grouped_expr", exprs_impl.buildGroupedExpr },
+    .{ "tuple_literal", exprs_impl.buildTupleLiteral },
+    .{ "struct_expr", exprs_impl.buildStructExpr },
+    // Binary expression tower
+    .{ "or_expr", exprs_impl.buildBinaryExpr },
+    .{ "and_expr", exprs_impl.buildBinaryExpr },
+    .{ "bitor_expr", exprs_impl.buildBinaryExpr },
+    .{ "bitxor_expr", exprs_impl.buildBinaryExpr },
+    .{ "bitand_expr", exprs_impl.buildBinaryExpr },
+    .{ "shift_expr", exprs_impl.buildBinaryExpr },
+    .{ "add_expr", exprs_impl.buildBinaryExpr },
+    .{ "mul_expr", exprs_impl.buildBinaryExpr },
+    .{ "compare_expr", exprs_impl.buildCompareExpr },
+    .{ "range_expr", exprs_impl.buildRangeExpr },
+    .{ "not_expr", exprs_impl.buildNotExpr },
+    .{ "unary_expr", exprs_impl.buildUnaryExpr },
+    .{ "postfix_expr", exprs_impl.buildPostfixExpr },
+    // Types
+    .{ "named_type", types_impl.buildNamedType },
+    .{ "keyword_type", types_impl.buildKeywordType },
+    .{ "generic_type", types_impl.buildGenericType },
+    .{ "scoped_type", types_impl.buildScopedType },
+    .{ "scoped_generic_type", types_impl.buildScopedGenericType },
+    .{ "borrow_type", types_impl.buildBorrowType },
+    .{ "ref_type", types_impl.buildRefType },
+    .{ "paren_type", types_impl.buildParenType },
+    .{ "slice_type", types_impl.buildSliceType },
+    .{ "array_type", types_impl.buildArrayType },
+    .{ "func_type", types_impl.buildFuncType },
+});
+
+fn buildBreakStmt(ctx: *BuildContext, _: *const CaptureNode) anyerror!*Node {
+    return ctx.newNode(.{ .break_stmt = {} });
+}
+
+fn buildContinueStmt(ctx: *BuildContext, _: *const CaptureNode) anyerror!*Node {
+    return ctx.newNode(.{ .continue_stmt = {} });
+}
+
+fn buildNullLiteral(ctx: *BuildContext, _: *const CaptureNode) anyerror!*Node {
+    return ctx.newNode(.{ .null_literal = {} });
+}
+
 /// Build an AST node from a capture node. Dispatches to rule-specific
-/// builders or passes through transparent rules.
+/// builders via comptime lookup table, or passes through transparent rules.
 pub fn buildNode(ctx: *BuildContext, cap: *const CaptureNode) anyerror!*Node {
     const rule = cap.rule orelse return error.NoRule;
 
     // Track position for source location recording
     ctx.current_pos = cap.start_pos;
 
-    // Declaration builders
-    if (std.mem.eql(u8, rule, "program")) return decls_impl.buildProgram(ctx, cap);
-    if (std.mem.eql(u8, rule, "module_decl")) return decls_impl.buildModuleDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "const_decl")) return decls_impl.buildConstDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "var_decl")) return decls_impl.buildVarDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "func_decl")) return decls_impl.buildFuncDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "param")) return decls_impl.buildParam(ctx, cap);
-    if (std.mem.eql(u8, rule, "struct_decl")) return decls_impl.buildStructDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "blueprint_decl")) return decls_impl.buildBlueprintDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "enum_decl")) return decls_impl.buildEnumDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "field_decl")) return decls_impl.buildFieldDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "enum_variant")) return decls_impl.buildEnumVariant(ctx, cap);
-    if (std.mem.eql(u8, rule, "bitfield_decl")) return decls_impl.buildBitfieldDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "destruct_decl")) return decls_impl.buildDestructDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "test_decl")) return decls_impl.buildTestDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "import_decl")) return decls_impl.buildImport(ctx, cap);
-    if (std.mem.eql(u8, rule, "metadata")) return decls_impl.buildMetadata(ctx, cap);
-
-    // Statement builders
-    if (std.mem.eql(u8, rule, "block")) return stmts_impl.buildBlock(ctx, cap);
-    if (std.mem.eql(u8, rule, "return_stmt")) return stmts_impl.buildReturn(ctx, cap);
-    if (std.mem.eql(u8, rule, "if_stmt")) return stmts_impl.buildIf(ctx, cap);
-    if (std.mem.eql(u8, rule, "elif_chain")) return stmts_impl.buildElifChain(ctx, cap);
-    if (std.mem.eql(u8, rule, "while_stmt")) return stmts_impl.buildWhile(ctx, cap);
-    if (std.mem.eql(u8, rule, "for_stmt")) return stmts_impl.buildFor(ctx, cap);
-    if (std.mem.eql(u8, rule, "defer_stmt")) return stmts_impl.buildDefer(ctx, cap);
-    if (std.mem.eql(u8, rule, "match_stmt")) return stmts_impl.buildMatch(ctx, cap);
-    if (std.mem.eql(u8, rule, "match_arm")) return stmts_impl.buildMatchArm(ctx, cap);
-    if (std.mem.eql(u8, rule, "break_stmt")) return ctx.newNode(.{ .break_stmt = {} });
-    if (std.mem.eql(u8, rule, "continue_stmt")) return ctx.newNode(.{ .continue_stmt = {} });
-    if (std.mem.eql(u8, rule, "throw_stmt")) return stmts_impl.buildThrowStmt(ctx, cap);
-    if (std.mem.eql(u8, rule, "expr_or_assignment")) return stmts_impl.buildExprOrAssignment(ctx, cap);
-    if (std.mem.eql(u8, rule, "assign_expr")) return stmts_impl.buildExprOrAssignment(ctx, cap);
-
-    // Expression builders
-    if (std.mem.eql(u8, rule, "int_literal")) return exprs_impl.buildIntLiteral(ctx, cap);
-    if (std.mem.eql(u8, rule, "float_literal")) return exprs_impl.buildFloatLiteral(ctx, cap);
-    if (std.mem.eql(u8, rule, "string_literal")) return exprs_impl.buildStringLiteral(ctx, cap);
-    if (std.mem.eql(u8, rule, "bool_literal")) return exprs_impl.buildBoolLiteral(ctx, cap);
-    if (std.mem.eql(u8, rule, "null_literal")) return ctx.newNode(.{ .null_literal = {} });
-    if (std.mem.eql(u8, rule, "identifier_expr")) return exprs_impl.buildIdentifier(ctx, cap);
-    if (std.mem.eql(u8, rule, "compiler_func")) return exprs_impl.buildCompilerFunc(ctx, cap);
-    if (std.mem.eql(u8, rule, "error_literal")) return exprs_impl.buildErrorLiteral(ctx, cap);
-    if (std.mem.eql(u8, rule, "array_literal")) return exprs_impl.buildArrayLiteral(ctx, cap);
-    if (std.mem.eql(u8, rule, "grouped_expr")) return exprs_impl.buildGroupedExpr(ctx, cap);
-    if (std.mem.eql(u8, rule, "tuple_literal")) return exprs_impl.buildTupleLiteral(ctx, cap);
-    if (std.mem.eql(u8, rule, "struct_expr")) return exprs_impl.buildStructExpr(ctx, cap);
-
-    // Binary expression tower — all use the same builder
-    if (std.mem.eql(u8, rule, "or_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "or");
-    if (std.mem.eql(u8, rule, "and_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "and");
-    if (std.mem.eql(u8, rule, "bitor_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "|");
-    if (std.mem.eql(u8, rule, "bitxor_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "^");
-    if (std.mem.eql(u8, rule, "bitand_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "&");
-    if (std.mem.eql(u8, rule, "shift_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "<<");
-    if (std.mem.eql(u8, rule, "add_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "+");
-    if (std.mem.eql(u8, rule, "mul_expr")) return exprs_impl.buildBinaryExpr(ctx, cap, "*");
-    if (std.mem.eql(u8, rule, "compare_expr")) return exprs_impl.buildCompareExpr(ctx, cap);
-    if (std.mem.eql(u8, rule, "range_expr")) return exprs_impl.buildRangeExpr(ctx, cap);
-    if (std.mem.eql(u8, rule, "not_expr")) return exprs_impl.buildNotExpr(ctx, cap);
-    if (std.mem.eql(u8, rule, "unary_expr")) return exprs_impl.buildUnaryExpr(ctx, cap);
-    if (std.mem.eql(u8, rule, "postfix_expr")) return exprs_impl.buildPostfixExpr(ctx, cap);
-
-    // Type builders
-    if (std.mem.eql(u8, rule, "named_type")) return types_impl.buildNamedType(ctx, cap);
-    if (std.mem.eql(u8, rule, "keyword_type")) return types_impl.buildKeywordType(ctx, cap);
-    if (std.mem.eql(u8, rule, "generic_type")) return types_impl.buildGenericType(ctx, cap);
-    if (std.mem.eql(u8, rule, "scoped_type")) return types_impl.buildScopedType(ctx, cap);
-    if (std.mem.eql(u8, rule, "scoped_generic_type")) return types_impl.buildScopedGenericType(ctx, cap);
-    if (std.mem.eql(u8, rule, "borrow_type")) return types_impl.buildBorrowType(ctx, cap);
-    if (std.mem.eql(u8, rule, "ref_type")) return types_impl.buildRefType(ctx, cap);
-    if (std.mem.eql(u8, rule, "paren_type")) return types_impl.buildParenType(ctx, cap);
-    if (std.mem.eql(u8, rule, "slice_type")) return types_impl.buildSliceType(ctx, cap);
-    if (std.mem.eql(u8, rule, "array_type")) return types_impl.buildArrayType(ctx, cap);
-    if (std.mem.eql(u8, rule, "func_type")) return types_impl.buildFuncType(ctx, cap);
-
-    // Context-setting rules (set flags on child node)
-    if (std.mem.eql(u8, rule, "thread_decl")) return decls_impl.buildThreadDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "pub_decl")) return decls_impl.buildPubDecl(ctx, cap);
-    if (std.mem.eql(u8, rule, "compt_decl")) return decls_impl.buildComptDecl(ctx, cap);
+    // Dispatch to builder via comptime lookup table
+    if (rule_dispatch.get(rule)) |builder_fn| return builder_fn(ctx, cap);
 
     // Transparent rules — recurse into first child
     if (cap.children.len > 0) return buildNode(ctx, &cap.children[0]);
