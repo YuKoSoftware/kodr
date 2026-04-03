@@ -184,14 +184,6 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 try cg.emit(", ");
                 try cg.generateExprMir(m.rhs());
                 try cg.emit(")");
-            } else if ((is_eq or is_ne) and (mirIsString(m.lhs()) or mirIsString(m.rhs()))) {
-                // String comparison → std.mem.eql
-                if (is_ne) try cg.emit("!");
-                try cg.emit("std.mem.eql(u8, ");
-                try cg.generateExprMir(m.lhs());
-                try cg.emit(", ");
-                try cg.generateExprMir(m.rhs());
-                try cg.emit(")");
             } else if (any_vec and lhs_is_vec != rhs_is_vec) {
                 // Vector-scalar broadcast: wrap scalar side with @splat
                 const op = codegen.opToZig(bin_op);
@@ -319,30 +311,6 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     return;
                 } else if (std.mem.eql(u8, callee_name, "overflow")) {
                     try cg.generateOverflowExprMir(arg_m);
-                    return;
-                }
-            }
-            // String method rewriting: s.method(args) → _str.method(s, args)
-            if (callee_is_field) {
-                const method = callee_mir.name orelse "";
-                const obj_mir = callee_mir.children[0]; // field_access.children[0] = object
-                const is_handle = obj_mir.type_class == .thread_handle;
-                if (!is_handle and (mirIsString(obj_mir) or
-                    std.mem.eql(u8, method, "toString") or
-                    std.mem.eql(u8, method, "join")))
-                {
-                    if (cg.str_is_included) {
-                        try cg.emitFmt("{s}(", .{method});
-                    } else {
-                        const prefix = cg.str_import_alias orelse "str";
-                        try cg.emitFmt("{s}.{s}(", .{ prefix, method });
-                    }
-                    try cg.generateExprMir(obj_mir);
-                    for (call_args) |arg| {
-                        try cg.emit(", ");
-                        try cg.generateExprMir(arg);
-                    }
-                    try cg.emit(")");
                     return;
                 }
             }
@@ -793,54 +761,6 @@ pub fn generateDestructMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const d_names = m.names orelse &.{};
     const decl_keyword: []const u8 = if (m.is_const) "const" else "var";
     const val_m = m.value();
-    // String split destructuring
-    if (d_names.len == 2 and val_m.kind == .call) {
-        const callee_m = val_m.getCallee();
-        if (callee_m.kind == .field_access) {
-            const method = callee_m.name orelse "";
-            if (std.mem.eql(u8, method, "split")) {
-                const call_args = val_m.callArgs();
-                const destruct_idx = cg.destruct_counter;
-                cg.destruct_counter += 1;
-                try cg.emitFmt("const _orhon_sp{d}_delim = ", .{destruct_idx});
-                if (call_args.len > 0) try cg.generateExprMir(call_args[0]);
-                try cg.emit(";\n");
-                try cg.emitIndent();
-                try cg.emitFmt("const _orhon_sp{d}_pos = std.mem.indexOf(u8, ", .{destruct_idx});
-                try cg.generateExprMir(callee_m.children[0]);
-                try cg.emitFmt(", _orhon_sp{d}_delim);\n", .{destruct_idx});
-                try cg.emitIndent();
-                try cg.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d_names[0], destruct_idx });
-                try cg.generateExprMir(callee_m.children[0]);
-                try cg.emit("[0.._idx] else ");
-                try cg.generateExprMir(callee_m.children[0]);
-                try cg.emit(";\n");
-                try cg.emitIndent();
-                try cg.emitFmt("{s} {s} = if (_orhon_sp{d}_pos) |_idx| ", .{ decl_keyword, d_names[1], destruct_idx });
-                try cg.generateExprMir(callee_m.children[0]);
-                try cg.emitFmt("[_idx + _orhon_sp{d}_delim.len..] else \"\";", .{destruct_idx});
-                return;
-            }
-            if (std.mem.eql(u8, method, "splitAt") and val_m.callArgs().len == 1) {
-                const destruct_idx = cg.destruct_counter;
-                cg.destruct_counter += 1;
-                try cg.emitFmt("var _orhon_s{d}: usize = @intCast(", .{destruct_idx});
-                try cg.generateExprMir(val_m.callArgs()[0]);
-                try cg.emit(");\n");
-                try cg.emitIndent();
-                try cg.emitFmt("_ = &_orhon_s{d};\n", .{destruct_idx});
-                try cg.emitIndent();
-                try cg.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[0] });
-                try cg.generateExprMir(callee_m.children[0]);
-                try cg.emitFmt("[0.._orhon_s{d}];\n", .{destruct_idx});
-                try cg.emitIndent();
-                try cg.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[1] });
-                try cg.generateExprMir(callee_m.children[0]);
-                try cg.emitFmt("[_orhon_s{d}..];", .{destruct_idx});
-                return;
-            }
-        }
-    }
     // Normal tuple destructuring
     const idx = cg.destruct_counter;
     cg.destruct_counter += 1;

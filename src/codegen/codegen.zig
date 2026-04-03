@@ -42,9 +42,6 @@ pub const CodeGen = struct {
     null_narrowed: std.StringHashMapUnmanaged(void) = .{},
     // Track the captured error variable name per scope for `.Error` → `@errorName()`
     error_capture_var: std.StringHashMapUnmanaged([]const u8) = .{},
-    // Import alias tracking — use the user's import name instead of hardcoded prefixes
-    str_import_alias: ?[]const u8 = null,
-    str_is_included: bool = false,
     // MIR annotation table — Phase 1+2 typed annotation pass
     node_map: ?*const mir.NodeMap = null,
     union_registry: ?*const mir.UnionRegistry = null,
@@ -295,12 +292,6 @@ pub const CodeGen = struct {
             }
         }
 
-        // Auto-import str if not explicitly imported — needed for string method dispatch
-        if (self.str_import_alias == null and !self.str_is_included) {
-            self.str_import_alias = "str";
-            try self.emit("const str = @import(\"_orhon_string\");\n");
-        }
-
         try self.emit("\n");
 
         // Emit _OrhonHandle helper for thread handle types (comptime, zero cost if unused)
@@ -362,15 +353,6 @@ pub const CodeGen = struct {
         // via createModule + addImport. This prevents Zig's "file exists in two modules"
         // error when multiple targets import the same module.
         const ext = "";
-
-        // Track import aliases for str and collections
-        if (std.mem.eql(u8, imp.path, "str")) {
-            if (imp.is_include) {
-                self.str_is_included = true;
-            } else {
-                self.str_import_alias = imp.alias orelse "str";
-            }
-        }
 
         if (imp.is_include) {
             // include — dump all symbols into local namespace via individual re-exports
