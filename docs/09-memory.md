@@ -99,66 +99,27 @@ Moving individual fields out of a struct is a compile time error.
 
 ## Pointers
 
-Traditional `*T` pointer syntax does not exist in Orhon. Instead there are three distinct pointer types, each with a clear purpose. Pointer construction uses the type annotation and `mut&` (address-of) — the type carries the safety level, no extra syntax needed.
+Orhon does not have pointer types as language builtins. The borrow system (`const&` / `mut&`) handles safe reference passing — this covers the vast majority of use cases.
 
-### `Ptr(T)` — Safe Pointer, General Use
-Compiler tracked. Always `const` — the pointer cannot be reassigned. Points to a single value only — no pointer arithmetic, no `[]` indexing. Must be initialized from a variable address (`mut& x`) — raw integer addresses are not allowed. The ownership pass ensures you cannot use a `Ptr(T)` after the pointee has moved — this is a hard compile-time error. No warnings emitted.
+For explicit pointer control (FFI, hardware access, pointer arithmetic), use `std::ptr`:
 
 ```
+import std::ptr
+
 var x: i32 = 10
-const ptr: Ptr(i32) = mut& x
-
-@deref(ptr)        // read the pointed-to value
-
-var x2: i32 = x   // x moved — compiler error if @deref(ptr) is used after this
+var p: ptr.Ptr(i32) = ptr.Ptr(i32).new(mut& x)
+const val: i32 = p.read()
+p.write(42)
 ```
 
-### `RawPtr(T)` — Unsafe Pointer, No Restrictions
-Zero overhead — just a memory address. No compiler tracking, no ownership checks, no bounds checking. `[]` indexing with full pointer arithmetic. Always emits a compiler warning — you are opting out of safety.
-
-```
-// from a variable
-const raw: RawPtr(i32) = mut& x
-raw[0]    // read value, no bounds check
-
-// from a hardware address
-const vga: RawPtr(u8) = 0xB8000
-vga[0]
-vga[5]
-
-// from a C function returning a pointer
-const arr: RawPtr(i32) = some_c_function()
-arr[n]    // nth element, pointer arithmetic under the hood
-```
-
-### `VolatilePtr(T)` — Unsafe Pointer, Hardware Registers
-Same as `RawPtr(T)` with one difference: every read and write is volatile — the compiler never caches or optimizes them away. For memory-mapped hardware registers where the value can change outside the program. Always emits a compiler warning.
-
-```
-const reg: VolatilePtr(u32) = 0xFF200000
-reg[0]         // volatile read
-reg[0] = 0x1   // volatile write
-reg[1] = 0x2   // volatile write to next register
-```
-
-### Pointer Construction
-The type annotation determines pointer kind — `mut&` takes the address, integer literals provide hardware addresses:
-
-```
-// From a variable — mut& takes the address
-const p: Ptr(i32) = mut& x             // safe, const, compiler-tracked
-const r: RawPtr(i32) = mut& x          // unsafe, warns
-const v: VolatilePtr(u32) = mut& x     // volatile, warns
-
-// From a hardware address — integer literal
-const reg: VolatilePtr(u32) = 0xFF200000
-const mem: RawPtr(u8) = 0xB8000
-```
+See [[std-ptr]] for full API documentation.
 
 ### Pointer Rules
-- `Ptr(T)` — always `const`, safe, no warnings, single value, `mut& variable` only
-- `RawPtr(T)` — always warns, no restrictions, full pointer arithmetic, escape hatch
-- `VolatilePtr(T)` — always warns, like `RawPtr(T)` but all accesses are volatile, hardware registers only
+- Use borrows (`const&` / `mut&`) for passing references — this is the normal path
+- Use `std::ptr` only when you need to hold an address explicitly
+- `Ptr(T)` — safe single-value pointer, constructed from borrows only
+- `RawPtr(T)` — unsafe, indexable, allows integer addresses (FFI/hardware)
+- `VolatilePtr(T)` — unsafe, volatile reads/writes (hardware registers)
 - Self-referential structures use array indices instead of pointers — faster and safer
 
 ---

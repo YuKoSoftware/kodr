@@ -22,33 +22,8 @@ Not blocking zero-magic work — metadata doesn't touch codegen. But needs a des
 
 ## Core — Language Ergonomics
 
-### Pointer redesign — core `*T` syntax + Ptr as std lib `hard`
-
-- Core language gets a native pointer type with clean syntax
-- Native pointer maps 1:1 to Zig pointers. Compiler understands it like `i32`.
-- `Ptr(T)`, `RawPtr(T)`, `VolatilePtr(T)` move out of `BUILTIN_TYPES` into std as
-  pure Zig structs that wrap the native pointer with safety/methods
-- Ownership/borrow checker enforces safety on native pointers — that's its job
-- `@deref` stays as the compiler function for dereferencing (or gets replaced by
-  whatever the new pointer syntax uses for dereference)
-- Removes: `Ptr`/`RawPtr`/`VolatilePtr` from builtins, `typeToZig` special cases,
-  pointer coercion codegen in `codegen_match.zig`
-- **Pointer type syntax:**
-  - `*T` — core pointer (raw address, unsafe)
-  - `**T` — volatile pointer (hardware, no optimization)
-  - `*(*T)` — pointer to pointer (just `*T` where T is another pointer)
-- **Pointer operations:**
-  - `ptr->` — dereference (read/write what it points to)
-  - `ptr-> = val` — write through pointer
-  - `ptr-->` — double dereference (pointer-to-pointer, max depth)
-  - `ptr[n]` — offset by n elements
-  - `&x` — take address of x
-  - `ptr->.field` — dereference then field access
-- **No deeper than pointer-to-pointer** — three levels is bad design, not supported
-- **std::ptr.Ptr(T)** — safe wrapper struct, adds ownership/borrow checking
-- **Removes from compiler:** `Ptr`, `RawPtr`, `VolatilePtr` from BUILTIN_TYPES,
-  all `typeToZig` special cases, pointer coercion codegen, `@deref` (replaced by `->`)
-- **Blocked on:** implementation planning
+### ~~Pointer redesign~~ — done (v0.17.0)
+Ptr/RawPtr/VolatilePtr moved from compiler builtins to `std::ptr`. @deref removed.
 
 ### Clean up collections.zig — import allocator from std `easy`
 
