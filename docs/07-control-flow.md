@@ -161,17 +161,17 @@ Guarded and unguarded arms can coexist freely in the same match block.
 
 ### Matching on Union Types
 
-`match` can branch on which type an `ErrorUnion(T)` or `NullUnion(T)` wrapper currently holds (see [[08-error-handling]]).
+`match` can branch on which type an `(Error | T)` or `(null | T)` union currently holds (see [[08-error-handling]]).
 Arms are type names — no binding syntax needed, access the payload via the usual dot syntax.
 
 ```
-// ErrorUnion(T)
+// (Error | T)
 match result {
     Error => { console.println(result.Error) }
     i32   => { console.println(result.i32) }
 }
 
-// NullUnion(T)
+// (null | T)
 match user {
     null => { return "not found" }
     User => { return user.User.name }

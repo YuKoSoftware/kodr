@@ -4,7 +4,7 @@ module example
 
 const ErrNotFound = Error("not found")
 
-func safe_divide(a: i32, b: i32) ErrorUnion(i32) {
+func safe_divide(a: i32, b: i32) (Error | i32) {
     if(b == 0) {
         return Error("division by zero")
     }
@@ -21,7 +21,7 @@ func divide_or_default(a: i32, b: i32) i32 {
 
 // ─── Null Handling ───────────────────────────────────────────────────────────
 
-func find_value(id: i32) NullUnion(i32) {
+func find_value(id: i32) (null | i32) {
     if(id > 0) {
         return id * 10
     }
@@ -55,7 +55,7 @@ func arb_union_check(flag: bool) i32 {
 
 // ─── Error Union with Void ───────────────────────────────────────────────────
 
-func validate_input(value: i32) ErrorUnion(void) {
+func validate_input(value: i32) (Error | void) {
     if(value < 0) {
         return Error("negative value")
     }
@@ -73,7 +73,7 @@ func check_and_report(value: i32) i32 {
 // ─── Throw Statement (error propagation) ─────────────────────────────────────
 
 // throw propagates the error and narrows the type
-func divide_with_throw(a: i32, b: i32) ErrorUnion(i32) {
+func divide_with_throw(a: i32, b: i32) (Error | i32) {
     const result = safe_divide(a, b)
     throw result
     return result

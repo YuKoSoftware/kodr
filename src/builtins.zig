@@ -12,8 +12,6 @@ pub const BUILTIN_TYPES = [_][]const u8{
     "Handle",
     "Error",
     "Vector",
-    "ErrorUnion",
-    "NullUnion",
 };
 
 /// Named constants for builtin type names used in comparisons across the compiler.
@@ -23,8 +21,6 @@ pub const BT = struct {
     pub const VOLATILE_PTR = "VolatilePtr";
     pub const HANDLE = "Handle";
     pub const ERROR = "Error";
-    pub const ERROR_UNION = "ErrorUnion";
-    pub const NULL_UNION = "NullUnion";
     pub const VECTOR = "Vector";
 
 };

@@ -136,8 +136,8 @@ const SYNTAX_DOC =
     \\
     \\```orhon
     \\(i32 | f64 | str)          // tagged union
-    \\ErrorUnion(T)              // error or value
-    \\NullUnion(T)               // null or value
+    \\(Error | T)                // error or value
+    \\(null | T)                 // null or value
     \\```
     \\
     \\### Function types
@@ -352,7 +352,7 @@ const SYNTAX_DOC =
     \\### Throw (error propagation)
     \\
     \\```orhon
-    \\func divide(a: i32, b: i32) ErrorUnion(i32) {
+    \\func divide(a: i32, b: i32) (Error | i32) {
     \\    if (b == 0) {
     \\        throw division_by_zero
     \\    }

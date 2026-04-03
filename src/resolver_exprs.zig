@@ -162,8 +162,11 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                     const struct_name: []const u8 = blk: {
                         if (self.ctx.decls.structs.contains(obj_id)) break :blk obj_id;
                         if (scope.lookup(obj_id)) |var_type| {
-                            // Unwrap error_union and null_union to get the underlying named type
+                            // Unwrap error/null unions to get the underlying named type
                             if (var_type == .named) break :blk var_type.named;
+                            if (var_type.unionInnerType()) |inner| {
+                                if (inner == .named) break :blk inner.named;
+                            }
                             if (var_type.coreInner()) |ci| {
                                 if (ci.* == .named) break :blk ci.named;
                             }
@@ -227,9 +230,10 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
 
         .field_expr => |f| {
             const obj_type = try resolveExpr(self, f.object, scope);
-            // .value on ErrorUnion(T) or NullUnion(T) unwraps to the inner type.
+            // .value on (Error | T) or (null | T) unwraps to the inner type.
             // This lets the resolver track variables assigned via `var x = result.value`.
             if (std.mem.eql(u8, f.field, "value")) {
+                if (obj_type.unionInnerType()) |inner| return inner;
                 if (obj_type.coreInner()) |ci| return ci.*;
             }
             const obj_name = obj_type.name();

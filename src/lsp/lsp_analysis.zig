@@ -57,8 +57,6 @@ pub fn formatType(allocator: std.mem.Allocator, t: types.ResolvedType) anyerror!
             const inner_s = try formatType(allocator, ct.inner.*);
             defer allocator.free(inner_s);
             const wrapper = switch (ct.kind) {
-                .error_union => "ErrorUnion",
-                .null_union => "NullUnion",
                 .handle => "Handle",
                 .safe_ptr => "Ptr",
                 .raw_ptr => "RawPtr",

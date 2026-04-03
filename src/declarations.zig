@@ -395,8 +395,6 @@ pub const DeclCollector = struct {
     /// Report a user-facing error for union type resolution failures.
     fn reportUnionError(self: *DeclCollector, err: anyerror, loc: ?errors.SourceLoc) !void {
         const msg_text = switch (err) {
-            error.ErrorInUnion => "Error cannot be a union member — use ErrorUnion(T) instead",
-            error.NullInUnion => "null cannot be a union member — use NullUnion(T) instead",
             error.DuplicateUnionMember => "duplicate type in union after flattening",
             else => return err,
         };

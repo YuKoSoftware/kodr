@@ -92,7 +92,7 @@ var z = @cast(f32, x) + f    // OK — explicit cast
 Silent wrap around by default. Use explicit builtins when you need controlled behavior. All are builtin functions — no import needed.
 
 ```
-@overflow(a + b)    // returns ErrorUnion(T) if overflow occurs — handle or propagate (see [[08-error-handling]])
+@overflow(a + b)    // returns (Error | T) if overflow occurs — handle or propagate (see [[08-error-handling]])
 @wrap(a + b)        // explicitly wraps around, documents intent, always succeeds
 @sat(a + b)         // saturating arithmetic, clamps to max/min value, always succeeds
 ```

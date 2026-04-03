@@ -574,8 +574,6 @@ fi
 # duplicate union member after flattening
 run_fixture neg_union_dup fail_union_duplicate.orh "duplicate type.*union\|duplicate.*flattening\|DuplicateUnionMember" "fixture: rejects duplicate type in flattened union"
 
-# Error in regular union banned
-run_fixture neg_error_union fail_error_in_union.orh "Error.*cannot be a union member\|use ErrorUnion\|ErrorInUnion" "fixture: rejects Error in regular union"
 
 # ── module main rejection ────────────────────────────────────────
 # module main is reserved — compiler must reject it

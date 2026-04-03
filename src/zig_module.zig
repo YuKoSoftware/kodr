@@ -64,21 +64,21 @@ pub fn mapType(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *T
             return true;
         },
 
-        // --- ?T → NullUnion(T) ---
+        // --- ?T → (null | T) ---
         .optional_type => {
             const child = tree.nodeData(node).node;
-            try out.append(allocator, "NullUnion(");
+            try out.append(allocator, "(null | ");
             const ok = try mapType(tree, child, allocator, out);
             if (!ok) return false;
             try out.append(allocator, ")");
             return true;
         },
 
-        // --- lhs!rhs → ErrorUnion(rhs) ---
+        // --- lhs!rhs → (Error | rhs) ---
         // For `anyerror!T`, lhs is the error set, rhs is the payload type.
         .error_union => {
             const rhs = tree.nodeData(node).node_and_node[1];
-            try out.append(allocator, "ErrorUnion(");
+            try out.append(allocator, "(Error | ");
             const ok = try mapType(tree, rhs, allocator, out);
             if (!ok) return false;
             try out.append(allocator, ")");
@@ -841,14 +841,14 @@ test "[]const u8 maps to str" {
     try expectMapping("const _: []const u8 = undefined;", "str");
 }
 
-test "?T maps to NullUnion(T)" {
-    try expectMapping("const _: ?i32 = undefined;", "NullUnion(i32)");
-    try expectMapping("const _: ?bool = undefined;", "NullUnion(bool)");
+test "?T maps to (null | T)" {
+    try expectMapping("const _: ?i32 = undefined;", "(null | i32)");
+    try expectMapping("const _: ?bool = undefined;", "(null | bool)");
 }
 
-test "anyerror!T maps to ErrorUnion(T)" {
-    try expectMapping("const _: anyerror!i32 = undefined;", "ErrorUnion(i32)");
-    try expectMapping("const _: anyerror!void = undefined;", "ErrorUnion(void)");
+test "anyerror!T maps to (Error | T)" {
+    try expectMapping("const _: anyerror!i32 = undefined;", "(Error | i32)");
+    try expectMapping("const _: anyerror!void = undefined;", "(Error | void)");
 }
 
 test "*T maps to mut& T" {
@@ -874,8 +874,8 @@ test "non-u8 slices are unmappable" {
 }
 
 test "nested types" {
-    try expectMapping("const _: ?[]const u8 = undefined;", "NullUnion(str)");
-    try expectMapping("const _: anyerror![]const u8 = undefined;", "ErrorUnion(str)");
+    try expectMapping("const _: ?[]const u8 = undefined;", "(null | str)");
+    try expectMapping("const _: anyerror![]const u8 = undefined;", "(Error | str)");
     try expectMapping("const _: *const []const u8 = undefined;", "const& str");
 }
 

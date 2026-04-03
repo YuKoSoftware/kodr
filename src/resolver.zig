@@ -550,21 +550,16 @@ pub fn typesCompatible(a: RT, b: RT) bool {
         const wrapper_name = coreTypeName(a.core_type.kind);
         if (std.mem.eql(u8, b_name, wrapper_name)) return true;
         if (b == .inferred or b == .unknown) return true;
-        // ErrorUnion(T) accepts Error, T, and literal-compatible values
-        if (a.core_type.kind == .error_union and b == .err) return true;
-        // NullUnion(T) accepts null, T, and literal-compatible values
-        if (a.core_type.kind == .null_union and b == .null_type) return true;
         return typesCompatible(a.core_type.inner.*, b) or isLiteralCompatible(b, a.core_type.inner.*);
     }
     if (b == .core_type) {
         const wrapper_name = coreTypeName(b.core_type.kind);
         if (std.mem.eql(u8, a_name, wrapper_name)) return true;
         if (a == .inferred or a == .unknown) return true;
-        if (b.core_type.kind == .error_union and a == .err) return true;
-        if (b.core_type.kind == .null_union and a == .null_type) return true;
         return typesCompatible(a, b.core_type.inner.*) or isLiteralCompatible(a, b.core_type.inner.*);
     }
-    // Arbitrary unions accept any of their members, or unresolved literals matching any member
+    // Unions accept any of their members, or unresolved literals matching any member.
+    // This includes (Error | T) accepting Error/T and (null | T) accepting null/T.
     if (b == .union_type) {
         if (a == .inferred or a == .unknown) return true;
         for (b.union_type) |member| {
@@ -589,8 +584,6 @@ pub fn typesCompatible(a: RT, b: RT) bool {
 /// Map CoreType.Kind to its Orhon wrapper type name
 pub fn coreTypeName(kind: types.ResolvedType.CoreType.Kind) []const u8 {
     return switch (kind) {
-        .error_union => "ErrorUnion",
-        .null_union => "NullUnion",
         .handle => "Handle",
         .safe_ptr => "Ptr",
         .raw_ptr => "RawPtr",

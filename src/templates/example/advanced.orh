@@ -28,13 +28,13 @@ func map_demo() i32 {
     return 0
 }
 
-// Map.get returns NullUnion(V)
+// Map.get returns (null | V)
 
 func map_get_demo() i32 {
     var m: Map(str, i32) = Map(str, i32).new()
     defer { m.free() }
     m.put("x", 77)
-    const result: NullUnion(i32) = m.get("x")
+    const result: (null | i32) = m.get("x")
     if(result is not null) {
         return result.value
     }
@@ -219,9 +219,9 @@ pub const Distance: type = f64
 
 const Scores: type = List(i32)
 
-const OptionalInt: type = NullUnion(i32)
+const OptionalInt: type = (null | i32)
 
-const Fallible: type = ErrorUnion(i32)
+const Fallible: type = (Error | i32)
 
 func type_alias_demo() i32 {
     const s: Speed = 42

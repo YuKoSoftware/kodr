@@ -34,26 +34,6 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*pa
     const covered_slice = covered.items;
 
     switch (match_type) {
-        .core_type => |ct| {
-            const required: [2][]const u8 = switch (ct.kind) {
-                .error_union => .{ "Error", ct.inner.name() },
-                .null_union => .{ "null", ct.inner.name() },
-                else => return, // other core types don't have match exhaustiveness
-            };
-            for (required) |req| {
-                var found = false;
-                for (covered_slice) |c| {
-                    if (std.mem.eql(u8, c, req)) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node), "non-exhaustive match — missing arm for '{s}', add it or use 'else'", .{req});
-                    return;
-                }
-            }
-        },
         .union_type => |members| {
             for (members) |member| {
                 var found = false;
@@ -76,21 +56,6 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*pa
 /// Validate that a match arm pattern is a valid member of the matched union type
 pub fn validateMatchArm(self: *TypeResolver, pattern_name: []const u8, match_type: RT, arm_node: *parser.Node) !void {
     switch (match_type) {
-        .core_type => |ct| {
-            switch (ct.kind) {
-                .error_union => {
-                    if (std.mem.eql(u8, pattern_name, builtins.BT.ERROR)) return;
-                    if (std.mem.eql(u8, pattern_name, ct.inner.name())) return;
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(arm_node), "match arm '{s}' is not a member of ErrorUnion({s})", .{ pattern_name, ct.inner.name() });
-                },
-                .null_union => {
-                    if (std.mem.eql(u8, pattern_name, "null")) return;
-                    if (std.mem.eql(u8, pattern_name, ct.inner.name())) return;
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(arm_node), "match arm '{s}' is not a member of NullUnion({s})", .{ pattern_name, ct.inner.name() });
-                },
-                else => {}, // other core types don't have match arms
-            }
-        },
         .union_type => |members| {
             // Valid arms: any member type name
             for (members) |member| {

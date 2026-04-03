@@ -163,7 +163,7 @@ x.i32     // access the i32 value
 x.f32     // access the f32 value (only valid when x is f32)
 ```
 
-Note: `Error` and `null` are not allowed in regular unions — use `ErrorUnion(T)` and `NullUnion(T)` wrapper types instead. See [[08-error-handling]].
+`Error` and `null` are valid union members: `(Error | T)` maps to `anyerror!T`, `(null | T)` maps to `?T`. See [[08-error-handling]].
 
 ### Tuples
 Named tuples only. Must be defined as named types with `const`. Nominal typing — two tuples with identical structure but different names are different types.

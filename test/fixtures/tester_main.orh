@@ -670,14 +670,14 @@ func main() void {
         console.println("FAIL is_not_qualified")
     }
 
-    // Test: ErrorUnion(void) — success path returns void, no error
+    // Test: (Error | void) — success path returns void, no error
     if(tester.test_error_void_ok() == 1) {
         console.println("PASS error_void_ok")
     } else {
         console.println("FAIL error_void_ok")
     }
 
-    // Test: ErrorUnion(void) — error path returns error
+    // Test: (Error | void) — error path returns error
     if(tester.test_error_void_fail() == 1) {
         console.println("PASS error_void_fail")
     } else {
@@ -691,7 +691,7 @@ func main() void {
         console.println("FAIL cast_to_enum")
     }
 
-    // Test: NullUnion((A | B | C)) → ?(union(enum){...})
+    // Test: (null | (A | B | C)) → ?(union(enum){...})
     if(tester.test_null_multi_union() == 1) {
         console.println("PASS null_multi_union")
     } else {

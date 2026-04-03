@@ -137,11 +137,11 @@ pub const MirAnnotator = struct {
         // Array → slice
         if (src == .array and dst == .slice)
             return .{ .kind = .array_to_slice };
-        // Plain → null union (CoreType)
-        if (dst.isCoreType(.null_union) and !src.isCoreType(.null_union) and src != .null_type)
+        // Plain → null union: (null | T)
+        if (dst.unionContainsNull() and !src.unionContainsNull() and src != .null_type)
             return .{ .kind = .null_wrap };
-        // Plain → error union (CoreType)
-        if (dst.isCoreType(.error_union) and !src.isCoreType(.error_union) and src != .err)
+        // Plain → error union: (Error | T)
+        if (dst.unionContainsError() and !src.unionContainsError() and src != .err)
             return .{ .kind = .error_wrap };
         // Plain → arbitrary union
         if (dst == .union_type and src != .union_type) {
@@ -153,6 +153,9 @@ pub const MirAnnotator = struct {
                     if (member == .null_type) return .{ .kind = null };
                 }
             }
+            // err literal into an error-containing union:
+            // typeToZig emits anyerror!T for such unions, so Zig handles natively.
+            if (src == .err and dst.unionContainsError()) return .{ .kind = null };
             // For numeric/float literals, find the matching member type in the union
             if (src == .primitive and src.primitive == .numeric_literal) {
                 for (dst.union_type) |member| {
@@ -170,7 +173,7 @@ pub const MirAnnotator = struct {
             return .{ .kind = .arbitrary_union_wrap, .tag = src.name() };
         }
         // Null union → plain (optional unwrap)
-        if (src.isCoreType(.null_union) and !dst.isCoreType(.null_union))
+        if (src.unionContainsNull() and !dst.unionContainsNull())
             return .{ .kind = .optional_unwrap };
         // Value → const ref (T → const& T)
         if (dst == .ptr) {
@@ -319,12 +322,7 @@ test "var_types - populated from var_decl" {
 }
 
 test "detectCoercion - null_wrap" {
-    const alloc = std.testing.allocator;
-    const inner = try alloc.create(RT);
-    defer alloc.destroy(inner);
-    inner.* = RT{ .primitive = .i32 };
-
-    const null_union_type = RT{ .core_type = .{ .kind = .null_union, .inner = inner } };
+    const null_union_type = RT{ .union_type = &.{ RT.null_type, RT{ .primitive = .i32 } } };
 
     // Plain → null union → null_wrap
     const r1 = MirAnnotator.detectCoercion(RT{ .primitive = .i32 }, null_union_type);
@@ -340,12 +338,7 @@ test "detectCoercion - null_wrap" {
 }
 
 test "detectCoercion - error_wrap" {
-    const alloc = std.testing.allocator;
-    const inner = try alloc.create(RT);
-    defer alloc.destroy(inner);
-    inner.* = RT{ .primitive = .i32 };
-
-    const error_union_type = RT{ .core_type = .{ .kind = .error_union, .inner = inner } };
+    const error_union_type = RT{ .union_type = &.{ RT.err, RT{ .primitive = .i32 } } };
 
     // Plain → error union → error_wrap
     const r1 = MirAnnotator.detectCoercion(RT{ .primitive = .i32 }, error_union_type);
@@ -378,24 +371,17 @@ test "detectCoercion - arbitrary_union_wrap" {
 }
 
 test "detectCoercion - optional_unwrap" {
-    const alloc = std.testing.allocator;
-    const inner = try alloc.create(RT);
-    defer alloc.destroy(inner);
-    inner.* = RT{ .primitive = .i32 };
-
-    // null_union → plain → optional_unwrap
-    const r1 = MirAnnotator.detectCoercion(RT{ .core_type = .{ .kind = .null_union, .inner = inner } }, RT{ .primitive = .i32 });
+    // (null | i32) → i32 → optional_unwrap
+    const null_union_type = RT{ .union_type = &.{ RT.null_type, RT{ .primitive = .i32 } } };
+    const r1 = MirAnnotator.detectCoercion(null_union_type, RT{ .primitive = .i32 });
     try std.testing.expectEqual(Coercion.optional_unwrap, r1.kind.?);
 }
 
 test "detectCoercion - unknown types" {
-    const alloc = std.testing.allocator;
-    const inner = try alloc.create(RT);
-    defer alloc.destroy(inner);
-    inner.* = RT{ .primitive = .i32 };
+    const null_union_type = RT{ .union_type = &.{ RT.null_type, RT{ .primitive = .i32 } } };
 
     // Unknown source → no coercion
-    const r1 = MirAnnotator.detectCoercion(RT.unknown, RT{ .core_type = .{ .kind = .null_union, .inner = inner } });
+    const r1 = MirAnnotator.detectCoercion(RT.unknown, null_union_type);
     try std.testing.expect(r1.kind == null);
 
     // Unknown destination → no coercion

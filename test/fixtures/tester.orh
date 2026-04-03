@@ -397,7 +397,7 @@ pub func test_mutable_method() i32 {
 
 const ErrDivByZero: Error = Error("division by zero")
 
-pub func safe_divide(a: i32, b: i32) ErrorUnion(i32) {
+pub func safe_divide(a: i32, b: i32) (Error | i32) {
     if(b == 0) {
         return ErrDivByZero
     }
@@ -405,7 +405,7 @@ pub func safe_divide(a: i32, b: i32) ErrorUnion(i32) {
 }
 
 pub func test_error_ok() i32 {
-    const result: ErrorUnion(i32) = safe_divide(10, 2)
+    const result: (Error | i32) = safe_divide(10, 2)
     if(result is Error) {
         return 0 - 1
     }
@@ -413,7 +413,7 @@ pub func test_error_ok() i32 {
 }
 
 pub func test_error_fail() i32 {
-    const result: ErrorUnion(i32) = safe_divide(10, 0)
+    const result: (Error | i32) = safe_divide(10, 0)
     if(result is Error) {
         return 0 - 1
     }
@@ -422,7 +422,7 @@ pub func test_error_fail() i32 {
 
 // ─── Null handling ──────────────────────────────────────
 
-pub func find_player(id: i32) NullUnion(i32) {
+pub func find_player(id: i32) (null | i32) {
     if(id > 0) {
         return id * 10
     }
@@ -430,7 +430,7 @@ pub func find_player(id: i32) NullUnion(i32) {
 }
 
 pub func test_null_some() i32 {
-    const result: NullUnion(i32) = find_player(5)
+    const result: (null | i32) = find_player(5)
     if(result is null) {
         return 0 - 1
     }
@@ -438,7 +438,7 @@ pub func test_null_some() i32 {
 }
 
 pub func test_null_none() i32 {
-    const result: NullUnion(i32) = find_player(0)
+    const result: (null | i32) = find_player(0)
     if(result is null) {
         return 0 - 1
     }
@@ -447,7 +447,7 @@ pub func test_null_none() i32 {
 
 // Inferred null union — no type annotation, .value unwrap
 pub func test_null_inferred() i32 {
-    const result: NullUnion(i32) = find_player(5)
+    const result: (null | i32) = find_player(5)
     if(result is null) {
         return 0 - 1
     }
@@ -473,7 +473,7 @@ pub func test_null_inferred_real() i32 {
 }
 
 pub func test_null_reassign() i32 {
-    var x: NullUnion(i32) = null
+    var x: (null | i32) = null
     x = 42
     if(x is null) {
         return 0 - 1
@@ -1303,13 +1303,13 @@ bitfield(u32) Perms {
 
 // ─── Map.get ────────────────────────────────────────────────
 
-// Map.get returns NullUnion(V) — test value extraction
+// Map.get returns (null | V) — test value extraction
 
 pub func test_map_get() i32 {
     var m: Map(str, i32) = Map(str, i32).new()
     defer { m.free() }
     m.put("x", 77)
-    const result: NullUnion(i32) = m.get("x")
+    const result: (null | i32) = m.get("x")
     if(result is not null) {
         return result.value
     }
@@ -1489,9 +1489,9 @@ pub struct IsTestType {
     val: i32
 }
 
-// ─── ErrorUnion(void) ───────────────────────────────────────
+// ─── (Error | void) ────────────────────────────────────────
 
-pub func do_side_effect(flag: bool) ErrorUnion(void) {
+pub func do_side_effect(flag: bool) (Error | void) {
     if(flag) {
         return Error("side effect failed")
     }
@@ -1526,10 +1526,10 @@ pub func test_cast_to_enum() i32 {
     return 0
 }
 
-// ─── NullUnion(T) with explicit type ────────────────────────
+// ─── (null | T) with explicit type ──────────────────────────
 
 pub func test_null_multi_union() i32 {
-    const val: NullUnion(i32) = 42
+    const val: (null | i32) = 42
     if(val is null) {
         return 0
     }

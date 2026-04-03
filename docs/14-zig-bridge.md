@@ -61,8 +61,8 @@ The compiler maps Zig types to Orhon types automatically:
 |-----|-------|
 | `u8`, `i32`, `f64`, `bool`, `void`, `usize` | same |
 | `[]const u8` | `str` |
-| `?T` | `NullUnion(T)` |
-| `anyerror!T` | `ErrorUnion(T)` |
+| `?T` | `(null \| T)` |
+| `anyerror!T` | `(Error \| T)` |
 | `*T` | `mut& T` |
 | `*const T` | `const& T` |
 | `comptime T: type` | `compt T: type` |

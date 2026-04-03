@@ -25,7 +25,12 @@ pub const TypeClass = enum {
 /// Classify a resolved type into a codegen category.
 pub fn classifyType(t: RT) TypeClass {
     return switch (t) {
-        .union_type => .arbitrary_union,
+        .union_type => {
+            // Scan union members for Error/null to classify as error_union or null_union
+            if (t.unionContainsError()) return .error_union;
+            if (t.unionContainsNull()) return .null_union;
+            return .arbitrary_union;
+        },
         .primitive => |p| if (p == .string) .string else .plain,
         .generic => |g| {
             if (std.mem.eql(u8, g.name, builtins.BT.RAW_PTR) or std.mem.eql(u8, g.name, builtins.BT.VOLATILE_PTR))
@@ -40,8 +45,6 @@ pub fn classifyType(t: RT) TypeClass {
             .raw_ptr, .volatile_ptr => .raw_ptr,
             .safe_ptr => .safe_ptr,
             .handle => .thread_handle,
-            .error_union => .error_union,
-            .null_union => .null_union,
         },
         // .ptr is a const &T reference — field access auto-derefs in Zig, not a Ptr(T) wrapper
         .ptr => .plain,
@@ -84,12 +87,15 @@ test "classifyType - primitives" {
 }
 
 test "classifyType - unions" {
-    const alloc = std.testing.allocator;
-    const inner = try alloc.create(RT);
-    defer alloc.destroy(inner);
-    inner.* = RT{ .primitive = .i32 };
-    try std.testing.expectEqual(TypeClass.error_union, classifyType(RT{ .core_type = .{ .kind = .error_union, .inner = inner } }));
-    try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .core_type = .{ .kind = .null_union, .inner = inner } }));
+    // (Error | i32) → error_union
+    const err_members = &[_]RT{ RT.err, RT{ .primitive = .i32 } };
+    try std.testing.expectEqual(TypeClass.error_union, classifyType(RT{ .union_type = err_members }));
+    // (null | i32) → null_union
+    const null_members = &[_]RT{ RT.null_type, RT{ .primitive = .i32 } };
+    try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .union_type = null_members }));
+    // (i32 | str) → arbitrary_union
+    const arb_members = &[_]RT{ RT{ .primitive = .i32 }, RT{ .primitive = .string } };
+    try std.testing.expectEqual(TypeClass.arbitrary_union, classifyType(RT{ .union_type = arb_members }));
 }
 
 test "classifyType - pointers and named" {

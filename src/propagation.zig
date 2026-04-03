@@ -354,8 +354,8 @@ pub const PropagationChecker = struct {
 
                     if (func_name) |fname| {
                         if (self.ctx.decls.funcs.get(fname)) |sig| {
-                            if (sig.return_type.isCoreType(.error_union)) return true;
-                            if (sig.return_type.isCoreType(.null_union)) return false;
+                            if (sig.return_type.unionContainsError()) return true;
+                            if (sig.return_type.unionContainsNull()) return false;
                         }
                     }
                 }
@@ -394,9 +394,13 @@ pub const PropagationChecker = struct {
 /// Returns true = Error union, false = null union, null = not a union
 fn typeNodeIsUnion(node: *parser.Node) ?bool {
     switch (node.*) {
-        .type_generic => |g| {
-            if (std.mem.eql(u8, g.name, builtins.BT.ERROR_UNION)) return true;
-            if (std.mem.eql(u8, g.name, builtins.BT.NULL_UNION)) return false;
+        .type_union => |members| {
+            for (members) |m| {
+                if (m.* == .type_named and std.mem.eql(u8, m.type_named, builtins.BT.ERROR)) return true;
+            }
+            for (members) |m| {
+                if (m.* == .type_named and std.mem.eql(u8, m.type_named, "null")) return false;
+            }
             return null;
         },
         else => return null,
@@ -429,10 +433,12 @@ fn nodeIsEarlyExit(node: *parser.Node) bool {
 
 fn typeCanPropagate(node: *parser.Node) bool {
     switch (node.*) {
-        .type_generic => |g| {
-            // ErrorUnion(T) can propagate errors, NullUnion(T) can propagate null
-            if (std.mem.eql(u8, g.name, builtins.BT.ERROR_UNION)) return true;
-            if (std.mem.eql(u8, g.name, builtins.BT.NULL_UNION)) return true;
+        .type_union => |members| {
+            // (Error | T) can propagate errors, (null | T) can propagate null
+            for (members) |m| {
+                if (m.* == .type_named and (std.mem.eql(u8, m.type_named, builtins.BT.ERROR) or std.mem.eql(u8, m.type_named, "null")))
+                    return true;
+            }
             return false;
         },
         .type_named => |n| return std.mem.eql(u8, n, K.Type.VOID) == false,
@@ -483,20 +489,15 @@ test "propagation - unhandled in non-propagating function" {
 }
 
 test "propagation - ResolvedType detects Error and null unions" {
-    const alloc = std.testing.allocator;
+    // Error union: (Error | i32)
+    const err_union = types.ResolvedType{ .union_type = &.{ types.ResolvedType.err, types.ResolvedType{ .primitive = .i32 } } };
+    try std.testing.expect(err_union.unionContainsError());
+    try std.testing.expect(!err_union.unionContainsNull());
 
-    // Error union (CoreType)
-    const inner = try alloc.create(types.ResolvedType);
-    defer alloc.destroy(inner);
-    inner.* = .{ .primitive = .i32 };
-    const err_union = types.ResolvedType{ .core_type = .{ .kind = .error_union, .inner = inner } };
-    try std.testing.expect(err_union.isCoreType(.error_union));
-    try std.testing.expect(!err_union.isCoreType(.null_union));
-
-    // Null union (CoreType)
-    const null_union = types.ResolvedType{ .core_type = .{ .kind = .null_union, .inner = inner } };
-    try std.testing.expect(null_union.isCoreType(.null_union));
-    try std.testing.expect(!null_union.isCoreType(.error_union));
+    // Null union: (null | i32)
+    const null_union = types.ResolvedType{ .union_type = &.{ types.ResolvedType.null_type, types.ResolvedType{ .primitive = .i32 } } };
+    try std.testing.expect(null_union.unionContainsNull());
+    try std.testing.expect(!null_union.unionContainsError());
 
     // Plain type — not a union
     const plain = types.ResolvedType{ .primitive = .i32 };
@@ -508,18 +509,20 @@ test "propagation - ResolvedType detects Error and null unions" {
 test "propagation - typeNodeIsUnion detects union AST nodes" {
     const alloc = std.testing.allocator;
 
-    // Build a type_generic node: ErrorUnion(i32)
+    // Build a type_union node: (Error | i32)
+    var error_type = parser.Node{ .type_named = "Error" };
     var i32_type = parser.Node{ .type_named = "i32" };
-    var err_args = [_]*parser.Node{&i32_type};
-    var err_union_node = parser.Node{ .type_generic = .{ .name = "ErrorUnion", .args = &err_args } };
+    var err_members = [_]*parser.Node{ &error_type, &i32_type };
+    var err_union_node = parser.Node{ .type_union = &err_members };
 
     // Should detect as Error union
     try std.testing.expect(typeNodeIsUnion(&err_union_node).? == true);
 
-    // Build NullUnion(User)
+    // Build (null | User)
+    var null_type = parser.Node{ .type_named = "null" };
     var user_type = parser.Node{ .type_named = "User" };
-    var null_args = [_]*parser.Node{&user_type};
-    var null_union_node = parser.Node{ .type_generic = .{ .name = "NullUnion", .args = &null_args } };
+    var null_members = [_]*parser.Node{ &null_type, &user_type };
+    var null_union_node = parser.Node{ .type_union = &null_members };
 
     try std.testing.expect(typeNodeIsUnion(&null_union_node).? == false);
 
@@ -540,9 +543,10 @@ test "propagation - call expr resolved via decl table" {
     defer decl_table.deinit();
 
     // Build an error_union ResolvedType: (Error | i32)
-    const inner = try alloc.create(types.ResolvedType);
-    defer alloc.destroy(inner);
-    inner.* = .{ .primitive = .i32 };
+    const err_members = try alloc.alloc(types.ResolvedType, 2);
+    defer alloc.free(err_members);
+    err_members[0] = types.ResolvedType.err;
+    err_members[1] = types.ResolvedType{ .primitive = .i32 };
 
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -556,7 +560,7 @@ test "propagation - call expr resolved via decl table" {
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
-        .return_type = .{ .core_type = .{ .kind = .error_union, .inner = inner } },
+        .return_type = .{ .union_type = err_members },
         .return_type_node = ret_node,
         .context = .normal,
         .is_pub = false,
@@ -683,9 +687,10 @@ test "propagation - reassignment resets handled status" {
     var decl_table = declarations.DeclTable.init(alloc);
     defer decl_table.deinit();
 
-    const inner = try alloc.create(types.ResolvedType);
-    defer alloc.destroy(inner);
-    inner.* = .{ .primitive = .i32 };
+    const err_members = try alloc.alloc(types.ResolvedType, 2);
+    defer alloc.free(err_members);
+    err_members[0] = types.ResolvedType.err;
+    err_members[1] = types.ResolvedType{ .primitive = .i32 };
 
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -698,7 +703,7 @@ test "propagation - reassignment resets handled status" {
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
-        .return_type = .{ .core_type = .{ .kind = .error_union, .inner = inner } },
+        .return_type = .{ .union_type = err_members },
         .return_type_node = ret_node,
         .context = .normal,
         .is_pub = false,

@@ -164,7 +164,7 @@ pub const ResolvedType = union(enum) {
     generic: Generic,
     /// Pointer: Ptr(T), const &T, var &T
     ptr: Ptr,
-    /// Core language wrapper type: ErrorUnion(T), NullUnion(T), Handle(T), Ptr(T), etc.
+    /// Core language wrapper type: Handle(T), Ptr(T), etc.
     core_type: CoreType,
     /// Type not yet resolved (e.g. inferred from context)
     inferred,
@@ -201,8 +201,6 @@ pub const ResolvedType = union(enum) {
         inner: *const ResolvedType,
 
         pub const Kind = enum {
-            error_union, // ErrorUnion(T) → anyerror!T
-            null_union, // NullUnion(T) → ?T
             handle, // Handle(T) → _OrhonHandle(T)
             safe_ptr, // Ptr(T) → *T
             raw_ptr, // RawPtr(T) → [*]T
@@ -223,6 +221,37 @@ pub const ResolvedType = union(enum) {
     /// Returns true if this is any kind of union
     pub fn isUnion(self: ResolvedType) bool {
         return self == .union_type;
+    }
+
+    /// Returns true if this union contains Error as a member: (Error | T)
+    pub fn unionContainsError(self: ResolvedType) bool {
+        if (self != .union_type) return false;
+        for (self.union_type) |m| {
+            if (m == .err) return true;
+        }
+        return false;
+    }
+
+    /// Returns true if this union contains null as a member: (null | T)
+    pub fn unionContainsNull(self: ResolvedType) bool {
+        if (self != .union_type) return false;
+        for (self.union_type) |m| {
+            if (m == .null_type) return true;
+        }
+        return false;
+    }
+
+    /// Get the non-Error/non-null inner type of a union like (Error | T) or (null | T).
+    /// Returns null if there are multiple non-special members.
+    pub fn unionInnerType(self: ResolvedType) ?ResolvedType {
+        if (self != .union_type) return null;
+        var inner: ?ResolvedType = null;
+        for (self.union_type) |m| {
+            if (m == .err or m == .null_type) continue;
+            if (inner != null) return null; // multiple non-special members
+            inner = m;
+        }
+        return inner;
     }
 
     /// Returns true if this is a specific core type kind
@@ -256,8 +285,6 @@ pub const ResolvedType = union(enum) {
             .generic => |g| g.name,
             .ptr => |p| if (p.kind == .mut_ref) "mut&" else "const&",
             .core_type => |ct| switch (ct.kind) {
-                .error_union => "ErrorUnion(T)",
-                .null_union => "NullUnion(T)",
                 .handle => "Handle(T)",
                 .safe_ptr => "Ptr(T)",
                 .raw_ptr => "RawPtr(T)",
@@ -322,11 +349,7 @@ pub fn resolveTypeNode(alloc: std.mem.Allocator, node: *parser.Node) anyerror!Re
 
         .type_generic => |g| {
             // Core language wrapper types → CoreType
-            const core_kind: ?ResolvedType.CoreType.Kind = if (std.mem.eql(u8, g.name, builtins.BT.ERROR_UNION))
-                .error_union
-            else if (std.mem.eql(u8, g.name, builtins.BT.NULL_UNION))
-                .null_union
-            else if (std.mem.eql(u8, g.name, builtins.BT.HANDLE))
+            const core_kind: ?ResolvedType.CoreType.Kind = if (std.mem.eql(u8, g.name, builtins.BT.HANDLE))
                 .handle
             else if (std.mem.eql(u8, g.name, builtins.BT.PTR))
                 .safe_ptr
@@ -375,8 +398,8 @@ fn classifyNamed(n: []const u8) ResolvedType {
     return .{ .named = n };
 }
 
-/// Resolve a union type node. Flattens nested unions, bans Error and null as
-/// members (use ErrorUnion(T) and NullUnion(T) instead), checks for duplicates.
+/// Resolve a union type node. Flattens nested unions, checks for duplicates.
+/// Error and null are valid union members: (Error | T) → anyerror!T, (null | T) → ?T.
 fn resolveUnion(alloc: std.mem.Allocator, members: []*parser.Node) !ResolvedType {
     // Phase 1: Resolve all members, flattening nested unions
     var flat = std.ArrayListUnmanaged(ResolvedType){};
@@ -384,9 +407,6 @@ fn resolveUnion(alloc: std.mem.Allocator, members: []*parser.Node) !ResolvedType
 
     for (members) |m| {
         const resolved = try resolveTypeNode(alloc, m);
-        // Ban Error and null in regular unions
-        if (resolved == .err) return error.ErrorInUnion;
-        if (resolved == .null_type) return error.NullInUnion;
         if (resolved == .union_type) {
             for (resolved.union_type) |inner| {
                 try flat.append(alloc, inner);
@@ -430,22 +450,22 @@ test "resolvedtype - primitive detection" {
 }
 
 test "resolvedtype - union detection" {
-    const alloc = std.testing.allocator;
+    // (Error | i32) union
+    const err_union = ResolvedType{ .union_type = &.{ ResolvedType.err, ResolvedType{ .primitive = .i32 } } };
+    try std.testing.expect(err_union.unionContainsError());
+    try std.testing.expect(!err_union.unionContainsNull());
+    try std.testing.expect(err_union.unionInnerType().?.primitive == .i32);
 
-    const inner = try alloc.create(ResolvedType);
-    defer alloc.destroy(inner);
-    inner.* = .{ .primitive = .i32 };
+    // (null | i32) union
+    const null_union = ResolvedType{ .union_type = &.{ ResolvedType.null_type, ResolvedType{ .primitive = .i32 } } };
+    try std.testing.expect(null_union.unionContainsNull());
+    try std.testing.expect(!null_union.unionContainsError());
+    try std.testing.expect(null_union.unionInnerType().?.primitive == .i32);
 
-    // CoreType variants
-    const core_err = ResolvedType{ .core_type = .{ .kind = .error_union, .inner = inner } };
-    try std.testing.expect(core_err.isCoreType(.error_union));
-    try std.testing.expect(!core_err.isCoreType(.null_union));
-    try std.testing.expect(core_err.coreInner() == inner);
-
-    const core_null = ResolvedType{ .core_type = .{ .kind = .null_union, .inner = inner } };
-    try std.testing.expect(core_null.isCoreType(.null_union));
-    try std.testing.expect(!core_null.isCoreType(.error_union));
-    try std.testing.expectEqualStrings("NullUnion(T)", core_null.name());
+    // Plain union (i32 | str)
+    const plain_union = ResolvedType{ .union_type = &.{ ResolvedType{ .primitive = .i32 }, ResolvedType{ .primitive = .string } } };
+    try std.testing.expect(!plain_union.unionContainsError());
+    try std.testing.expect(!plain_union.unionContainsNull());
 }
 
 test "resolvedtype - name for error messages" {
@@ -483,15 +503,15 @@ test "CoreType - isCoreType helper" {
     defer alloc.destroy(inner);
     inner.* = .{ .primitive = .i32 };
 
-    const err_union = ResolvedType{ .core_type = .{ .kind = .error_union, .inner = inner } };
-    try std.testing.expect(err_union.isCoreType(.error_union));
-    try std.testing.expect(!err_union.isCoreType(.null_union));
+    const handle = ResolvedType{ .core_type = .{ .kind = .handle, .inner = inner } };
+    try std.testing.expect(handle.isCoreType(.handle));
+    try std.testing.expect(!handle.isCoreType(.safe_ptr));
 
     const plain = ResolvedType{ .primitive = .i32 };
-    try std.testing.expect(!plain.isCoreType(.error_union));
+    try std.testing.expect(!plain.isCoreType(.handle));
 }
 
-test "resolveUnion - bans Error in union" {
+test "resolveUnion - allows Error in union" {
     const alloc = std.testing.allocator;
     const err_node = try alloc.create(parser.Node);
     defer alloc.destroy(err_node);
@@ -500,11 +520,13 @@ test "resolveUnion - bans Error in union" {
     defer alloc.destroy(i32_node);
     i32_node.* = .{ .type_named = "i32" };
     var members = [_]*parser.Node{ err_node, i32_node };
-    const result = resolveUnion(alloc, &members);
-    try std.testing.expectError(error.ErrorInUnion, result);
+    const result = try resolveUnion(alloc, &members);
+    try std.testing.expect(result == .union_type);
+    try std.testing.expect(result.unionContainsError());
+    alloc.free(result.union_type);
 }
 
-test "resolveUnion - bans null in union" {
+test "resolveUnion - allows null in union" {
     const alloc = std.testing.allocator;
     const null_node = try alloc.create(parser.Node);
     defer alloc.destroy(null_node);
@@ -513,8 +535,10 @@ test "resolveUnion - bans null in union" {
     defer alloc.destroy(i32_node);
     i32_node.* = .{ .type_named = "i32" };
     var members = [_]*parser.Node{ null_node, i32_node };
-    const result = resolveUnion(alloc, &members);
-    try std.testing.expectError(error.NullInUnion, result);
+    const result = try resolveUnion(alloc, &members);
+    try std.testing.expect(result == .union_type);
+    try std.testing.expect(result.unionContainsNull());
+    alloc.free(result.union_type);
 }
 
 test "resolveUnion - errors on duplicate type" {

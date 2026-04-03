@@ -63,7 +63,7 @@ func sat_add(a: i32, b: i32) i32 {
     return @sat(a + b)
 }
 
-func checked_add(a: i32, b: i32) ErrorUnion(i32) {
+func checked_add(a: i32, b: i32) (Error | i32) {
     return @overflow(a + b)
 }
 

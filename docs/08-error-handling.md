@@ -2,19 +2,19 @@
 
 ## Error Handling
 
-Functions that can fail return an `ErrorUnion(T)` wrapper type. No exceptions, no monads — just a wrapper and a type check. Errors map directly to native Zig error codes (see [[14-zig-bridge#Type Mapping|Zig mapping]]). If unhandled before scope exit, the compiler rejects the code.
+Functions that can fail return an `(Error | T)` union type. No exceptions, no monads — just a union and a type check. Errors map directly to native Zig error codes (see [[14-zig-bridge#Type Mapping|Zig mapping]]). If unhandled before scope exit, the compiler rejects the code.
 
 ```
 const ErrDivByZero = Error("division by zero")
 
-func divide(a: i32, b: i32) ErrorUnion(i32) {
+func divide(a: i32, b: i32) (Error | i32) {
     if(b == 0) {
         return ErrDivByZero
     }
     return a / b
 }
 
-var result: ErrorUnion(i32) = divide(10, 0)
+var result: (Error | i32) = divide(10, 0)
 if(result is Error) {
     console.print(result.Error)    // "division_by_zero"
     return
@@ -24,7 +24,7 @@ var value: i32 = result.value      // safe — Error case eliminated
 
 Inline errors are fine for one-off cases:
 ```
-func readFile(path: str) ErrorUnion(str) {
+func readFile(path: str) (Error | str) {
     return Error("could not open file")
 }
 ```
@@ -38,14 +38,14 @@ to an identifier (spaces become underscores): `Error("division by zero")` produc
 After narrowing a union with `is` + early exit, use `.value` to access the remaining type:
 
 ```
-const result: ErrorUnion(i32) = divide(10, 2)
+const result: (Error | i32) = divide(10, 2)
 if(result is Error) { return 0 }
 return result.value                // compiler knows it's i32
 ```
 
 Using `.value` without narrowing is a compile error:
 ```
-const result: ErrorUnion(i32) = divide(10, 2)
+const result: (Error | i32) = divide(10, 2)
 return result.value                // ERROR: unsafe unwrap
 ```
 
@@ -81,14 +81,14 @@ match(result) {
 **Syntax:** `throw variable_name`
 
 **Requirements:**
-- `variable_name` must be of type `ErrorUnion(T)` — not a raw expression
-- The enclosing function must return an error union type (`ErrorUnion(T)`)
+- `variable_name` must be of type `(Error | T)` — not a raw expression
+- The enclosing function must return an error union type (`(Error | T)`)
 
 **Semantics:** If the variable holds an error, the function returns it immediately. If it holds a value, execution continues and the variable is narrowed to `T` (no `.value` needed afterward).
 
 ```
 // without throw
-func divide_manual(a: i32, b: i32) ErrorUnion(i32) {
+func divide_manual(a: i32, b: i32) (Error | i32) {
     const result = safe_divide(a, b)
     if(result is Error) {
         return result
@@ -97,7 +97,7 @@ func divide_manual(a: i32, b: i32) ErrorUnion(i32) {
 }
 
 // with throw
-func divide_with_throw(a: i32, b: i32) ErrorUnion(i32) {
+func divide_with_throw(a: i32, b: i32) (Error | i32) {
     var result = safe_divide(a, b)
     throw result        // early return on error; result is now i32
     return result       // .value not needed — type is narrowed
@@ -112,15 +112,15 @@ func divide_with_throw(a: i32, b: i32) ErrorUnion(i32) {
 
 Absence of a value expressed through a union with `null`. `null` is never a standalone value — it only exists inside a union type. Maps directly to native Zig optionals (`?T`).
 
-The same scope-based rule as error handling applies — a `NullUnion(T)` wrapper must be handled before leaving scope. If not handled, the compiler rejects the code.
+The same scope-based rule as error handling applies — a `(null | T)` union must be handled before leaving scope. If not handled, the compiler rejects the code.
 
 ```
-func find(id: i32) NullUnion(User) {
+func find(id: i32) (null | User) {
     // ...
 }
 
 // must handle before scope exit
-var result: NullUnion(User) = find(42)
+var result: (null | User) = find(42)
 if(result is null) {
     return
 }
@@ -141,8 +141,8 @@ match(result) {
 
 | Orhon | Zig |
 |-------|-----|
-| `ErrorUnion(T)` | `anyerror!T` |
-| `NullUnion(T)` | `?T` |
+| `(Error \| T)` | `anyerror!T` |
+| `(null \| T)` | `?T` |
 | `Error("message")` | `error.message_sanitized` |
 | `null` | `null` |
 | `result.value` (error union) | `result catch unreachable` |

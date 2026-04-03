@@ -19,9 +19,9 @@ compt func bufferSize() i32 { return 1024 }
 const BUFFER_SIZE: i32 = bufferSize()   // evaluated at compile time
 ```
 
-All variables must be initialized at declaration — no uninitialized state. If a value is not yet known, use a `NullUnion(T)` wrapper:
+All variables must be initialized at declaration — no uninitialized state. If a value is not yet known, use a `(null | T)` union:
 ```
-var user: NullUnion(User) = null     // explicitly "not set yet"
+var user: (null | User) = null     // explicitly "not set yet"
 ```
 
 ---
@@ -36,7 +36,7 @@ var name = "hello"                  // clearly str
 var p = Player.create("hero")       // clearly Player
 var s = Circle(radius: 5.0)         // clearly Shape
 var flag = true                     // clearly bool
-var result = divide(10, 2)          // clearly ErrorUnion(i32)
+var result = divide(10, 2)          // clearly (Error | i32)
 var a: i32 = 5
 var b = a                           // clearly i32, inferred from a
 
