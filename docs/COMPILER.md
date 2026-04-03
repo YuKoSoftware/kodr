@@ -145,7 +145,9 @@ src/
     interface.zig           // public interface generation for library modules
     std_bundle.zig          // embedded stdlib file extraction
     formatter.zig           // orhon fmt
-    docgen.zig              // orhon gendoc
+    docgen.zig              // orhon gendoc — project API docs from /// comments
+    syntaxgen.zig           // orhon gendoc — syntax reference from embedded grammar
+    zig_docgen.zig          // orhon gendoc — stdlib reference from .zig pub declarations
     fuzz.zig                // standalone fuzzer binary
     lsp/                    // language server
         lsp.zig             //   hub — JSON-RPC transport, server loop

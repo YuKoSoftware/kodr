@@ -360,7 +360,9 @@ files to understand what compiler issues need fixing.
 - Used by: Orhon user code via `import std::X` or `use std::X`
 - `src/formatter.zig` — `orhon fmt` source formatter
 - `src/lsp/` — JSON-RPC LSP server (hub: `lsp.zig`, satellites: `lsp_types.zig`, `lsp_json.zig`, `lsp_analysis.zig`, `lsp_nav.zig`, `lsp_edit.zig`, `lsp_view.zig`, `lsp_semantic.zig`, `lsp_utils.zig`). Runs passes 1–9, publishes diagnostics, hover, completion, etc.
-- `src/docgen.zig` — `orhon gendoc` doc generator from `///` comments
+- `src/docgen.zig` — `orhon gendoc` project API docs from `///` comments
+- `src/syntaxgen.zig` — `orhon gendoc` syntax reference from embedded grammar
+- `src/zig_docgen.zig` — `orhon gendoc` stdlib reference from `.zig` pub declarations
 - `src/fuzz.zig` — standalone fuzzer binary for lexer + parser
 ## Data Flow
 - `cache.Cache` compares file timestamps at step 3
