@@ -125,23 +125,17 @@ We will break things along the way — that's expected. Fix forward, don't look 
 
 **Phase D — Collection grammar removal (biggest change)**
 
-**D1. Remove `collection_expr` from PEG grammar** `hard`
-- Location: `orhon.peg:440-447`
-- `List`, `Map`, `Set`, `Ring`, `ORing` are grammar keywords
-- Fix: remove all 5 rules. `List(i32)` becomes `collections.List(i32)` — parsed as
-  field access + generic call. User must `import std::collections`.
-- Touches: `orhon.peg`, `parser.zig` (remove `CollectionExpr`, `collection_expr` variant),
-  `peg/builder_exprs.zig` (remove `buildCollectionExpr`), `mir_lowerer.zig` (remove
-  `.collection_expr` case), `mir_node.zig` (remove `.collection` kind)
-- Unblocks: D2
+**~~D1. Remove `collection_expr` from PEG grammar~~** — DONE
+- Removed all 6 grammar rules (collection_expr + 5 sub-rules), CollectionExpr AST node,
+  .collection MIR kind, resolver/annotator/lowerer/codegen handling
+- Ring/ORing dropped entirely (stubs with no implementation)
+- Collections now normal imports via `use std::collections`
+- 76 lines removed from compiler, 308 tests pass
 
-**D2. Remove `.new()` constructor magic** `medium`
-- Location: `codegen_exprs.zig:286-301`
-- `Type.new()` → `.{}`, `Type.new(alloc)` → `.{ .alloc = alloc }`
-- Fix: once collections are normal imports (D1), `.new()` is a real Zig method
-  (already added to `collections.zig`). Remove the codegen string detection.
-- Also remove: `generateCollectionExprMir` in `codegen_match.zig` (emits `.{}`)
-- Depends on: D1
+**~~D2. Remove `.new()` constructor magic~~** — DONE
+- Removed `.new()` → `.{}` rewriting from codegen_exprs.zig
+- `.new()` is now a real method in `collections.zig`
+- `.new(alloc)` calls migrated to `.withAlloc(alloc)`
 
 **D3. Clean up collections.zig — import allocator from std** `easy`
 - Remove `const _default_alloc = std.heap.smp_allocator` from collections.zig

@@ -175,9 +175,8 @@ no codegen rewriting for specific method names. A user-defined `List` type in th
 own module must work identically to `std::collections.List`. The stdlib is just another
 set of Zig modules.
 
-**Known violations (tracked in `docs/TODO.md`):** `collection_expr` grammar rules,
-`.new()` constructor rewriting, `.value` field rewriting, bitfield auto-methods,
-`wrap()`/`sat()`/`overflow()` not using `@` prefix. All scheduled for removal.
+**Known violations (tracked in `docs/TODO.md`):** bitfield auto-methods.
+Scheduled for removal (blocked on compt tuple iteration).
 
 ### Documentation rule
 Each doc file has one specific purpose — no overlap between files. If information
