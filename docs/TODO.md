@@ -62,9 +62,22 @@ We will break things along the way — that's expected. Fix forward, don't look 
   library function like `async.spawn()` that the codegen just calls.
 - `h.value` → `h.value()` syntax change in all fixtures/templates
 
-**~~B3. Ptr/RawPtr `.value` → `@deref` compiler function~~** — DONE
+**~~B3. Ptr/RawPtr `.value` → `@deref` compiler function~~** — DONE (interim)
 - `@deref(p)` → `p.*` for Ptr, `p[0]` for RawPtr
 - Removed `.value` field rewriting from codegen_exprs.zig
+
+**B3b. Pointer redesign — core `*T` syntax + Ptr as std lib** `hard` — DESIGN PENDING
+- Core language gets a native pointer type with clean syntax (not `*T` — syntax TBD,
+  the C/Zig `*` prefix syntax is ugly, will be redesigned with something cleaner)
+- Native pointer maps 1:1 to Zig pointers. Compiler understands it like `i32`.
+- `Ptr(T)`, `RawPtr(T)`, `VolatilePtr(T)` move out of `BUILTIN_TYPES` into std as
+  pure Zig structs that wrap the native pointer with safety/methods
+- Ownership/borrow checker enforces safety on native pointers — that's its job
+- `@deref` stays as the compiler function for dereferencing (or gets replaced by
+  whatever the new pointer syntax uses for dereference)
+- Removes: `Ptr`/`RawPtr`/`VolatilePtr` from builtins, `typeToZig` special cases,
+  pointer coercion codegen in `codegen_match.zig`
+- **Blocked on:** pointer syntax design decision from user
 
 **B4. Bitfield auto-methods → std** `medium`
 - Location: `codegen_decls.zig:416-423, 447-454`
