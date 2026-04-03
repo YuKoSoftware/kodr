@@ -108,6 +108,9 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 const cmp = if (is_eq) "==" else "!=";
                 const rhs_mir = m.rhs();
                 if (rhs_mir.literal_kind == .null_lit) {
+                    // Record narrowing for type-name unwrap fallback
+                    if (val_mir.kind == .identifier)
+                        try cg.null_narrowed.put(cg.allocator, val_mir.name orelse "", {});
                     // (null | T) → ?T: x is null → x == null
                     try cg.emit("(");
                     try cg.generateExprMir(val_mir);
@@ -117,6 +120,9 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 if (rhs_mir.kind == .identifier) {
                     const rhs = rhs_mir.name orelse "";
                     if (std.mem.eql(u8, rhs, K.Type.ERROR)) {
+                        // Record narrowing for type-name unwrap fallback
+                        if (val_mir.kind == .identifier)
+                            try cg.error_narrowed.put(cg.allocator, val_mir.name orelse "", {});
                         // (Error | T) → anyerror!T: x is Error → if/else pattern
                         const t_val = if (is_eq) "false" else "true";
                         const f_val = if (is_eq) "true" else "false";
@@ -361,13 +367,30 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     try cg.emit(") |_| unreachable else |_e| @errorName(_e))");
                 }
             } else if (codegen.isResultValueField(field, cg.decls)) {
-                if (obj_tc == .error_union) {
+                // Resolve effective type class — fall back to var_types, then
+                // narrowing maps when MIR node annotation is .plain
+                // (compiler-generated exprs like @overflow, cross-module calls).
+                const eff_tc = if (obj_tc != .plain) obj_tc else blk: {
+                    const obj_name = if (obj_mir.kind == .identifier) (obj_mir.name orelse "") else "";
+                    if (obj_name.len > 0) {
+                        if (cg.var_types) |vt| {
+                            if (vt.get(obj_name)) |info| {
+                                if (info.type_class != .plain) break :blk info.type_class;
+                            }
+                        }
+                        // Narrowing fallback — is Error / is null / throw tracked the variable
+                        if (cg.error_narrowed.contains(obj_name)) break :blk mir.TypeClass.error_union;
+                        if (cg.null_narrowed.contains(obj_name)) break :blk mir.TypeClass.null_union;
+                    }
+                    break :blk obj_tc;
+                };
+                if (eff_tc == .error_union) {
                     try cg.generateExprMir(obj_mir);
                     try cg.emit(" catch unreachable");
-                } else if (obj_tc == .null_union) {
+                } else if (eff_tc == .null_union) {
                     try cg.generateExprMir(obj_mir);
                     try cg.emit(".?");
-                } else if (obj_tc == .arbitrary_union) {
+                } else if (eff_tc == .arbitrary_union) {
                     try cg.generateExprMir(obj_mir);
                     try cg.emitFmt("._{s}", .{field});
                 } else {
