@@ -77,10 +77,22 @@ We will break things along the way — that's expected. Fix forward, don't look 
   whatever the new pointer syntax uses for dereference)
 - Removes: `Ptr`/`RawPtr`/`VolatilePtr` from builtins, `typeToZig` special cases,
   pointer coercion codegen in `codegen_match.zig`
-- **Syntax direction:** `->` for dereference. `p->` gets the pointed-to value,
-  `p.method()` is for the pointer itself. Chains: `p->.field`. Clean separation
-  between "follow the pointer" and "access the pointer's own API". Replaces `@deref`.
-- **Blocked on:** full pointer syntax design (borrow syntax, mutability, etc.)
+- **Pointer type syntax:**
+  - `*T` — core pointer (raw address, unsafe)
+  - `**T` — volatile pointer (hardware, no optimization)
+  - `*(*T)` — pointer to pointer (just `*T` where T is another pointer)
+- **Pointer operations:**
+  - `ptr->` — dereference (read/write what it points to)
+  - `ptr-> = val` — write through pointer
+  - `ptr-->` — double dereference (pointer-to-pointer, max depth)
+  - `ptr[n]` — offset by n elements
+  - `&x` — take address of x
+  - `ptr->.field` — dereference then field access
+- **No deeper than pointer-to-pointer** — three levels is bad design, not supported
+- **std::ptr.Ptr(T)** — safe wrapper struct, adds ownership/borrow checking
+- **Removes from compiler:** `Ptr`, `RawPtr`, `VolatilePtr` from BUILTIN_TYPES,
+  all `typeToZig` special cases, pointer coercion codegen, `@deref` (replaced by `->`)
+- **Blocked on:** implementation planning
 
 **B4. Bitfield auto-methods → std** `medium`
 - Location: `codegen_decls.zig:416-423, 447-454`
