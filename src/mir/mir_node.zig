@@ -221,7 +221,6 @@ pub const MirKind = enum {
     slice,
     borrow,
     interpolation,
-    collection,
     compiler_fn,
     array_lit,
     tuple_lit,

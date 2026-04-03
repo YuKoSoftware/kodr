@@ -397,7 +397,6 @@ primary_expr
      / anon_tuple_literal
      / grouped_expr
      / error_literal
-     / collection_expr
      / struct_expr
      / identifier_expr
 
@@ -439,16 +438,6 @@ grouped_expr
 # Error literal: Error("message")
 error_literal
     <- 'Error' '(' STRING_LITERAL ')'  {label: "error literal"}
-
-# Collection constructors
-collection_expr
-    <- list_expr / map_expr / set_expr / ring_expr / oring_expr
-
-list_expr   <- 'List'  '(' type (',' expr)? ')'
-map_expr    <- 'Map'   '(' type ',' type (',' expr)? ')'
-set_expr    <- 'Set'   '(' type (',' expr)? ')'
-ring_expr   <- 'Ring'  '(' type ',' expr ')'
-oring_expr  <- 'ORing' '(' type ',' expr ')'
 
 # Anonymous struct expression: struct { fields, methods, constants }
 struct_expr

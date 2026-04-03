@@ -224,11 +224,6 @@ pub fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
             try annotateExpr(self, node);
             try annotateNode(self, b);
         },
-        .collection_expr => |c| {
-            try annotateExpr(self, node);
-            for (c.type_args) |arg| try annotateNode(self, arg);
-            if (c.alloc_arg) |a| try annotateNode(self, a);
-        },
         .range_expr => |r| {
             try annotateExpr(self, node);
             try annotateNode(self, r.left);

@@ -330,12 +330,6 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             return elem_type;
         },
 
-        .collection_expr => |c| {
-            for (c.type_args) |arg| _ = try resolveExpr(self, arg, scope);
-            if (c.alloc_arg) |a| _ = try resolveExpr(self, a, scope);
-            return RT{ .named = c.kind };
-        },
-
         .tuple_literal => |t| {
             for (t.fields) |f| _ = try resolveExpr(self, f, scope);
             return RT.inferred;

@@ -156,10 +156,8 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "unknown generic type '{s}'", .{g.name});
             }
             // Validate type arguments (Ring/ORing second arg is a size, Vector first arg is a size)
-            const is_ring = std.mem.eql(u8, g.name, "Ring") or std.mem.eql(u8, g.name, "ORing");
             const is_vector = std.mem.eql(u8, g.name, builtins.BT.VECTOR);
             for (g.args, 0..) |arg, idx| {
-                if (is_ring and idx == 1) continue; // size arg, not a type
                 if (is_vector and idx == 0) continue; // lane count, not a type
                 try validateType(self, arg, scope);
             }

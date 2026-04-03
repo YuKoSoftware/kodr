@@ -50,7 +50,6 @@ pub const NodeKind = enum {
     mut_borrow_expr,
     const_borrow_expr,
     compiler_func,
-    collection_expr,
     identifier,
     int_literal,
     float_literal,
@@ -115,7 +114,6 @@ pub const Node = union(NodeKind) {
     mut_borrow_expr: *Node,
     const_borrow_expr: *Node,
     compiler_func: CompilerFunc,
-    collection_expr: CollectionExpr,
     identifier: []const u8,
     int_literal: []const u8,
     float_literal: []const u8,
@@ -490,13 +488,6 @@ pub const FieldExpr = struct {
 pub const CompilerFunc = struct {
     name: []const u8,
     args: []*Node,
-};
-
-pub const CollectionExpr = struct {
-    kind: []const u8, // "List", "Map", "Set", "Ring", "ORing"
-    type_args: []*Node, // [T] for List/Set/Ring/ORing, [K, V] for Map
-    size_arg: ?*Node = null, // capacity for Ring/ORing
-    alloc_arg: ?*Node, // null = use default owned allocator
 };
 
 pub const TupleLiteral = struct {

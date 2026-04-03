@@ -516,12 +516,6 @@ pub fn generateInterpolatedStringMir(cg: *CodeGen, parts: []const parser.Interpo
     try cg.emit(var_name);
 }
 
-/// MIR-path collection expr — all unmanaged collections zero-initialize.
-pub fn generateCollectionExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
-    _ = m;
-    try cg.emit(".{}");
-}
-
 /// Type-directed pointer coercion for the MIR path.
 /// Called from generateTopLevelDeclMir and generateStmtDeclMir when type annotation is Ptr/RawPtr/VolatilePtr.
 /// type_node is the first type argument (e.g. i32 from Ptr(i32)); val_m is the value MIR node.

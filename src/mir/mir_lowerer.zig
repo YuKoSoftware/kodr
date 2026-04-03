@@ -261,12 +261,6 @@ pub const MirLowerer = struct {
                 try children.append(self.allocator, try self.lowerNode(r.right));
                 mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
             },
-            .collection_expr => |c| {
-                var children = std.ArrayListUnmanaged(*MirNode){};
-                for (c.type_args) |arg| try children.append(self.allocator, try self.lowerNode(arg));
-                if (c.alloc_arg) |a| try children.append(self.allocator, try self.lowerNode(a));
-                mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
-            },
             .compiler_func => |c| {
                 mir_node_ptr.children = try self.lowerSlice(c.args);
             },
@@ -703,7 +697,6 @@ fn astToMirKind(node: *parser.Node) MirKind {
         .mut_borrow_expr => .borrow,
         .const_borrow_expr => .borrow,
         .interpolated_string => .interpolation,
-        .collection_expr => .collection,
         .compiler_func => .compiler_fn,
         .array_literal => .array_lit,
         .tuple_literal => .tuple_lit,

@@ -517,8 +517,6 @@ pub const CodeGen = struct {
 
     pub fn generateInterpolatedStringMir(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void { return match_impl.generateInterpolatedStringMir(self, parts, expr_children); }
 
-    pub fn generateCollectionExprMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateCollectionExprMir(self, m); }
-
     pub fn generatePtrCoercionMir(self: *CodeGen, kind: []const u8, type_node: *parser.Node, val_m: *mir.MirNode) anyerror!void { return match_impl.generatePtrCoercionMir(self, kind, type_node, val_m); }
 
     pub fn generateCompilerFuncMir(self: *CodeGen, m: *mir.MirNode) anyerror!void { return match_impl.generateCompilerFuncMir(self, m); }

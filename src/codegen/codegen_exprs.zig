@@ -266,32 +266,6 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     return;
                 }
             }
-            // Collection constructor: List(T).new(), Map(K,V).new(), Set(T).new() → .{}
-            // The collection_expr builder is transparent — List(i32) reduces to the
-            // element type_primitive (i32) in the AST. So the callee's object has
-            // kind == .type_expr (a type in expression position), not .collection.
-            // Calling .new() with no args on a type in expression position always
-            // means "zero-initialize" — safe because user struct names parse as
-            // .identifier (not .type_expr), so there's no false-positive risk.
-            if (callee_is_field) {
-                const method = callee_mir.name orelse "";
-                if (std.mem.eql(u8, method, "new")) {
-                    if (callee_mir.children.len > 0) {
-                        const obj_mir = callee_mir.children[0];
-                        if (obj_mir.kind == .type_expr or obj_mir.kind == .collection) {
-                            if (call_args.len == 0) {
-                                try cg.emit(".{}");
-                                return;
-                            } else if (call_args.len == 1) {
-                                try cg.emit(".{ .alloc = ");
-                                try cg.generateExprMir(call_args[0]);
-                                try cg.emit(" }");
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
             // Clean call generation
             const call_arg_names = m.arg_names;
             if (call_arg_names != null and call_arg_names.?.len > 0) {
@@ -486,7 +460,6 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 try cg.generateInterpolatedStringMir(parts, m.children);
             }
         },
-        .collection => try cg.generateCollectionExprMir(m),
         .compiler_fn => try cg.generateCompilerFuncMir(m),
         .array_lit => {
             try cg.emit(".{");
