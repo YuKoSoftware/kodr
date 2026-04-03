@@ -450,9 +450,9 @@ set_expr    <- 'Set'   '(' type (',' expr)? ')'
 ring_expr   <- 'Ring'  '(' type ',' expr ')'
 oring_expr  <- 'ORing' '(' type ',' expr ')'
 
-# Anonymous struct expression: struct { field: Type ... }
+# Anonymous struct expression: struct { fields, methods, constants }
 struct_expr
-    <- 'struct' '{' _ (('pub')? field_decl _)* _ '}'  {label: "struct expression"}
+    <- 'struct' '{' _ (struct_member _)* _ '}'  {label: "struct expression"}
 
 # Plain identifier — variable, function name, enum variant
 identifier_expr
