@@ -61,8 +61,7 @@ Ptr/RawPtr/VolatilePtr moved from compiler builtins to `std::ptr`. @deref remove
 
 ### Remove stale type_class values from MIR `medium`
 
-- Several `type_class` enum values may be unused:
-  `.thread_handle`, `.safe_ptr`, `.raw_ptr` — evaluate if they're still needed.
+- `.thread_handle` may be unused after Handle moves to std::async — evaluate then.
 
 ---
 
@@ -186,7 +185,7 @@ simplify coercion sequences.
 |----------|-----------|
 | Fix bugs before architecture work | Correctness before performance/elegance |
 | Const auto-borrow via MIR annotation | Re-derive const-ness from AST, avoid coupling to ownership checker |
-| Type-directed pointer coercion | Type annotation carries safety level |
+| Pointers in std, not compiler | Borrows handle safe refs; std::ptr is the escape hatch |
 | Transparent (structural) type aliases | `Speed == i32`, not a distinct nominal type |
 | Allocator via `.new(alloc)`, not generic param | Keeps generics pure (types only) |
 | SMP as default allocator | GeneralPurposeAllocator optimized for general use |
