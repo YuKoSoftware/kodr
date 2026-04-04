@@ -6,9 +6,8 @@
 i8, i16, i32, i64, i128           // signed integers
 u8, u16, u32, u64, u128           // unsigned integers
 isize, usize                      // platform-native size, pointer sizes and indexing
-f16, bf16, f32, f64, f128         // floating point
+f16, f32, f64, f128               // floating point
                                   // f16  — half precision, graphics and AI inference
-                                  // bf16 — bfloat16, AI training
                                   // f128 — maps to C long double
 bool                              // true or false
 str                               // immutable text — shorthand for []const u8
@@ -40,8 +39,8 @@ Multiline strings use `\n` — no special multiline syntax needed. `str` is immu
 
 ### String Interpolation
 
-Embed expressions inside strings with `@{expr}`. Any expression that can be formatted
-is valid inside the braces:
+Embed variables inside strings with `@{name}`. Only single identifiers are supported
+inside the braces:
 
 ```
 const name: str = "world"
@@ -52,25 +51,23 @@ const msg: str = "value is @{x}"           // "value is 42"
 
 const a: i32 = 3
 const b: i32 = 7
-const calc: str = "@{a} + @{b} = @{a + b}" // "3 + 7 = 10"
+const sum: i32 = a + b
+const calc: str = "@{a} + @{b} = @{sum}"   // "3 + 7 = 10"
 ```
 
 **How it works:**
-- `@{expr}` is recognized inside any string literal by the lexer
-- The compiler generates `std.fmt.allocPrint` with format specifiers derived from
-  the expression types (`{s}` for strings, `{d}` for integers, `{d:.N}` for floats)
+- `@{name}` is recognized inside any string literal by the lexer
+- The compiler generates `std.fmt.allocPrint` with appropriate format specifiers
 - Memory is automatically managed — the compiler emits a `defer free` for each
   interpolated string to prevent leaks
 - Multiple `@{...}` segments in one string are combined into a single `allocPrint` call
 
-**Supported expression types:**
+**Supported types:**
 - `str` / `[]const u8` — inserted as-is
 - Integer types (`i32`, `u64`, etc.) — formatted as decimal
 - Float types (`f32`, `f64`, etc.) — formatted as decimal
-- Any expression that evaluates to one of the above
 
-**Not supported:** Arbitrary method calls or complex expressions inside `@{...}` should
-be assigned to a variable first for clarity.
+**Not supported:** Expressions inside `@{...}` — assign to a variable first.
 
 ---
 

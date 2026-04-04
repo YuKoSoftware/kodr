@@ -488,14 +488,12 @@ test "borrow checker - const &T borrow is immutable" {
     var checker = BorrowChecker.init(alloc, &ctx);
     defer checker.deinit();
 
-    // Two const &T borrows — should be fine
-    var inner_type = parser.Node{ .type_named = "MyStruct" };
-    var type_ann = parser.Node{ .type_ptr = .{ .kind = .const_ref, .elem = &inner_type } };
+    // Two const& borrows — should be fine (multiple immutable borrows allowed)
     var borrow_target = parser.Node{ .identifier = "data" };
-    var borrow_val = parser.Node{ .mut_borrow_expr = &borrow_target };
+    var borrow_val = parser.Node{ .const_borrow_expr = &borrow_target };
     var decl1 = parser.Node{ .var_decl = .{
         .name = "ref1",
-        .type_annotation = &type_ann,
+        .type_annotation = null,
         .value = &borrow_val,
         .is_pub = false,
     } };
@@ -503,10 +501,10 @@ test "borrow checker - const &T borrow is immutable" {
     try checker.checkStatement(&decl1);
 
     var borrow_target2 = parser.Node{ .identifier = "data" };
-    var borrow_val2 = parser.Node{ .mut_borrow_expr = &borrow_target2 };
+    var borrow_val2 = parser.Node{ .const_borrow_expr = &borrow_target2 };
     var decl2 = parser.Node{ .var_decl = .{
         .name = "ref2",
-        .type_annotation = &type_ann,
+        .type_annotation = null,
         .value = &borrow_val2,
         .is_pub = false,
     } };

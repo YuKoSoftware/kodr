@@ -41,7 +41,6 @@ pub const CodeGen = struct {
     error_narrowed: std.StringHashMapUnmanaged(void) = .{},
     null_narrowed: std.StringHashMapUnmanaged(void) = .{},
     // Track the captured error variable name per scope for `.Error` → `@errorName()`
-    error_capture_var: std.StringHashMapUnmanaged([]const u8) = .{},
     // MIR annotation table — Phase 1+2 typed annotation pass
     node_map: ?*const mir.NodeMap = null,
     union_registry: ?*const mir.UnionRegistry = null,
@@ -329,8 +328,29 @@ pub const CodeGen = struct {
         const imp = node.import_decl;
 
         if (imp.is_c_header) {
-            const alias = imp.alias orelse imp.path;
-            try self.emitLineFmt("// WARNING: C header import\nconst {s} = @cImport(@cInclude({s}));", .{ alias, imp.path });
+            const alias = if (imp.alias) |a| a else blk: {
+                // Derive identifier from header path: strip quotes, replace non-alnum with _
+                var buf: [256]u8 = undefined;
+                var len: usize = 0;
+                for (imp.path) |c| {
+                    if (c == '"') continue;
+                    if (std.ascii.isAlphanumeric(c) or c == '_') {
+                        if (len < buf.len) {
+                            buf[len] = c;
+                            len += 1;
+                        }
+                    } else if (len > 0 and buf[len - 1] != '_') {
+                        if (len < buf.len) {
+                            buf[len] = '_';
+                            len += 1;
+                        }
+                    }
+                }
+                // Trim trailing underscore
+                if (len > 0 and buf[len - 1] == '_') len -= 1;
+                break :blk try self.allocTypeStr("{s}", .{buf[0..len]});
+            };
+            try self.emitLineFmt("const {s} = @cImport(@cInclude({s}));", .{ alias, imp.path });
             return;
         }
 
@@ -345,24 +365,33 @@ pub const CodeGen = struct {
             const hidden = try std.fmt.allocPrint(self.allocator, "_included_{s}", .{imp.path});
             defer self.allocator.free(hidden);
             try self.emitLineFmt("const {s} = @import(\"{s}{s}\");", .{ hidden, imp.path, ext });
-            // Re-export each known declaration from the included module
+            // Re-export each pub declaration from the included module
             if (self.all_decls) |ad| {
                 if (ad.get(imp.path)) |dt| {
                     var func_iter = dt.funcs.iterator();
                     while (func_iter.next()) |entry| {
-                        try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
+                        if (entry.value_ptr.is_pub)
+                            try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
                     }
                     var struct_iter = dt.structs.iterator();
                     while (struct_iter.next()) |entry| {
-                        try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
+                        if (entry.value_ptr.is_pub)
+                            try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
                     }
                     var enum_iter = dt.enums.iterator();
                     while (enum_iter.next()) |entry| {
-                        try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
+                        if (entry.value_ptr.is_pub)
+                            try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
                     }
                     var var_iter = dt.vars.iterator();
                     while (var_iter.next()) |entry| {
-                        try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
+                        if (entry.value_ptr.is_pub)
+                            try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
+                    }
+                    var bp_iter = dt.blueprints.iterator();
+                    while (bp_iter.next()) |entry| {
+                        if (entry.value_ptr.is_pub)
+                            try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
                     }
                 }
             }
@@ -509,6 +538,46 @@ pub const CodeGen = struct {
         return s;
     }
 
+    /// Collect all leaf members from a tree of binary '|' expressions.
+    fn collectBinaryUnionMembers(self: *CodeGen, b: parser.BinaryOp, out: *std.ArrayListUnmanaged(*parser.Node)) !void {
+        // Recurse left
+        if (b.left.* == .binary_expr and b.left.binary_expr.op == .bit_or) {
+            try self.collectBinaryUnionMembers(b.left.binary_expr, out);
+        } else {
+            try out.append(self.allocator, b.left);
+        }
+        // Recurse right
+        if (b.right.* == .binary_expr and b.right.binary_expr.op == .bit_or) {
+            try self.collectBinaryUnionMembers(b.right.binary_expr, out);
+        } else {
+            try out.append(self.allocator, b.right);
+        }
+    }
+
+    /// Sanitize a type string into a valid Zig identifier for union tag names.
+    /// Replaces non-alphanumeric/underscore characters with underscores,
+    /// collapsing runs of underscores into one.
+    fn sanitizeTagName(self: *CodeGen, raw: []const u8) ![]const u8 {
+        var buf = std.ArrayListUnmanaged(u8){};
+        defer buf.deinit(self.allocator);
+        var prev_underscore = true; // suppress leading underscore
+        for (raw) |c| {
+            if (std.ascii.isAlphanumeric(c)) {
+                try buf.append(self.allocator, c);
+                prev_underscore = false;
+            } else if (!prev_underscore) {
+                try buf.append(self.allocator, '_');
+                prev_underscore = true;
+            }
+        }
+        // Trim trailing underscore
+        if (buf.items.len > 0 and buf.items[buf.items.len - 1] == '_') {
+            buf.items.len -= 1;
+        }
+        if (buf.items.len == 0) return "_anon";
+        return try self.allocTypeStr("{s}", .{buf.items});
+    }
+
     pub fn typeToZig(self: *CodeGen, node: *parser.Node) anyerror![]const u8 {
         return switch (node.*) {
             .type_named => |name| {
@@ -557,7 +626,7 @@ pub const CodeGen = struct {
                         try buf2.appendSlice(self.allocator, "union(enum) { ");
                         for (other_types.items) |t| {
                             const zt = try self.typeToZig(t);
-                            const tn = if (t.* == .type_named) t.type_named else zt;
+                            const tn = try self.sanitizeTagName(if (t.* == .type_named) t.type_named else zt);
                             try buf2.writer(self.allocator).print("_{s}: {s}, ", .{ tn, zt });
                         }
                         try buf2.appendSlice(self.allocator, "}");
@@ -577,7 +646,7 @@ pub const CodeGen = struct {
                 try buf.appendSlice(self.allocator, "union(enum) { ");
                 for (u) |t| {
                     const zig_type = try self.typeToZig(t);
-                    const type_name = if (t.* == .type_named) t.type_named else zig_type;
+                    const type_name = try self.sanitizeTagName(if (t.* == .type_named) t.type_named else zig_type);
                     try buf.writer(self.allocator).print("_{s}: {s}, ", .{ type_name, zig_type });
                 }
                 try buf.appendSlice(self.allocator, "}");
@@ -681,7 +750,20 @@ pub const CodeGen = struct {
                     const inner = try self.typeToZig(b.right);
                     break :blk try self.allocTypeStr("?{s}", .{inner});
                 }
-                break :blk "anyopaque";
+                // Regular arbitrary union: (A | B) → union(enum) { _A: A, _B: B }
+                var members = std.ArrayListUnmanaged(*parser.Node){};
+                defer members.deinit(self.allocator);
+                try self.collectBinaryUnionMembers(b, &members);
+                var buf2 = std.ArrayListUnmanaged(u8){};
+                defer buf2.deinit(self.allocator);
+                try buf2.appendSlice(self.allocator, "union(enum) { ");
+                for (members.items) |t| {
+                    const zt = try self.typeToZig(t);
+                    const tn = try self.sanitizeTagName(if (t.* == .type_named) t.type_named else zt);
+                    try buf2.writer(self.allocator).print("_{s}: {s}, ", .{ tn, zt });
+                }
+                try buf2.appendSlice(self.allocator, "}");
+                break :blk try self.allocTypeStr("{s}", .{buf2.items});
             },
             else => "anyopaque",
         };

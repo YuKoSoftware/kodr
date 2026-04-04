@@ -531,7 +531,7 @@ else
 fi
 
 # duplicate union member after flattening
-run_fixture neg_union_dup fail_union_duplicate.orh "duplicate type.*union\|duplicate.*flattening\|DuplicateUnionMember" "fixture: rejects duplicate type in flattened union"
+run_fixture neg_union_dup fail_union_duplicate.orh "duplicate type.*union" "fixture: rejects duplicate type in flattened union"
 
 
 # ── module main rejection ────────────────────────────────────────

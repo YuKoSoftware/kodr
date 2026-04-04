@@ -99,6 +99,15 @@ pub const PropagationChecker = struct {
                 var scope = PropagationScope.init(self.allocator, null, returns_error);
                 defer scope.deinit();
 
+                // Register function parameters with union types
+                for (f.params) |param| {
+                    if (param.* == .param) {
+                        if (typeNodeIsUnion(param.param.type_annotation)) |is_error| {
+                            try scope.define(param.param.name, is_error, 0, 0);
+                        }
+                    }
+                }
+
                 try self.checkNode(f.body, &scope);
                 try self.checkScopeExit(&scope);
             },
@@ -440,7 +449,7 @@ fn typeCanPropagate(node: *parser.Node) bool {
             }
             return false;
         },
-        .type_named => |n| return std.mem.eql(u8, n, K.Type.VOID) == false,
+        .type_named => return false,
         else => return false,
     }
 }

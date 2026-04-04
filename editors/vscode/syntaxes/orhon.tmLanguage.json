@@ -123,7 +123,7 @@
       "patterns": [
         {
           "name": "storage.type.primitive.orhon",
-          "match": "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize|f16|bf16|f32|f64|f128|bool|String|type)\\b"
+          "match": "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize|f16|f32|f64|f128|bool|String|type)\\b"
         },
         {
           "name": "storage.type.builtin.orhon",

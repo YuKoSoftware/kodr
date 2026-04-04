@@ -90,6 +90,134 @@ have no names, report "struct constructors require named arguments."
 but lines 103-108 say "Only `const` is supported." The compiler accepts both.
 Decide which is correct and update the spec + add validation if needed.
 
+### Automatic error propagation `medium`
+
+`propagation.zig:374-376` comments say unhandled error unions in error-returning
+functions will "automatically propagate with trace." But no codegen implements this.
+Unhandled `(Error | T)` in a function returning `(Error | T)` is silently allowed
+but the error value is discarded at runtime. Either implement auto-propagation
+(insert `try`-like unwrap in codegen) or always reject unhandled unions.
+
+### `throw` narrowing for direct variable use `medium`
+
+After `throw result`, the variable should be narrowed to `T` for direct use.
+Currently `throw` emits the error check but doesn't unwrap the variable —
+`var x: i32 = result` after `throw` produces invalid Zig because `result` is
+still `anyerror!i32`. Only `result.i32` / `result.value` works (via explicit unwrap).
+
+### `(null | Error | T)` TypeClass classification `easy`
+
+`mir_types.zig` classifies combined null+error unions as `.error_union` because the
+Error check runs first. The null component may not unwrap correctly. Need a combined
+TypeClass or two-pass unwrap pattern.
+
+### Spec: clarify reference types in variable declarations `easy`
+
+`docs/09-memory.md` line 82 shows `const ref: const& MyStruct = const& data` as valid NLL
+syntax, but the resolver (pass 5) rejects all `type_ptr` in variable declarations with
+"reference type not allowed in variable declaration." Either update the spec to remove
+the example, or change the resolver to allow it.
+
+### Interpolated string ownership/borrow checking `easy`
+
+Variables used inside interpolated strings (`"hello @{name}"`) are not checked for
+use-after-move or active-mutable-borrow violations. Both checkers fall through to
+`else => {}` for `interpolated_string` nodes. Add handling that walks `.expr` parts.
+
+### Borrow checker dead code: type-annotation-based mutability `easy`
+
+`borrow_checks.zig` var_decl handler had logic to derive borrow mutability from the type
+annotation (`isMutableBorrowType`). Since the resolver rejects `type_ptr` in var decls
+before the borrow checker runs, this path was never reachable. The `mut_borrow_expr`
+expression now correctly determines mutability. Clean up any remaining dead branches.
+
+### `compt for` — implement grammar and builder `medium`
+
+Spec documents `compt for(fields) |field| { ... }` but grammar only supports
+`compt func`. `ForStmt.is_compt` field exists, codegen handles it (`inline for`),
+but builder hardcodes `is_compt = false`. Need to add `'compt'?` prefix to `for_stmt`
+grammar rule and set the flag in the builder.
+
+### Remove dead `is_compt` codegen paths for var_decl `easy`
+
+Dead codegen paths exist in `codegen_decls.zig:345` and `codegen_stmts.zig:59` for
+`is_compt` on var_decl, but no parser path ever sets this flag. `compt const` is
+unnecessary — top-level `const` with comptime-known values is automatically
+compile-time in Zig. Remove the dead code.
+
+### `any` param in type-generating compt → wrong Zig type `easy`
+
+`codegen_decls.zig:94` maps `any` parameter in type-generating compt functions to
+`comptime name: type`, but `any` means "any value" not "any type." Should be
+`comptime name: anytype` for value parameters. Only `type` annotation should map
+to `comptime T: type`.
+
+### Consuming method calls not tracked by ownership checker `medium`
+
+Methods with `self: T` (by value, not borrow) should move the receiver and mark it
+invalid after the call. Currently `ownership_checks.zig:204` always passes
+`is_borrow=true` for method receivers. `p.destroy(); p.use()` is not caught.
+Needs: look up method signature, check if self param is by value, mark receiver moved.
+
+### Method/cross-module call argument count validation `easy`
+
+`resolver_exprs.zig:198` looks up method signatures for return type but doesn't
+validate argument count. Direct identifier calls (line 175) do validate. Add the
+same arity check for `field_expr` callee paths (method calls and `module.func()` calls).
+
+### Interpolated strings in non-hoisted positions produce invalid Zig `medium`
+
+`findInterpolation` in `mir_lowerer.zig` only hoists interpolated strings in var_decl,
+call args, assignment, and return. In other positions (if conditions, binary exprs,
+match arms), the codegen fallback emits the temp var after its use, producing invalid
+Zig (use-before-declaration). Either expand `findInterpolation` to recurse all
+expression positions, or restructure pre_stmts flushing.
+
+### Array literal resolver returns element type, not array type `medium`
+
+`resolver_exprs.zig:393` returns the first element's type (e.g., `i32`) instead of
+an array type. This breaks `array_to_slice` coercion detection in the MIR annotator.
+`var arr: []i32 = [1, 2, 3]` likely produces invalid Zig. Fix: return a proper array
+resolved type, or special-case array literal nodes in coercion detection.
+
+### Tuple literal resolver returns RT.inferred `easy`
+
+`resolver_exprs.zig:403` returns `RT.inferred` for tuple literals. Downstream passes
+have no composite type info for tuples in expression position (function args, returns).
+
+### Unclosed `@{` in string produces no error `easy`
+
+If a user writes `"hello @{name"` (missing `}`), the builder silently treats the
+`@{name` text as a literal string part. Should report a parse error.
+
+### Resolver: type-check test bodies `medium`
+
+The resolver (pass 5) has no `.test_decl` arm — test bodies are entirely skipped.
+Type errors in tests are only caught at Zig compilation (pass 12). Cannot simply
+add a test_decl case because the resolver runs per-file and test bodies reference
+functions from other files in the same module. Needs cross-file module scope support
+in the resolver first.
+
+### Import error messages lack source locations `easy`
+
+Three import-related errors pass `null` for location:
+- `module_parse.zig:205` — "module not found" for `std::` imports
+- `module.zig:404` — "module not found — add X.orh"
+- `module_parse.zig:192` — "unknown import scope"
+These should include file/line from the import AST node.
+
+### `@wrap`/`@sat` silently drop for div/mod operators `easy`
+
+`codegen_match.zig` maps `@wrap(a + b)` to wrapping add, but returns null for `/` and
+`%` (Zig has no wrapping variants for these). The builtin semantics are silently dropped.
+Either reject unsupported operators in the resolver, or emit a warning.
+
+### Unknown compiler function produces Zig comment, not error `easy`
+
+`codegen_match.zig:552` emits `/* unknown @name */` for unrecognized compiler function
+names. Should report an error in the resolver instead. Currently the parser limits
+names to the known set, but a validation in the resolver would be defense-in-depth.
+
 ### Partial field move detection `medium`
 
 Ownership pass claims to enforce struct atomicity (no partial field moves) but has no
@@ -112,6 +240,22 @@ for anonymous structs in compt functions too. Currently codegen handles this cor
   2. Compt arithmetic (`1 << index` at compile time)
   3. Compt `@intFromEnum` equivalent
 - Users can create bitfields manually with `u32` + bitwise operators in the meantime
+
+### Named tuple nominal typing `medium`
+
+Spec says named tuples are nominally typed (two tuples with identical structure but
+different names are different types). Current codegen emits anonymous Zig structs
+(`struct { x: f32, y: f32 }`), which are structurally typed — no type distinction
+between `Point` and `Velocity` with the same fields.
+
+Fix: emit named struct constants instead of inline anonymous structs.
+
+### Dead NodeKind variants: `type_primitive`, `type_tuple_anon` `easy`
+
+`type_primitive` and `type_tuple_anon` exist in `parser.zig` NodeKind but are never
+produced by any PEG builder function. `type_tuple_anon` has contradictory handling
+in `types.zig` (treated as union) vs `codegen.zig` (treated as struct). Remove both
+variants or implement them if needed.
 
 ### Break up oversized functions `medium`
 

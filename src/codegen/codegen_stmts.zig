@@ -212,6 +212,10 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 try cg.emitFmt("defer std.heap.smp_allocator.free({s});", .{name});
             }
         },
+        // Local function declaration — delegate to top-level func codegen
+        .func => {
+            try cg.generateFuncMir(m);
+        },
         // Bare expression as statement — discard return value
         else => {
             if (m.kind == .call) try cg.emit("_ = ");

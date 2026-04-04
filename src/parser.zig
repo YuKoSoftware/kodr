@@ -181,6 +181,7 @@ pub const Metadata = struct {
     field: MetadataField,
     value: *Node,
     extra: ?*Node = null,              // version node for #dep, null otherwise
+    raw_field: ?[]const u8 = null,     // original field name for error reporting
 };
 
 pub const FuncContext = enum {

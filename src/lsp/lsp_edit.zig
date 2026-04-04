@@ -135,7 +135,7 @@ fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Val
     const primitives = [_][]const u8{
         "str", "bool", "i8", "i16", "i32", "i64", "i128",
         "u8", "u16", "u32", "u64", "u128", "isize", "usize",
-        "f16", "f32", "f64", "f128", "bf16",
+        "f16", "f32", "f64", "f128",
     };
     for (primitives) |pt| {
         if (!first) try buf.append(allocator, ',');

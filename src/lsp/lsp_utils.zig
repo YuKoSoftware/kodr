@@ -330,7 +330,7 @@ pub fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8
         "i8", "i16", "i32", "i64", "i128",
         "u8", "u16", "u32", "u64", "u128",
         "isize", "usize",
-        "f16", "f32", "f64", "f128", "bf16",
+        "f16", "f32", "f64", "f128",
     };
     for (primitives) |p| {
         if (std.mem.eql(u8, name, p)) {

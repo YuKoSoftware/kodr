@@ -21,7 +21,6 @@ pub const Primitive = enum {
     isize,
     usize,
     f16,
-    bf16,
     f32,
     f64,
     f128,
@@ -50,7 +49,6 @@ pub const Primitive = enum {
             .{ "isize", .isize },
             .{ "usize", .usize },
             .{ "f16", .f16 },
-            .{ "bf16", .bf16 },
             .{ "f32", .f32 },
             .{ "f64", .f64 },
             .{ "f128", .f128 },
@@ -80,7 +78,6 @@ pub const Primitive = enum {
             .isize => "isize",
             .usize => "usize",
             .f16 => "f16",
-            .bf16 => "bf16",
             .f32 => "f32",
             .f64 => "f64",
             .f128 => "f128",
@@ -119,7 +116,7 @@ pub const Primitive = enum {
 
     pub fn isFloat(self: Primitive) bool {
         return switch (self) {
-            .f16, .bf16, .f32, .f64, .f128 => true,
+            .f16, .f32, .f64, .f128 => true,
             else => false,
         };
     }
@@ -372,6 +369,32 @@ fn resolveUnion(alloc: std.mem.Allocator, members: []*parser.Node) !ResolvedType
     const result = try alloc.alloc(ResolvedType, flat.items.len);
     @memcpy(result, flat.items);
     return .{ .union_type = result };
+}
+
+/// Find the name of the first duplicate member in a union type node.
+/// Used for error reporting when resolveUnion returns DuplicateUnionMember.
+pub fn findDuplicateUnionMember(alloc: std.mem.Allocator, members: []*parser.Node) ?[]const u8 {
+    var resolved = std.ArrayListUnmanaged(ResolvedType){};
+    defer resolved.deinit(alloc);
+
+    for (members) |m| {
+        const r = resolveTypeNode(alloc, m) catch continue;
+        if (r == .union_type) {
+            for (r.union_type) |inner| {
+                resolved.append(alloc, inner) catch continue;
+            }
+        } else {
+            resolved.append(alloc, r) catch continue;
+        }
+    }
+
+    for (resolved.items, 0..) |a, i| {
+        const a_name = a.name();
+        for (resolved.items[i + 1 ..]) |b| {
+            if (std.mem.eql(u8, a_name, b.name())) return a_name;
+        }
+    }
+    return null;
 }
 
 /// Check if a name is a primitive type (copy semantics)

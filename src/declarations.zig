@@ -219,7 +219,7 @@ pub const DeclCollector = struct {
         for (f.params) |param| {
             if (param.* == .param) {
                 const param_type = types.resolveTypeNode(self.table.typeAllocator(), param.param.type_annotation) catch |err| {
-                    try self.reportUnionError(err, loc);
+                    try self.reportUnionError(err, loc, param.param.type_annotation);
                     return;
                 };
                 try params.append(self.allocator, .{
@@ -243,7 +243,7 @@ pub const DeclCollector = struct {
         }
 
         const return_type = types.resolveTypeNode(self.table.typeAllocator(), f.return_type) catch |err| {
-            try self.reportUnionError(err, loc);
+            try self.reportUnionError(err, loc, f.return_type);
             return;
         };
 
@@ -375,12 +375,20 @@ pub const DeclCollector = struct {
     }
 
     /// Report a user-facing error for union type resolution failures.
-    fn reportUnionError(self: *DeclCollector, err: anyerror, loc: ?errors.SourceLoc) !void {
-        const msg_text = switch (err) {
-            error.DuplicateUnionMember => "duplicate type in union after flattening",
+    fn reportUnionError(self: *DeclCollector, err: anyerror, loc: ?errors.SourceLoc, type_node: ?*parser.Node) !void {
+        switch (err) {
+            error.DuplicateUnionMember => {
+                // Try to find the specific duplicate type name
+                if (type_node != null and type_node.?.* == .type_union) {
+                    if (types.findDuplicateUnionMember(self.allocator, type_node.?.type_union)) |dup_name| {
+                        try self.reporter.reportFmt(loc, "duplicate type '{s}' in union — each type may appear only once", .{dup_name});
+                        return;
+                    }
+                }
+                try self.reporter.reportFmt(loc, "duplicate type in union — each type may appear only once", .{});
+            },
             else => return err,
-        };
-        try self.reporter.reportFmt(loc, "{s}", .{msg_text});
+        }
     }
 
     fn collectEnum(self: *DeclCollector, e: parser.EnumDecl, loc: ?errors.SourceLoc) anyerror!void {
@@ -422,7 +430,7 @@ pub const DeclCollector = struct {
 
         const var_type: ?types.ResolvedType = if (v.type_annotation) |t|
             (types.resolveTypeNode(self.table.typeAllocator(), t) catch |err| {
-                try self.reportUnionError(err, loc);
+                try self.reportUnionError(err, loc, t);
                 return;
             })
         else

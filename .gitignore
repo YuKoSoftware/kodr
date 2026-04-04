@@ -7,3 +7,5 @@ zig-out/
 *.o
 *.a
 test_union_*
+test_bf16
+test_f16

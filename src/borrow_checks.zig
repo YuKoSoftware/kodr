@@ -13,13 +13,11 @@ pub fn checkStatement(self: *BorrowChecker, node: *parser.Node) anyerror!void {
     self.current_node = node;
     switch (node.*) {
         .var_decl => |v| {
-            // Borrow mutability comes from the type annotation (mut& T vs const& T),
-            // not from const/var — const binding to mut& T is still a mutable borrow
+            // mut& is always a mutable borrow, const& is always immutable
             // NLL: borrow_ref is the declared variable name
             if (v.value.* == .mut_borrow_expr) {
-                const is_mut = borrow.isMutableBorrowType(v.type_annotation);
                 if (borrow.extractBorrowTarget(v.value.mut_borrow_expr)) |target| {
-                    try self.addBorrow(target.variable, target.field, is_mut, v.name);
+                    try self.addBorrow(target.variable, target.field, true, v.name);
                 }
             } else if (v.value.* == .const_borrow_expr) {
                 if (borrow.extractBorrowTarget(v.value.const_borrow_expr)) |target| {
@@ -32,7 +30,7 @@ pub fn checkStatement(self: *BorrowChecker, node: *parser.Node) anyerror!void {
         .return_stmt => |r| {
             if (r.value) |val| {
                 // Cannot return a reference — only owned values
-                if (val.* == .mut_borrow_expr) {
+                if (val.* == .mut_borrow_expr or val.* == .const_borrow_expr) {
                     try self.ctx.reporter.report(.{
                         .message = "cannot return a reference — functions can only return owned values",
                         .loc = self.ctx.nodeLoc(node),
@@ -75,9 +73,8 @@ pub fn checkStatement(self: *BorrowChecker, node: *parser.Node) anyerror!void {
             // NLL: borrow_ref is the LHS identifier (if it is one)
             const assign_ref: ?[]const u8 = if (a.left.* == .identifier) a.left.identifier else null;
             if (a.right.* == .mut_borrow_expr) {
-                const is_mut = borrow.isMutableBorrowType(null); // no type context in assignment
                 if (borrow.extractBorrowTarget(a.right.mut_borrow_expr)) |target| {
-                    try self.addBorrow(target.variable, target.field, is_mut, assign_ref);
+                    try self.addBorrow(target.variable, target.field, true, assign_ref);
                 }
             } else if (a.right.* == .const_borrow_expr) {
                 if (borrow.extractBorrowTarget(a.right.const_borrow_expr)) |target| {
@@ -96,10 +93,10 @@ pub fn checkStatement(self: *BorrowChecker, node: *parser.Node) anyerror!void {
 pub fn checkExpr(self: *BorrowChecker, node: *parser.Node) anyerror!void {
     switch (node.*) {
         .mut_borrow_expr => |inner| {
-            // mut& in expression context (e.g. function call arg) — default immutable
+            // mut& in expression context (e.g. function call arg) — mutable borrow
             // NLL: null ref — temporary borrow, not tracked for NLL
             if (borrow.extractBorrowTarget(inner)) |target| {
-                try self.addBorrow(target.variable, target.field, false, null);
+                try self.addBorrow(target.variable, target.field, true, null);
             }
             try checkExpr(self, inner);
         },

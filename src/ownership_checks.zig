@@ -38,6 +38,15 @@ pub fn checkStatement(self: *OwnershipChecker, node: *parser.Node, scope: *Owner
             }
         },
 
+        .throw_stmt => |t| {
+            // Check for use-after-move of the thrown variable
+            if (scope.getState(t.variable)) |state| {
+                if (state.state == .moved) {
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "use of moved value '{s}' — consider using @copy()", .{t.variable});
+                }
+            }
+        },
+
         .return_stmt => |r| {
             if (r.value) |v| {
                 try checkExpr(self, v, scope, false);

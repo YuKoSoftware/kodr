@@ -287,17 +287,26 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
             mod.imports_owned = false;
         }
 
-        // Check if root module (has build declaration in metadata)
+        // Validate metadata fields and check if root module
         for (build_result.node.program.metadata) |meta| {
+            if (meta.metadata.field == .unknown) {
+                // Report unknown metadata field — likely a typo
+                if (meta.metadata.raw_field) |raw| {
+                    try self.reporter.reportFmt(null, "unknown metadata field '#{s}' — expected #build, #name, #version, #dep, or #description", .{raw});
+                }
+            }
             if (meta.metadata.field == .build) {
                 mod.is_root = true;
                 if (meta.metadata.value.* == .identifier) {
                     const val = meta.metadata.value.identifier;
-                    if (std.mem.eql(u8, val, "static")) {
+                    if (std.mem.eql(u8, val, "exe")) {
+                        mod.build_type = .exe;
+                    } else if (std.mem.eql(u8, val, "static")) {
                         mod.build_type = .static;
                     } else if (std.mem.eql(u8, val, "dynamic")) {
                         mod.build_type = .dynamic;
                     } else {
+                        try self.reporter.reportFmt(null, "unknown #build type '{s}' — expected 'exe', 'static', or 'dynamic'", .{val});
                         mod.build_type = .exe;
                     }
                 } else {

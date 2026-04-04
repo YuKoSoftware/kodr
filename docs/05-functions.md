@@ -86,9 +86,11 @@ compt func describe(val: any) str {
 }
 ```
 
-### `compt for` — compile-time loop unrolling
+### `compt for` — compile-time loop unrolling (planned)
 
-`compt for` unrolls the loop at compile time. Each iteration becomes separate code
+> **Not yet implemented.** Grammar only supports `compt func` currently.
+
+`compt for` will unroll the loop at compile time. Each iteration becomes separate code
 in the output:
 
 ```
@@ -103,7 +105,7 @@ compt for(fields) |field| {
 - `compt` functions with `T: type` parameters require the type to be known at compile time
 - `compt` functions returning `type` cannot be called at runtime — types don't exist at runtime
 - `compt` is a function-level modifier, not a block-level one — the entire function is compile-time
-- `compt` variables at module level (`compt const X = ...`) are compile-time constants
+- Top-level `const` with comptime-known values is automatically compile-time — no `compt const` needed
 
 
 ## No Function Overloading

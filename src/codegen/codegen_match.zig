@@ -533,7 +533,10 @@ fn emitIntrospectionType(cg: *CodeGen, arg: *mir.MirNode) anyerror!void {
                 else => false,
             };
         },
-        else => false,
+        else => blk: {
+            // Compiler functions returning type (e.g. @fieldType, @typeOf) are type refs
+            break :blk arg.resolved_type == .primitive and arg.resolved_type.primitive == .@"type";
+        },
     };
     if (is_type_ref) {
         try cg.generateExprMir(arg);
@@ -567,15 +570,17 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 const target_type = try cg.typeToZig(args[0].ast); // type trees are structural — typeToZig walks AST
                 const target_is_float = target_type.len > 0 and target_type[0] == 'f';
                 const target_is_enum = cg.isEnumTypeName(args[0].ast); // type trees are structural — isEnumTypeName reads AST
-                const source_is_float_literal = args[1].literal_kind == .float;
+                // Detect float source from literal kind OR resolved type
+                const source_is_float = args[1].literal_kind == .float or
+                    (args[1].resolved_type == .primitive and args[1].resolved_type.primitive.isFloat());
                 try cg.emitFmt("@as({s}, ", .{target_type});
                 if (target_is_enum) {
                     try cg.emit("@enumFromInt(");
-                } else if (target_is_float and source_is_float_literal) {
+                } else if (target_is_float and source_is_float) {
                     try cg.emit("@floatCast(");
                 } else if (target_is_float) {
                     try cg.emit("@floatFromInt(");
-                } else if (source_is_float_literal) {
+                } else if (source_is_float) {
                     try cg.emit("@intFromFloat(");
                 } else {
                     try cg.emit("@intCast(");
@@ -590,12 +595,12 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         },
         .size => {
             try cg.emit("@sizeOf(");
-            if (args.len > 0) try cg.generateExprMir(args[0]);
+            if (args.len > 0) try emitIntrospectionType(cg, args[0]);
             try cg.emit(")");
         },
         .@"align" => {
             try cg.emit("@alignOf(");
-            if (args.len > 0) try cg.generateExprMir(args[0]);
+            if (args.len > 0) try emitIntrospectionType(cg, args[0]);
             try cg.emit(")");
         },
         .copy => {
@@ -605,13 +610,22 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             if (args.len > 0) try cg.generateExprMir(args[0]);
         },
         .assert => {
-            if (cg.in_test_block) {
-                try cg.emit("try std.testing.expect(");
+            if (args.len >= 2) {
+                // @assert(cond, "message") — conditional panic with custom message
+                try cg.emit("if (!(");
+                try cg.generateExprMir(args[0]);
+                try cg.emit(")) @panic(");
+                try cg.generateExprMir(args[1]);
+                try cg.emit(")");
             } else {
-                try cg.emit("std.debug.assert(");
+                if (cg.in_test_block) {
+                    try cg.emit("try std.testing.expect(");
+                } else {
+                    try cg.emit("std.debug.assert(");
+                }
+                if (args.len > 0) try cg.generateExprMir(args[0]);
+                try cg.emit(")");
             }
-            if (args.len > 0) try cg.generateExprMir(args[0]);
-            try cg.emit(")");
         },
         .swap => {
             if (args.len == 2) {
@@ -841,12 +855,14 @@ pub fn opToZig(op: parser.Operator) []const u8 {
 
 /// Check if a field name is a type name used for union value access (result.i32, result.User)
 pub fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) bool {
+    // .value — universal unwrap syntax for error/null unions
+    if (std.mem.eql(u8, name, "value")) return true;
     // Primitive type names — always valid as union payload access
     const primitives = [_][]const u8{
         "i8", "i16", "i32", "i64", "i128",
         "u8", "u16", "u32", "u64", "u128",
         "isize", "usize",
-        "f16", "bf16", "f32", "f64", "f128",
+        "f16", "f32", "f64", "f128",
         "bool", "str", "void",
     };
     for (primitives) |p| {

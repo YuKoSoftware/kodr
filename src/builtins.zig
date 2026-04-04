@@ -161,7 +161,6 @@ pub fn primitiveToZig(orhon_type: []const u8) []const u8 {
         .{ "f32", "f32" },
         .{ "f64", "f64" },
         .{ "f128", "f128" },
-        .{ "bf16", "f16" },
     };
     for (mappings) |m| {
         if (std.mem.eql(u8, orhon_type, m[0])) return m[1];
@@ -211,5 +210,5 @@ test "CompilerFunc.fromName" {
 test "primitive mapping" {
     try std.testing.expectEqualStrings("[]const u8", primitiveToZig("str"));
     try std.testing.expectEqualStrings("i32", primitiveToZig("i32"));
-    try std.testing.expectEqualStrings("f16", primitiveToZig("bf16"));
+
 }

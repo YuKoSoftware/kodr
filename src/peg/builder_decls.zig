@@ -157,12 +157,14 @@ pub fn buildMetadata(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
         if (cap.children.len > 1) {
             extra = try builder.buildNode(ctx, &cap.children[1]);
         }
-        return ctx.newNode(.{ .metadata = .{ .field = parser.MetadataField.parse(field), .value = value, .extra = extra } });
+        const parsed_field = parser.MetadataField.parse(field);
+        return ctx.newNode(.{ .metadata = .{ .field = parsed_field, .value = value, .extra = extra, .raw_field = if (parsed_field == .unknown) field else null } });
     }
 
     // Fallback — create a dummy value
     const dummy = try ctx.newNode(.{ .identifier = field });
-    return ctx.newNode(.{ .metadata = .{ .field = parser.MetadataField.parse(field), .value = dummy } });
+    const parsed_field2 = parser.MetadataField.parse(field);
+    return ctx.newNode(.{ .metadata = .{ .field = parsed_field2, .value = dummy, .raw_field = if (parsed_field2 == .unknown) field else null } });
 }
 
 // ============================================================

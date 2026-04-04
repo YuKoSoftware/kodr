@@ -316,12 +316,54 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 const t = try resolveExpr(self, arg, scope);
                 if (idx == 0) first_arg_type = t;
             }
+            const loc = self.ctx.nodeLoc(node);
+
+            // Argument count validation
+            const expected: ?struct { min: usize, max: usize } = if (std.mem.eql(u8, cf.name, "cast") or std.mem.eql(u8, cf.name, "swap") or
+                std.mem.eql(u8, cf.name, "splitAt") or std.mem.eql(u8, cf.name, "hasField") or
+                std.mem.eql(u8, cf.name, "hasDecl") or std.mem.eql(u8, cf.name, "fieldType"))
+                .{ .min = 2, .max = 2 }
+            else if (std.mem.eql(u8, cf.name, "assert"))
+                .{ .min = 1, .max = 2 }
+            else if (std.mem.eql(u8, cf.name, "copy") or std.mem.eql(u8, cf.name, "move") or
+                std.mem.eql(u8, cf.name, "size") or std.mem.eql(u8, cf.name, "align") or
+                std.mem.eql(u8, cf.name, "typename") or std.mem.eql(u8, cf.name, "typeid") or
+                std.mem.eql(u8, cf.name, "typeOf") or std.mem.eql(u8, cf.name, "fieldNames") or
+                std.mem.eql(u8, cf.name, "wrap") or std.mem.eql(u8, cf.name, "sat") or
+                std.mem.eql(u8, cf.name, "overflow"))
+                .{ .min = 1, .max = 1 }
+            else
+                null;
+
+            if (expected) |exp| {
+                if (cf.args.len < exp.min or cf.args.len > exp.max) {
+                    if (exp.min == exp.max) {
+                        try self.ctx.reporter.reportFmt(loc, "@{s} takes exactly {d} argument(s)", .{ cf.name, exp.min });
+                    } else {
+                        try self.ctx.reporter.reportFmt(loc, "@{s} takes {d} to {d} arguments", .{ cf.name, exp.min, exp.max });
+                    }
+                }
+            }
+
+            // String literal validation for introspection functions
+            if (std.mem.eql(u8, cf.name, "hasField") or std.mem.eql(u8, cf.name, "hasDecl") or
+                std.mem.eql(u8, cf.name, "fieldType"))
+            {
+                if (cf.args.len >= 2 and cf.args[1].* != .string_literal) {
+                    try self.ctx.reporter.reportFmt(loc, "@{s} requires a string literal as second argument", .{cf.name});
+                }
+            }
+
+            // Return type resolution
             if (std.mem.eql(u8, cf.name, "size") or std.mem.eql(u8, cf.name, "align")) return RT{ .primitive = .usize };
             if (std.mem.eql(u8, cf.name, "typeid")) return RT{ .primitive = .usize };
             if (std.mem.eql(u8, cf.name, "typename")) return RT{ .primitive = .string };
             if (std.mem.eql(u8, cf.name, "typeOf")) return RT{ .primitive = .@"type" };
             if (std.mem.eql(u8, cf.name, "assert")) return RT{ .primitive = .void };
             if (std.mem.eql(u8, cf.name, "swap")) return RT{ .primitive = .void };
+            if (std.mem.eql(u8, cf.name, "hasField") or std.mem.eql(u8, cf.name, "hasDecl")) return RT{ .primitive = .bool };
+            if (std.mem.eql(u8, cf.name, "fieldType")) return RT{ .primitive = .@"type" };
+            if (std.mem.eql(u8, cf.name, "fieldNames")) return RT.inferred;
             // cast(T, x) → returns T (first arg is the target type)
             if (std.mem.eql(u8, cf.name, "cast")) {
                 if (cf.args.len >= 1 and cf.args[0].* == .identifier) {
@@ -337,28 +379,13 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             if (std.mem.eql(u8, cf.name, "copy") or std.mem.eql(u8, cf.name, "move")) {
                 return first_arg_type;
             }
-            // Introspection functions
-            if (std.mem.eql(u8, cf.name, "hasField") or std.mem.eql(u8, cf.name, "hasDecl")) {
-                if (cf.args.len != 2) {
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "@{s} takes exactly 2 arguments", .{cf.name});
-                } else if (cf.args[1].* != .string_literal) {
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "@{s} requires a string literal as second argument", .{cf.name});
-                }
-                return RT{ .primitive = .bool };
+            // wrap(expr), sat(expr) → returns same type as inner expression
+            if (std.mem.eql(u8, cf.name, "wrap") or std.mem.eql(u8, cf.name, "sat")) {
+                return first_arg_type;
             }
-            if (std.mem.eql(u8, cf.name, "fieldType")) {
-                if (cf.args.len != 2) {
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "@fieldType takes exactly 2 arguments", .{});
-                } else if (cf.args[1].* != .string_literal) {
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "@fieldType requires a string literal as second argument", .{});
-                }
-                return RT{ .primitive = .@"type" };
-            }
-            if (std.mem.eql(u8, cf.name, "fieldNames")) {
-                if (cf.args.len != 1) {
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "@fieldNames takes exactly 1 argument", .{});
-                }
-                return RT.inferred;
+            // overflow(expr) → returns same type (error union semantics tracked by propagation)
+            if (std.mem.eql(u8, cf.name, "overflow")) {
+                return first_arg_type;
             }
             return RT.unknown;
         },
@@ -368,7 +395,14 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             var elem_type: RT = RT.inferred;
             for (elems) |elem| {
                 const t = try resolveExpr(self, elem, scope);
-                if (elem_type == .inferred) elem_type = t;
+                if (elem_type == .inferred) {
+                    elem_type = t;
+                } else if (t != .inferred and t != .unknown and elem_type != .unknown and
+                    !resolver_mod.typesCompatible(t, elem_type))
+                {
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(elem),
+                        "array element type mismatch — expected '{s}', got '{s}'", .{ elem_type.name(), t.name() });
+                }
             }
             return elem_type;
         },

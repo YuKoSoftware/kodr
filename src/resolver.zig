@@ -19,10 +19,11 @@ const RT = types.ResolvedType;
 
 /// Primitive type name candidates for "did you mean?" suggestions on unknown types.
 pub const PRIMITIVE_NAMES = [_][]const u8{
-    "i8", "i16", "i32", "i64",
-    "u8", "u16", "u32", "u64",
-    "f32", "f64",
-    "bool", "usize", "void",
+    "i8", "i16", "i32", "i64", "i128",
+    "u8", "u16", "u32", "u64", "u128",
+    "isize", "usize",
+    "f16", "f32", "f64", "f128",
+    "bool", "str", "void",
 };
 
 /// A resolved type binding — maps expression nodes to their resolved types
@@ -70,15 +71,16 @@ pub const TypeResolver = struct {
         return false;
     }
 
-    /// Check if a type name exists in any `use`-d (included) module's DeclTable.
+    /// Check if a type name exists as a pub declaration in any `use`-d (included) module's DeclTable.
     pub fn isIncludedType(self: *const TypeResolver, name: []const u8) bool {
         const ad = self.ctx.all_decls orelse return false;
         for (self.included_modules.items) |mod_name| {
             if (ad.get(mod_name)) |mod_decls| {
-                if (mod_decls.structs.contains(name) or
-                    mod_decls.enums.contains(name) or
-                    mod_decls.funcs.contains(name) or
-                    mod_decls.types.contains(name)) return true;
+                if (mod_decls.structs.get(name)) |s| { if (s.is_pub) return true; }
+                if (mod_decls.enums.get(name)) |e| { if (e.is_pub) return true; }
+                if (mod_decls.funcs.get(name)) |f| { if (f.is_pub) return true; }
+                // Type aliases don't have is_pub — they are always visible
+                if (mod_decls.types.contains(name)) return true;
             }
         }
         return false;
@@ -191,6 +193,24 @@ pub const TypeResolver = struct {
 
                 // Validate return type in func_scope so type params (T: type) are visible
                 try self.validateType(f.return_type, &func_scope);
+
+                // Check: `any` return type requires at least one `any`-typed parameter
+                if (f.return_type.* == .type_named and std.mem.eql(u8, f.return_type.type_named, K.Type.ANY)) {
+                    var has_any_param = false;
+                    for (f.params) |param| {
+                        if (param.* == .param and param.param.type_annotation.* == .type_named and
+                            std.mem.eql(u8, param.param.type_annotation.type_named, K.Type.ANY))
+                        {
+                            has_any_param = true;
+                            break;
+                        }
+                    }
+                    if (!has_any_param) {
+                        try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                            "function '{s}' returns 'any' but has no 'any'-typed parameter — return type cannot be determined", .{f.name});
+                    }
+                }
+
                 const prev_return = self.current_return_type;
                 // If function has type params, return type is generic — skip return type checking
                 if (has_type_param) {
@@ -289,6 +309,11 @@ pub const TypeResolver = struct {
             .field_decl => |f| {
                 // Validate field type annotation
                 try self.validateType(f.type_annotation, scope);
+                // 'any' is not valid as a struct field type
+                if (f.type_annotation.* == .type_named and std.mem.eql(u8, f.type_annotation.type_named, K.Type.ANY)) {
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                        "'any' is not valid as a struct field type — use a type parameter instead", .{});
+                }
                 // Type-check default value against declared type
                 if (f.default_value) |dv| {
                     const field_type = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), f.type_annotation);

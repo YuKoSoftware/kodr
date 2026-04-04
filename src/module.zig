@@ -17,7 +17,7 @@ pub const MODULE_KEYWORD = "module ";
 pub const BuildType = enum { none, exe, static, dynamic };
 
 /// Parse a build type string from metadata (e.g. "exe", "static", "dynamic").
-/// Returns `.exe` for unrecognized values.
+/// Returns `.exe` for unrecognized values (caller should validate and report errors).
 pub fn parseBuildType(raw: []const u8) BuildType {
     const map = std.StaticStringMap(BuildType).initComptime(.{
         .{ "exe", .exe },

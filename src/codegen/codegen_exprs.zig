@@ -42,7 +42,7 @@ pub fn matchesKind(n: []const u8, kind: TypeKind) bool {
             std.mem.eql(u8, n, "u32") or std.mem.eql(u8, n, "u64") or
             std.mem.eql(u8, n, "u128") or
             std.mem.eql(u8, n, "usize") or std.mem.eql(u8, n, "isize"),
-        .float => std.mem.eql(u8, n, "f16") or std.mem.eql(u8, n, "bf16") or
+        .float => std.mem.eql(u8, n, "f16") or
             std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or
             std.mem.eql(u8, n, "f128"),
         .string => std.mem.eql(u8, n, "str"),
@@ -306,21 +306,10 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             const obj_mir = m.children[0];
             const obj_tc = obj_mir.type_class;
             if (std.mem.eql(u8, field, K.Type.ERROR)) {
-                // result.Error → @errorName(captured_err) (native Zig error)
-                if (obj_mir.kind == .identifier) {
-                    const obj_name = obj_mir.name orelse "";
-                    if (cg.error_capture_var.get(obj_name)) |cap| {
-                        try cg.emitFmt("@errorName({s})", .{cap});
-                    } else {
-                        try cg.emit("(if (");
-                        try cg.generateExprMir(obj_mir);
-                        try cg.emit(") |_| unreachable else |_e| @errorName(_e))");
-                    }
-                } else {
-                    try cg.emit("(if (");
-                    try cg.generateExprMir(obj_mir);
-                    try cg.emit(") |_| unreachable else |_e| @errorName(_e))");
-                }
+                // result.Error → @errorName(err) (native Zig error)
+                try cg.emit("(if (");
+                try cg.generateExprMir(obj_mir);
+                try cg.emit(") |_| unreachable else |_e| @errorName(_e))");
             } else if (codegen.isResultValueField(field, cg.decls)) {
                 // Resolve effective type class — fall back to var_types, then
                 // narrowing maps when MIR node annotation is .plain
