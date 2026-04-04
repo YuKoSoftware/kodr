@@ -172,6 +172,7 @@ const rule_dispatch = std.StaticStringMap(BuilderFn).initComptime(.{
     .{ "string_literal", exprs_impl.buildStringLiteral },
     .{ "bool_literal", exprs_impl.buildBoolLiteral },
     .{ "null_literal", buildNullLiteral },
+    .{ "void_literal", buildVoidLiteral },
     .{ "identifier_expr", exprs_impl.buildIdentifier },
     .{ "compiler_func", exprs_impl.buildCompilerFunc },
     .{ "error_literal", exprs_impl.buildErrorLiteral },
@@ -218,6 +219,10 @@ fn buildContinueStmt(ctx: *BuildContext, _: *const CaptureNode) anyerror!*Node {
 
 fn buildNullLiteral(ctx: *BuildContext, _: *const CaptureNode) anyerror!*Node {
     return ctx.newNode(.{ .null_literal = {} });
+}
+
+fn buildVoidLiteral(ctx: *BuildContext, _: *const CaptureNode) anyerror!*Node {
+    return ctx.newNode(.{ .type_named = "void" });
 }
 
 /// Build an AST node from a capture node. Dispatches to rule-specific

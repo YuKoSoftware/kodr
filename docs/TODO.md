@@ -6,12 +6,6 @@ Items ordered by importance and how much they unblock future work.
 
 ## Bugs
 
-### `void` not valid as generic argument `medium`
-
-`Thread(void)`, `List(void)`, any `Type(void)` fails to parse. The PEG grammar
-doesn't treat `void` as an expression in argument position. Affects any generic
-type instantiated with `void`.
-
 ### var-not-reassigned false positive for method calls `medium`
 
 `var t = Thread.spawn(...)` triggers "use const" warning because the compiler sees
@@ -41,7 +35,7 @@ Known Zig comptime friction with Orhon codegen:
   Users must write `thread.Thread(i32).spawn(func, arg)` instead of `thread.spawn(func, arg)`.
 - **spawn/spawn2 arity split** — `spawn(func, arg)` for 1-arg, `spawn2(func, a, b)` for 2-arg.
   Zig's `@call` needs a tuple but Orhon passes individual values. Needs spawn3+ for more args.
-- Also affected by Bugs: `void` generic arg, var-not-reassigned false positive.
+- Also affected by Bugs: var-not-reassigned false positive.
 
 ### Bitfield as pure Orhon std module `hard` — DEFERRED
 

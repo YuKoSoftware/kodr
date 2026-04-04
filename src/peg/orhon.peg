@@ -373,6 +373,7 @@ primary_expr
      / string_literal
      / bool_literal
      / null_literal
+     / void_literal
      / array_literal
      / tuple_literal
      / anon_tuple_literal
@@ -398,6 +399,7 @@ int_literal     <- INT_LITERAL
 float_literal   <- FLOAT_LITERAL
 bool_literal    <- 'true' / 'false'
 null_literal    <- 'null'
+void_literal    <- 'void'
 
 string_literal
     <- STRING_LITERAL                           # may contain @{expr} interpolation
