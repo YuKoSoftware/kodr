@@ -2,8 +2,9 @@
 // Pure transforms on byte slices. No state, no allocation ownership.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Base64 Encode ──
 

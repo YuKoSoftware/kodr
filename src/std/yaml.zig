@@ -5,8 +5,9 @@
 //                   merge keys, complex keys, multiple documents.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Value Types ──
 

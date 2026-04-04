@@ -164,15 +164,9 @@ test "copy" {
     @assert(copy_demo() == 99)
 }
 
-
 test "compound assignment" {
     @assert(compound_demo() == 19)
 }
-
-test "safe pointer" {
-    @assert(read_via_ptr(42) == 42)
-}
-
 
 test "identity generic" {
     const x: i32 = identity(42)

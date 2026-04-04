@@ -607,3 +607,161 @@ test "builder - build pub struct" {
     try std.testing.expectEqualStrings("Point", s.struct_decl.name);
     try std.testing.expect(s.struct_decl.is_pub);
 }
+
+test "builder - string interpolation" {
+    const alloc = std.testing.allocator;
+    const peg = @import("../peg.zig");
+
+    var g = try peg.loadGrammar(alloc);
+    defer g.deinit();
+
+    const src = "module mymod\n\nfunc f() str {\n    const name: str = \"world\"\n    return \"hello @{name}!\"\n}\n";
+    var lex = lexer.Lexer.init(src);
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var engine = capture_mod.CaptureEngine.init(&g, tokens.items, std.heap.page_allocator);
+    defer engine.deinit();
+    const cap = engine.captureProgram() orelse return error.TestFailed;
+
+    var result = try buildAST(&cap, tokens.items, std.heap.page_allocator);
+    defer result.ctx.deinit();
+
+    try std.testing.expect(result.node.* == .program);
+}
+
+test "builder - postfix index" {
+    const alloc = std.testing.allocator;
+    const peg = @import("../peg.zig");
+
+    var g = try peg.loadGrammar(alloc);
+    defer g.deinit();
+
+    const src = "module mymod\n\nfunc f(items: []i32) i32 {\n    return items[0]\n}\n";
+    var lex = lexer.Lexer.init(src);
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var engine = capture_mod.CaptureEngine.init(&g, tokens.items, std.heap.page_allocator);
+    defer engine.deinit();
+    const cap = engine.captureProgram() orelse return error.TestFailed;
+
+    var result = try buildAST(&cap, tokens.items, std.heap.page_allocator);
+    defer result.ctx.deinit();
+
+    const func = result.node.program.top_level[0];
+    try std.testing.expect(func.* == .func_decl);
+    const body_node = func.func_decl.body;
+    try std.testing.expect(body_node.* == .block);
+    const stmts = body_node.block.statements;
+    try std.testing.expect(stmts.len > 0);
+    const ret = stmts[0];
+    try std.testing.expect(ret.* == .return_stmt);
+    try std.testing.expect(ret.return_stmt.value.?.* == .index_expr);
+}
+
+test "builder - is type check" {
+    const alloc = std.testing.allocator;
+    const peg = @import("../peg.zig");
+
+    var g = try peg.loadGrammar(alloc);
+    defer g.deinit();
+
+    const src = "module mymod\n\nfunc f(val: (null | i32)) bool {\n    if(val is null) {\n        return false\n    }\n    return true\n}\n";
+    var lex = lexer.Lexer.init(src);
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var engine = capture_mod.CaptureEngine.init(&g, tokens.items, std.heap.page_allocator);
+    defer engine.deinit();
+    const cap = engine.captureProgram() orelse return error.TestFailed;
+
+    var result = try buildAST(&cap, tokens.items, std.heap.page_allocator);
+    defer result.ctx.deinit();
+
+    const func = result.node.program.top_level[0];
+    try std.testing.expect(func.* == .func_decl);
+    const body_node = func.func_decl.body;
+    try std.testing.expect(body_node.* == .block);
+    try std.testing.expect(body_node.block.statements[0].* == .if_stmt);
+}
+
+test "builder - match with guard" {
+    const alloc = std.testing.allocator;
+    const peg = @import("../peg.zig");
+
+    var g = try peg.loadGrammar(alloc);
+    defer g.deinit();
+
+    const src = "module mymod\n\nfunc f(n: i32) i32 {\n    match(n) {\n        (x if x > 0) => { return x }\n        else => { return 0 }\n    }\n}\n";
+    var lex = lexer.Lexer.init(src);
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var engine = capture_mod.CaptureEngine.init(&g, tokens.items, std.heap.page_allocator);
+    defer engine.deinit();
+    const cap = engine.captureProgram() orelse return error.TestFailed;
+
+    var result = try buildAST(&cap, tokens.items, std.heap.page_allocator);
+    defer result.ctx.deinit();
+
+    const func = result.node.program.top_level[0];
+    const body_node = func.func_decl.body;
+    try std.testing.expect(body_node.* == .block);
+    const stmts = body_node.block.statements;
+    try std.testing.expect(stmts[0].* == .match_stmt);
+    const match_node = stmts[0].match_stmt;
+    try std.testing.expect(match_node.arms.len >= 2);
+    try std.testing.expect(match_node.arms[0].match_arm.guard != null);
+}
+
+test "builder - paren type as union" {
+    const alloc = std.testing.allocator;
+    const peg = @import("../peg.zig");
+
+    var g = try peg.loadGrammar(alloc);
+    defer g.deinit();
+
+    const src = "module mymod\n\nfunc f(x: i32) (Error | i32) {\n    return x\n}\n";
+    var lex = lexer.Lexer.init(src);
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var engine = capture_mod.CaptureEngine.init(&g, tokens.items, std.heap.page_allocator);
+    defer engine.deinit();
+    const cap = engine.captureProgram() orelse return error.TestFailed;
+
+    var result = try buildAST(&cap, tokens.items, std.heap.page_allocator);
+    defer result.ctx.deinit();
+
+    const func = result.node.program.top_level[0];
+    try std.testing.expect(func.* == .func_decl);
+    const ret_type = func.func_decl.return_type;
+    try std.testing.expect(ret_type.* == .type_union);
+}
+
+test "builder - enum declaration" {
+    const alloc = std.testing.allocator;
+    const peg = @import("../peg.zig");
+
+    var g = try peg.loadGrammar(alloc);
+    defer g.deinit();
+
+    const src = "module mymod\n\npub enum(u8) Direction {\n    North\n    South\n    East\n    West\n}\n";
+    var lex = lexer.Lexer.init(src);
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var engine = capture_mod.CaptureEngine.init(&g, tokens.items, std.heap.page_allocator);
+    defer engine.deinit();
+    const cap = engine.captureProgram() orelse return error.TestFailed;
+
+    var result = try buildAST(&cap, tokens.items, std.heap.page_allocator);
+    defer result.ctx.deinit();
+
+    const e = result.node.program.top_level[0];
+    try std.testing.expect(e.* == .enum_decl);
+    try std.testing.expectEqualStrings("Direction", e.enum_decl.name);
+    try std.testing.expect(e.enum_decl.is_pub);
+    try std.testing.expectEqual(@as(usize, 4), e.enum_decl.members.len);
+}

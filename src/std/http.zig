@@ -2,8 +2,9 @@
 // Wraps Zig's std.http.Client for simple GET/POST requests.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 const max_body = 10 * 1024 * 1024; // 10 MB
 

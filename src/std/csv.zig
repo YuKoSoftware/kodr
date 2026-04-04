@@ -2,8 +2,9 @@
 // RFC 4180 compatible: handles quoted fields, embedded commas, escaped quotes.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Internal: Parse CSV into rows of fields ──
 

@@ -2,8 +2,9 @@
 // Supports dot-path traversal for nested access.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Dot-Path Resolver ──
 // Walks a parsed JSON value by splitting path on '.'

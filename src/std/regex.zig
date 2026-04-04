@@ -2,8 +2,9 @@
 // Recursive backtracking regex engine with basic syntax support.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Pattern AST ──
 

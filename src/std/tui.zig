@@ -4,7 +4,8 @@
 const std = @import("std");
 
 const posix = std.posix;
-const alloc = std.heap.smp_allocator;
+const allocator = @import("allocator.zig");
+const alloc = allocator.default;
 
 const stdout = std.fs.File{ .handle = posix.STDOUT_FILENO };
 const stdin = std.fs.File{ .handle = posix.STDIN_FILENO };
@@ -80,7 +81,7 @@ pub fn terminalSize() Size {
     var ws: posix.winsize = undefined;
     const rc = posix.system.ioctl(posix.STDOUT_FILENO, posix.system.T.IOCGWINSZ, @intFromPtr(&ws));
     if (rc == 0) {
-        return .{ .row_count = @intCast(ws.col), .col_count = @intCast(ws.row) };
+        return .{ .row_count = @intCast(ws.row), .col_count = @intCast(ws.col) };
     }
     return .{ .row_count = 24, .col_count = 80 };
 }

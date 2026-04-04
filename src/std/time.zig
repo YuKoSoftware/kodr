@@ -1,14 +1,15 @@
 // time.zig — time and duration sidecar for std::time
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Now ──
 
 /// Returns the current time in milliseconds since the Unix epoch.
 pub fn now() i64 {
-    return @divTrunc(std.time.milliTimestamp(), 1);
+    return std.time.milliTimestamp();
 }
 
 /// Returns the current time in nanoseconds since the Unix epoch.

@@ -3,8 +3,9 @@
 // self-closing tags. No namespaces, DTD, CDATA, or processing instructions.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Internal: Lightweight XML Node ──
 
@@ -201,16 +202,9 @@ fn resolveNode(root: XmlNode, path: []const u8) ?XmlNode {
 
 fn resolveAll(root: XmlNode, path: []const u8) []const XmlNode {
     // Find parent path and target tag
-    var last_dot: usize = 0;
-    var found_dot = false;
-    for (path, 0..) |c, idx| {
-        if (c == '.') {
-            last_dot = idx;
-            found_dot = true;
-        }
-    }
+    const last_dot_pos = std.mem.lastIndexOfScalar(u8, path, '.');
 
-    if (!found_dot) {
+    if (last_dot_pos == null) {
         // Path is just the root tag
         if (std.mem.eql(u8, root.tag, path)) {
             const result = alloc.alloc(XmlNode, 1) catch return &.{};
@@ -220,6 +214,7 @@ fn resolveAll(root: XmlNode, path: []const u8) []const XmlNode {
         return &.{};
     }
 
+    const last_dot = last_dot_pos.?;
     const parent_path = path[0..last_dot];
     const target_tag = path[last_dot + 1 ..];
 

@@ -526,3 +526,74 @@ pub const TypeGeneric = struct {
 
 /// Map from AST node pointers to their source locations
 pub const LocMap = std.AutoHashMap(*Node, errors.SourceLoc);
+
+// ── Tests ──
+
+test "Operator.parse - all operators" {
+    try std.testing.expectEqual(Operator.add, Operator.parse("+"));
+    try std.testing.expectEqual(Operator.sub, Operator.parse("-"));
+    try std.testing.expectEqual(Operator.mul, Operator.parse("*"));
+    try std.testing.expectEqual(Operator.div, Operator.parse("/"));
+    try std.testing.expectEqual(Operator.mod, Operator.parse("%"));
+    try std.testing.expectEqual(Operator.concat, Operator.parse("++"));
+    try std.testing.expectEqual(Operator.range, Operator.parse(".."));
+    try std.testing.expectEqual(Operator.@"and", Operator.parse("and"));
+    try std.testing.expectEqual(Operator.@"or", Operator.parse("or"));
+    try std.testing.expectEqual(Operator.not, Operator.parse("not"));
+    try std.testing.expectEqual(Operator.eq, Operator.parse("=="));
+    try std.testing.expectEqual(Operator.ne, Operator.parse("!="));
+    try std.testing.expectEqual(Operator.lt, Operator.parse("<"));
+    try std.testing.expectEqual(Operator.gt, Operator.parse(">"));
+    try std.testing.expectEqual(Operator.le, Operator.parse("<="));
+    try std.testing.expectEqual(Operator.ge, Operator.parse(">="));
+    try std.testing.expectEqual(Operator.bit_or, Operator.parse("|"));
+    try std.testing.expectEqual(Operator.bit_xor, Operator.parse("^"));
+    try std.testing.expectEqual(Operator.bit_and, Operator.parse("&"));
+    try std.testing.expectEqual(Operator.shl, Operator.parse("<<"));
+    try std.testing.expectEqual(Operator.shr, Operator.parse(">>"));
+    try std.testing.expectEqual(Operator.bang, Operator.parse("!"));
+    try std.testing.expectEqual(Operator.assign, Operator.parse("="));
+    try std.testing.expectEqual(Operator.add_assign, Operator.parse("+="));
+    try std.testing.expectEqual(Operator.sub_assign, Operator.parse("-="));
+    try std.testing.expectEqual(Operator.mul_assign, Operator.parse("*="));
+    try std.testing.expectEqual(Operator.div_assign, Operator.parse("/="));
+}
+
+test "Operator.parse - unknown falls back to assign" {
+    try std.testing.expectEqual(Operator.assign, Operator.parse("???"));
+    try std.testing.expectEqual(Operator.assign, Operator.parse(""));
+}
+
+test "Operator.toZig - round trip" {
+    const ops = [_]Operator{
+        .add, .sub, .mul, .div, .mod, .eq, .ne,
+        .lt,  .gt,  .le,  .ge,  .bit_or, .bit_xor, .bit_and,
+        .shl, .shr, .assign, .add_assign, .sub_assign,
+        .mul_assign, .div_assign, .concat, .range,
+    };
+    for (ops) |op| {
+        const zig_str = op.toZig();
+        try std.testing.expect(zig_str.len > 0);
+    }
+}
+
+test "Operator.isComparison" {
+    try std.testing.expect(Operator.eq.isComparison());
+    try std.testing.expect(Operator.ne.isComparison());
+    try std.testing.expect(Operator.lt.isComparison());
+    try std.testing.expect(!Operator.add.isComparison());
+    try std.testing.expect(!Operator.assign.isComparison());
+}
+
+test "MetadataField.parse - known fields" {
+    try std.testing.expectEqual(MetadataField.build, MetadataField.parse("build"));
+    try std.testing.expectEqual(MetadataField.name, MetadataField.parse("name"));
+    try std.testing.expectEqual(MetadataField.version, MetadataField.parse("version"));
+    try std.testing.expectEqual(MetadataField.dep, MetadataField.parse("dep"));
+    try std.testing.expectEqual(MetadataField.description, MetadataField.parse("description"));
+}
+
+test "MetadataField.parse - unknown" {
+    try std.testing.expectEqual(MetadataField.unknown, MetadataField.parse("foo"));
+    try std.testing.expectEqual(MetadataField.unknown, MetadataField.parse(""));
+}

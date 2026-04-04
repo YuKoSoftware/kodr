@@ -2,8 +2,9 @@
 // All functions operate on paths as []const u8 (Orhon str).
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Read ──
 
@@ -41,8 +42,7 @@ pub fn appendFile(path: []const u8, content: []const u8) anyerror!void {
         return writeFile(path, content);
     };
     defer file.close();
-    file.seekTo(std.math.maxInt(u64)) catch {}; // best-effort: seek/cleanup failure is non-fatal
-    file.seekFromEnd(0) catch {};
+    file.seekFromEnd(0) catch {}; // best-effort: seek failure is non-fatal
     file.writeAll(content) catch {
         return error.could_not_append_to_file;
     };
@@ -166,7 +166,7 @@ test "mkdir" {
     const tmp = "/tmp/_orhon_fs_testdir";
     try mkdir(tmp);
     try std.testing.expect(exists(tmp));
-    std.fs.cwd().deleteDir(tmp) catch {}; // best-effort: seek/cleanup failure is non-fatal
+    std.fs.cwd().deleteDir(tmp) catch {}; // best-effort: test cleanup
 }
 
 test "joinPath" {

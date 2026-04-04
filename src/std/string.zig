@@ -2,8 +2,9 @@
 // Operates on []const u8 (Orhon str type). All functions are pure — no side effects.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Comparison ──
 

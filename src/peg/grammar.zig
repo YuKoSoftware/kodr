@@ -583,3 +583,49 @@ test "grammar - token resolution in parsed rules" {
     try std.testing.expect(seq[2] == .token);
     try std.testing.expectEqual(TokenKind.newline, seq[2].token);
 }
+
+test "grammar - positive lookahead produces ahead node" {
+    const alloc = std.testing.allocator;
+    const src = "peek\n    <- &'func' 'func'\n";
+    var grammar = try parseGrammar(src, alloc);
+    defer grammar.deinit();
+
+    const rule = grammar.getRule("peek") orelse return error.TestFailed;
+    try std.testing.expect(rule == .sequence);
+    const seq = rule.sequence;
+    try std.testing.expect(seq[0] == .ahead);
+}
+
+test "grammar - empty input produces grammar with builtins only" {
+    const alloc = std.testing.allocator;
+    var grammar = try parseGrammar("", alloc);
+    defer grammar.deinit();
+
+    // Built-in overrides (_/TERM/EOF) should exist
+    try std.testing.expect(grammar.getRule("_") != null);
+    // No user-defined rules
+    try std.testing.expect(grammar.getRule("program") == null);
+}
+
+test "grammar - negation prefix produces not node" {
+    const alloc = std.testing.allocator;
+    const src = "rule\n    <- !'func' IDENTIFIER\n";
+    var grammar = try parseGrammar(src, alloc);
+    defer grammar.deinit();
+
+    const rule = grammar.getRule("rule") orelse return error.TestFailed;
+    try std.testing.expect(rule == .sequence);
+    const seq = rule.sequence;
+    try std.testing.expect(seq[0] == .not);
+}
+
+test "grammar - token_text for contextual identifier" {
+    const alloc = std.testing.allocator;
+    const src = "err\n    <- 'Error'\n";
+    var grammar = try parseGrammar(src, alloc);
+    defer grammar.deinit();
+
+    const rule = grammar.getRule("err") orelse return error.TestFailed;
+    try std.testing.expect(rule == .token_text);
+    try std.testing.expectEqualStrings("Error", rule.token_text.text);
+}

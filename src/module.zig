@@ -620,3 +620,104 @@ test "read module name" {
     try std.testing.expect(name != null);
     try std.testing.expectEqualStrings("testmod", name.?);
 }
+
+test "parseBuildType" {
+    try std.testing.expectEqual(BuildType.exe, parseBuildType("exe"));
+    try std.testing.expectEqual(BuildType.static, parseBuildType("static"));
+    try std.testing.expectEqual(BuildType.dynamic, parseBuildType("dynamic"));
+    try std.testing.expectEqual(BuildType.exe, parseBuildType("unknown"));
+    try std.testing.expectEqual(BuildType.exe, parseBuildType(""));
+}
+
+test "formatExpectedSet - single item" {
+    const alloc = std.testing.allocator;
+    var set = std.EnumSet(lexer.TokenKind).initEmpty();
+    set.insert(.kw_func);
+    const result = try formatExpectedSet(alloc, set);
+    defer alloc.free(result);
+    try std.testing.expect(std.mem.eql(u8, result, "expected 'func'"));
+}
+
+test "formatExpectedSet - two items" {
+    const alloc = std.testing.allocator;
+    var set = std.EnumSet(lexer.TokenKind).initEmpty();
+    set.insert(.kw_func);
+    set.insert(.kw_struct);
+    const result = try formatExpectedSet(alloc, set);
+    defer alloc.free(result);
+    // Two items use " or " (no comma)
+    try std.testing.expect(std.mem.indexOf(u8, result, " or ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, ", or ") == null);
+}
+
+test "read module name - with leading comment" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const f = try tmp.dir.createFile("commented.orh", .{});
+        defer f.close();
+        try f.writeAll("// header comment\nmodule mymod\n");
+    }
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, "commented.orh");
+    defer std.testing.allocator.free(tmp_path);
+
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    var resolver = Resolver.init(std.testing.allocator, &reporter);
+    defer resolver.deinit();
+
+    const name = try resolver.readModuleName(tmp_path);
+    defer if (name) |n| std.testing.allocator.free(n);
+    try std.testing.expect(name != null);
+    try std.testing.expectEqualStrings("mymod", name.?);
+}
+
+test "read module name - no module keyword" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const f = try tmp.dir.createFile("nomod.orh", .{});
+        defer f.close();
+        try f.writeAll("func main() void {}\n");
+    }
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, "nomod.orh");
+    defer std.testing.allocator.free(tmp_path);
+
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    var resolver = Resolver.init(std.testing.allocator, &reporter);
+    defer resolver.deinit();
+
+    const name = try resolver.readModuleName(tmp_path);
+    try std.testing.expect(name == null);
+}
+
+test "extractVersion - wrong field count" {
+    const alloc = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const v1 = try a.create(parser.Node);
+    v1.* = .{ .int_literal = "1" };
+    const v2 = try a.create(parser.Node);
+    v2.* = .{ .int_literal = "2" };
+
+    const fields = try a.alloc(*parser.Node, 2);
+    fields[0] = v1;
+    fields[1] = v2;
+
+    var tuple_node = parser.Node{ .tuple_literal = .{
+        .is_named = false,
+        .fields = fields,
+        .field_names = &.{},
+    } };
+
+    try std.testing.expect(extractVersion(&tuple_node) == null);
+}

@@ -2,8 +2,9 @@
 // Supports [section] headers, key=value pairs, and # ; comments.
 
 const std = @import("std");
+const allocator = @import("allocator.zig");
 
-const alloc = std.heap.smp_allocator;
+const alloc = allocator.default;
 
 // ── Internal: Parse into section→key→value map ──
 

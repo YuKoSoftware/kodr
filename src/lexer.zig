@@ -929,3 +929,111 @@ test "lexer - bare & is bitwise AND" {
     try std.testing.expectEqual(TokenKind.ampersand, kinds.items[1]);
     try std.testing.expectEqual(TokenKind.identifier, kinds.items[2]);
 }
+
+test "lexer - invalid prefix literals produce .invalid" {
+    const cases = [_][]const u8{ "0x", "0b", "0o", "0xZZ", "0b22", "0o99" };
+    for (cases) |input| {
+        var lex = Lexer.init(input);
+        const tok = lex.next();
+        try std.testing.expectEqual(TokenKind.invalid, tok.kind);
+    }
+}
+
+test "lexer - unterminated string at newline" {
+    var lex = Lexer.init("\"hello\nworld");
+    const tok = lex.next();
+    try std.testing.expectEqual(TokenKind.string_literal, tok.kind);
+    try std.testing.expectEqualStrings("\"hello", tok.text);
+}
+
+test "lexer - unterminated string at EOF" {
+    var lex = Lexer.init("\"hello");
+    const tok = lex.next();
+    try std.testing.expectEqual(TokenKind.string_literal, tok.kind);
+    try std.testing.expectEqualStrings("\"hello", tok.text);
+}
+
+test "lexer - EOF inside escape sequence" {
+    var lex = Lexer.init("\"\\");
+    const tok = lex.next();
+    try std.testing.expectEqual(TokenKind.string_literal, tok.kind);
+    const tok2 = lex.next();
+    try std.testing.expectEqual(TokenKind.eof, tok2.kind);
+}
+
+test "lexer - mut alone is identifier not keyword" {
+    var lex = Lexer.init("mut x");
+    const tok = lex.next();
+    try std.testing.expectEqual(TokenKind.identifier, tok.kind);
+    try std.testing.expectEqualStrings("mut", tok.text);
+}
+
+test "lexer - column tracking" {
+    var lex = Lexer.init("  func var");
+    const tok1 = lex.next(); // func at col 3
+    const tok2 = lex.next(); // var at col 8
+    try std.testing.expectEqual(@as(usize, 3), tok1.col);
+    try std.testing.expectEqual(@as(usize, 8), tok2.col);
+}
+
+test "lexer - number before dotdot stays int" {
+    const alloc = std.testing.allocator;
+    var lex = Lexer.init("1..5");
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var kinds = std.ArrayListUnmanaged(TokenKind){};
+    defer kinds.deinit(alloc);
+    for (tokens.items) |t| {
+        if (t.kind != .newline and t.kind != .eof) {
+            try kinds.append(alloc, t.kind);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), kinds.items.len);
+    try std.testing.expectEqual(TokenKind.int_literal, kinds.items[0]);
+    try std.testing.expectEqual(TokenKind.dotdot, kinds.items[1]);
+    try std.testing.expectEqual(TokenKind.int_literal, kinds.items[2]);
+}
+
+test "lexer - number before dot non-digit stays int" {
+    const alloc = std.testing.allocator;
+    var lex = Lexer.init("42.x");
+    var tokens = try lex.tokenize(alloc);
+    defer tokens.deinit(alloc);
+
+    var kinds = std.ArrayListUnmanaged(TokenKind){};
+    defer kinds.deinit(alloc);
+    for (tokens.items) |t| {
+        if (t.kind != .newline and t.kind != .eof) {
+            try kinds.append(alloc, t.kind);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), kinds.items.len);
+    try std.testing.expectEqual(TokenKind.int_literal, kinds.items[0]);
+    try std.testing.expectEqual(TokenKind.dot, kinds.items[1]);
+    try std.testing.expectEqual(TokenKind.identifier, kinds.items[2]);
+}
+
+test "lexer - @ produces at_sign" {
+    var lex = Lexer.init("@cast");
+    const tok1 = lex.next();
+    const tok2 = lex.next();
+    try std.testing.expectEqual(TokenKind.at_sign, tok1.kind);
+    try std.testing.expectEqual(TokenKind.identifier, tok2.kind);
+}
+
+test "lexer - # produces hash" {
+    var lex = Lexer.init("#build");
+    const tok1 = lex.next();
+    const tok2 = lex.next();
+    try std.testing.expectEqual(TokenKind.hash, tok1.kind);
+    try std.testing.expectEqual(TokenKind.identifier, tok2.kind);
+}
+
+test "lexer - %= is two tokens" {
+    var lex = Lexer.init("%=");
+    const tok1 = lex.next();
+    const tok2 = lex.next();
+    try std.testing.expectEqual(TokenKind.percent, tok1.kind);
+    try std.testing.expectEqual(TokenKind.assign, tok2.kind);
+}

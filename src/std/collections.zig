@@ -80,8 +80,6 @@ pub fn List(comptime T: type) type {
 /// Returns a hash map type parameterized over key type K and value type V.
 pub fn Map(comptime K: type, comptime V: type) type {
     const Context = if (K == []const u8) std.hash_map.StringContext else std.hash_map.AutoContext(K);
-    const Eql = if (K == []const u8) std.hash_map.StringContext else std.hash_map.AutoContext(K);
-    _ = Eql;
 
     return struct {
         inner: std.HashMapUnmanaged(K, V, Context, 80) = .{},
@@ -124,24 +122,32 @@ pub fn Map(comptime K: type, comptime V: type) type {
             return @intCast(self.inner.count());
         }
 
-        /// Returns a slice of all keys in the map.
+        /// Returns a caller-owned slice of all keys in the map. Free with `alloc.free()`.
         pub fn keys(self: *const Self) []const K {
-            var result = std.ArrayListUnmanaged(K){};
+            const count = self.inner.count();
+            if (count == 0) return &.{};
+            const buf = self.alloc.alloc(K, count) catch return &.{};
+            var i: usize = 0;
             var iter = self.inner.iterator();
             while (iter.next()) |entry| {
-                result.append(self.alloc, entry.key_ptr.*) catch break; // OOM: return partial keys
+                buf[i] = entry.key_ptr.*;
+                i += 1;
             }
-            return result.items;
+            return buf;
         }
 
-        /// Returns a slice of all values in the map.
+        /// Returns a caller-owned slice of all values in the map. Free with `alloc.free()`.
         pub fn values(self: *const Self) []const V {
-            var result = std.ArrayListUnmanaged(V){};
+            const count = self.inner.count();
+            if (count == 0) return &.{};
+            const buf = self.alloc.alloc(V, count) catch return &.{};
+            var i: usize = 0;
             var iter = self.inner.iterator();
             while (iter.next()) |entry| {
-                result.append(self.alloc, entry.value_ptr.*) catch break; // OOM: return partial values
+                buf[i] = entry.value_ptr.*;
+                i += 1;
             }
-            return result.items;
+            return buf;
         }
 
         /// Releases all memory owned by the map.
@@ -193,14 +199,18 @@ pub fn Set(comptime T: type) type {
             return @intCast(self.inner.count());
         }
 
-        /// Returns a slice of all items in the set for iteration.
+        /// Returns a caller-owned slice of all items in the set. Free with `alloc.free()`.
         pub fn items(self: *const Self) []const T {
-            var result = std.ArrayListUnmanaged(T){};
+            const count = self.inner.count();
+            if (count == 0) return &.{};
+            const buf = self.alloc.alloc(T, count) catch return &.{};
+            var i: usize = 0;
             var iter = self.inner.iterator();
             while (iter.next()) |entry| {
-                result.append(self.alloc, entry.key_ptr.*) catch break; // OOM: return partial items
+                buf[i] = entry.key_ptr.*;
+                i += 1;
             }
-            return result.items;
+            return buf;
         }
 
         /// Releases all memory owned by the set.
