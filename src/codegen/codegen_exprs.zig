@@ -467,10 +467,13 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 // Anonymous struct — emit full body (fields, methods, constants) via MIR children
                 try cg.emit("struct {\n");
                 cg.indent += 1;
-                // Set generic_struct_name so Self → @This() inside methods
+                // Set struct context so Self → @This() inside methods
                 const prev_gsn = cg.generic_struct_name;
+                const prev_in_struct = cg.in_struct;
                 cg.generic_struct_name = "_anon";
+                cg.in_struct = true;
                 defer cg.generic_struct_name = prev_gsn;
+                defer cg.in_struct = prev_in_struct;
                 try cg.emitStructBody(m.children);
                 cg.indent -= 1;
                 try cg.emitIndent();

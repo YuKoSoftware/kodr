@@ -6,6 +6,23 @@ Items ordered by importance and how much they unblock future work.
 
 ## Core — Language Ergonomics
 
+### Data-carrying enums (tagged unions) `hard`
+
+Specced in `docs/10-structs-enums.md` (lines 145-150) but broken across the pipeline.
+Variant field information is dropped at every stage:
+
+1. **EnumSig** (`declarations.zig`) — only stores variant names, no field info
+2. **MIR lowerer** (`mir_lowerer.zig:570-577`) — copies only name/value, drops fields
+3. **Codegen** (`codegen_decls.zig:286-318`) — always emits `enum(backing)`, never `union(enum(backing))`
+4. **Resolver** — no validation of variant field types
+
+Needs a vertical slice: extend EnumSig with VariantSig (fields list), carry fields
+through MIR, emit `union(enum(backing))` in codegen for data-carrying variants,
+validate field types in resolver. Also: reject variants that have both data fields
+AND explicit integer discriminants (currently produces confusing Zig error).
+
+Simple value enums work correctly — this only affects data-carrying variants.
+
 ### Review metadata directives (`#name`, `#version`, `#build`, `#dep`) `medium`
 
 All metadata directives need to be looked at together. Questions:
@@ -15,6 +32,17 @@ All metadata directives need to be looked at together. Questions:
 - Should metadata be unified into one system instead of split between `#` directives and `.zon`?
 
 Not blocking zero-magic work — metadata doesn't touch codegen. But needs a design pass.
+
+### For-loop tuple captures `medium`
+
+Specced in `docs/07-control-flow.md` (line 29+): `for(my_map) |(key, value)| {}`.
+AST has `is_tuple_capture` field in `ForStmt` but it's never set by the PEG builder.
+The builder conflates tuple elements with index variables. Codegen only uses the first
+capture element. Needs:
+- Builder: detect parenthesized capture form, set `is_tuple_capture = true`
+- Resolver: type-check both capture variables from map/set element types
+- Codegen: emit Zig destructure pattern for tuple captures
+- Blocked on std::collections having iterable map/set types
 
 ### Mixed numeric type checking and for-loop index type `medium`
 
@@ -48,6 +76,32 @@ Known Zig comptime friction with Orhon codegen:
 
 Specced in `docs/04-operators.md` but not implemented. Needs codegen expansion to
 per-field operations and scalar broadcast wrapping. No current use cases in Tamga.
+
+### Reject positional struct constructors `easy`
+
+The spec says "Named instantiation always" for structs, but the resolver doesn't
+reject `Player(42, "hero")` — it passes through and fails at Zig compilation with
+a confusing error. Add a check: when a call targets a known struct name and args
+have no names, report "struct constructors require named arguments."
+
+### Spec: clarify `var` inside structs `easy`
+
+`docs/10-structs-enums.md` line 11 shows `var defaultHealth: f32 = 100.0` (mutable static),
+but lines 103-108 say "Only `const` is supported." The compiler accepts both.
+Decide which is correct and update the spec + add validation if needed.
+
+### Partial field move detection `medium`
+
+Ownership pass claims to enforce struct atomicity (no partial field moves) but has no
+field-access tracking. `let b = player.name` moves a single field without error.
+Either implement field-level ownership states or document the limitation.
+
+### Self outside struct scope `easy`
+
+`Self` is accepted as a valid type everywhere (even outside structs) because the resolver
+can't distinguish struct-method context from top-level. Would need `struct_depth` tracking
+for anonymous structs in compt functions too. Currently codegen handles this correctly
+(only maps Self → @This() inside structs), so invalid usage produces a Zig error.
 
 ### Bitfield as pure Orhon std module `hard` — DEFERRED
 
@@ -107,6 +161,7 @@ be processed in parallel via a thread pool.
 - Cross-module errors should show module context
 - Generic instantiation failures should show the constraint that failed
 - Common mistake detection — token insertions/deletions at failure point
+- `else if` → suggest `elif` (currently produces generic parse error expecting `{`)
 
 ### Formatter — line-length awareness `medium`
 

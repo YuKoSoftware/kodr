@@ -126,6 +126,7 @@ pub fn checkStatement(self: *OwnershipChecker, node: *parser.Node, scope: *Owner
                 if (arm.* == .match_arm) {
                     self.restoreScope(scope, snapshot);
                     try checkExpr(self, arm.match_arm.pattern, scope, true);
+                    if (arm.match_arm.guard) |g| try checkExpr(self, g, scope, true);
                     try self.checkNode(arm.match_arm.body, scope);
                     try arm_snapshots.append(self.allocator, try self.snapshotScope(scope));
                 }

@@ -35,6 +35,8 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*pa
 
     switch (match_type) {
         .union_type => |members| {
+            var missing: std.ArrayListUnmanaged([]const u8) = .{};
+            defer missing.deinit(self.ctx.allocator);
             for (members) |member| {
                 var found = false;
                 for (covered_slice) |c| {
@@ -43,11 +45,62 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*pa
                         break;
                     }
                 }
-                if (!found) {
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node), "non-exhaustive match — missing arm for '{s}', add it or use 'else'", .{member.name()});
-                    return;
+                if (!found) try missing.append(self.ctx.allocator, member.name());
+            }
+            if (missing.items.len > 0) {
+                // Report all missing arms in one message
+                var buf: std.ArrayListUnmanaged(u8) = .{};
+                defer buf.deinit(self.ctx.allocator);
+                const w = buf.writer(self.ctx.allocator);
+                try w.writeAll("non-exhaustive match — missing arm for ");
+                for (missing.items, 0..) |name, idx| {
+                    if (idx > 0) try w.writeAll(", ");
+                    try w.print("'{s}'", .{name});
+                }
+                try w.writeAll(", add missing arms or use 'else'");
+                try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node), "{s}", .{buf.items});
+            }
+        },
+        .named => |name| {
+            // Check enum exhaustiveness — look up variants in local or included DeclTables
+            const enum_sig = self.ctx.decls.enums.get(name) orelse blk: {
+                // Search included modules
+                if (self.ctx.all_decls) |ad| {
+                    for (self.included_modules.items) |mod_name| {
+                        if (ad.get(mod_name)) |mod_decls| {
+                            if (mod_decls.enums.get(name)) |sig| break :blk sig;
+                        }
+                    }
+                }
+                break :blk null;
+            };
+            if (enum_sig) |esig| {
+                var missing: std.ArrayListUnmanaged([]const u8) = .{};
+                defer missing.deinit(self.ctx.allocator);
+                for (esig.variants) |variant| {
+                    var found = false;
+                    for (covered_slice) |c| {
+                        if (std.mem.eql(u8, c, variant)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) try missing.append(self.ctx.allocator, variant);
+                }
+                if (missing.items.len > 0) {
+                    var buf: std.ArrayListUnmanaged(u8) = .{};
+                    defer buf.deinit(self.ctx.allocator);
+                    const w = buf.writer(self.ctx.allocator);
+                    try w.writeAll("non-exhaustive match — missing arm for ");
+                    for (missing.items, 0..) |name_m, idx| {
+                        if (idx > 0) try w.writeAll(", ");
+                        try w.print("'{s}'", .{name_m});
+                    }
+                    try w.writeAll(", add missing arms or use 'else'");
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node), "{s}", .{buf.items});
                 }
             }
+            // else: named type is a struct or unknown — no exhaustiveness required
         },
         else => {}, // integer/string matches — no exhaustiveness required
     }
@@ -88,7 +141,7 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 std.mem.eql(u8, type_name, K.Type.VOID) or
                 std.mem.eql(u8, type_name, K.Type.NULL) or
                 std.mem.eql(u8, type_name, "type") or
-                // Self is valid inside any struct method — maps to @This() in codegen
+                // Self is valid inside struct methods — maps to @This() in codegen
                 std.mem.eql(u8, type_name, "Self") or
                 scope.lookup(type_name) != null;
 
@@ -246,8 +299,15 @@ pub fn checkBlueprintConformance(self: *TypeResolver, s: parser.StructDecl, loc:
     }
 
     for (s.blueprints) |bp_name| {
-        // Look up blueprint in declarations
-        const bp_sig = self.ctx.decls.blueprints.get(bp_name) orelse {
+        // Look up blueprint in local or included module declarations
+        const bp_sig = self.ctx.decls.blueprints.get(bp_name) orelse blk: {
+            if (self.ctx.all_decls) |ad| {
+                for (self.included_modules.items) |mod_name| {
+                    if (ad.get(mod_name)) |mod_decls| {
+                        if (mod_decls.blueprints.get(bp_name)) |sig| break :blk sig;
+                    }
+                }
+            }
             try self.ctx.reporter.reportFmt(loc, "unknown blueprint '{s}'", .{bp_name});
             continue;
         };

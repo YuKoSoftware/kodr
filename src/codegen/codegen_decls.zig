@@ -202,6 +202,10 @@ pub fn generateStructMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const tp = m.type_params;
     const is_generic = tp != null and tp.?.len > 0;
 
+    const prev_in_struct = cg.in_struct;
+    cg.in_struct = true;
+    defer cg.in_struct = prev_in_struct;
+
     if (is_generic) {
         if (m.is_pub) try cg.emit("pub ");
         try cg.emitFmt("fn {s}(", .{struct_name});

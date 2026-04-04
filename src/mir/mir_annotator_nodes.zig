@@ -58,6 +58,9 @@ pub fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
 
         .enum_decl => |e| {
             try self.recordNode(node, RT{ .named = e.name });
+            for (e.members) |member| {
+                try annotateNode(self, member);
+            }
         },
 
         .block => |b| {
@@ -245,6 +248,10 @@ pub fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
         .error_literal,
         .identifier,
         => try annotateExpr(self, node),
+
+        .field_decl => |f| {
+            if (f.default_value) |dv| try annotateNode(self, dv);
+        },
 
         else => {},
     }

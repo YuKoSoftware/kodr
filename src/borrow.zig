@@ -290,6 +290,7 @@ fn collectIdentifiers(node: *parser.Node, map: *std.StringHashMapUnmanaged(usize
             collectIdentifiers(m.value, map, allocator, stmt_idx);
             for (m.arms) |arm| {
                 if (arm.* == .match_arm) {
+                    if (arm.match_arm.guard) |g| collectIdentifiers(g, map, allocator, stmt_idx);
                     collectIdentifiers(arm.match_arm.body, map, allocator, stmt_idx);
                 }
             }

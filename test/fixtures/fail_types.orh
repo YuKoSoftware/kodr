@@ -77,6 +77,18 @@ func index_bool() void {
     const y: bool = x[0]
 }
 
+// struct as condition (non-primitive non-bool)
+
+struct Point {
+    x: i32
+    y: i32
+}
+
+func struct_as_cond() void {
+    const p = Point.new(1, 2)
+    if(p) { }
+}
+
 // match arm with wrong type name
 
 func get_val(flag: bool) (i32 | str) {

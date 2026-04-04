@@ -40,6 +40,7 @@ pub const TypeResolver = struct {
     bindings: std.ArrayListUnmanaged(TypeBinding),
     type_map: std.AutoHashMapUnmanaged(*parser.Node, RT),
     loop_depth: u32 = 0, // track nesting depth for break/continue validation
+    struct_depth: u32 = 0, // track nesting depth for Self type validation
     current_return_type: ?RT = null, // expected return type of current function
     /// Module names imported with `use` — their types are available unqualified.
     included_modules: std.ArrayListUnmanaged([]const u8) = .{},
@@ -202,6 +203,8 @@ pub const TypeResolver = struct {
                 try self.resolveNode(f.body, &func_scope);
             },
             .struct_decl => |s| {
+                self.struct_depth += 1;
+                defer self.struct_depth -= 1;
                 var struct_scope = Scope.init(self.ctx.allocator, scope);
                 defer struct_scope.deinit();
                 // Add type params to scope (T: type → T is a known type)
@@ -283,6 +286,16 @@ pub const TypeResolver = struct {
                     try scope.define(v.name, resolved);
                 }
             },
+            .field_decl => |f| {
+                // Validate field type annotation
+                try self.validateType(f.type_annotation, scope);
+                // Type-check default value against declared type
+                if (f.default_value) |dv| {
+                    const field_type = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), f.type_annotation);
+                    const val_type = try self.resolveExpr(dv, scope);
+                    try self.checkAssignCompat(field_type, val_type, node);
+                }
+            },
             else => {},
         }
     }
@@ -307,8 +320,8 @@ pub const TypeResolver = struct {
             },
             .if_stmt => |i| {
                 const cond_type = try self.resolveExpr(i.condition, scope);
-                if (cond_type == .primitive and cond_type.primitive != .bool and
-                    cond_type != .unknown and cond_type != .inferred)
+                if (cond_type != .unknown and cond_type != .inferred and
+                    !(cond_type == .primitive and cond_type.primitive == .bool))
                 {
                     try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "type mismatch in if condition: expected bool, got '{s}'", .{cond_type.name()});
                 }
@@ -317,8 +330,8 @@ pub const TypeResolver = struct {
             },
             .while_stmt => |w| {
                 const cond_type = try self.resolveExpr(w.condition, scope);
-                if (cond_type == .primitive and cond_type.primitive != .bool and
-                    cond_type != .unknown and cond_type != .inferred)
+                if (cond_type != .unknown and cond_type != .inferred and
+                    !(cond_type == .primitive and cond_type.primitive == .bool))
                 {
                     try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "type mismatch in while condition: expected bool, got '{s}'", .{cond_type.name()});
                 }
@@ -347,9 +360,14 @@ pub const TypeResolver = struct {
                     if (arm.* == .match_arm) {
                         const ma = arm.match_arm;
                         const pat = ma.pattern;
-                        // Check for else arm
+                        // Check for else arm — must be last
                         if (pat.* == .identifier and std.mem.eql(u8, pat.identifier, "else")) {
+                            if (has_else) {
+                                try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(arm), "duplicate 'else' arm in match statement", .{});
+                            }
                             has_else = true;
+                        } else if (has_else) {
+                            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(arm), "'else' arm must be the last arm in a match statement", .{});
                         }
                         // Validate union match arm patterns
                         if (pat.* == .identifier and !std.mem.eql(u8, pat.identifier, "else")) {
@@ -501,10 +519,36 @@ pub fn typesMatchWithSubstitution(struct_type: RT, bp_type: RT, bp_name: []const
                 else => false,
             };
         },
+        .slice => |bp_elem| {
+            return switch (struct_type) {
+                .slice => |se| typesMatchWithSubstitution(se.*, bp_elem.*, bp_name, struct_name),
+                else => false,
+            };
+        },
+        .array => |bp_arr| {
+            return switch (struct_type) {
+                .array => |sa| typesMatchWithSubstitution(sa.elem.*, bp_arr.elem.*, bp_name, struct_name),
+                else => false,
+            };
+        },
+        .union_type => |bp_members| {
+            return switch (struct_type) {
+                .union_type => |sm| {
+                    if (bp_members.len != sm.len) return false;
+                    for (bp_members, sm) |bp_m, sm_m| {
+                        if (!typesMatchWithSubstitution(sm_m, bp_m, bp_name, struct_name)) return false;
+                    }
+                    return true;
+                },
+                else => false,
+            };
+        },
+        .err => return struct_type == .err,
+        .null_type => return struct_type == .null_type,
         .inferred => return struct_type == .inferred,
         .unknown => return true,
         else => {
-            // For other types (slice, array, tuple, func_ptr, generic, etc.)
+            // For other types (tuple, func_ptr, generic, etc.)
             // fall back to tag comparison
             return std.meta.activeTag(bp_type) == std.meta.activeTag(struct_type);
         },

@@ -32,6 +32,7 @@ pub const CodeGen = struct {
     type_ctx: ?*parser.Node, // expected type from enclosing decl (for overflow codegen)
     locs: ?*const parser.LocMap, // AST node → source location (set by main.zig)
     generic_struct_name: ?[]const u8, // inside a generic struct — name to replace with @This()
+    in_struct: bool, // inside any struct (generic or not) — Self maps to @This()
     all_decls: ?*std.StringHashMap(*declarations.DeclTable), // all module decl tables for cross-module default args
     file_offsets: []const module.FileOffset, // combined-line → original file+line
     module_builds: ?*const std.StringHashMapUnmanaged(module.BuildType), // imported module → build type
@@ -153,6 +154,7 @@ pub const CodeGen = struct {
             .reassigned_vars = .{},
             .type_ctx = null,
             .generic_struct_name = null,
+            .in_struct = false,
             .all_decls = null,
             .locs = null,
             .file_offsets = &.{},
@@ -511,11 +513,11 @@ pub const CodeGen = struct {
         return switch (node.*) {
             .type_named => |name| {
                 if (std.mem.eql(u8, name, K.Type.ERROR)) return "anyerror";
-                // Inside a generic struct, self-references use @This()
+                // Self is always @This() inside any struct
+                if (self.in_struct and std.mem.eql(u8, name, "Self")) return "@This()";
+                // Inside a generic struct, the struct's own name also maps to @This()
                 if (self.generic_struct_name) |gsn| {
                     if (std.mem.eql(u8, name, gsn)) return "@This()";
-                    // Self is always @This() inside any struct (named or anonymous)
-                    if (std.mem.eql(u8, name, "Self")) return "@This()";
                 }
                 return builtins.primitiveToZig(name);
             },
