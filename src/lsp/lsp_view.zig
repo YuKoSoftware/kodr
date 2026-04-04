@@ -1,4 +1,4 @@
-// lsp_view.zig -- LSP view and hints handlers (symbols, signature help, inlay hints, folding)
+// lsp_view.zig — LSP view and hints handlers (symbols, signature help, inlay hints, folding)
 
 const std = @import("std");
 const lsp_types = @import("lsp_types.zig");
@@ -92,13 +92,13 @@ pub fn handleWorkspaceSymbol(allocator: std.mem.Allocator, root: std.json.Value,
     return allocator.dupe(u8, buf.items);
 }
 
-pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len > haystack.len) return false;
     var i: usize = 0;
     while (i + needle.len <= haystack.len) : (i += 1) {
         var matches = true;
         for (0..needle.len) |j| {
-            if (toLowerAscii(haystack[i + j]) != toLowerAscii(needle[j])) {
+            if (std.ascii.toLower(haystack[i + j]) != std.ascii.toLower(needle[j])) {
                 matches = false;
                 break;
             }
@@ -108,9 +108,6 @@ pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-fn toLowerAscii(c: u8) u8 {
-    return if (c >= 'A' and c <= 'Z') c + 32 else c;
-}
 
 // ============================================================
 // SIGNATURE HELP — show parameter hints for function calls
@@ -152,7 +149,7 @@ pub fn handleSignatureHelp(allocator: std.mem.Allocator, root: std.json.Value, i
     try buf.append(allocator, '"');
 
     // Extract parameter labels from signature like "func name(a: i32, b: str) void"
-    const param_labels = extractParamLabels(func_sym.detail);
+    const param_labels = lsp_edit.extractParamLabels(func_sym.detail);
     if (param_labels.count > 0) {
         try buf.appendSlice(allocator, ",\"parameters\":[");
         for (0..param_labels.count) |i| {
@@ -222,10 +219,6 @@ pub fn findCallContext(prefix: []const u8) ?CallContext {
     return null;
 }
 
-pub fn extractParamLabels(sig: []const u8) ParamLabels {
-    return lsp_edit.extractParamLabels(sig);
-}
-
 // ============================================================
 // INLAY HINTS — show inferred types for variables
 // ============================================================
@@ -256,9 +249,6 @@ pub fn handleInlayHint(allocator: std.mem.Allocator, root: std.json.Value, id: s
         if (c == '\n') {
             const line = source[line_start..idx];
             const trimmed = std.mem.trimLeft(u8, line, " \t");
-            const indent = idx - line_start - trimmed.len;
-            _ = indent;
-
             // Check for "var name = ..." or "const name = ..."
             const is_var = std.mem.startsWith(u8, trimmed, "var ");
             const is_const = std.mem.startsWith(u8, trimmed, "const ");
@@ -466,21 +456,3 @@ test "containsIgnoreCase matches" {
     try std.testing.expect(!containsIgnoreCase("ab", "abc"));
 }
 
-test "extractParamLabels single param" {
-    const labels = extractParamLabels("func println(msg: str) void");
-    try std.testing.expectEqual(@as(usize, 1), labels.count);
-    try std.testing.expectEqualStrings("msg: str", "func println(msg: str) void"[labels.starts[0]..labels.ends[0]]);
-}
-
-test "extractParamLabels multiple params" {
-    const labels = extractParamLabels("func add(a: i32, b: i32) i32");
-    try std.testing.expectEqual(@as(usize, 2), labels.count);
-    const sig = "func add(a: i32, b: i32) i32";
-    try std.testing.expectEqualStrings("a: i32", sig[labels.starts[0]..labels.ends[0]]);
-    try std.testing.expectEqualStrings("b: i32", sig[labels.starts[1]..labels.ends[1]]);
-}
-
-test "extractParamLabels no params" {
-    const labels = extractParamLabels("func main() void");
-    try std.testing.expectEqual(@as(usize, 0), labels.count);
-}

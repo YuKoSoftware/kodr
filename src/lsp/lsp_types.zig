@@ -1,10 +1,6 @@
-// lsp_types.zig -- LSP shared type definitions and constants
+// lsp_types.zig — LSP shared type definitions and constants
 
 const std = @import("std");
-const parser = @import("../parser.zig");
-const declarations = @import("../declarations.zig");
-const types = @import("../types.zig");
-const lexer = @import("../lexer.zig");
 
 // ============================================================
 // TRANSPORT CONSTANTS

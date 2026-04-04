@@ -1,4 +1,4 @@
-// lsp_semantic.zig -- LSP semantic tokens handler
+// lsp_semantic.zig — LSP semantic tokens handler
 
 const std = @import("std");
 const lsp_types = @import("lsp_types.zig");
@@ -7,7 +7,6 @@ const lsp_utils = @import("lsp_utils.zig");
 const lexer = @import("../lexer.zig");
 
 const SemanticTokenType = lsp_types.SemanticTokenType;
-const SemanticModifier = lsp_types.SemanticModifier;
 const SemanticToken = lsp_types.SemanticToken;
 const TokenClassification = lsp_types.TokenClassification;
 

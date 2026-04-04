@@ -1,4 +1,4 @@
-// lsp_edit.zig -- LSP editing handlers (completion, rename, code actions, formatting)
+// lsp_edit.zig — LSP editing handlers (completion, rename, code actions, formatting)
 
 const std = @import("std");
 const lsp_types = @import("lsp_types.zig");
@@ -16,7 +16,6 @@ const MAX_PARAMS = lsp_types.MAX_PARAMS;
 const jsonStr = lsp_json.jsonStr;
 const jsonObj = lsp_json.jsonObj;
 const jsonInt = lsp_json.jsonInt;
-const jsonArray = lsp_json.jsonArray;
 const writeJsonValue = lsp_json.writeJsonValue;
 const appendJsonString = lsp_json.appendJsonString;
 const appendInt = lsp_json.appendInt;
@@ -30,6 +29,7 @@ const uriToPath = lsp_utils.uriToPath;
 const pathToUri = lsp_utils.pathToUri;
 const getWordAtPosition = lsp_utils.getWordAtPosition;
 const isIdentChar = lsp_utils.isIdentChar;
+const findWordOccurrences = lsp_utils.findWordOccurrences;
 const getLinePrefix = lsp_utils.getLinePrefix;
 const getDotPrefix = lsp_utils.getDotPrefix;
 const getModuleName = lsp_utils.getModuleName;
@@ -272,7 +272,7 @@ pub fn handleRename(allocator: std.mem.Allocator, root: std.json.Value, id: std.
     if (project_root) |pr| {
         const src_path = try std.fmt.allocPrint(allocator, "{s}/src", .{pr});
         defer allocator.free(src_path);
-        collectOrhFiles(allocator, src_path, pr, &file_uris) catch {};
+        collectOrhFiles(allocator, src_path, &file_uris) catch {};
     }
 
     // Build WorkspaceEdit with TextEdits per document
@@ -295,39 +295,23 @@ pub fn handleRename(allocator: std.mem.Allocator, root: std.json.Value, id: std.
         var edits: std.ArrayListUnmanaged(u8) = .{};
         defer edits.deinit(allocator);
         var first_edit = true;
-        var line_num: usize = 0;
-        var line_start: usize = 0;
-        var i: usize = 0;
-        while (i < file_source.len) {
-            if (file_source[i] == '\n') {
-                line_num += 1;
-                line_start = i + 1;
-                i += 1;
-                continue;
-            }
-            if (i + word.len <= file_source.len and
-                std.mem.eql(u8, file_source[i .. i + word.len], word) and
-                (i == 0 or !isIdentChar(file_source[i - 1])) and
-                (i + word.len >= file_source.len or !isIdentChar(file_source[i + word.len])))
-            {
-                if (!first_edit) try edits.append(allocator, ',');
-                first_edit = false;
-                const col = i - line_start;
-                try edits.appendSlice(allocator, "{\"range\":{\"start\":{\"line\":");
-                try appendInt(&edits, allocator, line_num);
-                try edits.appendSlice(allocator, ",\"character\":");
-                try appendInt(&edits, allocator, col);
-                try edits.appendSlice(allocator, "},\"end\":{\"line\":");
-                try appendInt(&edits, allocator, line_num);
-                try edits.appendSlice(allocator, ",\"character\":");
-                try appendInt(&edits, allocator, col + word.len);
-                try edits.appendSlice(allocator, "}},\"newText\":\"");
-                try appendJsonString(&edits, allocator, new_name);
-                try edits.appendSlice(allocator, "\"}");
-                i += word.len;
-                continue;
-            }
-            i += 1;
+
+        const occurrences = findWordOccurrences(allocator, file_source, word) catch continue;
+        defer allocator.free(occurrences);
+        for (occurrences) |occ| {
+            if (!first_edit) try edits.append(allocator, ',');
+            first_edit = false;
+            try edits.appendSlice(allocator, "{\"range\":{\"start\":{\"line\":");
+            try appendInt(&edits, allocator, occ.line);
+            try edits.appendSlice(allocator, ",\"character\":");
+            try appendInt(&edits, allocator, occ.col);
+            try edits.appendSlice(allocator, "},\"end\":{\"line\":");
+            try appendInt(&edits, allocator, occ.line);
+            try edits.appendSlice(allocator, ",\"character\":");
+            try appendInt(&edits, allocator, occ.col + word.len);
+            try edits.appendSlice(allocator, "}},\"newText\":\"");
+            try appendJsonString(&edits, allocator, new_name);
+            try edits.appendSlice(allocator, "\"}");
         }
 
         if (edits.items.len > 0) {
@@ -346,8 +330,7 @@ pub fn handleRename(allocator: std.mem.Allocator, root: std.json.Value, id: std.
 }
 
 /// Recursively collect .orh file URIs from a directory.
-fn collectOrhFiles(allocator: std.mem.Allocator, dir_path: []const u8, project_root: []const u8, uris: *std.StringHashMap(void)) anyerror!void {
-    _ = project_root;
+fn collectOrhFiles(allocator: std.mem.Allocator, dir_path: []const u8, uris: *std.StringHashMap(void)) anyerror!void {
     var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch return;
     defer dir.close();
     var iter = dir.iterate();
@@ -355,7 +338,7 @@ fn collectOrhFiles(allocator: std.mem.Allocator, dir_path: []const u8, project_r
         if (entry.kind == .directory) {
             const sub = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
             defer allocator.free(sub);
-            try collectOrhFiles(allocator, sub, dir_path, uris);
+            try collectOrhFiles(allocator, sub, uris);
         } else if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".orh")) {
             const full = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
             defer allocator.free(full);

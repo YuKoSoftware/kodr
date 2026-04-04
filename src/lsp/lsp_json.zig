@@ -1,11 +1,10 @@
-// lsp_json.zig -- LSP JSON helpers and response builders
+// lsp_json.zig — LSP JSON helpers and response builders
 
 const std = @import("std");
 const lsp_types = @import("lsp_types.zig");
 
 const Diagnostic = lsp_types.Diagnostic;
 const SymbolInfo = lsp_types.SymbolInfo;
-const SymbolKind = lsp_types.SymbolKind;
 
 // ============================================================
 // JSON HELPERS
@@ -87,7 +86,7 @@ pub fn appendJsonString(w: *std.ArrayListUnmanaged(u8), allocator: std.mem.Alloc
             else => {
                 if (c < 0x20) {
                     var buf: [6]u8 = undefined;
-                    const esc = std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c}) catch continue;
+                    const esc = std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c}) catch unreachable;
                     try w.appendSlice(allocator, esc);
                 } else {
                     try w.append(allocator, c);

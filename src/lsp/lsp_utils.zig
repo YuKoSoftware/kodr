@@ -1,13 +1,10 @@
-// lsp_utils.zig -- LSP URI helpers, text utilities, symbol lookup, and logging
+// lsp_utils.zig — LSP URI helpers, text utilities, symbol lookup, and logging
 
 const std = @import("std");
 const lsp_types = @import("lsp_types.zig");
-const parser = @import("../parser.zig");
-const declarations = @import("../declarations.zig");
 const builtins = @import("../builtins.zig");
 
 const SymbolInfo = lsp_types.SymbolInfo;
-const SymbolKind = lsp_types.SymbolKind;
 
 // ============================================================
 // LOGGING
@@ -372,10 +369,10 @@ pub fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8
         .{ "not", "(keyword) logical NOT operator" },
         .{ "as", "(keyword) type conversion" },
         .{ "is", "(keyword) type check" },
-        .{ "cast", "(keyword) explicit type cast" },
-        .{ "copy", "(keyword) copy value" },
-        .{ "move", "(keyword) move ownership" },
-        .{ "swap", "(keyword) swap two values" },
+        .{ "cast", "(compiler function) explicit type cast — @cast()" },
+        .{ "copy", "(compiler function) copy value — @copy()" },
+        .{ "move", "(compiler function) move ownership — @move()" },
+        .{ "swap", "(compiler function) swap two values — @swap()" },
         .{ "thread", "(keyword) spawn a thread" },
         .{ "compt", "(keyword) compile-time evaluation" },
         .{ "test", "(keyword) test block" },
@@ -396,8 +393,51 @@ pub fn builtinDetail(allocator: std.mem.Allocator, name: []const u8) ?[]const u8
 }
 
 // ============================================================
+// WORD OCCURRENCE SEARCH
+// ============================================================
+
+pub const WordOccurrence = struct { line: usize, col: usize };
+
+/// Find all whole-word occurrences of `word` in `source`, returning (line, col) pairs.
+pub fn findWordOccurrences(allocator: std.mem.Allocator, source: []const u8, word: []const u8) ![]WordOccurrence {
+    var results: std.ArrayListUnmanaged(WordOccurrence) = .{};
+    var line_num: usize = 0;
+    var line_start: usize = 0;
+    var i: usize = 0;
+    while (i < source.len) {
+        if (source[i] == '\n') {
+            line_num += 1;
+            line_start = i + 1;
+            i += 1;
+            continue;
+        }
+        if (i + word.len <= source.len and
+            std.mem.eql(u8, source[i .. i + word.len], word) and
+            (i == 0 or !isIdentChar(source[i - 1])) and
+            (i + word.len >= source.len or !isIdentChar(source[i + word.len])))
+        {
+            try results.append(allocator, .{ .line = line_num, .col = i - line_start });
+            i += word.len;
+            continue;
+        }
+        i += 1;
+    }
+    return results.toOwnedSlice(allocator);
+}
+
+// ============================================================
 // TESTS
 // ============================================================
+
+test "findWordOccurrences finds whole words" {
+    const source = "var foo = foo + foobar";
+    const occs = try findWordOccurrences(std.testing.allocator, source, "foo");
+    defer std.testing.allocator.free(occs);
+    try std.testing.expectEqual(@as(usize, 2), occs.len);
+    try std.testing.expectEqual(@as(usize, 0), occs[0].line);
+    try std.testing.expectEqual(@as(usize, 4), occs[0].col);
+    try std.testing.expectEqual(@as(usize, 10), occs[1].col);
+}
 
 test "uriToPath converts file URI" {
     const path = uriToPath("file:///home/user/project/src/main.orh");

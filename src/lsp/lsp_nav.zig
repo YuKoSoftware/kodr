@@ -1,4 +1,4 @@
-// lsp_nav.zig -- LSP navigation handlers (hover, definition, references, highlight)
+// lsp_nav.zig — LSP navigation handlers (hover, definition, references, highlight)
 
 const std = @import("std");
 const lsp_types = @import("lsp_types.zig");
@@ -7,7 +7,6 @@ const lsp_utils = @import("lsp_utils.zig");
 
 const SymbolInfo = lsp_types.SymbolInfo;
 
-const jsonStr = lsp_json.jsonStr;
 const jsonObj = lsp_json.jsonObj;
 const jsonInt = lsp_json.jsonInt;
 const writeJsonValue = lsp_json.writeJsonValue;
@@ -23,6 +22,7 @@ const getDocSource = lsp_utils.getDocSource;
 const uriToPath = lsp_utils.uriToPath;
 const getWordAtPosition = lsp_utils.getWordAtPosition;
 const isIdentChar = lsp_utils.isIdentChar;
+const findWordOccurrences = lsp_utils.findWordOccurrences;
 const getDotContext = lsp_utils.getDotContext;
 const getModuleName = lsp_utils.getModuleName;
 const getImportedModules = lsp_utils.getImportedModules;
@@ -182,41 +182,22 @@ pub fn handleReferences(allocator: std.mem.Allocator, root: std.json.Value, id: 
         const file_source = std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024) catch continue;
         defer allocator.free(file_source);
 
-        // Find all occurrences of `word` as a whole identifier
-        var line_num: usize = 0;
-        var line_start: usize = 0;
-        var i: usize = 0;
-        while (i < file_source.len) {
-            if (file_source[i] == '\n') {
-                line_num += 1;
-                line_start = i + 1;
-                i += 1;
-                continue;
-            }
-            // Check for word match at this position
-            if (i + word.len <= file_source.len and
-                std.mem.eql(u8, file_source[i .. i + word.len], word) and
-                (i == 0 or !isIdentChar(file_source[i - 1])) and
-                (i + word.len >= file_source.len or !isIdentChar(file_source[i + word.len])))
-            {
-                if (!first) try buf.append(allocator, ',');
-                first = false;
-                const col = i - line_start;
-                try buf.appendSlice(allocator, "{\"uri\":\"");
-                try appendJsonString(&buf, allocator, file_uri);
-                try buf.appendSlice(allocator, "\",\"range\":{\"start\":{\"line\":");
-                try appendInt(&buf, allocator, line_num);
-                try buf.appendSlice(allocator, ",\"character\":");
-                try appendInt(&buf, allocator, col);
-                try buf.appendSlice(allocator, "},\"end\":{\"line\":");
-                try appendInt(&buf, allocator, line_num);
-                try buf.appendSlice(allocator, ",\"character\":");
-                try appendInt(&buf, allocator, col + word.len);
-                try buf.appendSlice(allocator, "}}}");
-                i += word.len;
-                continue;
-            }
-            i += 1;
+        const occurrences = findWordOccurrences(allocator, file_source, word) catch continue;
+        defer allocator.free(occurrences);
+        for (occurrences) |occ| {
+            if (!first) try buf.append(allocator, ',');
+            first = false;
+            try buf.appendSlice(allocator, "{\"uri\":\"");
+            try appendJsonString(&buf, allocator, file_uri);
+            try buf.appendSlice(allocator, "\",\"range\":{\"start\":{\"line\":");
+            try appendInt(&buf, allocator, occ.line);
+            try buf.appendSlice(allocator, ",\"character\":");
+            try appendInt(&buf, allocator, occ.col);
+            try buf.appendSlice(allocator, "},\"end\":{\"line\":");
+            try appendInt(&buf, allocator, occ.line);
+            try buf.appendSlice(allocator, ",\"character\":");
+            try appendInt(&buf, allocator, occ.col + word.len);
+            try buf.appendSlice(allocator, "}}}");
         }
     }
 

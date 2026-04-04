@@ -1,4 +1,4 @@
-// lsp_analysis.zig -- Compiler analysis and type formatting
+// lsp_analysis.zig — Compiler analysis and type formatting
 
 const std = @import("std");
 const lsp_types = @import("lsp_types.zig");
@@ -14,7 +14,6 @@ const sema = @import("../sema.zig");
 const errors = @import("../errors.zig");
 const cache = @import("../cache.zig");
 const types = @import("../types.zig");
-const builtins = @import("../builtins.zig");
 
 const SymbolInfo = lsp_types.SymbolInfo;
 const SymbolKind = lsp_types.SymbolKind;
@@ -228,24 +227,7 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
             continue;
         }
 
-        // Pass 5: Type Resolution (uses scratch arena)
-        const tr_ctx = sema.SemanticContext{
-            .allocator = a,
-            .reporter = &reporter,
-            .decls = &dc.table,
-            .locs = locs_ptr,
-            .file_offsets = file_offsets,
-        };
-        var tr = resolver.TypeResolver.init(&tr_ctx);
-        tr.resolve(ast) catch {};
-
-        // Extract symbols from DeclTable + AST locations (even if type resolution had errors).
-        // Symbol strings are allocated with the long-lived allocator so they outlive the arena.
-        extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
-
-        if (reporter.errors.items.len > errors_before) continue;
-
-        // Shared context for validation passes -- uses scratch arena allocator
+        // Shared context for passes 5-8 — uses scratch arena allocator
         const sema_ctx = sema.SemanticContext{
             .allocator = a,
             .reporter = &reporter,
@@ -253,6 +235,16 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
             .locs = locs_ptr,
             .file_offsets = file_offsets,
         };
+
+        // Pass 5: Type Resolution (uses scratch arena)
+        var tr = resolver.TypeResolver.init(&sema_ctx);
+        tr.resolve(ast) catch {};
+
+        // Extract symbols from DeclTable + AST locations (even if type resolution had errors).
+        // Symbol strings are allocated with the long-lived allocator so they outlive the arena.
+        extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
+
+        if (reporter.errors.items.len > errors_before) continue;
 
         // Pass 6: Ownership (uses scratch arena)
         var oc = ownership.OwnershipChecker.init(a, &sema_ctx);

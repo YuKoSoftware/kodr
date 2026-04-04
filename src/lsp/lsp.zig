@@ -3,7 +3,6 @@
 // Handler implementations live in lsp_nav, lsp_edit, lsp_view, lsp_semantic.
 
 const std = @import("std");
-const lexer = @import("../lexer.zig");
 const lsp_types = @import("lsp_types.zig");
 const lsp_json = @import("lsp_json.zig");
 const lsp_utils = @import("lsp_utils.zig");
@@ -30,6 +29,60 @@ const buildEmptyResponse = lsp_json.buildEmptyResponse;
 const buildDiagnosticsMsg = lsp_json.buildDiagnosticsMsg;
 
 const Io = std.Io;
+
+// ============================================================
+// METHOD DISPATCH
+// ============================================================
+
+const Method = enum {
+    initialize,
+    initialized,
+    shutdown,
+    exit,
+    did_open,
+    did_save,
+    did_change,
+    did_close,
+    hover,
+    definition,
+    document_symbol,
+    completion,
+    references,
+    rename,
+    signature_help,
+    formatting,
+    workspace_symbol,
+    code_action,
+    inlay_hint,
+    document_highlight,
+    folding_range,
+    semantic_tokens,
+};
+
+const METHOD_MAP = std.StaticStringMap(Method).initComptime(.{
+    .{ "initialize", .initialize },
+    .{ "initialized", .initialized },
+    .{ "shutdown", .shutdown },
+    .{ "exit", .exit },
+    .{ "textDocument/didOpen", .did_open },
+    .{ "textDocument/didSave", .did_save },
+    .{ "textDocument/didChange", .did_change },
+    .{ "textDocument/didClose", .did_close },
+    .{ "textDocument/hover", .hover },
+    .{ "textDocument/definition", .definition },
+    .{ "textDocument/documentSymbol", .document_symbol },
+    .{ "textDocument/completion", .completion },
+    .{ "textDocument/references", .references },
+    .{ "textDocument/rename", .rename },
+    .{ "textDocument/signatureHelp", .signature_help },
+    .{ "textDocument/formatting", .formatting },
+    .{ "workspace/symbol", .workspace_symbol },
+    .{ "textDocument/codeAction", .code_action },
+    .{ "textDocument/inlayHint", .inlay_hint },
+    .{ "textDocument/documentHighlight", .document_highlight },
+    .{ "textDocument/foldingRange", .folding_range },
+    .{ "textDocument/semanticTokens/full", .semantic_tokens },
+});
 
 // ============================================================
 // JSON-RPC TRANSPORT
@@ -128,6 +181,7 @@ pub fn serve(allocator: std.mem.Allocator) !void {
 
     var initialized = false;
     var project_root: ?[]const u8 = null;
+    defer if (project_root) |r| allocator.free(r);
 
     // Client settings (from initializationOptions)
     var enable_inlay_hints = false;
@@ -175,214 +229,10 @@ pub fn serve(allocator: std.mem.Allocator) !void {
         defer parsed.deinit();
 
         const root = parsed.value;
-        const method = jsonStr(root, "method") orelse "";
+        const method_str = jsonStr(root, "method") orelse "";
         const id = jsonId(root);
-
-        if (std.mem.eql(u8, method, "initialize")) {
-            lspLog("initialize", .{});
-            if (jsonObj(root, "params")) |params| {
-                if (jsonStr(params, "rootUri")) |root_uri| {
-                    if (uriToPath(root_uri)) |path| {
-                        project_root = try allocator.dupe(u8, path);
-                        lspLog("project root: {s}", .{path});
-                    }
-                }
-                // Read client settings from initializationOptions
-                if (jsonObj(params, "initializationOptions")) |opts| {
-                    enable_inlay_hints = jsonBool(opts, "inlayHints");
-                    enable_snippets = jsonBool(opts, "completionSnippets");
-                    lspLog("settings: inlayHints={}, snippets={}", .{ enable_inlay_hints, enable_snippets });
-                }
-            }
-            const resp = try buildInitializeResult(allocator, id);
-            defer allocator.free(resp);
-            try writeMessage(stdout, resp);
-
-        } else if (std.mem.eql(u8, method, "initialized")) {
-            initialized = true;
-            lspLog("initialized", .{});
-            if (project_root) |r| {
-                const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
-                cached_symbols = result.symbols;
-                freeDiagnostics(allocator, cached_diags);
-                cached_diags = result.diags;
-            }
-
-        } else if (std.mem.eql(u8, method, "shutdown")) {
-            lspLog("shutdown", .{});
-            const resp = try buildEmptyResponse(allocator, id);
-            defer allocator.free(resp);
-            try writeMessage(stdout, resp);
-
-        } else if (std.mem.eql(u8, method, "exit")) {
-            lspLog("exit", .{});
-            return;
-
-        } else if (std.mem.eql(u8, method, "textDocument/didOpen")) {
-            if (!initialized) continue;
-            if (jsonObj(root, "params")) |params| {
-                if (jsonObj(params, "textDocument")) |td| {
-                    if (jsonStr(td, "uri")) |uri| {
-                        lspLog("didOpen: {s}", .{uri});
-                        if (!open_docs.contains(uri))
-                            try open_docs.put(try allocator.dupe(u8, uri), {});
-                        // Store document content
-                        if (jsonStr(td, "text")) |text| {
-                            const text_owned = try allocator.dupe(u8, text);
-                            if (doc_store.getPtr(uri)) |val_ptr| {
-                                allocator.free(val_ptr.*);
-                                val_ptr.* = text_owned;
-                            } else {
-                                try doc_store.put(try allocator.dupe(u8, uri), text_owned);
-                            }
-                        }
-                        if (project_root == null) {
-                            if (uriToPath(uri)) |path| {
-                                if (findProjectRoot(path)) |r| {
-                                    project_root = try allocator.dupe(u8, r);
-                                    lspLog("detected root: {s}", .{r});
-                                }
-                            }
-                        }
-                        if (project_root) |r| {
-                            const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
-                            cached_symbols = result.symbols;
-                            freeDiagnostics(allocator, cached_diags);
-                cached_diags = result.diags;
-                        }
-                    }
-                }
-            }
-
-        } else if (std.mem.eql(u8, method, "textDocument/didSave")) {
-            if (!initialized) continue;
-            lspLog("didSave", .{});
-            if (project_root) |r| {
-                const result = try runAndPublishWithDiags(allocator, stdout, r, &open_docs, cached_symbols);
-                cached_symbols = result.symbols;
-                freeDiagnostics(allocator, cached_diags);
-                cached_diags = result.diags;
-            }
-
-        } else if (std.mem.eql(u8, method, "textDocument/didChange")) {
-            if (!initialized) continue;
-            if (jsonObj(root, "params")) |params| {
-                if (jsonObj(params, "textDocument")) |td| {
-                    if (jsonStr(td, "uri")) |uri| {
-                        if (jsonArray(params, "contentChanges")) |arr| {
-                            if (arr.len > 0) {
-                                if (jsonStr(arr[0], "text")) |text| {
-                                    const text_owned = try allocator.dupe(u8, text);
-                                    if (doc_store.getPtr(uri)) |val_ptr| {
-                                        allocator.free(val_ptr.*);
-                                        val_ptr.* = text_owned;
-                                    } else {
-                                        try doc_store.put(try allocator.dupe(u8, uri), text_owned);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-        } else if (std.mem.eql(u8, method, "textDocument/didClose")) {
-            if (!initialized) continue;
-            if (jsonObj(root, "params")) |params| {
-                if (jsonObj(params, "textDocument")) |td| {
-                    if (jsonStr(td, "uri")) |uri| {
-                        lspLog("didClose: {s}", .{uri});
-                        const clear = buildDiagnosticsMsg(allocator, uri, &.{}) catch continue;
-                        defer allocator.free(clear);
-                        writeMessage(stdout, clear) catch {};
-                        if (open_docs.fetchRemove(uri)) |kv| allocator.free(kv.key);
-                        if (doc_store.fetchRemove(uri)) |kv| {
-                            allocator.free(kv.key);
-                            allocator.free(kv.value);
-                        }
-                    }
-                }
-            }
-
-        } else if (std.mem.eql(u8, method, "textDocument/hover")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "hover",
-                lsp_nav.handleHover(allocator, root, id, cached_symbols, &doc_store));
-
-        } else if (std.mem.eql(u8, method, "textDocument/definition")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "definition",
-                lsp_nav.handleDefinition(allocator, root, id, cached_symbols, &doc_store));
-
-        } else if (std.mem.eql(u8, method, "textDocument/documentSymbol")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "documentSymbol",
-                lsp_view.handleDocumentSymbols(allocator, root, id, cached_symbols));
-
-        } else if (std.mem.eql(u8, method, "textDocument/completion")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "completion",
-                lsp_edit.handleCompletion(allocator, root, id, cached_symbols, enable_snippets, &doc_store));
-
-        } else if (std.mem.eql(u8, method, "textDocument/references")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "references",
-                lsp_nav.handleReferences(allocator, root, id, cached_symbols));
-
-        } else if (std.mem.eql(u8, method, "textDocument/rename")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "rename",
-                lsp_edit.handleRename(allocator, root, id, cached_symbols, project_root));
-
-        } else if (std.mem.eql(u8, method, "textDocument/signatureHelp")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "signatureHelp",
-                lsp_view.handleSignatureHelp(allocator, root, id, cached_symbols, &doc_store));
-
-        } else if (std.mem.eql(u8, method, "textDocument/formatting")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "formatting",
-                lsp_edit.handleFormatting(allocator, root, id));
-
-        } else if (std.mem.eql(u8, method, "workspace/symbol")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "workspaceSymbol",
-                lsp_view.handleWorkspaceSymbol(allocator, root, id, cached_symbols));
-
-        } else if (std.mem.eql(u8, method, "textDocument/codeAction")) {
-            if (!initialized) continue;
-            try dispatchLspArray(allocator, stdout, id, "codeAction",
-                lsp_edit.handleCodeAction(allocator, root, id, cached_diags));
-
-        } else if (std.mem.eql(u8, method, "textDocument/inlayHint")) {
-            if (!initialized or !enable_inlay_hints) {
-                if (id != .null) {
-                    const resp = try buildEmptyArrayResponse(allocator, id);
-                    defer allocator.free(resp);
-                    try writeMessage(stdout, resp);
-                }
-                continue;
-            }
-            try dispatchLsp(allocator, stdout, id, "inlayHint",
-                lsp_view.handleInlayHint(allocator, root, id, cached_symbols, &doc_store));
-
-        } else if (std.mem.eql(u8, method, "textDocument/documentHighlight")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "documentHighlight",
-                lsp_nav.handleDocumentHighlight(allocator, root, id, &doc_store));
-
-        } else if (std.mem.eql(u8, method, "textDocument/foldingRange")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "foldingRange",
-                lsp_view.handleFoldingRange(allocator, root, id, &doc_store));
-
-        } else if (std.mem.eql(u8, method, "textDocument/semanticTokens/full")) {
-            if (!initialized) continue;
-            try dispatchLsp(allocator, stdout, id, "semanticTokens",
-                lsp_semantic.handleSemanticTokens(allocator, root, id));
-
-        } else {
-            // Unknown request — respond with null result
+        const m = METHOD_MAP.get(method_str) orelse {
+            // Unknown request — respond with null result if it has an id
             switch (id) {
                 .integer, .string => {
                     const resp = try buildEmptyResponse(allocator, id);
@@ -391,8 +241,180 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                 },
                 else => {},
             }
+            continue;
+        };
+
+        // All methods except lifecycle require initialization
+        switch (m) {
+            .initialize, .initialized, .shutdown, .exit => {},
+            else => if (!initialized) continue,
+        }
+
+        switch (m) {
+            .initialize => {
+                lspLog("initialize", .{});
+                if (jsonObj(root, "params")) |params| {
+                    if (jsonStr(params, "rootUri")) |root_uri| {
+                        if (uriToPath(root_uri)) |path| {
+                            project_root = try allocator.dupe(u8, path);
+                            lspLog("project root: {s}", .{path});
+                        }
+                    }
+                    if (jsonObj(params, "initializationOptions")) |opts| {
+                        enable_inlay_hints = jsonBool(opts, "inlayHints");
+                        enable_snippets = jsonBool(opts, "completionSnippets");
+                        lspLog("settings: inlayHints={}, snippets={}", .{ enable_inlay_hints, enable_snippets });
+                    }
+                }
+                const resp = try buildInitializeResult(allocator, id);
+                defer allocator.free(resp);
+                try writeMessage(stdout, resp);
+            },
+            .initialized => {
+                initialized = true;
+                lspLog("initialized", .{});
+                if (project_root) |r|
+                    try analyzeAndCache(allocator, stdout, r, &open_docs, &cached_symbols, &cached_diags);
+            },
+            .shutdown => {
+                lspLog("shutdown", .{});
+                const resp = try buildEmptyResponse(allocator, id);
+                defer allocator.free(resp);
+                try writeMessage(stdout, resp);
+            },
+            .exit => {
+                lspLog("exit", .{});
+                return;
+            },
+            .did_open => {
+                if (jsonObj(root, "params")) |params| {
+                    if (jsonObj(params, "textDocument")) |td| {
+                        if (jsonStr(td, "uri")) |uri| {
+                            lspLog("didOpen: {s}", .{uri});
+                            if (!open_docs.contains(uri))
+                                try open_docs.put(try allocator.dupe(u8, uri), {});
+                            if (jsonStr(td, "text")) |text|
+                                try updateDocStore(&doc_store, allocator, uri, text);
+                            if (project_root == null) {
+                                if (uriToPath(uri)) |path| {
+                                    if (findProjectRoot(path)) |r| {
+                                        project_root = try allocator.dupe(u8, r);
+                                        lspLog("detected root: {s}", .{r});
+                                    }
+                                }
+                            }
+                            if (project_root) |r|
+                                try analyzeAndCache(allocator, stdout, r, &open_docs, &cached_symbols, &cached_diags);
+                        }
+                    }
+                }
+            },
+            .did_save => {
+                lspLog("didSave", .{});
+                if (project_root) |r|
+                    try analyzeAndCache(allocator, stdout, r, &open_docs, &cached_symbols, &cached_diags);
+            },
+            .did_change => {
+                if (jsonObj(root, "params")) |params| {
+                    if (jsonObj(params, "textDocument")) |td| {
+                        if (jsonStr(td, "uri")) |uri| {
+                            if (jsonArray(params, "contentChanges")) |arr| {
+                                if (arr.len > 0) {
+                                    if (jsonStr(arr[0], "text")) |text|
+                                        try updateDocStore(&doc_store, allocator, uri, text);
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            .did_close => {
+                if (jsonObj(root, "params")) |params| {
+                    if (jsonObj(params, "textDocument")) |td| {
+                        if (jsonStr(td, "uri")) |uri| {
+                            lspLog("didClose: {s}", .{uri});
+                            const clear = buildDiagnosticsMsg(allocator, uri, &.{}) catch continue;
+                            defer allocator.free(clear);
+                            writeMessage(stdout, clear) catch {};
+                            if (open_docs.fetchRemove(uri)) |kv| allocator.free(kv.key);
+                            if (doc_store.fetchRemove(uri)) |kv| {
+                                allocator.free(kv.key);
+                                allocator.free(kv.value);
+                            }
+                        }
+                    }
+                }
+            },
+            .hover => try dispatchLsp(allocator, stdout, id, "hover",
+                lsp_nav.handleHover(allocator, root, id, cached_symbols, &doc_store)),
+            .definition => try dispatchLsp(allocator, stdout, id, "definition",
+                lsp_nav.handleDefinition(allocator, root, id, cached_symbols, &doc_store)),
+            .document_symbol => try dispatchLsp(allocator, stdout, id, "documentSymbol",
+                lsp_view.handleDocumentSymbols(allocator, root, id, cached_symbols)),
+            .completion => try dispatchLsp(allocator, stdout, id, "completion",
+                lsp_edit.handleCompletion(allocator, root, id, cached_symbols, enable_snippets, &doc_store)),
+            .references => try dispatchLsp(allocator, stdout, id, "references",
+                lsp_nav.handleReferences(allocator, root, id, cached_symbols)),
+            .rename => try dispatchLsp(allocator, stdout, id, "rename",
+                lsp_edit.handleRename(allocator, root, id, cached_symbols, project_root)),
+            .signature_help => try dispatchLsp(allocator, stdout, id, "signatureHelp",
+                lsp_view.handleSignatureHelp(allocator, root, id, cached_symbols, &doc_store)),
+            .formatting => try dispatchLsp(allocator, stdout, id, "formatting",
+                lsp_edit.handleFormatting(allocator, root, id)),
+            .workspace_symbol => try dispatchLsp(allocator, stdout, id, "workspaceSymbol",
+                lsp_view.handleWorkspaceSymbol(allocator, root, id, cached_symbols)),
+            .code_action => try dispatchLspArray(allocator, stdout, id, "codeAction",
+                lsp_edit.handleCodeAction(allocator, root, id, cached_diags)),
+            .inlay_hint => {
+                if (!enable_inlay_hints) {
+                    if (id != .null) {
+                        const resp = try buildEmptyArrayResponse(allocator, id);
+                        defer allocator.free(resp);
+                        try writeMessage(stdout, resp);
+                    }
+                    continue;
+                }
+                try dispatchLsp(allocator, stdout, id, "inlayHint",
+                    lsp_view.handleInlayHint(allocator, root, id, cached_symbols, &doc_store));
+            },
+            .document_highlight => try dispatchLsp(allocator, stdout, id, "documentHighlight",
+                lsp_nav.handleDocumentHighlight(allocator, root, id, &doc_store)),
+            .folding_range => try dispatchLsp(allocator, stdout, id, "foldingRange",
+                lsp_view.handleFoldingRange(allocator, root, id, &doc_store)),
+            .semantic_tokens => try dispatchLsp(allocator, stdout, id, "semanticTokens",
+                lsp_semantic.handleSemanticTokens(allocator, root, id)),
         }
     }
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+/// Update in-memory document content. Frees old value if key exists, otherwise inserts new entry.
+fn updateDocStore(doc_store: *std.StringHashMap([]u8), allocator: std.mem.Allocator, uri: []const u8, text: []const u8) !void {
+    const text_owned = try allocator.dupe(u8, text);
+    if (doc_store.getPtr(uri)) |val_ptr| {
+        allocator.free(val_ptr.*);
+        val_ptr.* = text_owned;
+    } else {
+        try doc_store.put(try allocator.dupe(u8, uri), text_owned);
+    }
+}
+
+/// Run analysis, publish diagnostics, and swap cached symbols/diags.
+fn analyzeAndCache(
+    allocator: std.mem.Allocator,
+    writer: *Io.Writer,
+    root: []const u8,
+    open_docs: *std.StringHashMap(void),
+    cached_symbols: *[]SymbolInfo,
+    cached_diags: *[]Diagnostic,
+) !void {
+    const result = try runAndPublishWithDiags(allocator, writer, root, open_docs, cached_symbols.*);
+    cached_symbols.* = result.symbols;
+    freeDiagnostics(allocator, cached_diags.*);
+    cached_diags.* = result.diags;
 }
 
 // ============================================================
