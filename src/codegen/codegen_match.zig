@@ -551,10 +551,7 @@ fn emitIntrospectionType(cg: *CodeGen, arg: *mir.MirNode) anyerror!void {
 pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const cf_name = m.name orelse return;
     const args = m.children;
-    switch (builtins.CompilerFunc.fromName(cf_name) orelse {
-        try cg.emitFmt("/* unknown @{s} */", .{cf_name});
-        return;
-    }) {
+    switch (builtins.CompilerFunc.fromName(cf_name) orelse unreachable) {
         .typename => {
             try cg.emit("@typeName(@TypeOf(");
             if (args.len > 0) try cg.generateExprMir(args[0]);
@@ -697,6 +694,9 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         .overflow => {
             if (args.len > 0) try cg.generateOverflowExprMir(args[0]);
         },
+        // @type is an internal desugaring artifact from `x is T` — always handled as
+        // part of binary `is` expression in codegen_exprs, never reaches here standalone
+        .@"type" => @panic("@type should not reach generateCompilerFuncMir"),
     }
 }
 

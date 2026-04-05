@@ -138,20 +138,6 @@ Spec documents `compt for(fields) |field| { ... }` but grammar only supports
 but builder hardcodes `is_compt = false`. Need to add `'compt'?` prefix to `for_stmt`
 grammar rule and set the flag in the builder.
 
-### Remove dead `is_compt` codegen paths for var_decl `easy`
-
-Dead codegen paths exist in `codegen_decls.zig:345` and `codegen_stmts.zig:59` for
-`is_compt` on var_decl, but no parser path ever sets this flag. `compt const` is
-unnecessary — top-level `const` with comptime-known values is automatically
-compile-time in Zig. Remove the dead code.
-
-### `any` param in type-generating compt → wrong Zig type `easy`
-
-`codegen_decls.zig:94` maps `any` parameter in type-generating compt functions to
-`comptime name: type`, but `any` means "any value" not "any type." Should be
-`comptime name: anytype` for value parameters. Only `type` annotation should map
-to `comptime T: type`.
-
 ### Consuming method calls not tracked by ownership checker `medium`
 
 Methods with `self: T` (by value, not borrow) should move the receiver and mark it
@@ -159,11 +145,16 @@ invalid after the call. Currently `ownership_checks.zig:204` always passes
 `is_borrow=true` for method receivers. `p.destroy(); p.use()` is not caught.
 Needs: look up method signature, check if self param is by value, mark receiver moved.
 
-### Method/cross-module call argument count validation `easy`
+### Method/cross-module call argument count validation `medium`
 
 `resolver_exprs.zig:198` looks up method signatures for return type but doesn't
 validate argument count. Direct identifier calls (line 175) do validate. Add the
 same arity check for `field_expr` callee paths (method calls and `module.func()` calls).
+
+Complications: `use`-imported struct methods appear in `funcs` with implicit `self` param;
+zig-module auto-generated stubs don't expose inner struct methods; generic return types
+(e.g., `List(i32)`) don't register methods. Self parameter detection (instance vs static)
+needs careful handling across all lookup paths.
 
 ### Interpolated strings in non-hoisted positions produce invalid Zig `medium`
 
@@ -196,11 +187,6 @@ need unified union type names. The `arb_union_cross` and `arb_union_inferred` te
 `resolver_exprs.zig:403` returns `RT.inferred` for tuple literals. Downstream passes
 have no composite type info for tuples in expression position (function args, returns).
 
-### Unclosed `@{` in string produces no error `easy`
-
-If a user writes `"hello @{name"` (missing `}`), the builder silently treats the
-`@{name` text as a literal string part. Should report a parse error.
-
 ### Resolver: type-check test bodies `medium`
 
 The resolver (pass 5) has no `.test_decl` arm — test bodies are entirely skipped.
@@ -208,26 +194,6 @@ Type errors in tests are only caught at Zig compilation (pass 12). Cannot simply
 add a test_decl case because the resolver runs per-file and test bodies reference
 functions from other files in the same module. Needs cross-file module scope support
 in the resolver first.
-
-### Import error messages lack source locations `easy`
-
-Three import-related errors pass `null` for location:
-- `module_parse.zig:205` — "module not found" for `std::` imports
-- `module.zig:404` — "module not found — add X.orh"
-- `module_parse.zig:192` — "unknown import scope"
-These should include file/line from the import AST node.
-
-### `@wrap`/`@sat` silently drop for div/mod operators `easy`
-
-`codegen_match.zig` maps `@wrap(a + b)` to wrapping add, but returns null for `/` and
-`%` (Zig has no wrapping variants for these). The builtin semantics are silently dropped.
-Either reject unsupported operators in the resolver, or emit a warning.
-
-### Unknown compiler function produces Zig comment, not error `easy`
-
-`codegen_match.zig:552` emits `/* unknown @name */` for unrecognized compiler function
-names. Should report an error in the resolver instead. Currently the parser limits
-names to the known set, but a validation in the resolver would be defense-in-depth.
 
 ### Partial field move detection `medium`
 
@@ -252,14 +218,6 @@ for anonymous structs in compt functions too. Currently codegen handles this cor
   3. Compt `@intFromEnum` equivalent
 - Users can create bitfields manually with `u32` + bitwise operators in the meantime
 
-### Stdlib cache not invalidated on compiler upgrade `easy`
-
-`std_bundle.zig:writeStdFile()` skips writing if the file already exists in
-`.orh-cache/std/`. When a user upgrades the compiler, the cached stdlib files
-from the old version are never overwritten — the new compiler runs with stale
-stdlib code. Fix: compare embedded content hash with cached file hash, or
-always overwrite, or add a version stamp to the cache directory.
-
 ### Named tuple nominal typing `medium`
 
 Spec says named tuples are nominally typed (two tuples with identical structure but
@@ -269,12 +227,14 @@ between `Point` and `Velocity` with the same fields.
 
 Fix: emit named struct constants instead of inline anonymous structs.
 
-### Dead NodeKind variants: `type_primitive`, `type_tuple_anon` `easy`
+### Dead NodeKind variants: `type_primitive`, `type_tuple_anon` `medium`
 
 `type_primitive` and `type_tuple_anon` exist in `parser.zig` NodeKind but are never
-produced by any PEG builder function. `type_tuple_anon` has contradictory handling
-in `types.zig` (treated as union) vs `codegen.zig` (treated as struct). Remove both
-variants or implement them if needed.
+produced by any PEG builder function. However, they are referenced in ~15 match arms
+across 8 files (codegen, types, resolver, mir, lsp, interface, docgen) and constructed
+in `interface.zig` tests. `type_tuple_anon` has contradictory handling in `types.zig`
+(treated as union) vs `codegen.zig` (treated as struct). Removing them requires updating
+all consuming switch arms and deciding whether `type_named` should absorb primitives.
 
 ### Break up oversized functions `medium`
 
@@ -330,12 +290,6 @@ be processed in parallel via a thread pool.
 
 Missing: wrapping for long lines, function signature breaking rules, alignment
 for multi-line assignments, comment-aware formatting, configurable style.
-
-### LSP — foldingRange brace stack overflow `easy`
-
-`lsp_view.zig:handleFoldingRange` uses a fixed `[256]usize` brace stack with no bounds
-check. Deeply nested code (>256 levels of `{`) would cause an out-of-bounds write.
-Fix: check `brace_depth < 256` before pushing, or use a dynamic list.
 
 ### LSP — feature-gated passes `medium`
 

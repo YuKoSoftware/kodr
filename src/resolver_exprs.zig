@@ -316,38 +316,54 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             const loc = self.ctx.nodeLoc(node);
             const func = builtins.CompilerFunc.fromName(cf.name);
 
+            const f = func orelse {
+                try self.ctx.reporter.reportFmt(loc, "unknown compiler function '@{s}'", .{cf.name});
+                return RT.unknown;
+            };
+
             // Argument count validation
             const ArgCount = struct { min: usize, max: usize };
-            const expected: ?ArgCount = if (func) |f| switch (f) {
-                .cast, .swap, .splitAt, .hasField, .hasDecl, .fieldType => ArgCount{ .min = 2, .max = 2 },
-                .assert => ArgCount{ .min = 1, .max = 2 },
+            const expected: ArgCount = switch (f) {
+                .cast, .swap, .splitAt, .hasField, .hasDecl, .fieldType => .{ .min = 2, .max = 2 },
+                .assert => .{ .min = 1, .max = 2 },
                 .copy, .move, .size, .@"align", .typename, .typeid, .typeOf,
-                .fieldNames, .wrap, .sat, .overflow,
-                => ArgCount{ .min = 1, .max = 1 },
-            } else null;
+                .fieldNames, .wrap, .sat, .overflow, .@"type",
+                => .{ .min = 1, .max = 1 },
+            };
 
-            if (expected) |exp| {
-                if (cf.args.len < exp.min or cf.args.len > exp.max) {
-                    if (exp.min == exp.max) {
-                        try self.ctx.reporter.reportFmt(loc, "@{s} takes exactly {d} argument(s)", .{ cf.name, exp.min });
-                    } else {
-                        try self.ctx.reporter.reportFmt(loc, "@{s} takes {d} to {d} arguments", .{ cf.name, exp.min, exp.max });
-                    }
+            if (cf.args.len < expected.min or cf.args.len > expected.max) {
+                if (expected.min == expected.max) {
+                    try self.ctx.reporter.reportFmt(loc, "@{s} takes exactly {d} argument(s)", .{ cf.name, expected.min });
+                } else {
+                    try self.ctx.reporter.reportFmt(loc, "@{s} takes {d} to {d} arguments", .{ cf.name, expected.min, expected.max });
                 }
             }
 
             // String literal validation for introspection functions
-            if (func) |f| switch (f) {
+            switch (f) {
                 .hasField, .hasDecl, .fieldType => {
                     if (cf.args.len >= 2 and cf.args[1].* != .string_literal) {
                         try self.ctx.reporter.reportFmt(loc, "@{s} requires a string literal as second argument", .{cf.name});
                     }
                 },
                 else => {},
-            };
+            }
+
+            // Operator validation for wrapping/saturating/overflow builtins
+            switch (f) {
+                .wrap, .sat, .overflow => {
+                    if (cf.args.len >= 1 and cf.args[0].* == .binary_expr) {
+                        const op = cf.args[0].binary_expr.op;
+                        if (op != .add and op != .sub and op != .mul) {
+                            try self.ctx.reporter.reportFmt(loc, "@{s} only supports +, -, * operators — division and modulo have no wrapping equivalents", .{cf.name});
+                        }
+                    }
+                },
+                else => {},
+            }
 
             // Return type resolution
-            return if (func) |f| switch (f) {
+            return switch (f) {
                 .size, .@"align", .typeid => RT{ .primitive = .usize },
                 .typename => RT{ .primitive = .string },
                 .typeOf, .fieldType => RT{ .primitive = .@"type" },
@@ -366,8 +382,9 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                     break :blk RT.unknown;
                 },
                 .copy, .move, .wrap, .sat, .overflow => first_arg_type,
+                .@"type" => RT{ .primitive = .@"type" },
                 .splitAt => RT.inferred,
-            } else RT.unknown;
+            };
         },
 
         .array_literal => |elems| {

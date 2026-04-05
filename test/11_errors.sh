@@ -490,6 +490,11 @@ if echo "$NEG_OUT" | grep -qi "@hasField\|error"; then
 else
     fail "rejects bad introspection args" "$NEG_OUT"
 fi
+if echo "$NEG_OUT" | grep -qi "@wrap.*only supports"; then
+    pass "rejects @wrap with unsupported operator"
+else
+    fail "rejects @wrap with unsupported operator" "$NEG_OUT"
+fi
 
 # blueprint: missing method
 cd "$TESTDIR"

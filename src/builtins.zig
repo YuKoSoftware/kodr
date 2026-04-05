@@ -33,6 +33,7 @@ pub const CompilerFunc = enum {
     wrap,
     sat,
     overflow,
+    @"type", // internal: desugared from `x is T` — not user-facing
 
     pub fn fromName(name: []const u8) ?CompilerFunc {
         const map = std.StaticStringMap(CompilerFunc).initComptime(.{
@@ -54,6 +55,7 @@ pub const CompilerFunc = enum {
             .{ "wrap", .wrap },
             .{ "sat", .sat },
             .{ "overflow", .overflow },
+            .{ "type", .@"type" },
         });
         return map.get(name);
     }

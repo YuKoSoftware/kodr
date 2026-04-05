@@ -401,7 +401,20 @@ pub const Resolver = struct {
             const mod = entry.value_ptr;
             for (mod.imports) |imp_name| {
                 if (!self.modules.contains(imp_name)) {
-                    try reporter.reportFmt(null, "module '{s}' not found — add '{s}.orh' to src/", .{ imp_name, imp_name });
+                    // Find the import AST node to get source location
+                    const loc = if (mod.ast) |ast| blk: {
+                        for (ast.program.imports) |imp| {
+                            if (std.mem.eql(u8, imp.import_decl.path, imp_name)) {
+                                break :blk resolveNodeLoc(
+                                    if (mod.locs) |*l| l else null,
+                                    mod.file_offsets,
+                                    imp,
+                                );
+                            }
+                        }
+                        break :blk null;
+                    } else null;
+                    try reporter.reportFmt(loc, "module '{s}' not found — add '{s}.orh' to src/", .{ imp_name, imp_name });
                 }
             }
         }

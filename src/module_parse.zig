@@ -183,13 +183,19 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
             const decl = imp.import_decl;
             if (decl.is_c_header) continue;
 
+            const imp_loc = module.resolveNodeLoc(
+                if (mod.locs) |*l| l else null,
+                mod.file_offsets,
+                imp,
+            );
+
             if (decl.scope) |sc| {
                 // std::mem is a built-in compiler module — no .orh file needed
                 if (std.mem.eql(u8, sc, "std") and std.mem.eql(u8, decl.path, "mem")) continue;
 
                 // Only std:: imports are supported
                 if (!std.mem.eql(u8, sc, "std")) {
-                    try self.reporter.reportFmt(null, "unknown import scope '{s}' — only 'std' is supported", .{sc});
+                    try self.reporter.reportFmt(imp_loc, "unknown import scope '{s}' — only 'std' is supported", .{sc});
                     continue;
                 }
 
@@ -202,7 +208,7 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
 
                 // Check the .orh file exists
                 std.fs.cwd().access(file_path, .{}) catch {
-                    try self.reporter.reportFmt(null, "module '{s}::{s}' not found",
+                    try self.reporter.reportFmt(imp_loc, "module '{s}::{s}' not found",
                         .{ sc, decl.path });
                     self.allocator.free(file_path);
                     continue;

@@ -411,7 +411,7 @@ pub fn hashInterface(decls: *const declarations.DeclTable) u64 {
         fn hash(s: u64, sig: declarations.VarSig) u64 {
             var h = s;
             if (sig.type_) |t| h = hashResolvedType(h, t);
-            return XxHash3.hash(h, &[_]u8{ @intFromBool(sig.is_const), @intFromBool(sig.is_compt) });
+            return XxHash3.hash(h, &[_]u8{@intFromBool(sig.is_const)});
         }
     }.hash);
 

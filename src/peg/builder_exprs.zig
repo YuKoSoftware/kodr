@@ -60,7 +60,8 @@ pub fn buildStringLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
                 try parts.append(ctx.alloc(), .{ .expr = expr_node });
                 pos = close + 1;
             } else {
-                // Unclosed @{ — emit remainder as literal (silent degradation)
+                // Unclosed @{ — report error and emit remainder as literal
+                ctx.reportError("unclosed '@{' in string — missing '}'", cap.start_pos);
                 const lit = try ctx.alloc().dupe(u8, inner[abs..]);
                 try parts.append(ctx.alloc(), .{ .literal = lit });
                 break;

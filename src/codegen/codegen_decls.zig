@@ -88,7 +88,7 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         if (is_type_param) {
             try cg.emitFmt("comptime {s}: type", .{pname});
         } else if (is_type_generic and is_any) {
-            try cg.emitFmt("comptime {s}: type", .{pname});
+            try cg.emitFmt("comptime {s}: anytype", .{pname});
         } else if (is_any) {
             try cg.emitFmt("{s}: anytype", .{pname});
         } else {
@@ -329,23 +329,10 @@ pub fn generateTopLevelDeclMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (cg.is_zig_module) return cg.generateZigReExport(name, m.is_pub);
 
     // Type alias: const Name: type = T → const Name = ZigType;
-    // Must precede is_compt check — type aliases are also is_const.
     if (m.is_const and isTypeAlias(m.type_annotation)) {
         if (m.is_pub) try cg.emit("pub ");
         try cg.emitFmt("const {s} = ", .{name});
         try cg.emit(try cg.typeToZig(m.value().ast)); // type trees are structural — typeToZig walks AST
-        try cg.emit(";\n");
-        return;
-    }
-
-    if (m.is_compt) {
-        // Top-level const is already comptime in Zig, so just emit const.
-        if (m.is_pub) try cg.emit("pub ");
-        try cg.emitFmt("const {s}: {s} = ", .{
-            name,
-            try cg.typeToZig(m.type_annotation orelse return),
-        });
-        try cg.generateExprMir(m.value());
         try cg.emit(";\n");
         return;
     }

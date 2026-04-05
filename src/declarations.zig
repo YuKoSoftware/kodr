@@ -66,7 +66,6 @@ pub const VarSig = struct {
     name: []const u8,
     type_: ?types.ResolvedType,
     is_const: bool,
-    is_compt: bool,
     is_pub: bool,
 };
 
@@ -207,7 +206,7 @@ pub const DeclCollector = struct {
                 if (v.mutability == .mutable) {
                     try self.reporter.reportFmt(loc, "module-level 'var' is not allowed — use 'const' for module-level declarations", .{});
                 } else {
-                    try self.collectVar(v, true, false, loc);
+                    try self.collectVar(v, true, loc);
                 }
             },
             else => {},
@@ -417,7 +416,7 @@ pub const DeclCollector = struct {
         try self.table.enums.put(e.name, sig);
     }
 
-    fn collectVar(self: *DeclCollector, v: parser.VarDecl, is_const: bool, is_compt: bool, loc: ?errors.SourceLoc) anyerror!void {
+    fn collectVar(self: *DeclCollector, v: parser.VarDecl, is_const: bool, loc: ?errors.SourceLoc) anyerror!void {
         // Type alias: const Name: type = T — register in types map, not vars
         if (is_const and isTypeAlias(v.type_annotation)) {
             try self.table.types.put(v.name, v.name);
@@ -436,7 +435,6 @@ pub const DeclCollector = struct {
             .name = v.name,
             .type_ = var_type,
             .is_const = is_const,
-            .is_compt = is_compt,
             .is_pub = v.is_pub,
         };
 

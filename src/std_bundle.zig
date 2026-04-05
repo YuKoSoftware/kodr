@@ -41,15 +41,27 @@ const PTR_ZIG      = @embedFile("std/ptr.zig");
 // STDLIB FILE EXTRACTION
 // ============================================================
 
-/// Write an embedded file to .orh-cache/std/ if it doesn't already exist
+/// Write an embedded file to .orh-cache/std/, overwriting if content has changed
 pub fn writeStdFile(dir: []const u8, name: []const u8, content: []const u8, allocator: std.mem.Allocator) !void {
     const path = try std.fs.path.join(allocator, &.{ dir, name });
     defer allocator.free(path);
-    std.fs.cwd().access(path, .{}) catch {
-        const file = try std.fs.cwd().createFile(path, .{});
+
+    // Check if existing file matches embedded content
+    if (std.fs.cwd().openFile(path, .{})) |file| {
         defer file.close();
-        try file.writeAll(content);
-    };
+        const stat = try file.stat();
+        if (stat.size == content.len) {
+            const existing = try allocator.alloc(u8, content.len);
+            defer allocator.free(existing);
+            const bytes_read = try file.readAll(existing);
+            if (bytes_read == content.len and std.mem.eql(u8, existing, content)) return;
+        }
+    } else |_| {}
+
+    // File missing or content differs — write fresh copy
+    const file = try std.fs.cwd().createFile(path, .{});
+    defer file.close();
+    try file.writeAll(content);
 }
 
 /// Ensure all embedded std files exist in .orh-cache/std/
@@ -92,4 +104,48 @@ pub fn ensureStdFiles(allocator: std.mem.Allocator) !void {
     for (files) |f| {
         try writeStdFile(std_dir, f.name, f.content, allocator);
     }
+}
+
+// ============================================================
+// TESTS
+// ============================================================
+
+test "writeStdFile overwrites stale content" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const dir_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(dir_path);
+
+    // Write initial content
+    try writeStdFile(dir_path, "test.zig", "old content", allocator);
+
+    // Write updated content — should overwrite
+    try writeStdFile(dir_path, "test.zig", "new content", allocator);
+
+    // Verify new content was written
+    const file = try tmp.dir.openFile("test.zig", .{});
+    defer file.close();
+    var buf: [64]u8 = undefined;
+    const n = try file.readAll(&buf);
+    try std.testing.expectEqualStrings("new content", buf[0..n]);
+}
+
+test "writeStdFile creates missing file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const dir_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(dir_path);
+
+    // Write to non-existent file
+    try writeStdFile(dir_path, "new.zig", "fresh content", allocator);
+
+    const file = try tmp.dir.openFile("new.zig", .{});
+    defer file.close();
+    var buf: [64]u8 = undefined;
+    const n = try file.readAll(&buf);
+    try std.testing.expectEqualStrings("fresh content", buf[0..n]);
 }
