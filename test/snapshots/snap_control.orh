@@ -17,8 +17,8 @@ pub func day_name(d: i32) i32 {
         1 => { return 10 }
         2 => { return 20 }
         3 => { return 30 }
+        else => { return 0 }
     }
-    return 0
 }
 
 // for loop over a slice parameter

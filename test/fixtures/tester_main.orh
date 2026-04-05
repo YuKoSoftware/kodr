@@ -1,6 +1,5 @@
 module comptest
 
-#name    = "comptest"
 #version = (1, 0, 0)
 #build   = exe
 

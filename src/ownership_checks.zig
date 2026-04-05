@@ -280,6 +280,16 @@ pub fn checkExpr(self: *OwnershipChecker, node: *parser.Node, scope: *OwnershipS
             }
         },
 
+        .interpolated_string => |interp| {
+            // Embedded expressions are read (borrowed), not moved
+            for (interp.parts) |part| {
+                switch (part) {
+                    .expr => |e| try checkExpr(self, e, scope, true),
+                    .literal => {},
+                }
+            }
+        },
+
         else => {},
     }
 }

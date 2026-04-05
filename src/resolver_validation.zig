@@ -14,7 +14,10 @@ const Scope = resolver_mod.Scope;
 const RT = types.ResolvedType;
 
 /// Check that a match on a union type covers all members
-pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*parser.Node, match_node: *parser.Node) !void {
+pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type_raw: RT, arms: []*parser.Node, match_node: *parser.Node) !void {
+    // Unwrap pointer/reference types — match(self) where self: const& T checks T
+    const match_type: RT = if (match_type_raw == .ptr) match_type_raw.ptr.elem.* else match_type_raw;
+
     // Collect covered arm names
     var covered: std.ArrayListUnmanaged([]const u8) = .{};
     defer covered.deinit(self.ctx.allocator);
@@ -47,23 +50,12 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*pa
                 if (!found) try missing.append(self.ctx.allocator, member.name());
             }
             if (missing.items.len > 0) {
-                // Report all missing arms in one message
-                var buf: std.ArrayListUnmanaged(u8) = .{};
-                defer buf.deinit(self.ctx.allocator);
-                const w = buf.writer(self.ctx.allocator);
-                try w.writeAll("non-exhaustive match — missing arm for ");
-                for (missing.items, 0..) |name, idx| {
-                    if (idx > 0) try w.writeAll(", ");
-                    try w.print("'{s}'", .{name});
-                }
-                try w.writeAll(", add missing arms or use 'else'");
-                try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node), "{s}", .{buf.items});
+                try reportMissingArms(self, missing.items, match_node);
             }
         },
         .named => |name| {
             // Check enum exhaustiveness — look up variants in local or included DeclTables
             const enum_sig = self.ctx.decls.enums.get(name) orelse blk: {
-                // Search included modules
                 if (self.ctx.all_decls) |ad| {
                     for (self.included_modules.items) |mod_name| {
                         if (ad.get(mod_name)) |mod_decls| {
@@ -87,22 +79,35 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*pa
                     if (!found) try missing.append(self.ctx.allocator, variant);
                 }
                 if (missing.items.len > 0) {
-                    var buf: std.ArrayListUnmanaged(u8) = .{};
-                    defer buf.deinit(self.ctx.allocator);
-                    const w = buf.writer(self.ctx.allocator);
-                    try w.writeAll("non-exhaustive match — missing arm for ");
-                    for (missing.items, 0..) |name_m, idx| {
-                        if (idx > 0) try w.writeAll(", ");
-                        try w.print("'{s}'", .{name_m});
-                    }
-                    try w.writeAll(", add missing arms or use 'else'");
-                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node), "{s}", .{buf.items});
+                    try reportMissingArms(self, missing.items, match_node);
                 }
+            } else {
+                // Named type is not a known enum — require else arm
+                // (caller only calls us when !has_else)
+                try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node),
+                    "match on non-enum type requires an 'else' arm", .{});
             }
-            // else: named type is a struct or unknown — no exhaustiveness required
         },
-        else => {}, // integer/string matches — no exhaustiveness required
+        // Non-enum, non-union types (integers, strings, booleans, floats) —
+        // caller only calls us when !has_else, so report directly
+        else => {
+            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node),
+                "match on non-enum type requires an 'else' arm", .{});
+        },
     }
+}
+
+fn reportMissingArms(self: *TypeResolver, missing: []const []const u8, match_node: *parser.Node) !void {
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    defer buf.deinit(self.ctx.allocator);
+    const w = buf.writer(self.ctx.allocator);
+    try w.writeAll("non-exhaustive match — missing arm for ");
+    for (missing, 0..) |name, idx| {
+        if (idx > 0) try w.writeAll(", ");
+        try w.print("'{s}'", .{name});
+    }
+    try w.writeAll(", add missing arms or use 'else'");
+    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(match_node), "{s}", .{buf.items});
 }
 
 /// Validate that a match arm pattern is a valid member of the matched union type

@@ -20,7 +20,6 @@ ORHON
 
 cat > src/multimod.orh <<'ORHON'
 module multimod
-#name    = "multimod"
 #version = (1, 0, 0)
 #build   = exe
 import std::console
@@ -47,7 +46,6 @@ cd "$TESTDIR/dynlink"
 # Create a dynamic lib module
 cat > src/mathlib.orh <<'ORHON'
 module mathlib
-#name    = "mathlib"
 #build   = dynamic
 pub func add(a: i32, b: i32) i32 {
     return a + b
@@ -57,7 +55,6 @@ ORHON
 # Create an exe that imports the dynamic lib
 cat > src/dynlink.orh <<'ORHON'
 module dynlink
-#name    = "dynlink"
 #build   = exe
 import std::console
 import mathlib
@@ -94,7 +91,6 @@ cd "$TESTDIR/statlink"
 # Create a static lib module
 cat > src/utils.orh <<'ORHON'
 module utils
-#name    = "utils"
 #build   = static
 pub func triple(n: i32) i32 {
     return n * 3
@@ -104,7 +100,6 @@ ORHON
 # Create an exe that imports the static lib
 cat > src/statlink.orh <<'ORHON'
 module statlink
-#name    = "statlink"
 #build   = exe
 import std::console
 import utils
@@ -140,7 +135,6 @@ cd "$TESTDIR/sidecarmod"
 # Anchor file — declares the static lib
 cat > src/mylib.orh <<'ORHON'
 module mylib
-#name  = "mylib"
 #build = static
 
 pub func triple(n: i32) i32 {
@@ -167,7 +161,6 @@ ZIG
 # Exe that imports the multi-file module
 cat > src/sidecarmod.orh <<'ORHON'
 module sidecarmod
-#name  = "sidecarmod"
 #build = exe
 import mylib
 

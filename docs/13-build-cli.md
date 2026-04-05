@@ -71,7 +71,7 @@ All generated files live in `.orh-cache/generated/` and should never be edited m
 
 ```
 bin/
-    <project_name>       // final binary — named from #name metadata, or module name
+    <module_name>        // final binary — named from the module name
 
 .orh-cache/
     generated/

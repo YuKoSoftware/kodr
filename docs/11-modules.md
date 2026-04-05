@@ -3,8 +3,6 @@
 ## Module Declaration
 
 Every `.orh` file must declare its module at the top — this is mandatory, no exceptions.
-The module tag is the only thing that determines which module a file belongs to.
-Folder structure, file names, and directory nesting have no significance whatsoever.
 
 ```
 module math
@@ -14,28 +12,26 @@ module math
 The compiler scans all `.orh` files in `src/`, reads the module tag at the top of each,
 and groups files by module name. Each group becomes one **compilation unit**.
 
-- File location doesn't matter — `src/math.orh`, `src/extra/more_math.orh`,
-  `src/deep/nested/stuff.orh` — all fine as long as they declare `module math`
-- Folder organization is purely for the developer's convenience
-- The compiler only cares about module tags, not paths
+- All files in a module must be in the same directory as the anchor file
+- The compiler groups by module tag, then validates directory co-location
 
 ### File Naming Rules — Anchor File
 Among all files in a module, exactly one must be named after the module — the **anchor file**.
 This is what `import math` resolves to. Only the anchor file can contain metadata
-(`#build`, `#name`, `#version`, `#dep`, etc.).
+(`#build`, `#version`, `#dep`, etc.).
 
-- `module math` → one of the files must be `math.orh` (anywhere in `src/`)
+- `module math` → one of the files must be `math.orh`
 - `module myproj` → one of the files must be `myproj.orh`
-- Other files in the same module can be named anything
+- All other files declaring the same module must be in the same directory
 - No anchor file found = hard compiler error
 - Every project root is named after the project folder — for both executables and libraries
 
-Example — module math spanning three files, freely organized:
+Example — module math spanning three files, all in the same directory:
 ```
 src/
     math.orh              ← anchor file — required
-    utils/algebra.orh     ← also module math, any location
-    utils/geometry.orh    ← also module math, any location
+    algebra.orh           ← also module math, same directory as anchor
+    geometry.orh          ← also module math, same directory as anchor
 ```
 
 All three declare `module math`. The compiler groups them into one compilation unit.
@@ -57,14 +53,13 @@ pub func solve(a: f64, b: f64, c: f64) f64 { }
 ```
 Regular modules are only compiled if something imports them (dead code elimination).
 
-**Project root** — named after the project folder. Metadata uses `#key = value`:
+**Project root** — the module with a `#build` directive. Metadata uses `#key = value`:
 ```
-// myproj.orh — project root for executable
-module myproj
+// game.orh — project root for executable
+module game
 
 #build   = exe
 #version = (1, 0, 0)
-#name    = "myproj"
 
 func main() void {
     // entry point — required for #build = exe
@@ -77,27 +72,27 @@ module mylib
 
 #build   = static
 #version = (1, 0, 0)
-#name    = "mylib"
 ```
+
+The binary name is always derived from the module name: `module game` produces `game`,
+`module mylib` produces `libmylib.a` / `libmylib.so`.
 
 ### Primary Module Detection
 
-The **primary module** is the exe module whose name matches the project folder name and
-whose anchor file lives directly in `src/` (not in a subdirectory). This is the module
-`orhon run` builds and executes.
+The **primary module** is the `#build = exe` module whose anchor file lives directly in
+`src/` (not in a subdirectory). This is the module `orhon run` builds and executes.
+The module name does not need to match the project folder name.
 
 Rules:
-- Module name == project folder name → primary module
-- Anchor file must be at `src/<name>.orh` (top-level, not nested)
-- All other `#build = exe` modules must have their anchor file in a subdirectory of `src/`
-- Only one primary module per project — having two top-level exe anchors is a hard compiler error
+- Only one `#build = exe` module allowed at the `src/` root level
+- The anchor file must be at `src/<name>.orh` (top-level, not nested)
+- Having two top-level exe anchors is a hard compiler error
 
 ```
 myproj/
     src/
-        myproj.orh          ← primary module anchor (module myproj, #build = exe)
-        player.orh          ← also module myproj — additional file
-        tools/tools.orh     ← module tools, #build = exe (non-primary exe — must be in subdir)
+        game.orh            ← primary module anchor (module game, #build = exe)
+        player.orh          ← also module game — additional file
 ```
 
 ### Additional Library Modules
@@ -237,7 +232,6 @@ compiler is the build system.
 // myproj.orh — executable
 module myproj
 
-#name    = "myproj"
 #version = (1, 0, 0)
 #build   = exe
 
@@ -248,17 +242,8 @@ func main() void { }
 // mylib.orh — library project root
 module mylib
 
-#name    = "mylib"
 #version = (1, 0, 0)
 #build   = static
-```
-
-```
-// math/math.orh — additional library module within a project
-module math
-
-#build = static
-#name  = "math"
 ```
 
 ### Build Types

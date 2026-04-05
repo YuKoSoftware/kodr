@@ -167,6 +167,14 @@ pub fn checkExpr(self: *BorrowChecker, node: *parser.Node) anyerror!void {
         .compiler_func => |cf| {
             for (cf.args) |arg| try checkExpr(self, arg);
         },
+        .interpolated_string => |interp| {
+            for (interp.parts) |part| {
+                switch (part) {
+                    .expr => |e| try checkExpr(self, e),
+                    .literal => {},
+                }
+            }
+        },
         else => {},
     }
 }

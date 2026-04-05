@@ -194,6 +194,19 @@ pub const Resolver = struct {
                 files[anchor_idx] = tmp;
             }
 
+            // All module files must be in the same directory as the anchor file
+            if (anchor_count == 1 and files.len > 1) {
+                const anchor_dir = std.fs.path.dirname(files[0]) orelse "";
+                for (files[1..]) |f| {
+                    const file_dir = std.fs.path.dirname(f) orelse "";
+                    if (!std.mem.eql(u8, anchor_dir, file_dir)) {
+                        try self.reporter.reportFmt(.{ .file = f, .line = 1, .col = 1 },
+                            "'{s}' declares module '{s}' but is not in the same directory as anchor file '{s}'",
+                            .{ f, mod_name, files[0] });
+                    }
+                }
+            }
+
             try self.modules.put(mod_name, .{
                 .name = mod_name,
                 .files = files,

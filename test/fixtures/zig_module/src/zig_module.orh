@@ -1,6 +1,5 @@
 module zig_module
 
-#name    = "zig_module"
 #version = (1, 0, 0)
 #build   = exe
 

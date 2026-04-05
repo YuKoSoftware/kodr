@@ -1,5 +1,4 @@
 module union_flat
-#name    = "union_flat"
 #version = (1, 0, 0)
 #build   = exe
 

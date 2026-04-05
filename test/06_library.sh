@@ -14,7 +14,6 @@ cd "$TESTDIR/testlib"
 # Rewrite as static library (func main not allowed in lib modules)
 cat > src/testlib.orh <<'ORHON'
 module testlib
-#name    = "testlib"
 #version = (1, 0, 0)
 #build   = static
 
@@ -67,7 +66,6 @@ cd "$TESTDIR"
 mkdir -p ifacelib/src
 cat > ifacelib/src/ifacelib.orh <<'ORHON'
 module ifacelib
-#name    = "ifacelib"
 #version = (1, 0, 0)
 #build   = static
 pub func add(a: i32, b: i32) i32 {
@@ -85,7 +83,6 @@ cd "$TESTDIR"
 mkdir -p ifaceuser/src
 cat > ifaceuser/src/ifaceuser.orh <<'ORHON'
 module ifaceuser
-#name    = "ifaceuser"
 #version = (1, 0, 0)
 #build   = exe
 import ifacelib

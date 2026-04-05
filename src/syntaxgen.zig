@@ -30,7 +30,6 @@ const SYNTAX_DOC =
     \\
     \\```orhon
     \\#build = exe
-    \\#name = "myapp"
     \\#version = 1.0.0
     \\#dep "libs/math"
     \\```

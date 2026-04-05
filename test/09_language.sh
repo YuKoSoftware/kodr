@@ -153,7 +153,6 @@ cd "$TESTDIR"
 mkdir -p bpmulti/src
 cp "$FIXTURES/blueprint_main.orh" bpmulti/src/bpmulti.orh
 sed -i '1s/^module bptest$/module bpmulti/' bpmulti/src/bpmulti.orh
-sed -i 's/#name    = "bptest"/#name    = "bpmulti"/' bpmulti/src/bpmulti.orh
 cp "$FIXTURES/blueprint_multiple.orh" bpmulti/src/tester.orh
 cd bpmulti
 

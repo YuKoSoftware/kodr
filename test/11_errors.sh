@@ -43,7 +43,6 @@ cd "$TESTDIR"
 mkdir -p neg_anchor/src
 cat > neg_anchor/src/neg_anchor.orh <<'ORHON'
 module neg_anchor
-#name    = "neg_anchor"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -63,7 +62,6 @@ cd "$TESTDIR"
 "$ORHON" init badimport >/dev/null 2>&1
 cat > "$TESTDIR/badimport/src/badimport.orh" <<'ORHON'
 module badimport
-#name    = "badimport"
 #version = (1, 0, 0)
 #build   = exe
 import nonexistent
@@ -107,7 +105,6 @@ cd "$TESTDIR"
 mkdir -p neg_split/src
 cat > neg_split/src/neg_split.orh <<'ORHON'
 module neg_split
-#name    = "neg_split"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -126,7 +123,6 @@ cd "$TESTDIR"
 mkdir -p neg_rettype/src
 cat > neg_rettype/src/neg_rettype.orh <<'ORHON'
 module neg_rettype
-#name    = "neg_rettype"
 #version = (1, 0, 0)
 #build   = exe
 func foo() i32 {
@@ -145,7 +141,6 @@ cd "$TESTDIR"
 mkdir -p neg_ifcond/src
 cat > neg_ifcond/src/neg_ifcond.orh <<'ORHON'
 module neg_ifcond
-#name    = "neg_ifcond"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -162,7 +157,6 @@ cd "$TESTDIR"
 mkdir -p neg_whilecond/src
 cat > neg_whilecond/src/neg_whilecond.orh <<'ORHON'
 module neg_whilecond
-#name    = "neg_whilecond"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -179,7 +173,6 @@ cd "$TESTDIR"
 mkdir -p neg_break/src
 cat > neg_break/src/neg_break.orh <<'ORHON'
 module neg_break
-#name    = "neg_break"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -196,7 +189,6 @@ cd "$TESTDIR"
 mkdir -p neg_continue/src
 cat > neg_continue/src/neg_continue.orh <<'ORHON'
 module neg_continue
-#name    = "neg_continue"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -213,7 +205,6 @@ cd "$TESTDIR"
 mkdir -p neg_varref/src
 cat > neg_varref/src/neg_varref.orh <<'ORHON'
 module neg_varref
-#name    = "neg_varref"
 #version = (1, 0, 0)
 #build   = exe
 struct Foo {
@@ -234,7 +225,6 @@ cd "$TESTDIR"
 mkdir -p neg_typemismatch/src
 cat > neg_typemismatch/src/neg_typemismatch.orh <<'ORHON'
 module neg_typemismatch
-#name    = "neg_typemismatch"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -251,7 +241,6 @@ cd "$TESTDIR"
 mkdir -p neg_dupvar/src
 cat > neg_dupvar/src/neg_dupvar.orh <<'ORHON'
 module neg_dupvar
-#name    = "neg_dupvar"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -269,7 +258,6 @@ cd "$TESTDIR"
 mkdir -p neg_default_order/src
 cat > neg_default_order/src/neg_default_order.orh <<'ORHON'
 module neg_default_order
-#name    = "neg_default_order"
 #version = (1, 0, 0)
 #build   = exe
 func foo(a: i32 = 5, b: i32) i32 {
@@ -287,7 +275,6 @@ cd "$TESTDIR"
 mkdir -p neg_u8str/src
 cat > neg_u8str/src/neg_u8str.orh <<'ORHON'
 module neg_u8str
-#name    = "neg_u8str"
 #version = (1, 0, 0)
 #build   = exe
 func greet(s: str) void { }
@@ -307,7 +294,6 @@ cd "$TESTDIR"
 mkdir -p neg_str_eq/src
 cat > neg_str_eq/src/neg_str_eq.orh <<'ORHON'
 module neg_str_eq
-#name    = "neg_str_eq"
 #version = (1, 0, 0)
 #build   = exe
 func main() void {
@@ -325,7 +311,6 @@ cd "$TESTDIR"
 mkdir -p neg_dup_anchor/src/sub
 cat > neg_dup_anchor/src/neg_dup_anchor.orh <<'ORHON'
 module neg_dup_anchor
-#name    = "neg_dup"
 #version = (1, 0, 0)
 #build   = exe
 func main() void { }
@@ -383,6 +368,7 @@ run_fixture neg_matcharm fail_types.orh "not a member" "fixture: rejects invalid
 
 # struct errors
 run_fixture neg_struct_dup fail_structs.orh "duplicate field" "fixture: catches duplicate struct field"
+run_fixture neg_struct_pos fail_struct_positional.orh "require named arguments" "fixture: rejects positional struct constructor"
 
 # enum errors
 run_fixture neg_enum_dup fail_enums.orh "duplicate variant" "fixture: catches duplicate enum variant"
@@ -397,6 +383,7 @@ run_fixture neg_scope fail_scope.orh "module-level.*var.*not allowed\|already de
 # match errors
 run_fixture neg_match fail_match.orh "not a member" "fixture: catches invalid match arm"
 run_fixture neg_match_guard fail_match_guard.orh "match with guards requires" "fixture: catches guarded match without else"
+run_fixture neg_match_noelse fail_match_no_else.orh "requires an 'else' arm" "fixture: rejects match on non-enum without else"
 
 # throw in void function
 cd "$TESTDIR"
@@ -545,7 +532,6 @@ cd "$TESTDIR"
 mkdir -p neg_modmain/src
 cat > neg_modmain/src/neg_modmain.orh <<'ORHON'
 module main
-#name    = "neg_modmain"
 #version = (1, 0, 0)
 #build   = exe
 func main() void { }
@@ -560,7 +546,6 @@ cd "$TESTDIR"
 mkdir -p neg_libmain/src
 cat > neg_libmain/src/neg_libmain.orh <<'ORHON'
 module neg_libmain
-#name    = "neg_libmain"
 #version = (1, 0, 0)
 #build   = static
 func main() void { }
@@ -569,6 +554,39 @@ cd neg_libmain
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "func main.*only allowed in executable"; then pass "rejects func main() in library"
 else fail "rejects func main() in library" "$NEG_OUT"; fi
+
+# #name directive rejected (binary name comes from module name)
+cd "$TESTDIR"
+mkdir -p neg_hashname/src
+cat > neg_hashname/src/neg_hashname.orh <<'ORHON'
+module neg_hashname
+#name    = "somename"
+#version = (1, 0, 0)
+#build   = exe
+func main() void { }
+ORHON
+cd neg_hashname
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "#name is not supported"; then pass "rejects #name directive"
+else fail "rejects #name directive" "$NEG_OUT"; fi
+
+# module files must be in same directory as anchor
+cd "$TESTDIR"
+mkdir -p neg_moddir/src/sub
+cat > neg_moddir/src/neg_moddir.orh <<'ORHON'
+module neg_moddir
+#version = (1, 0, 0)
+#build   = exe
+func main() void { }
+ORHON
+cat > neg_moddir/src/sub/extra.orh <<'ORHON'
+module neg_moddir
+pub func helper() i32 { return 1 }
+ORHON
+cd neg_moddir
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "not in the same directory"; then pass "rejects module files in different directories"
+else fail "rejects module files in different directories" "$NEG_OUT"; fi
 
 
 report_results

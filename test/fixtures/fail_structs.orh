@@ -1,6 +1,5 @@
 module fixture
 
-#name    = "fail_structs"
 #version = (1, 0, 0)
 #build   = exe
 

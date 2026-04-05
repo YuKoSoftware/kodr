@@ -22,9 +22,10 @@ pub fn day_name(d: i32) i32 {
         3 => {
             return 30;
         },
-        else => {},
+        else => {
+            return 0;
+        },
     }
-    return 0;
 }
 
 pub fn sum_slice(arr: []i32) i32 {

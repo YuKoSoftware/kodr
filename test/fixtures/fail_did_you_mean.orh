@@ -1,6 +1,5 @@
 module fixture
 
-#name    = "fail_did_you_mean"
 #version = (1, 0, 0)
 #build   = exe
 

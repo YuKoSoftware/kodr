@@ -1,5 +1,4 @@
 module fixture
-#name    = "bptest"
 #version = (1, 0, 0)
 #build   = exe
 

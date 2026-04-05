@@ -979,11 +979,52 @@ test "resolver - struct constructor resolves to named type" {
     arg.* = .{ .int_literal = "5" };
     const args = try a.alloc(*parser.Node, 1);
     args[0] = arg;
+    const names = try a.alloc([]const u8, 1);
+    names[0] = "x";
+    const call = try a.create(parser.Node);
+    call.* = .{ .call_expr = .{ .callee = callee, .args = args, .arg_names = names } };
+
+    const result = try resolver.resolveExpr(call, &scope);
+    try std.testing.expectEqualStrings("Point", result.name());
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "resolver - positional struct constructor rejected" {
+    const alloc = std.testing.allocator;
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+
+    const fields = try alloc.alloc(declarations.FieldSig, 1);
+    fields[0] = .{ .name = "x", .type_ = .{ .primitive = .i32 }, .has_default = false, .is_pub = true };
+    try decl_table.structs.put("Point", .{ .name = "Point", .fields = fields, .is_pub = true });
+
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+    var resolver = TypeResolver.init(&ctx);
+    defer resolver.deinit();
+    var scope = Scope.init(alloc, null);
+    defer scope.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Point(5) → positional, should be rejected
+    const callee = try a.create(parser.Node);
+    callee.* = .{ .identifier = "Point" };
+    const arg = try a.create(parser.Node);
+    arg.* = .{ .int_literal = "5" };
+    const args = try a.alloc(*parser.Node, 1);
+    args[0] = arg;
     const call = try a.create(parser.Node);
     call.* = .{ .call_expr = .{ .callee = callee, .args = args, .arg_names = &.{} } };
 
     const result = try resolver.resolveExpr(call, &scope);
+    // Still resolves to the struct type (soft error)
     try std.testing.expectEqualStrings("Point", result.name());
+    // But an error was reported
+    try std.testing.expect(reporter.hasErrors());
 }
 
 test "resolver - validateType catches unknown generic" {
@@ -1087,6 +1128,37 @@ test "resolver - match exhaustiveness with many arms" {
 
     // Should report missing T18
     try resolver.checkMatchExhaustiveness(union_type, arms, match_node);
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "resolver - match on primitive without else rejected" {
+    const alloc = std.testing.allocator;
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+    var resolver = TypeResolver.init(&ctx);
+    defer resolver.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Build match on i32 with no else arm
+    const pat = try a.create(parser.Node);
+    pat.* = .{ .int_literal = "1" };
+    const body = try a.create(parser.Node);
+    body.* = .{ .int_literal = "0" };
+    const arm = try a.create(parser.Node);
+    arm.* = .{ .match_arm = .{ .pattern = pat, .guard = null, .body = body } };
+    const arms = try a.alloc(*parser.Node, 1);
+    arms[0] = arm;
+
+    const match_node = try a.create(parser.Node);
+    match_node.* = .{ .int_literal = "0" };
+
+    try resolver.checkMatchExhaustiveness(RT{ .primitive = .i32 }, arms, match_node);
     try std.testing.expect(reporter.hasErrors());
 }
 

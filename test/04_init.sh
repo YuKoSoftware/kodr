@@ -49,10 +49,10 @@ else
     fail "testproj.orh has 'module testproj'"
 fi
 
-if grep -q '#name    = "testproj"' testproj/src/testproj.orh; then
-    pass "testproj.orh has project name"
+if grep -q '#build   = exe' testproj/src/testproj.orh; then
+    pass "testproj.orh has #build = exe"
 else
-    fail "testproj.orh has project name"
+    fail "testproj.orh has #build = exe"
 fi
 
 if grep -q "^module example$" testproj/src/example/example.orh; then

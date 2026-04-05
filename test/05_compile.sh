@@ -13,7 +13,6 @@ cd "$TESTDIR"
 mkdir -p orhontest/src
 cp "$FIXTURES/tester_main.orh" orhontest/src/orhontest.orh
 sed -i '1s/^module comptest$/module orhontest/' orhontest/src/orhontest.orh
-sed -i 's/#name    = "comptest"/#name    = "orhontest"/' orhontest/src/orhontest.orh
 cp "$FIXTURES/tester.orh" orhontest/src/tester.orh
 cd "$TESTDIR/orhontest"
 
@@ -36,7 +35,6 @@ cd "$TESTDIR"
 mkdir -p failtest/src
 cat > failtest/src/failtest.orh <<'ORHON'
 module failtest
-#name    = "failtest"
 #version = (1, 0, 0)
 #build   = exe
 func add(a: i32, b: i32) i32 {

@@ -436,17 +436,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         while (mod_it2.next()) |entry| {
             const mod = entry.value_ptr;
             if (!mod.is_root) continue;
-            var project_name: []const u8 = "";
-            if (mod.ast) |ast| {
-                for (ast.program.metadata) |meta| {
-                    if (meta.metadata.field == .name) {
-                        if (meta.metadata.value.* == .string_literal) {
-                            project_name = constants.stripQuotes(meta.metadata.value.string_literal);
-                        }
-                    }
-                }
-            }
-            const binary_name2 = if (project_name.len > 0) project_name else mod.name;
+            const binary_name2 = mod.name;
             last_binary_name = binary_name2;
             // Collect module imports, zig module names, and cross-zig deps for test build.zig
             var test_zig_mods = std.ArrayListUnmanaged([]const u8){};
@@ -558,7 +548,6 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             if (!mod.is_root) continue;
 
             var build_type: module.BuildType = .exe;
-            var project_name: []const u8 = "";
             var mt_version: ?[3]u64 = null;
             if (mod.ast) |ast| {
                 for (ast.program.metadata) |meta| {
@@ -568,9 +557,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                         }
                     }
                     if (meta.metadata.field == .name) {
-                        if (meta.metadata.value.* == .string_literal) {
-                            project_name = constants.stripQuotes(meta.metadata.value.string_literal);
-                        }
+                        try reporter.reportFmt(.{ .file = mod.files[0], .line = 1, .col = 1 },
+                            "#name is not supported — the binary name is derived from the module name", .{});
                     }
                     if (meta.metadata.field == .version) {
                         mt_version = module.extractVersion(meta.metadata.value);
@@ -578,7 +566,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
                 }
             }
 
-            const binary_name = if (project_name.len > 0) project_name else mod.name;
+            // Binary name always comes from the module name
+            const binary_name = mod.name;
 
             if (build_type == .exe) {
                 // Primary module (name matches folder) gets priority for orhon run

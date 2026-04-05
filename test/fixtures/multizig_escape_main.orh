@@ -1,5 +1,4 @@
 module multizig_escape
-#name    = "multizig_escape"
 #version = (1, 0, 0)
 #build   = static
 

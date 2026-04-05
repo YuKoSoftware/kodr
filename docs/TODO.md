@@ -23,15 +23,21 @@ AND explicit integer discriminants (currently produces confusing Zig error).
 
 Simple value enums work correctly — this only affects data-carrying variants.
 
-### Review metadata directives (`#name`, `#version`, `#build`, `#dep`) `medium`
+### Review metadata directives (`#version`, `#build`, `#dep`) `medium`
 
-All metadata directives need to be looked at together. Questions:
+Remaining questions:
 - Should `#dep` move to `.zon` files (like C deps already do)?
 - Is `#dep` tested? (Currently zero tests)
-- Are `#name`, `#version`, `#build` the right set, or should some move to `.zon`?
 - Should metadata be unified into one system instead of split between `#` directives and `.zon`?
 
+`#name` removed entirely — binary name always comes from the module name.
 Not blocking zero-magic work — metadata doesn't touch codegen. But needs a design pass.
+
+### Unused import warnings `easy`
+
+No unused import detection exists yet. When implemented, suppress warnings for
+`#build = static/dynamic` root modules — libraries import modules to expose them,
+not necessarily to use them directly.
 
 ### For-loop tuple captures `medium`
 
@@ -77,12 +83,10 @@ Known Zig comptime friction with Orhon codegen:
 Specced in `docs/04-operators.md` but not implemented. Needs codegen expansion to
 per-field operations and scalar broadcast wrapping. No current use cases in Tamga.
 
-### Reject positional struct constructors `easy`
+### ~~Reject positional struct constructors~~ `easy` — DONE
 
-The spec says "Named instantiation always" for structs, but the resolver doesn't
-reject `Player(42, "hero")` — it passes through and fails at Zig compilation with
-a confusing error. Add a check: when a call targets a known struct name and args
-have no names, report "struct constructors require named arguments."
+Resolver now rejects `Player(42, "hero")` with a clear error message:
+"struct constructors require named arguments." Unit test + integration fixture added.
 
 ### Spec: clarify `var` inside structs `easy`
 
@@ -105,6 +109,11 @@ Currently `throw` emits the error check but doesn't unwrap the variable —
 `var x: i32 = result` after `throw` produces invalid Zig because `result` is
 still `anyerror!i32`. Only `result.i32` / `result.value` works (via explicit unwrap).
 
+### ~~Match on non-enum type without else~~ `easy` — DONE
+
+Match on numeric/string/bool types now requires an `else` arm. Pointer/reference
+types are unwrapped for exhaustiveness checking. Unit test + integration fixture added.
+
 ### `(null | Error | T)` TypeClass classification `easy`
 
 `mir_types.zig` classifies combined null+error unions as `.error_union` because the
@@ -118,18 +127,16 @@ syntax, but the resolver (pass 5) rejects all `type_ptr` in variable declaration
 "reference type not allowed in variable declaration." Either update the spec to remove
 the example, or change the resolver to allow it.
 
-### Interpolated string ownership/borrow checking `easy`
+### ~~Interpolated string ownership/borrow checking~~ `easy` — DONE
 
-Variables used inside interpolated strings (`"hello @{name}"`) are not checked for
-use-after-move or active-mutable-borrow violations. Both checkers fall through to
-`else => {}` for `interpolated_string` nodes. Add handling that walks `.expr` parts.
+Both ownership and borrow checkers now walk `.expr` parts of interpolated strings.
+Use-after-move and active-mutable-borrow violations inside `"hello @{name}"` are caught.
+Unit tests added to both `ownership.zig` and `borrow.zig`.
 
-### Borrow checker dead code: type-annotation-based mutability `easy`
+### ~~Borrow checker dead code: type-annotation-based mutability~~ `easy` — DONE
 
-`borrow_checks.zig` var_decl handler had logic to derive borrow mutability from the type
-annotation (`isMutableBorrowType`). Since the resolver rejects `type_ptr` in var decls
-before the borrow checker runs, this path was never reachable. The `mut_borrow_expr`
-expression now correctly determines mutability. Clean up any remaining dead branches.
+Already cleaned up. `var_decl` handler uses `mut_borrow_expr`/`const_borrow_expr`
+directly. `isMutableBorrowType` remains used only for method self-parameter checks.
 
 ### `compt for` — implement grammar and builder `medium`
 
@@ -235,6 +242,19 @@ across 8 files (codegen, types, resolver, mir, lsp, interface, docgen) and const
 in `interface.zig` tests. `type_tuple_anon` has contradictory handling in `types.zig`
 (treated as union) vs `codegen.zig` (treated as struct). Removing them requires updating
 all consuming switch arms and deciding whether `type_named` should absorb primitives.
+
+### Dead parameter `obj_name` in `lookupStructMethod` `easy`
+
+`borrow.zig:192` — `lookupStructMethod(obj_name, method_name)` discards `obj_name`
+with `_ = obj_name`. The function iterates all struct types to find any method with
+the given name without verifying the object's type matches. Either remove the parameter
+or use it to filter by the object's actual struct type.
+
+### Build-type string parsing duplicated `easy`
+
+`module_parse.zig:308-316` has an `if/else if` chain comparing against `"exe"`,
+`"static"`, `"dynamic"` — duplicating the logic already in `module.parseBuildType()`.
+Replace with a call to the existing function.
 
 ### Break up oversized functions `medium`
 

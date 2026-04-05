@@ -1,5 +1,4 @@
 module fixture
-#name    = "failtest"
 #version = (1, 0, 0)
 #build   = exe
 import does_not_exist

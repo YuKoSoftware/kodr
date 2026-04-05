@@ -64,7 +64,6 @@ cd "$TESTDIR"
 mkdir -p discardtest/src
 cat > discardtest/src/discardtest.orh <<'ORHON'
 module discardtest
-#name    = "discardtest"
 #version = (1, 0, 0)
 #build   = exe
 import std::console

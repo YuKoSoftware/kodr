@@ -1,5 +1,4 @@
 module fixture
-#name    = "fail_union_dup"
 #version = (1, 0, 0)
 #build   = exe
 

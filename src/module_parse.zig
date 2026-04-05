@@ -298,7 +298,7 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
             if (meta.metadata.field == .unknown) {
                 // Report unknown metadata field — likely a typo
                 if (meta.metadata.raw_field) |raw| {
-                    try self.reporter.reportFmt(null, "unknown metadata field '#{s}' — expected #build, #name, #version, #dep, or #description", .{raw});
+                    try self.reporter.reportFmt(null, "unknown metadata field '#{s}' — expected #build, #version, #dep, or #description", .{raw});
                 }
             }
             if (meta.metadata.field == .build) {
@@ -323,29 +323,20 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
 
     }
 
-    // Validate exe layout — exe modules with anchor file directly in src/ must
-    // match the project folder name (only the primary module gets #build = exe at root)
-    const project_folder = blk: {
-        const cwd_path = try std.fs.cwd().realpathAlloc(self.allocator, ".");
-        defer self.allocator.free(cwd_path);
-        break :blk try self.allocator.dupe(u8, std.fs.path.basename(cwd_path));
-    };
-    defer self.allocator.free(project_folder);
-
+    // Validate exe layout — only one #build = exe module allowed in src/
+    var exe_count: usize = 0;
     var exe_it = self.modules.iterator();
     while (exe_it.next()) |entry| {
         const mod = entry.value_ptr;
         if (mod.build_type != .exe) continue;
 
-        // Check if anchor file is directly in src/ (not in a subdirectory)
         if (mod.files.len > 0) {
             const anchor = mod.files[0];
             const dir = std.fs.path.dirname(anchor) orelse "";
-            // Anchor is directly in src/ if its directory is exactly "src"
             if (std.mem.eql(u8, dir, "src")) {
-                if (!std.mem.eql(u8, entry.key_ptr.*, project_folder)) {
-                    try self.reporter.reportFmt(.{ .file = anchor, .line = 1, .col = 1 }, "only the primary module '{s}' may use #build = exe in src/ — move '{s}' to a subdirectory",
-                        .{ project_folder, entry.key_ptr.* });
+                exe_count += 1;
+                if (exe_count > 1) {
+                    try self.reporter.reportFmt(.{ .file = anchor, .line = 1, .col = 1 }, "multiple #build = exe modules in src/ — only one executable entry point is allowed", .{});
                 }
             }
         }

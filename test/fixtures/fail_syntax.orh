@@ -1,6 +1,5 @@
 module fixture
 
-#name    = "fail_syntax"
 #version = (1, 0, 0)
 #build   = exe
 

@@ -1,5 +1,4 @@
 module snaptest_basics
-#name    = "snaptest_basics"
 #version = (1, 0, 0)
 #build   = exe
 

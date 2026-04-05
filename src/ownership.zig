@@ -854,3 +854,31 @@ test "ownership - var value still moves" {
     try checker.checkExpr(&id2, &scope, false);
     try std.testing.expect(reporter.hasErrors()); // use-after-move detected
 }
+
+test "ownership - interpolated string checks embedded exprs" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+
+    var checker = OwnershipChecker.init(alloc, &ctx);
+
+    var scope = OwnershipScope.init(alloc, null);
+    defer scope.deinit();
+
+    // Define 's' as non-primitive, moved
+    try scope.define("s", false);
+    _ = scope.setState("s", .moved);
+
+    // Use moved 's' inside interpolated string — should detect use-after-move
+    var id_node = parser.Node{ .identifier = "s" };
+    var parts = [_]parser.InterpolatedPart{
+        .{ .literal = "hello " },
+        .{ .expr = &id_node },
+    };
+    var interp = parser.Node{ .interpolated_string = .{ .parts = &parts } };
+    try checker.checkExpr(&interp, &scope, false);
+    try std.testing.expect(reporter.hasErrors());
+}

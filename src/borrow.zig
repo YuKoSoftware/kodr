@@ -966,3 +966,28 @@ test "NLL - buildLastUseMap with nested expressions" {
     try std.testing.expectEqual(@as(usize, 0), last_use.get("bar").?);
     try std.testing.expectEqual(@as(usize, 1), last_use.get("obj").?);
 }
+
+test "borrow checker - interpolated string checks embedded exprs" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+    var checker = BorrowChecker.init(alloc, &ctx);
+    defer checker.deinit();
+
+    // Mutable borrow of x
+    try checker.addBorrow("x", null, true, null);
+
+    // Use x inside interpolated string — should detect borrow violation
+    var id_node = parser.Node{ .identifier = "x" };
+    var parts = [_]parser.InterpolatedPart{
+        .{ .literal = "value: " },
+        .{ .expr = &id_node },
+    };
+    var interp = parser.Node{ .interpolated_string = .{ .parts = &parts } };
+    try checker.checkExpr(&interp);
+    try std.testing.expect(reporter.hasErrors());
+}
