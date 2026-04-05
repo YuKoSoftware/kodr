@@ -305,15 +305,9 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                 mod.is_root = true;
                 if (meta.metadata.value.* == .identifier) {
                     const val = meta.metadata.value.identifier;
-                    if (std.mem.eql(u8, val, "exe")) {
-                        mod.build_type = .exe;
-                    } else if (std.mem.eql(u8, val, "static")) {
-                        mod.build_type = .static;
-                    } else if (std.mem.eql(u8, val, "dynamic")) {
-                        mod.build_type = .dynamic;
-                    } else {
+                    mod.build_type = module.parseBuildType(val);
+                    if (mod.build_type == .exe and !std.mem.eql(u8, val, "exe")) {
                         try self.reporter.reportFmt(null, "unknown #build type '{s}' — expected 'exe', 'static', or 'dynamic'", .{val});
-                        mod.build_type = .exe;
                     }
                 } else {
                     mod.build_type = .exe;

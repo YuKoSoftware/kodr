@@ -41,4 +41,37 @@ else
     fail "orhon version prints version"
 fi
 
+section "CLI commands"
+
+# orhon analysis on a valid fixture
+ANALYSIS_OUT=$("$ORHON" analysis "$FIXTURES/blueprint_basic.orh" 2>&1 || true)
+if echo "$ANALYSIS_OUT" | grep -q "PASS"; then
+    pass "orhon analysis on valid file"
+else
+    fail "orhon analysis on valid file" "$ANALYSIS_OUT"
+fi
+
+# orhon gendoc -syntax produces docs/syntax.md
+cd "$TESTDIR"
+"$ORHON" init gendoc_proj >/dev/null 2>&1
+cd gendoc_proj
+mkdir -p docs
+"$ORHON" gendoc -syntax >/dev/null 2>&1
+if [ -f docs/syntax.md ]; then
+    pass "orhon gendoc -syntax produces syntax.md"
+else
+    fail "orhon gendoc -syntax produces syntax.md"
+fi
+
+# orhon build -zig emits Zig source project
+cd "$TESTDIR"
+"$ORHON" init zigproj >/dev/null 2>&1
+cd zigproj
+"$ORHON" build -zig >/dev/null 2>&1
+if [ -d bin/zig ]; then
+    pass "orhon build -zig creates bin/zig/"
+else
+    fail "orhon build -zig creates bin/zig/"
+fi
+
 report_results

@@ -369,7 +369,7 @@ run_fixture neg_matcharm fail_types.orh "not a member" "fixture: rejects invalid
 # struct errors
 run_fixture neg_struct_dup fail_structs.orh "duplicate field" "fixture: catches duplicate struct field"
 run_fixture neg_struct_pos fail_struct_positional.orh "require named arguments" "fixture: rejects positional struct constructor"
-
+run_fixture neg_struct_var fail_struct_var.orh "mutable.*var.*not allowed" "fixture: rejects var in struct"
 # enum errors
 run_fixture neg_enum_dup fail_enums.orh "duplicate variant" "fixture: catches duplicate enum variant"
 run_fixture neg_enum_val fail_enum_value.orh "error" "fixture: rejects tagged union with explicit value"
@@ -569,6 +569,38 @@ cd neg_hashname
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "#name is not supported"; then pass "rejects #name directive"
 else fail "rejects #name directive" "$NEG_OUT"; fi
+
+# circular imports (module A imports B, B imports A)
+cd "$TESTDIR"
+mkdir -p neg_circular/src
+cp "$FIXTURES/fail_circular_a.orh" neg_circular/src/circular_a.orh
+cp "$FIXTURES/fail_circular_b.orh" neg_circular/src/circular_b.orh
+cat > neg_circular/src/neg_circular.orh <<'ORHON'
+module neg_circular
+#version = (1, 0, 0)
+#build   = exe
+import circular_a
+func main() void { }
+ORHON
+cd neg_circular
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "circular import"; then pass "rejects circular imports"
+else fail "rejects circular imports" "$NEG_OUT"; fi
+
+# struct main {} in exe module — main is reserved for func main()
+cd "$TESTDIR"
+mkdir -p neg_structmain/src
+cat > neg_structmain/src/neg_structmain.orh <<'ORHON'
+module neg_structmain
+#version = (1, 0, 0)
+#build   = exe
+struct main { x: i32 }
+func entry() void { }
+ORHON
+cd neg_structmain
+NEG_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$NEG_OUT" | grep -qi "'main' is reserved"; then pass "rejects struct main in exe module"
+else fail "rejects struct main in exe module" "$NEG_OUT"; fi
 
 # module files must be in same directory as anchor
 cd "$TESTDIR"

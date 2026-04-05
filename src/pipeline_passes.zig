@@ -69,6 +69,74 @@ pub fn validateMainReserved(
     return reporter.hasErrors();
 }
 
+/// Check for unused imports and emit warnings.
+/// Scans module source files for "importname." qualifier patterns.
+/// `use` (include) imports are always considered used since they merge symbols.
+/// Library root modules (#build = static/dynamic) are skipped — they import
+/// modules to expose them, not necessarily to use them directly.
+pub fn checkUnusedImports(
+    allocator: std.mem.Allocator,
+    ast: *parser.Node,
+    mod_ptr: *module.Module,
+    locs_ptr: ?*const parser.LocMap,
+    file_offsets: []module.FileOffset,
+    reporter: *errors.Reporter,
+) !void {
+    // Skip library root modules — they import to expose, not to use
+    if (mod_ptr.build_type == .static or mod_ptr.build_type == .dynamic) return;
+
+    // Skip std modules — they live in .orh-cache/std/ and have internal imports
+    if (mod_ptr.is_zig_module) return;
+    for (mod_ptr.files) |file| {
+        if (std.mem.indexOf(u8, file, ".orh-cache/std/") != null) return;
+    }
+
+    // Read all source files for this module into one buffer
+    var source_parts: std.ArrayListUnmanaged([]const u8) = .{};
+    defer {
+        for (source_parts.items) |s| allocator.free(s);
+        source_parts.deinit(allocator);
+    }
+    for (mod_ptr.files) |file| {
+        const content = std.fs.cwd().readFileAlloc(allocator, file, 10 * 1024 * 1024) catch continue;
+        source_parts.append(allocator, content) catch {
+            allocator.free(content);
+            continue;
+        };
+    }
+
+    for (ast.program.imports) |imp_node| {
+        if (imp_node.* != .import_decl) continue;
+        const imp = imp_node.import_decl;
+
+        // `use` imports merge symbols — always considered used
+        if (imp.is_include) continue;
+
+        // Skip std imports — may be needed transitively by other std modules
+        if (imp.scope != null and std.mem.eql(u8, imp.scope.?, "std")) continue;
+
+        const ref_name = imp.alias orelse imp.path;
+        const prefix = try std.fmt.allocPrint(allocator, "{s}.", .{ref_name});
+        defer allocator.free(prefix);
+
+        // Search source text for "modname." qualifier pattern
+        var used = false;
+        for (source_parts.items) |source| {
+            if (std.mem.indexOf(u8, source, prefix) != null) {
+                used = true;
+                break;
+            }
+        }
+
+        if (!used) {
+            const loc = module.resolveNodeLoc(locs_ptr, file_offsets, imp_node);
+            const msg = try std.fmt.allocPrint(allocator, "unused import: '{s}'", .{ref_name});
+            defer allocator.free(msg);
+            try reporter.warn(.{ .message = msg, .loc = loc });
+        }
+    }
+}
+
 /// Run semantic passes 5–8 and codegen passes 10–11 for a single module.
 /// Returns the generated Zig output string slice (owned by cg).
 pub fn runSemanticAndCodegen(

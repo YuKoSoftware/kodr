@@ -130,7 +130,7 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     try cg.emit(");");
                 }
             } else if (assign_op == .assign and
-                m.lhs().type_class == .null_union)
+                (m.lhs().type_class == .null_union or m.lhs().type_class == .null_error_union))
             {
                 try cg.generateExprMir(m.lhs());
                 try cg.emit(" = ");

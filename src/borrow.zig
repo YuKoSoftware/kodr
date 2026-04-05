@@ -174,22 +174,17 @@ pub const BorrowChecker = struct {
 
     /// Look up a struct method by searching struct_methods with all known struct type names.
     /// Returns the FuncSig if found, null otherwise.
-    pub fn lookupStructMethod(self: *BorrowChecker, obj_name: []const u8, method_name: []const u8) ?declarations.FuncSig {
+    pub fn lookupStructMethod(self: *BorrowChecker, method_name: []const u8) ?declarations.FuncSig {
         // Try all struct types — check if "TypeName.method" exists in struct_methods.
         // The object variable's type name is not available here (borrow checker runs
         // without type info), so iterate known structs that have this method.
         var it = self.ctx.decls.structs.iterator();
         while (it.next()) |entry| {
             const struct_name = entry.key_ptr.*;
-            // Check struct_methods for "StructName.method"
             const sm_it = self.ctx.decls.struct_methods;
-            // Build the key "StructName.method" and look it up
             var buf: [256]u8 = undefined;
             const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ struct_name, method_name }) catch continue;
             if (sm_it.get(key)) |sig| {
-                // Verify the struct has a field/relationship with the object name,
-                // or just trust that if the method exists, it's a valid candidate.
-                _ = obj_name;
                 return sig;
             }
         }
@@ -749,12 +744,12 @@ test "borrow checker - lookupStructMethod" {
     defer checker.deinit();
 
     // Found
-    const sig = checker.lookupStructMethod("p", "scale");
+    const sig = checker.lookupStructMethod("scale");
     try std.testing.expect(sig != null);
     try std.testing.expectEqualStrings("scale", sig.?.name);
 
     // Not found
-    try std.testing.expect(checker.lookupStructMethod("p", "nonexistent") == null);
+    try std.testing.expect(checker.lookupStructMethod("nonexistent") == null);
 }
 
 test "borrow checker - removeLastBorrow" {

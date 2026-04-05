@@ -570,7 +570,7 @@ pub const CodeGen = struct {
         return switch (node.*) {
             .type_named => |name| {
                 if (std.mem.eql(u8, name, K.Type.ERROR)) return "anyerror";
-                // Self is always @This() inside any struct
+                // Self maps to @This() inside any struct
                 if (self.in_struct and std.mem.eql(u8, name, "Self")) return "@This()";
                 // Inside a generic struct, the struct's own name also maps to @This()
                 if (self.generic_struct_name) |gsn| {

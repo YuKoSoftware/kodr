@@ -33,11 +33,15 @@ Remaining questions:
 `#name` removed entirely — binary name always comes from the module name.
 Not blocking zero-magic work — metadata doesn't touch codegen. But needs a design pass.
 
-### Unused import warnings `easy`
+### ~~Unused import warnings~~ `easy` — DONE
 
-No unused import detection exists yet. When implemented, suppress warnings for
-`#build = static/dynamic` root modules — libraries import modules to expose them,
-not necessarily to use them directly.
+Scans module source files for `"importname."` qualifier patterns. Suppressed for:
+`use` imports (merge symbols), `#build = static/dynamic` library roots,
+std imports (`scope = "std"`), zig modules, and `.orh-cache/std/` modules.
+
+**Gap:** `use` imports are not checked — detecting unused `use` requires knowing
+the module's exported symbols, which needs declaration collection (post-parse).
+Should be added in the resolver where declarations are already available.
 
 ### For-loop tuple captures `medium`
 
@@ -88,11 +92,11 @@ per-field operations and scalar broadcast wrapping. No current use cases in Tamg
 Resolver now rejects `Player(42, "hero")` with a clear error message:
 "struct constructors require named arguments." Unit test + integration fixture added.
 
-### Spec: clarify `var` inside structs `easy`
+### ~~Spec: clarify `var` inside structs~~ `easy` — DONE
 
-`docs/10-structs-enums.md` line 11 shows `var defaultHealth: f32 = 100.0` (mutable static),
-but lines 103-108 say "Only `const` is supported." The compiler accepts both.
-Decide which is correct and update the spec + add validation if needed.
+Resolved: only `const` is allowed in structs (no mutable shared state). Spec example
+updated to use `const`. Compiler now rejects `var` in struct bodies with a clear error.
+Unit test + integration fixture added.
 
 ### Automatic error propagation `medium`
 
@@ -114,18 +118,28 @@ still `anyerror!i32`. Only `result.i32` / `result.value` works (via explicit unw
 Match on numeric/string/bool types now requires an `else` arm. Pointer/reference
 types are unwrapped for exhaustiveness checking. Unit test + integration fixture added.
 
-### `(null | Error | T)` TypeClass classification `easy`
+### ~~`(null | Error | T)` TypeClass classification~~ `easy` — DONE
 
-`mir_types.zig` classifies combined null+error unions as `.error_union` because the
-Error check runs first. The null component may not unwrap correctly. Need a combined
-TypeClass or two-pass unwrap pattern.
+Added `.null_error_union` TypeClass for unions containing both null and Error.
+Codegen emits two-pass unwrap (`.? catch unreachable`). All consumer sites in
+codegen_exprs, codegen_stmts, codegen_match, and mir_annotator updated.
 
-### Spec: clarify reference types in variable declarations `easy`
+**Remaining gaps for `null_error_union`:**
 
-`docs/09-memory.md` line 82 shows `const ref: const& MyStruct = const& data` as valid NLL
-syntax, but the resolver (pass 5) rejects all `type_ptr` in variable declarations with
-"reference type not allowed in variable declaration." Either update the spec to remove
-the example, or change the resolver to allow it.
+- `is Error` codegen (`codegen_exprs.zig`) — generates `if (x) |_| false else |_| true`
+  which unwraps the optional, not the error union. Needs two-step: null check then
+  error check.
+- `throw` codegen (`codegen_stmts.zig`) — generates optional unwrap pattern instead
+  of error propagation. Needs optional unwrap first, then error propagation.
+- Narrowing fallback (`codegen_exprs.zig:305-307`) — after `is null` narrowing on
+  `(null | Error | T)`, `.value` generates `.?` but should generate `catch unreachable`
+  since null is already eliminated.
+
+### ~~Spec: clarify reference types in variable declarations~~ `easy` — DONE
+
+Resolved: the compiler is correct — reference types (`const& T`, `mut& T`) are only
+valid in function parameters, not variable declarations. Updated spec examples in
+`docs/09-memory.md` to use expression-level borrows instead of stored references.
 
 ### ~~Interpolated string ownership/borrow checking~~ `easy` — DONE
 
@@ -189,10 +203,11 @@ Root cause: the union registry generates function-scoped union names; cross-modu
 need unified union type names. The `arb_union_cross` and `arb_union_inferred` tests in
 `tester.orh` are blocked on this bug and cannot be added to `tester_main.orh` until fixed.
 
-### Tuple literal resolver returns RT.inferred `easy`
+### ~~Tuple literal resolver returns RT.inferred~~ `easy` — DONE
 
-`resolver_exprs.zig:403` returns `RT.inferred` for tuple literals. Downstream passes
-have no composite type info for tuples in expression position (function args, returns).
+Named tuple literals now resolve to `RT.tuple` with per-field types. Anonymous
+tuples (no field names) still return `RT.inferred` since there's no positional
+tuple type in the type system.
 
 ### Resolver: type-check test bodies `medium`
 
@@ -208,12 +223,48 @@ Ownership pass claims to enforce struct atomicity (no partial field moves) but h
 field-access tracking. `let b = player.name` moves a single field without error.
 Either implement field-level ownership states or document the limitation.
 
-### Self outside struct scope `easy`
+### ~~Self outside struct scope~~ `easy` — DONE
 
-`Self` is accepted as a valid type everywhere (even outside structs) because the resolver
-can't distinguish struct-method context from top-level. Would need `struct_depth` tracking
-for anonymous structs in compt functions too. Currently codegen handles this correctly
-(only maps Self → @This() inside structs), so invalid usage produces a Zig error.
+`Self` rejected outside struct bodies (enforced via `struct_depth` in resolver).
+Needed for anonymous structs returned from `compt func` where no named type exists.
+Named structs can use their own name.
+
+**Planned:** Replace `Self` with `@this` compiler keyword. Blocked by a PEG engine
+bug — multi-token alternatives (`'@' 'this'`) in the type rule cause an alignment
+panic in the hash map. Needs PEG engine investigation first.
+
+### PEG engine crash with multi-token type alternatives `medium`
+
+Adding `'@' 'this'` (two tokens) as an alternative in the `type` grammar rule causes
+an alignment panic in `std.hash_map` during `resolveNodeLoc`. The crash occurs in
+`module_parse.zig:186` when looking up import node locations. Single-token alternatives
+work fine. The issue likely involves capture position tracking for multi-token
+sequences inside ordered choice (`/`) alternatives in type rules.
+
+Blocks: `@this` as a replacement for `Self` in `.orh` source.
+
+### Circular import crash when `import std::allocator` is absent `medium`
+
+Removing `import std::allocator` from the example module causes "circular import
+detected: string → allocator" followed by an alignment panic. The `allocator` import
+in the example template is unused but prevents this crash — it's a workaround.
+
+Root cause: std modules have internal dependencies (`string` depends on `allocator`),
+and the module resolver fails to handle them correctly when `allocator` isn't imported
+by any user module. The import order or resolution graph likely has a missing edge.
+
+### Instance method detection uses `self` name — should use type `medium`
+
+The borrow checker, MIR annotator, and codegen detect instance methods by checking
+if the first parameter is named `"self"`. This prevents users from choosing their own
+parameter name (e.g., `this`, `me`). Should detect instance methods by checking if the
+first parameter's type references the enclosing struct instead.
+
+Affected locations:
+- `borrow_checks.zig:124` — `sig.params[0].name == "self"`
+- `mir_annotator_nodes.zig:287` — `sig.params[0].name == "self"`
+- `codegen_match.zig:187,368` — `name == "self"`
+- `declarations.zig:708` — constructs test sig with name `"self"`
 
 ### Bitfield as pure Orhon std module `hard` — DEFERRED
 
@@ -243,18 +294,16 @@ in `interface.zig` tests. `type_tuple_anon` has contradictory handling in `types
 (treated as union) vs `codegen.zig` (treated as struct). Removing them requires updating
 all consuming switch arms and deciding whether `type_named` should absorb primitives.
 
-### Dead parameter `obj_name` in `lookupStructMethod` `easy`
+### ~~Dead parameter `obj_name` in `lookupStructMethod`~~ `easy` — DONE
 
-`borrow.zig:192` — `lookupStructMethod(obj_name, method_name)` discards `obj_name`
-with `_ = obj_name`. The function iterates all struct types to find any method with
-the given name without verifying the object's type matches. Either remove the parameter
-or use it to filter by the object's actual struct type.
+Removed unused `obj_name` parameter from `lookupStructMethod`. The function iterates
+all struct types by design (borrow checker has no type info), so the parameter was
+always discarded. All callers updated.
 
-### Build-type string parsing duplicated `easy`
+### ~~Build-type string parsing duplicated~~ `easy` — DONE
 
-`module_parse.zig:308-316` has an `if/else if` chain comparing against `"exe"`,
-`"static"`, `"dynamic"` — duplicating the logic already in `module.parseBuildType()`.
-Replace with a call to the existing function.
+`module_parse.zig` now calls `module.parseBuildType()` instead of duplicating the
+if/else chain. Error reporting for unknown values preserved.
 
 ### Break up oversized functions `medium`
 
@@ -376,20 +425,19 @@ simplify coercion sequences.
 
 ## Testing Improvements
 
-### Untested CLI commands `easy`
+### ~~Untested CLI commands~~ `easy` — DONE
 
-`orhon analysis`, `orhon gendoc`, and `orhon build -zig` have zero tests (unit or
-integration). Any of these could break silently. Add to `test/03_cli.sh`:
-- `orhon analysis` on a valid fixture → verify PASS output
-- `orhon gendoc -syntax` → verify `docs/syntax.md` produced
-- `orhon build -zig` → verify `bin/zig/` directory created
+All three now have integration tests in `test/03_cli.sh`:
+- `orhon analysis` on a valid fixture — verifies PASS output
+- `orhon gendoc -syntax` — verifies `docs/syntax.md` produced
+- `orhon build -zig` — verifies `bin/zig/` directory created
 
-### Missing negative test fixtures `easy`
+### ~~Missing negative test fixtures~~ `easy` — DONE
 
-Several error paths have no integration test fixture:
-- Circular imports — no `fail_circular.orh` (module A imports B, B imports A)
-- `struct main {}` in exe module — `validateMainReserved` non-function branch untested
-- `orhon init "bad name!"` — name validation exists but no test verifies rejection
+All three cases now have tests:
+- Circular imports — `fail_circular_a.orh` / `fail_circular_b.orh` in `test/11_errors.sh`
+- `struct main {}` in exe module — tests `validateMainReserved` non-function branch
+- `orhon init "bad name!"` — tests name validation rejection in `test/04_init.sh`
 
 ### Incremental cache skip verification `medium`
 

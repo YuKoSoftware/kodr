@@ -431,7 +431,8 @@ pub fn generateInterpolatedStringMirInline(cg: *CodeGen, parts: []const parser.I
     }
     // Use error propagation only if the enclosing function has an error return type.
     // Otherwise use unreachable — smp_allocator OOM is extremely rare in practice.
-    if (cg.funcReturnTypeClass() == .error_union) {
+    const ret_tc = cg.funcReturnTypeClass();
+    if (ret_tc == .error_union or ret_tc == .null_error_union) {
         try cg.emit("}) catch |err| return err");
     } else {
         try cg.emit("}) catch unreachable");
@@ -501,7 +502,8 @@ pub fn generateInterpolatedStringMir(cg: *CodeGen, parts: []const parser.Interpo
     cg.output = saved_output;
 
     // Use error propagation only if the enclosing function has an error return type.
-    if (cg.funcReturnTypeClass() == .error_union) {
+    const ret_tc2 = cg.funcReturnTypeClass();
+    if (ret_tc2 == .error_union or ret_tc2 == .null_error_union) {
         try cg.pre_stmts.appendSlice(cg.allocator, "}) catch |err| return err;\n");
     } else {
         try cg.pre_stmts.appendSlice(cg.allocator, "}) catch unreachable;\n");

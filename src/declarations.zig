@@ -281,6 +281,10 @@ pub const DeclCollector = struct {
     fn collectStruct(self: *DeclCollector, s: parser.StructDecl, loc: ?errors.SourceLoc) anyerror!void {
         var fields: std.ArrayListUnmanaged(FieldSig) = .{};
         for (s.members) |member| {
+            // Reject mutable static variables — only const is allowed in structs
+            if (member.* == .var_decl and member.var_decl.mutability == .mutable) {
+                try self.reporter.reportFmt(loc, "mutable 'var' not allowed in struct '{s}' — use 'const' for static declarations", .{s.name});
+            }
             if (member.* == .field_decl) {
                 const f = member.field_decl;
                 try fields.append(self.allocator, .{
@@ -949,6 +953,51 @@ test "declaration collector - hasDecl" {
     });
     try std.testing.expect(table.hasDecl("foo"));
     try std.testing.expect(!table.hasDecl("bar"));
+}
+
+test "declaration collector - rejects var in struct" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Create a var_decl member (mutable) inside a struct
+    const val_node = try a.create(parser.Node);
+    val_node.* = .{ .int_literal = "100" };
+    const var_member = try a.create(parser.Node);
+    var_member.* = .{ .var_decl = .{
+        .name = "count",
+        .type_annotation = null,
+        .value = val_node,
+        .is_pub = false,
+        .mutability = .mutable,
+    } };
+
+    const members = try a.alloc(*parser.Node, 1);
+    members[0] = var_member;
+    const struct_node = try a.create(parser.Node);
+    struct_node.* = .{ .struct_decl = .{
+        .name = "Bad",
+        .type_params = &.{},
+        .members = members,
+        .is_pub = false,
+    } };
+
+    const top_level = try a.alloc(*parser.Node, 1);
+    top_level[0] = struct_node;
+    const module_node = try a.create(parser.Node);
+    module_node.* = .{ .module_decl = .{ .name = "testmod" } };
+    const prog = try a.create(parser.Node);
+    prog.* = .{ .program = .{ .module = module_node, .metadata = &.{}, .imports = &.{}, .top_level = top_level } };
+
+    var collector = DeclCollector.init(alloc, &reporter);
+    defer collector.deinit();
+    try collector.collect(prog);
+
+    try std.testing.expect(reporter.hasErrors());
 }
 
 test "isTypeAlias - detects type keyword annotation" {

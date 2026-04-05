@@ -291,6 +291,9 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         if (try passes.validateMainReserved(ast, mod_ptr, locs_ptr, file_offsets, reporter))
             return null;
 
+        // ── Check for unused imports ────────────────────────
+        try passes.checkUnusedImports(allocator, ast, mod_ptr, locs_ptr, file_offsets, reporter);
+
         // Compute this module's current interface hash (after pass 4, before skip decision).
         // Stored here so it is available whether or not we recompile.
         const current_iface_hash = cache.hashInterface(&decl_collector.table);

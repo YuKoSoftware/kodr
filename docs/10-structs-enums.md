@@ -8,8 +8,8 @@ struct Player {
     health: f32             // private by default
     score: i32
 
-    // static variable — no self, belongs to the type
-    var defaultHealth: f32 = 100.0
+    // static constant — no self, belongs to the type
+    const defaultHealth: f32 = 100.0
 
     // static method — no self, called on type name
     func create(name: str) Player {

@@ -14,6 +14,7 @@ pub const TypeClass = enum {
     plain,
     error_union,
     null_union,
+    null_error_union,
     arbitrary_union,
     string,
 };
@@ -22,9 +23,12 @@ pub const TypeClass = enum {
 pub fn classifyType(t: RT) TypeClass {
     return switch (t) {
         .union_type => {
-            // Scan union members for Error/null to classify as error_union or null_union
-            if (t.unionContainsError()) return .error_union;
-            if (t.unionContainsNull()) return .null_union;
+            // Scan union members for Error/null to classify
+            const has_error = t.unionContainsError();
+            const has_null = t.unionContainsNull();
+            if (has_error and has_null) return .null_error_union;
+            if (has_error) return .error_union;
+            if (has_null) return .null_union;
             return .arbitrary_union;
         },
         .primitive => |p| if (p == .string) .string else .plain,
@@ -75,6 +79,9 @@ test "classifyType - unions" {
     // (null | i32) → null_union
     const null_members = &[_]RT{ RT.null_type, RT{ .primitive = .i32 } };
     try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .union_type = null_members }));
+    // (null | Error | i32) → null_error_union
+    const null_err_members = &[_]RT{ RT.null_type, RT.err, RT{ .primitive = .i32 } };
+    try std.testing.expectEqual(TypeClass.null_error_union, classifyType(RT{ .union_type = null_err_members }));
     // (i32 | str) → arbitrary_union
     const arb_members = &[_]RT{ RT{ .primitive = .i32 }, RT{ .primitive = .string } };
     try std.testing.expectEqual(TypeClass.arbitrary_union, classifyType(RT{ .union_type = arb_members }));

@@ -145,11 +145,17 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 std.mem.eql(u8, type_name, K.Type.VOID) or
                 std.mem.eql(u8, type_name, K.Type.NULL) or
                 std.mem.eql(u8, type_name, "type") or
-                // Self is valid inside struct methods — maps to @This() in codegen
-                std.mem.eql(u8, type_name, "Self") or
+                // Self is valid inside struct bodies — maps to @This() in codegen
+                (std.mem.eql(u8, type_name, "Self") and self.type_decl_depth > 0) or
                 scope.lookup(type_name) != null;
 
             if (!is_known) {
+                // Self outside struct gets a specific error message
+                if (std.mem.eql(u8, type_name, "Self")) {
+                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                        "'Self' can only be used inside struct bodies — it refers to the enclosing struct type", .{});
+                    return;
+                }
                 // Build candidate list from declared types + primitives for suggestion
                 var candidates: std.ArrayListUnmanaged([]const u8) = .{};
                 defer candidates.deinit(self.ctx.allocator);

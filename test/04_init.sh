@@ -67,6 +67,15 @@ else
     fail "init on existing dir succeeds"
 fi
 
+section "orhon init — name validation"
+
+cd "$TESTDIR"
+if "$ORHON" init "bad name!" 2>/dev/null; then
+    fail "rejects invalid project name"
+else
+    pass "rejects invalid project name"
+fi
+
 section "embedded std (auto-extracted on build)"
 
 cd "$TESTDIR/testproj"

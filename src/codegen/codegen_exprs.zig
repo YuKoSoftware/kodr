@@ -308,7 +308,11 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     }
                     break :blk obj_tc;
                 };
-                if (eff_tc == .error_union) {
+                if (eff_tc == .null_error_union) {
+                    try cg.emit("(");
+                    try cg.generateExprMir(obj_mir);
+                    try cg.emit(".? catch unreachable)");
+                } else if (eff_tc == .error_union) {
                     try cg.generateExprMir(obj_mir);
                     try cg.emit(" catch unreachable");
                 } else if (eff_tc == .null_union) {

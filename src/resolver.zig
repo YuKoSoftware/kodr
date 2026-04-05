@@ -34,7 +34,7 @@ pub const TypeResolver = struct {
     ctx: *const sema.SemanticContext,
     type_map: std.AutoHashMapUnmanaged(*parser.Node, RT),
     loop_depth: u32 = 0, // track nesting depth for break/continue validation
-    struct_depth: u32 = 0, // track nesting depth for Self type validation
+    type_decl_depth: u32 = 0, // track nesting depth for Self validation (structs and enums)
     current_return_type: ?RT = null, // expected return type of current function
     /// Module names imported with `use` — their types are available unqualified.
     included_modules: std.ArrayListUnmanaged([]const u8) = .{},
@@ -214,8 +214,8 @@ pub const TypeResolver = struct {
                 try self.resolveNode(f.body, &func_scope);
             },
             .struct_decl => |s| {
-                self.struct_depth += 1;
-                defer self.struct_depth -= 1;
+                self.type_decl_depth += 1;
+                defer self.type_decl_depth -= 1;
                 var struct_scope = Scope.init(self.ctx.allocator, scope);
                 defer struct_scope.deinit();
                 // Add type params to scope (T: type → T is a known type)
@@ -245,6 +245,8 @@ pub const TypeResolver = struct {
                 }
             },
             .enum_decl => |e| {
+                self.type_decl_depth += 1;
+                defer self.type_decl_depth -= 1;
                 var enum_scope = Scope.init(self.ctx.allocator, scope);
                 defer enum_scope.deinit();
                 for (e.members) |member| {

@@ -331,7 +331,8 @@ pub fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
 pub fn annotateDeclCoercions(self: *MirAnnotator, value: *parser.Node, decl_type: RT) !void {
     const val_type = self.lookupType(value) orelse {
         // null_literal has no type in the type_map — handle directly
-        if (value.* == .null_literal and classifyType(decl_type) == .null_union) {
+        const decl_tc = classifyType(decl_type);
+        if (value.* == .null_literal and (decl_tc == .null_union or decl_tc == .null_error_union)) {
             try self.node_map.put(self.allocator, value, .{
                 .resolved_type = .null_type,
                 .type_class = .plain,

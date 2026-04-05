@@ -77,13 +77,14 @@ struct Game {
 ### Lifetimes
 No lifetime annotations ever. The language stays simple — complexity lives in `@` compiler functions. Functions cannot return references — only owned values. If you need to return borrowed data, use `copy` to return an owned copy.
 
-Non-lexical lifetimes (NLL) — a borrow ends at the **last use** of the reference variable, not at the end of the block. This accepts more valid programs without sacrificing safety:
+Non-lexical lifetimes (NLL) — a borrow ends at the **last use** of the reference, not at the end of the block. This accepts more valid programs without sacrificing safety:
 ```
 var data: MyStruct = getData()
-const ref: const& MyStruct = const& data    // borrow starts
-read(ref)                                    // last use of ref — borrow ends here
-mutate(mut& data)                           // OK — borrow already expired
+read(const& data)                           // immutable borrow — expires after call
+mutate(mut& data)                           // OK — previous borrow already expired
 ```
+
+Reference types (`const& T`, `mut& T`) are only valid in function parameters — they cannot appear in variable declarations. Borrows are always expression-level.
 
 ### Structs and Ownership
 Structs are atomic ownership units — all fields move together or none do.
@@ -91,7 +92,7 @@ Structs are atomic ownership units — all fields move together or none do.
 var p: Player = Player(name: "john", score: 0, health: 100.0)
 var p2: Player = p      // entire struct moves, p is invalid
 
-var name: mut& str = mut& p2.name    // borrow a field, p2 still owns everything
+modify(mut& p2.name)                 // borrow a field, p2 still owns everything
 ```
 Moving individual fields out of a struct is a compile time error.
 

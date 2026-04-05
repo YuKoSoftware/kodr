@@ -120,7 +120,7 @@ pub fn checkExpr(self: *BorrowChecker, node: *parser.Node) anyerror!void {
                     // Try top-level funcs first, then struct_methods ("Type.method" key).
                     {
                         if (self.ctx.decls.funcs.get(method_name) orelse
-                            self.lookupStructMethod(obj_name, method_name)) |sig| {
+                            self.lookupStructMethod(method_name)) |sig| {
                             if (sig.params.len > 0 and std.mem.eql(u8, sig.params[0].name, "self")) {
                                 const self_node = sig.param_nodes[0];
                                 if (self_node.* == .param) {

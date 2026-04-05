@@ -412,6 +412,17 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
         },
 
         .tuple_literal => |t| {
+            if (t.is_named and t.field_names.len == t.fields.len) {
+                const alloc = self.ctx.decls.typeAllocator();
+                const resolved = try alloc.alloc(RT.TupleField, t.fields.len);
+                for (t.fields, t.field_names, 0..) |f, name, i| {
+                    resolved[i] = .{
+                        .name = name,
+                        .type_ = try resolveExpr(self, f, scope),
+                    };
+                }
+                return RT{ .tuple = resolved };
+            }
             for (t.fields) |f| _ = try resolveExpr(self, f, scope);
             return RT.inferred;
         },
