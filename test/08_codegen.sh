@@ -51,8 +51,8 @@ fi
 
 # ── Specific codegen patterns ────────────────────────────────
 
-if grep -q "inline fn" "$EXAMPLE_ZIG"; then pass "compt func → inline fn"
-else fail "compt func → inline fn"; fi
+if grep -q "fn double(comptime" "$EXAMPLE_ZIG"; then pass "compt func → comptime params"
+else fail "compt func → comptime params"; fi
 
 if grep -q "pub fn main" "$MAIN_ZIG"; then pass "main is pub"
 else fail "main is pub"; fi

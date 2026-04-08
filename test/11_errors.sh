@@ -671,4 +671,7 @@ run_fixture neg_is_compound fail_is_compound.orh "compound.*is.*not supported" "
 # is outside if/elif
 run_fixture neg_is_outside fail_is_outside_if.orh "is.*can only be used in if" "fixture: rejects is outside if/elif"
 
+# @compileError inside compt func
+run_fixture neg_compile_error fail_compile_error.orh "should not compile\|compileError" "fixture: @compileError triggers compile failure"
+
 report_results

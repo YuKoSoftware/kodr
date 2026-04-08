@@ -20,11 +20,11 @@ fi
 
 GEN_EXAMPLE=".orh-cache/generated/example.zig"
 
-if grep -q "inline fn" "$GEN_EXAMPLE"; then pass "compt func generates inline fn"
-else fail "compt func generates inline fn"; fi
+if grep -q "fn double(comptime" "$GEN_EXAMPLE"; then pass "compt func generates comptime params"
+else fail "compt func generates comptime params"; fi
 
-if grep -q "inline fn double" "$GEN_EXAMPLE"; then pass "compt func double generates inline fn"
-else fail "compt func double generates inline fn"; fi
+if grep -q "fn describe(comptime" "$GEN_EXAMPLE"; then pass "compt func describe generates comptime params"
+else fail "compt func describe generates comptime params"; fi
 
 if grep -q '++' "$GEN_EXAMPLE"; then pass "++ concatenation in output"
 else fail "++ concatenation in output"; fi
@@ -71,7 +71,7 @@ GEN_TESTER=".orh-cache/generated/tester.zig"
 if [ -f "$GEN_TESTER" ]; then pass "tester.zig generated"
 else fail "tester.zig generated"; fi
 
-if grep -q "inline fn" "$GEN_TESTER" 2>/dev/null; then pass "compt func codegen"
+if grep -q "fn doubled(comptime" "$GEN_TESTER" 2>/dev/null; then pass "compt func codegen"
 else fail "compt func codegen"; fi
 
 if grep -q "switch" "$GEN_TESTER" 2>/dev/null; then pass "match → switch codegen"

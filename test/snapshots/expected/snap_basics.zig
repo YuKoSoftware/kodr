@@ -17,7 +17,7 @@ pub fn greet(name: []const u8) []const u8 {
     return (("hello" ++ " ") ++ name);
 }
 
-pub inline fn doubled(n: i32) i32 {
+pub fn doubled(comptime n: i32) i32 {
     return (n * 2);
 }
 
