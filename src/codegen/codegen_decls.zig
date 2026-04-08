@@ -68,11 +68,7 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         std.mem.eql(u8, ret_type.type_named, K.Type.TYPE);
     const is_type_generic = m.is_compt and returns_type;
 
-    if (m.is_compt and !is_type_generic) {
-        try cg.emitFmt("inline fn {s}(", .{func_name});
-    } else {
-        try cg.emitFmt("fn {s}(", .{func_name});
-    }
+    try cg.emitFmt("fn {s}(", .{func_name});
 
     // Parameters
     var first_any_param: ?[]const u8 = null;
@@ -89,8 +85,13 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             try cg.emitFmt("comptime {s}: type", .{pname});
         } else if (is_type_generic and is_any) {
             try cg.emitFmt("comptime {s}: anytype", .{pname});
+        } else if (m.is_compt and is_any) {
+            try cg.emitFmt("comptime {s}: anytype", .{pname});
         } else if (is_any) {
             try cg.emitFmt("{s}: anytype", .{pname});
+        } else if (m.is_compt and !is_type_generic) {
+            const zig_type = try cg.typeToZig(pta);
+            try cg.emitFmt("comptime {s}: {s}", .{ pname, zig_type });
         } else {
             const zig_type = try cg.typeToZig(pta);
             try cg.emitFmt("{s}: {s}", .{ pname, zig_type });
