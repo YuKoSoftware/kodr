@@ -395,6 +395,7 @@ compiler_func_name
      / '@' 'hasField' / '@' 'hasDecl' / '@' 'fieldType' / '@' 'fieldNames'
      / '@' 'splitAt'
      / '@' 'wrap' / '@' 'sat' / '@' 'overflow'
+     / '@' 'compileError'
 
 # Literals
 int_literal     <- INT_LITERAL

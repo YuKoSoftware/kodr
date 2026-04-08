@@ -33,6 +33,7 @@ pub const CompilerFunc = enum {
     wrap,
     sat,
     overflow,
+    compileError,
     @"type", // internal: desugared from `x is T` — not user-facing
 
     pub fn fromName(name: []const u8) ?CompilerFunc {
@@ -55,6 +56,7 @@ pub const CompilerFunc = enum {
             .{ "wrap", .wrap },
             .{ "sat", .sat },
             .{ "overflow", .overflow },
+            .{ "compileError", .compileError },
             .{ "type", .@"type" },
         });
         return map.get(name);
@@ -111,6 +113,7 @@ test "compiler func detection via fromName" {
     try std.testing.expect(CompilerFunc.fromName("hasDecl") != null);
     try std.testing.expect(CompilerFunc.fromName("fieldType") != null);
     try std.testing.expect(CompilerFunc.fromName("fieldNames") != null);
+    try std.testing.expect(CompilerFunc.fromName("compileError") != null);
 }
 
 test "value type detection" {
@@ -127,5 +130,6 @@ test "CompilerFunc.fromName" {
     try std.testing.expect(CompilerFunc.fromName("assert") == .assert);
     try std.testing.expect(CompilerFunc.fromName("unknown") == null);
     try std.testing.expect(CompilerFunc.fromName("") == null);
+    try std.testing.expect(CompilerFunc.fromName("compileError") == .compileError);
 }
 

@@ -786,6 +786,11 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         .overflow => {
             if (args.len > 0) try cg.generateOverflowExprMir(args[0]);
         },
+        .compileError => {
+            try cg.emit("@compileError(");
+            if (args.len > 0) try cg.generateExprMir(args[0]);
+            try cg.emit(")");
+        },
         // @type is an internal desugaring artifact from `x is T` — always handled as
         // part of binary `is` expression in codegen_exprs, never reaches here standalone
         .@"type" => @panic("@type should not reach generateCompilerFuncMir"),

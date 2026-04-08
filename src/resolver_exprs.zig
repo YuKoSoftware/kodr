@@ -392,7 +392,7 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 .cast, .swap, .splitAt, .hasField, .hasDecl, .fieldType => .{ .min = 2, .max = 2 },
                 .assert => .{ .min = 1, .max = 2 },
                 .copy, .move, .size, .@"align", .typename, .typeid, .typeOf,
-                .fieldNames, .wrap, .sat, .overflow, .@"type",
+                .fieldNames, .wrap, .sat, .overflow, .@"type", .compileError,
                 => .{ .min = 1, .max = 1 },
             };
 
@@ -432,7 +432,7 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 .size, .@"align", .typeid => RT{ .primitive = .usize },
                 .typename => RT{ .primitive = .string },
                 .typeOf, .fieldType => RT{ .primitive = .@"type" },
-                .assert, .swap => RT{ .primitive = .void },
+                .assert, .swap, .compileError => RT{ .primitive = .void },
                 .hasField, .hasDecl => RT{ .primitive = .bool },
                 .fieldNames => RT.inferred,
                 .cast => blk: {
