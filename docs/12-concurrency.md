@@ -15,47 +15,54 @@ import std::thread
 
 `Thread(T)` spawns an OS thread. `T` is the join return type.
 
+**Zero arguments — `run`:**
 ```
-func doubler(x: i32) i32 {
-    return x * 2
+func worker() i32 {
+    return 42
 }
 
-var t: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, 21)
+var t: thread.Thread(i32) = thread.Thread(i32).run(worker)
 const result: i32 = t.join()    // blocks, returns 42
+```
+
+**With arguments — `spawn`:**
+
+Pass arguments as a struct. The thread function receives the struct as its single parameter.
+```
+struct AddArgs {
+    a: i32
+    b: i32
+}
+
+func adder(args: AddArgs) i32 {
+    return args.a + args.b
+}
+
+var t: thread.Thread(i32) = thread.Thread(i32).spawn(adder, AddArgs{a: 17, b: 25})
+const result: i32 = t.join()    // blocks, returns 42
+```
+
+**Void-returning threads:**
+```
+struct Config {
+    path: str
+}
+
+func background(args: Config) void {
+    // do work
+}
+
+var t: thread.Thread(void) = thread.Thread(void).spawn(background, Config{path: "/tmp"})
+t.join()
 ```
 
 Methods:
 | Method | Description |
 |--------|-------------|
-| `spawn(f, arg)` | Spawn a thread running `f(arg)`. Returns `Thread(T)`. |
-| `spawn2(f, arg1, arg2)` | Spawn a thread running `f(arg1, arg2)`. Returns `Thread(T)`. |
+| `run(f)` | Spawn a thread running `f()` with no arguments. Returns `Thread(T)`. |
+| `spawn(f, args)` | Spawn a thread running `f(args)` where `args` is a struct. Returns `Thread(T)`. |
 | `join()` | Block until thread completes, return result of type `T`. |
 | `done()` | Non-blocking check — returns `bool`. |
-
-For void-returning threads, use `Thread(void)`:
-```
-func worker(x: i32) void {
-    // do work
-}
-
-var t: thread.Thread(void) = thread.Thread(void).spawn(worker, 42)
-t.join()
-```
-
-For two arguments, use `spawn2` directly or pack them into a struct:
-```
-struct Args {
-    pub a: i32
-    pub b: i32
-}
-
-func adder(args: Args) i32 {
-    return args.a + args.b
-}
-
-var t: thread.Thread(i32) = thread.Thread(i32).spawn(adder, Args{a: 17, b: 25})
-const result: i32 = t.join()
-```
 
 ### Atomic(T)
 
@@ -100,7 +107,6 @@ Methods:
 
 ## Limitations
 
-- **Spawn arity** — `spawn(f, arg)` takes one argument; `spawn2(f, arg1, arg2)` takes two. For zero args, the function must accept a dummy parameter. For three or more args, pack into a struct.
 - **No ownership enforcement** — the compiler does not currently track ownership across thread boundaries. The programmer must ensure thread safety manually using `Atomic(T)` and `Mutex`.
 - **No unjoined-thread detection** — forgetting to call `join()` leaks the thread's shared state.
 
