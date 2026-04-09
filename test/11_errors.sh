@@ -680,4 +680,7 @@ run_fixture neg_compt_expr fail_compt.orh "unable to resolve comptime\|comptime.
 run_fixture neg_compt_type_arg fail_compt.orh "unable to resolve comptime\|comptime.*runtime" "fixture: rejects runtime param as compt type arg"
 run_fixture neg_compt_nested fail_compt.orh "unable to resolve comptime\|comptime.*runtime" "fixture: rejects runtime param in nested compt call"
 
+# else if → elif
+run_fixture neg_else_if fail_else_if.orh "elif" "fixture: suggests elif instead of else if"
+
 report_results

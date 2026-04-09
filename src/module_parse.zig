@@ -141,6 +141,10 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                     break :blk try std.fmt.allocPrint(alloc, "var &T is not valid — use mut& T for mutable references", .{})
                 else
                     break :blk try std.fmt.allocPrint(alloc, "unexpected '{s}'", .{err_info.found});
+            } else if (err_info.found_kind == .kw_if and err_info.pos > 0 and
+                tokens.items[err_info.pos - 1].kind == .kw_else) blk:
+            {
+                break :blk try std.fmt.allocPrint(alloc, "'else if' is not valid \u{2014} use 'elif' for chained conditions", .{});
             } else if (err_info.label) |label| blk: {
                 // Human-readable label from grammar annotation
                 break :blk try std.fmt.allocPrint(alloc, "expected {s}, found '{s}'", .{ label, err_info.found });
