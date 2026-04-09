@@ -19,44 +19,42 @@ pub fn Thread(comptime T: type) type {
 
         const Self = @This();
 
-        /// Spawn a new thread running f with one argument.
-        pub fn spawn(comptime f: anytype, arg: anytype) Self {
+        /// Spawn a new thread running f with no arguments.
+        pub fn run(comptime f: anytype) Self {
             const state = std.heap.page_allocator.create(SharedState) catch
                 @panic("Out of memory: thread state allocation");
             state.* = .{};
 
-            const Arg = @TypeOf(arg);
             const Wrapper = struct {
-                fn run(s: *SharedState, a: Arg) void {
+                fn entry(s: *SharedState) void {
+                    const result = @call(.auto, f, .{});
+                    if (T != void) s.result = result;
+                    s.completed.store(true, .release);
+                }
+            };
+
+            const thread = std.Thread.spawn(.{}, Wrapper.entry, .{state}) catch
+                |e| @panic(@errorName(e));
+
+            return .{ .handle = thread, .state = state };
+        }
+
+        /// Spawn a new thread running f with a struct of arguments.
+        pub fn spawn(comptime f: anytype, args: anytype) Self {
+            const state = std.heap.page_allocator.create(SharedState) catch
+                @panic("Out of memory: thread state allocation");
+            state.* = .{};
+
+            const Args = @TypeOf(args);
+            const Wrapper = struct {
+                fn entry(s: *SharedState, a: Args) void {
                     const result = @call(.auto, f, .{a});
                     if (T != void) s.result = result;
                     s.completed.store(true, .release);
                 }
             };
 
-            const thread = std.Thread.spawn(.{}, Wrapper.run, .{ state, arg }) catch
-                |e| @panic(@errorName(e));
-
-            return .{ .handle = thread, .state = state };
-        }
-
-        /// Spawn a new thread running f with two arguments.
-        pub fn spawn2(comptime f: anytype, arg1: anytype, arg2: anytype) Self {
-            const state = std.heap.page_allocator.create(SharedState) catch
-                @panic("Out of memory: thread state allocation");
-            state.* = .{};
-
-            const Arg1 = @TypeOf(arg1);
-            const Arg2 = @TypeOf(arg2);
-            const Wrapper = struct {
-                fn run(s: *SharedState, a1: Arg1, a2: Arg2) void {
-                    const result = @call(.auto, f, .{ a1, a2 });
-                    if (T != void) s.result = result;
-                    s.completed.store(true, .release);
-                }
-            };
-
-            const thread = std.Thread.spawn(.{}, Wrapper.run, .{ state, arg1, arg2 }) catch
+            const thread = std.Thread.spawn(.{}, Wrapper.entry, .{ state, args }) catch
                 |e| @panic(@errorName(e));
 
             return .{ .handle = thread, .state = state };

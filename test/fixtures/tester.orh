@@ -1308,29 +1308,42 @@ pub func test_map_get() i32 {
 
 // std::thread — spawn a thread and join for result
 
-func doubler(x: i32) i32 {
-    return x * 2
+func worker() i32 {
+    return 42
 }
 
-func adder(a: i32, b: i32) i32 {
-    return a + b
+struct DoubleArgs {
+    n: i32
+}
+
+func doubler(args: DoubleArgs) i32 {
+    return args.n * 2
+}
+
+struct AddArgs {
+    a: i32
+    b: i32
+}
+
+func adder(args: AddArgs) i32 {
+    return args.a + args.b
 }
 
 pub func test_thread() i32 {
-    var t: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, 21)
+    var t: thread.Thread(i32) = thread.Thread(i32).run(worker)
     return t.join()
 }
 
 pub func test_thread_multi() i32 {
-    var a: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, 10)
-    var b: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, 15)
+    var a: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, DoubleArgs{n: 10})
+    var b: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, DoubleArgs{n: 15})
     const r1: i32 = a.join()
     const r2: i32 = b.join()
     return r1 + r2
 }
 
 pub func test_thread_params() i32 {
-    var t: thread.Thread(i32) = thread.Thread(i32).spawn2(adder, 17, 25)
+    var t: thread.Thread(i32) = thread.Thread(i32).spawn(adder, AddArgs{a: 17, b: 25})
     return t.join()
 }
 
@@ -1339,13 +1352,13 @@ pub func test_thread_void() i32 {
 }
 
 pub func test_thread_done() i32 {
-    var t: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, 5)
+    var t: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, DoubleArgs{n: 5})
     const result: i32 = t.join()
     return result
 }
 
 pub func test_thread_join() i32 {
-    var t: thread.Thread(i32) = thread.Thread(i32).spawn(doubler, 99)
+    var t: thread.Thread(i32) = thread.Thread(i32).run(worker)
     t.join()
     return 1
 }
@@ -1689,6 +1702,23 @@ pub func test_compt_struct_defaults() i32 {
 
 test "compt struct defaults" {
     @assert(test_compt_struct_defaults() == 0)
+}
+
+// compt func with for loop — should generate inline for
+compt func countFields(T: type) i32 {
+    var count: i32 = 0
+    for (@fieldNames(T)) |_| {
+        count += 1
+    }
+    return count
+}
+
+pub func test_compt_for() i32 {
+    return countFields(Vec2)
+}
+
+test "compt for" {
+    @assert(test_compt_for() == 2)
 }
 
 // ─── Tuple capture iteration ────────────────────────────────
