@@ -1,0 +1,49 @@
+module fixture
+
+#version = (1, 0, 0)
+#build   = exe
+
+// ── Case 1: runtime param passed to value-computing compt ───
+
+compt func doubled(n: i32) i32 {
+    return n * 2
+}
+
+func use_doubled(x: i32) i32 {
+    return doubled(x)
+}
+
+// ── Case 2: runtime expression passed to compt ─────────────
+
+func compute(a: i32, b: i32) i32 {
+    return doubled(a + b)
+}
+
+// ── Case 3: runtime param passed to compt type argument ────
+
+compt func Wrapper(T: type) type {
+    return struct {
+        val: T
+    }
+}
+
+func bad_runtime_type(x: i32) void {
+    const T = Wrapper(x)
+}
+
+// ── Case 4: runtime param in nested compt call ─────────────
+
+compt func tripled(n: i32) i32 {
+    return doubled(n) + n
+}
+
+func use_tripled(x: i32) i32 {
+    return tripled(x)
+}
+
+func main() void {
+    const a: i32 = use_doubled(5)
+    const b: i32 = compute(3, 4)
+    bad_runtime_type(5)
+    const c: i32 = use_tripled(5)
+}

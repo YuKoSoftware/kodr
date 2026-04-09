@@ -674,4 +674,10 @@ run_fixture neg_is_outside fail_is_outside_if.orh "is.*can only be used in if" "
 # @compileError inside compt func
 run_fixture neg_compile_error fail_compile_error.orh "should not compile\|compileError" "fixture: @compileError triggers compile failure"
 
+# compt misuse
+run_fixture neg_compt_runtime fail_compt.orh "unable to resolve comptime\|comptime.*runtime" "fixture: rejects runtime param to compt func"
+run_fixture neg_compt_expr fail_compt.orh "unable to resolve comptime\|comptime.*runtime" "fixture: rejects runtime expression to compt func"
+run_fixture neg_compt_type_arg fail_compt.orh "unable to resolve comptime\|comptime.*runtime" "fixture: rejects runtime param as compt type arg"
+run_fixture neg_compt_nested fail_compt.orh "unable to resolve comptime\|comptime.*runtime" "fixture: rejects runtime param in nested compt call"
+
 report_results
