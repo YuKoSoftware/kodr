@@ -1,0 +1,17 @@
+module fixture
+
+#version = (1, 0, 0)
+#build   = exe
+
+// missing parens after if
+func bad_if() void {
+    if true {
+    }
+}
+
+// stray semicolons
+func bad_semi() void {
+    const x: i32 = 5;
+}
+
+func main() void { }

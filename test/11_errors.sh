@@ -733,4 +733,8 @@ NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "shapes"; then pass "unknown type mentions source module"
 else fail "unknown type mentions source module" "$NEG_OUT"; fi
 
+# common syntax mistakes
+run_fixture neg_missing_paren fail_common_mistakes.orh "parentheses\|'('" "fixture: suggests parens after if/while/for"
+run_fixture neg_semicolon fail_common_mistakes.orh "semicolon" "fixture: warns about stray semicolons"
+
 report_results

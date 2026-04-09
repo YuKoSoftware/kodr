@@ -145,6 +145,22 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                 tokens.items[err_info.pos - 1].kind == .kw_else) blk:
             {
                 break :blk try std.fmt.allocPrint(alloc, "'else if' is not valid \u{2014} use 'elif' for chained conditions", .{});
+            } else if (err_info.found_kind == .semicolon) blk: {
+                break :blk try std.fmt.allocPrint(alloc, "unexpected ';' \u{2014} Orhon does not use semicolons", .{});
+            } else if ((err_info.found_kind == .identifier or
+                err_info.found_kind == .int_literal or
+                err_info.found_kind == .kw_true or
+                err_info.found_kind == .kw_false) and
+                err_info.pos > 0 and
+                (tokens.items[err_info.pos - 1].kind == .kw_if or
+                tokens.items[err_info.pos - 1].kind == .kw_while or
+                tokens.items[err_info.pos - 1].kind == .kw_for)) blk:
+            {
+                break :blk try std.fmt.allocPrint(alloc,
+                    "missing '(' after '{s}' \u{2014} conditions require parentheses: {s}(...)", .{
+                    tokens.items[err_info.pos - 1].text,
+                    tokens.items[err_info.pos - 1].text,
+                });
             } else if (err_info.label) |label| blk: {
                 // Human-readable label from grammar annotation
                 break :blk try std.fmt.allocPrint(alloc, "expected {s}, found '{s}'", .{ label, err_info.found });
