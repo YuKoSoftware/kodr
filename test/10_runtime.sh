@@ -59,6 +59,7 @@ for TEST_NAME in \
     field_type field_names \
     compt_struct \
     compt_struct_defaults \
+    compt_for \
     negative_literal_args \
     tuple_capture tuple_capture_index \
     neu_is_error neu_is_not_error neu_error_access \

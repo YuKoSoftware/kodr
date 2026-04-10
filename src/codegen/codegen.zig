@@ -84,6 +84,12 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// Whether the current function is a compt function (all loops should be inline).
+    pub fn inComptFunc(self: *const CodeGen) bool {
+        if (self.current_func_mir) |m| return m.is_compt;
+        return false;
+    }
+
     /// Get the TypeClass of the current function's return type from MIR.
     /// Only valid in MIR-path codegen (current_func_mir set by generateFuncMir).
     pub fn funcReturnTypeClass(self: *const CodeGen) mir.TypeClass {

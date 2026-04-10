@@ -618,8 +618,11 @@ pub fn generateForMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const caps = m.captures orelse &.{};
     const iters = m.iterables();
 
+    const inline_prefix: []const u8 = if (cg.inComptFunc()) "inline " else "";
+
     // Tuple capture — struct field destructuring on first iterable
     if (m.is_tuple_capture and caps.len > 0) {
+        try cg.emit(inline_prefix);
         try cg.emit("for (");
         // First iterable: the struct slice
         try cg.generateExprMir(iters[0]);
@@ -664,6 +667,7 @@ pub fn generateForMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     }
 
     // Non-tuple: each iterable maps 1:1 to a capture
+    try cg.emit(inline_prefix);
     try cg.emit("for (");
     for (iters, 0..) |iter_m, i| {
         if (i > 0) try cg.emit(", ");

@@ -6,16 +6,6 @@ Actionable items for the current development phase. Deferred and future work is 
 
 ## Developer Experience
 
-### Formatter — AST-based rewrite `hard`
-
-Line-length warnings are implemented (`orhon fmt --line-length N`). Full auto-wrapping
-requires an AST-based formatter and a grammar decision about line continuation
-(Orhon uses newlines as statement terminators). Remaining:
-- Auto-wrapping long lines (needs line continuation rule in grammar)
-- Function signature breaking rules
-- Alignment for multi-line assignments
-- Comment-aware formatting
-
 ### LSP — feature-gated passes `medium`
 
 Gate passes by request type instead of running 1–9 on every change:

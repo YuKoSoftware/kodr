@@ -83,6 +83,17 @@ Complementary to `compt func`: `compt func` marks a function as *always* compile
 
 ## Tooling & Ecosystem
 
+### Formatter — AST-based rewrite `hard`
+
+Line-length warnings are implemented (`orhon fmt --line-length N`). Full auto-wrapping
+requires an AST-based formatter and a grammar decision about line continuation
+(Orhon uses newlines as statement terminators). Remaining:
+- Auto-wrapping long lines (needs line continuation rule in grammar)
+- Function signature breaking rules
+- Alignment for multi-line assignments
+- Comment-aware formatting
+
+
 ### Source mapping for debugger `hard`
 
 Emit `.orh.map` files mapping generated `.zig` lines back to `.orh` source.

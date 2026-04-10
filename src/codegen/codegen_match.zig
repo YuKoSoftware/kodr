@@ -619,9 +619,11 @@ fn emitIntrospectionType(cg: *CodeGen, arg: *mir.MirNode) anyerror!void {
             // Identifier is a direct type reference when its name matches the resolved type name.
             // e.g. Vec2 → name="Vec2", resolved_type=.named{"Vec2"} → true
             // e.g. v   → name="v",    resolved_type=.named{"Vec2"} → false
+            // Compt type params (T: type) resolve to .primitive(.type) — also a type ref.
             const id_name = arg.name orelse break :blk false;
             break :blk switch (arg.resolved_type) {
                 .named => |n| std.mem.eql(u8, id_name, n),
+                .primitive => |p| p == .@"type" and cg.inComptFunc(),
                 else => false,
             };
         },

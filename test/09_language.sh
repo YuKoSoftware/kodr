@@ -74,6 +74,9 @@ else fail "tester.zig generated"; fi
 if grep -q "fn doubled(comptime" "$GEN_TESTER" 2>/dev/null; then pass "compt func codegen"
 else fail "compt func codegen"; fi
 
+if grep -q "inline for" "$GEN_TESTER" 2>/dev/null; then pass "compt func emits inline for"
+else fail "compt func emits inline for"; fi
+
 if grep -q "switch" "$GEN_TESTER" 2>/dev/null; then pass "match → switch codegen"
 else fail "match → switch codegen"; fi
 

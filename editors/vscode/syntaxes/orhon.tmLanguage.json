@@ -99,23 +99,23 @@
         },
         {
           "name": "keyword.declaration.orhon",
-          "match": "\\b(func|var|const|struct|enum|bitfield|module|import|pub|extern|compt|test)\\b"
+          "match": "\\b(func|var|const|struct|blueprint|enum|module|import|use|pub|compt|test)\\b"
         },
         {
           "name": "keyword.operator.orhon",
-          "match": "\\b(and|or|not|as|is|cast|copy|move|swap)\\b"
+          "match": "\\b(and|or|not|as|is)\\b"
         },
         {
           "name": "keyword.other.orhon",
-          "match": "\\b(thread|any|self|main)\\b"
+          "match": "\\b(any|self|main)\\b"
         },
         {
           "name": "constant.language.orhon",
-          "match": "\\b(true|false|null|void|Error)\\b"
+          "match": "\\b(true|false|null)\\b"
         },
         {
           "name": "support.function.builtin.orhon",
-          "match": "\\b(assert|size|align|typename|typeid|wrap|sat|overflow)\\b"
+          "match": "@(cast|copy|move|swap|assert|size|align|typename|typeid|typeOf|hasField|hasDecl|fieldType|fieldNames|splitAt|wrap|sat|overflow|compileError)\\b"
         }
       ]
     },
@@ -123,11 +123,11 @@
       "patterns": [
         {
           "name": "storage.type.primitive.orhon",
-          "match": "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize|f16|f32|f64|f128|bool|String|type)\\b"
+          "match": "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize|f16|f32|f64|f128|bool|str|void|type)\\b"
         },
         {
           "name": "storage.type.builtin.orhon",
-          "match": "\\b(List|Map|Set|Ring|ORing|Ptr|RawPtr|VolatilePtr|Thread|Async|File|Dir|Format|Version)\\b"
+          "match": "\\b(Error|Vector)\\b"
         },
         {
           "comment": "User-defined type names (PascalCase)",

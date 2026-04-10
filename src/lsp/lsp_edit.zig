@@ -90,15 +90,21 @@ fn buildDotCompletionResponse(allocator: std.mem.Allocator, id: std.json.Value, 
         if (is_field or is_mod) {
             if (!first) try buf.append(allocator, ',');
             first = false;
+            // Sort: fields first, then functions, then other
+            const sort_prefix: u8 = switch (s.kind) {
+                .field => '0',
+                .function => '1',
+                else => '2',
+            };
             if (use_snippets) {
-                try appendSymbolCompletionItem(&buf, allocator, s);
+                try appendSymbolCompletionItem(&buf, allocator, s, sort_prefix);
             } else {
                 const kind: CompletionItemKind = switch (s.kind) {
                     .function => .function, .struct_ => .struct_, .enum_ => .enum_,
                     .variable => .variable, .constant => .constant,
                     .field => .field, .enum_member => .enum_member,
                 };
-                try appendCompletionItem(&buf, allocator, s.name, s.detail, kind);
+                try appendCompletionItem(&buf, allocator, s.name, s.detail, kind, sort_prefix);
             }
         }
     }
@@ -117,21 +123,27 @@ fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Val
 
     var first = true;
 
-    // Keywords
-    const keywords = [_][]const u8{
-        "func", "var", "const", "if", "elif", "else", "for", "while", "return",
-        "import", "pub", "match", "struct", "enum", "defer",
-        "thread", "null", "void", "compt", "any", "module", "test",
-        "and", "or", "not", "as", "break", "continue", "true", "false",
-        "is",
-    };
-    for (keywords) |kw| {
+    // Project symbols (only from current module + imported modules)
+    // Sort priority: 0 = current module, 1 = imported modules
+    for (symbols) |s| {
+        if (!isVisibleModule(s.module, current_module, imports)) continue;
+        const is_current = if (current_module) |cm| std.mem.eql(u8, s.module, cm) else false;
+        const sort_prefix: u8 = if (is_current) '0' else '1';
         if (!first) try buf.append(allocator, ',');
         first = false;
-        try appendCompletionItem(&buf, allocator, kw, "keyword", .keyword);
+        if (use_snippets) {
+            try appendSymbolCompletionItem(&buf, allocator, s, sort_prefix);
+        } else {
+            const kind: CompletionItemKind = switch (s.kind) {
+                .function => .function, .struct_ => .struct_, .enum_ => .enum_,
+                .variable => .variable, .constant => .constant,
+                .field => .field, .enum_member => .enum_member,
+            };
+            try appendCompletionItem(&buf, allocator, s.name, s.detail, kind, sort_prefix);
+        }
     }
 
-    // Primitive types
+    // Primitive types (sort priority: 2)
     const primitives = [_][]const u8{
         "str", "bool", "i8", "i16", "i32", "i64", "i128",
         "u8", "u16", "u32", "u64", "u128", "isize", "usize",
@@ -140,49 +152,50 @@ fn buildGeneralCompletionResponse(allocator: std.mem.Allocator, id: std.json.Val
     for (primitives) |pt| {
         if (!first) try buf.append(allocator, ',');
         first = false;
-        try appendCompletionItem(&buf, allocator, pt, "primitive type", .type_);
+        try appendCompletionItem(&buf, allocator, pt, "primitive type", .type_, '2');
     }
 
-    // Builtin types
+    // Builtin types (sort priority: 3)
     for (builtins.BUILTIN_TYPES) |bt| {
         if (!first) try buf.append(allocator, ',');
         first = false;
-        try appendCompletionItem(&buf, allocator, bt, "builtin type", .type_);
+        try appendCompletionItem(&buf, allocator, bt, "builtin type", .type_, '3');
     }
 
-    // Project symbols (only from current module + imported modules)
-    for (symbols) |s| {
-        if (!isVisibleModule(s.module, current_module, imports)) continue;
+    // Keywords (sort priority: 4)
+    const keywords = [_][]const u8{
+        "func", "var", "const", "if", "elif", "else", "for", "while", "return",
+        "import", "use", "pub", "match", "struct", "blueprint", "enum", "defer",
+        "null", "void", "compt", "any", "module", "test",
+        "and", "or", "not", "as", "break", "continue", "true", "false",
+        "is",
+    };
+    for (keywords) |kw| {
         if (!first) try buf.append(allocator, ',');
         first = false;
-        if (use_snippets) {
-            try appendSymbolCompletionItem(&buf, allocator, s);
-        } else {
-            const kind: CompletionItemKind = switch (s.kind) {
-                .function => .function, .struct_ => .struct_, .enum_ => .enum_,
-                .variable => .variable, .constant => .constant,
-                .field => .field, .enum_member => .enum_member,
-            };
-            try appendCompletionItem(&buf, allocator, s.name, s.detail, kind);
-        }
+        try appendCompletionItem(&buf, allocator, kw, "keyword", .keyword, '4');
     }
 
     try buf.appendSlice(allocator, "]}}");
     return allocator.dupe(u8, buf.items);
 }
 
-fn appendCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, label: []const u8, detail: []const u8, kind: CompletionItemKind) !void {
+fn appendCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, label: []const u8, detail: []const u8, kind: CompletionItemKind, sort_prefix: u8) !void {
     try buf.appendSlice(allocator, "{\"label\":\"");
     try appendJsonString(buf, allocator, label);
     try buf.appendSlice(allocator, "\",\"kind\":");
     try appendInt(buf, allocator, @intFromEnum(kind));
     try buf.appendSlice(allocator, ",\"detail\":\"");
     try appendJsonString(buf, allocator, detail);
+    try buf.appendSlice(allocator, "\",\"sortText\":\"");
+    try buf.append(allocator, sort_prefix);
+    try buf.append(allocator, '_');
+    try appendJsonString(buf, allocator, label);
     try buf.appendSlice(allocator, "\"}");
 }
 
 /// Append a completion item with snippet insertText for functions.
-fn appendSymbolCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, sym: SymbolInfo) !void {
+fn appendSymbolCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, sym: SymbolInfo, sort_prefix: u8) !void {
     try buf.appendSlice(allocator, "{\"label\":\"");
     try appendJsonString(buf, allocator, sym.name);
     try buf.appendSlice(allocator, "\",\"kind\":");
@@ -198,6 +211,10 @@ fn appendSymbolCompletionItem(buf: *std.ArrayListUnmanaged(u8), allocator: std.m
     try appendInt(buf, allocator, @intFromEnum(kind));
     try buf.appendSlice(allocator, ",\"detail\":\"");
     try appendJsonString(buf, allocator, sym.detail);
+    try buf.appendSlice(allocator, "\",\"sortText\":\"");
+    try buf.append(allocator, sort_prefix);
+    try buf.append(allocator, '_');
+    try appendJsonString(buf, allocator, sym.name);
     try buf.append(allocator, '"');
 
     // For functions, add a snippet that includes parameter placeholders

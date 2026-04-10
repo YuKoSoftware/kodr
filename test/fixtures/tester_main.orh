@@ -794,6 +794,13 @@ func main() void {
         console.println("FAIL compt_struct_defaults")
     }
 
+    // Test: compt func with inline for loop
+    if(tester.test_compt_for() == 2) {
+        console.println("PASS compt_for")
+    } else {
+        console.println("FAIL compt_for")
+    }
+
     // Test: for loop tuple capture — struct field destructuring
     if(tester.test_tuple_capture() == 21) {
         console.println("PASS tuple_capture")
