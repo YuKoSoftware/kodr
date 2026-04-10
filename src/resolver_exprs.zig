@@ -243,6 +243,28 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                                 "'{s}' expects {d} to {d} argument(s), got {d}", .{ name, min_args, max_args, c.args.len });
                         }
                     }
+                    // Compt constraint validation — reject non-comptime arguments
+                    if (sig.context == .compt) {
+                        for (c.args, 0..) |arg, idx| {
+                            if (!isComptimeKnown(self, arg)) {
+                                const arg_name = if (arg.* == .identifier) arg.identifier else "expression";
+                                const is_type_param = if (idx < sig.params.len)
+                                    switch (sig.params[idx].type_) {
+                                        .primitive => |p| p == .@"type",
+                                        else => false,
+                                    }
+                                else
+                                    false;
+                                if (is_type_param) {
+                                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                                        "compt function '{s}' expects a type argument, but '{s}' is a function parameter", .{ name, arg_name });
+                                } else {
+                                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                                        "compt function '{s}' requires compile-time-known arguments, but '{s}' is a function parameter", .{ name, arg_name });
+                                }
+                            }
+                        }
+                    }
                     return sig.return_type;
                 }
             }
@@ -583,4 +605,25 @@ fn validateCallArity(
                 "'{s}' expects {d} to {d} argument(s), got {d}", .{ callee_name, min_args, max_args, call_args_len });
         }
     }
+}
+
+/// Conservative check: returns false only for expressions that are DEFINITELY
+/// not compile-time-known (function parameters). Returns true for everything else
+/// to avoid false positives.
+fn isComptimeKnown(self: *TypeResolver, node: *parser.Node) bool {
+    return switch (node.*) {
+        .int_literal, .float_literal, .string_literal, .bool_literal, .null_literal => true,
+        .identifier => |name| !self.param_names.contains(name),
+        .unary_expr => |u| isComptimeKnown(self, u.operand),
+        .binary_expr => |b| isComptimeKnown(self, b.left) and isComptimeKnown(self, b.right),
+        .call_expr => |c| {
+            if (c.callee.* == .identifier) {
+                if (self.ctx.decls.funcs.get(c.callee.identifier)) |sig| {
+                    return sig.context == .compt;
+                }
+            }
+            return true;
+        },
+        else => true,
+    };
 }

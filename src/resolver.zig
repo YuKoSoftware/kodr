@@ -40,6 +40,8 @@ pub const TypeResolver = struct {
     current_return_type: ?RT = null, // expected return type of current function
     /// Module names imported with `use` — their types are available unqualified.
     included_modules: std.ArrayListUnmanaged([]const u8) = .{},
+    /// Parameter names of the current function — used to detect non-comptime arguments.
+    param_names: std.StringHashMapUnmanaged(void) = .{},
 
     pub fn init(ctx: *const sema.SemanticContext) TypeResolver {
         return .{
@@ -51,6 +53,7 @@ pub const TypeResolver = struct {
     pub fn deinit(self: *TypeResolver) void {
         self.type_map.deinit(self.ctx.allocator);
         self.included_modules.deinit(self.ctx.allocator);
+        self.param_names.deinit(self.ctx.allocator);
     }
 
     /// Check if a name exists in a parent scope within the function boundary.
@@ -181,6 +184,14 @@ pub const TypeResolver = struct {
                                 try self.checkAssignCompat(t, dv_type, param);
                             }
                         }
+                    }
+                }
+
+                // Track parameter names for compt argument validation
+                self.param_names.clearRetainingCapacity();
+                for (f.params) |param| {
+                    if (param.* == .param) {
+                        try self.param_names.put(self.ctx.allocator, param.param.name, {});
                     }
                 }
 
