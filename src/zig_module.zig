@@ -372,7 +372,7 @@ fn extractFnInnerEx(
         } else if (param.type_expr) |type_node| {
             // For struct methods, handle self-parameter mapping
             if (struct_name.len > 0) {
-                const mapped = try mapSelfParam(tree, type_node, struct_name, allocator);
+                const mapped = try mapSelfParam(tree, type_node, struct_name, allocator, import_aliases);
                 if (mapped) |m| {
                     defer allocator.free(m);
                     try params.appendSlice(allocator, m);
@@ -615,6 +615,7 @@ fn mapSelfParam(
     type_node: Node.Index,
     struct_name: []const u8,
     allocator: Allocator,
+    import_aliases: ?*const ImportAliasMap,
 ) anyerror!?[]const u8 {
     const tag = tree.nodeTag(type_node);
 
@@ -623,7 +624,7 @@ fn mapSelfParam(
         tag == .ptr_type or tag == .ptr_type_bit_range)
     {
         const ptr_info = tree.fullPtrType(type_node) orelse {
-            return try mapTypeAlloc(tree, type_node, allocator);
+            return try mapTypeAlloc(tree, type_node, allocator, import_aliases);
         };
 
         if (ptr_info.size == .one) {
@@ -651,14 +652,14 @@ fn mapSelfParam(
     }
 
     // Fall through to normal mapType
-    return try mapTypeAlloc(tree, type_node, allocator);
+    return try mapTypeAlloc(tree, type_node, allocator, import_aliases);
 }
 
 /// Convenience wrapper: calls mapType and returns an owned string, or null if unmappable.
-fn mapTypeAlloc(tree: *const Ast, node: Node.Index, allocator: Allocator) anyerror!?[]const u8 {
+fn mapTypeAlloc(tree: *const Ast, node: Node.Index, allocator: Allocator, import_aliases: ?*const ImportAliasMap) anyerror!?[]const u8 {
     var out: TypeBuf = .{};
     defer out.deinit(allocator);
-    const ok = try mapType(tree, node, allocator, &out);
+    const ok = try mapTypeEx(tree, node, allocator, &out, null, import_aliases);
     if (!ok) return null;
     return try allocator.dupe(u8, out.items());
 }
