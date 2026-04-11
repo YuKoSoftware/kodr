@@ -16,6 +16,101 @@ const PASSTHROUGH_PRIMITIVES = std.StaticStringMap(void).initComptime(.{
     .{ "bool", {} }, .{ "void", {} }, .{ "usize", {} },
 });
 
+/// Maps local Zig import aliases to sibling module names.
+/// Built from top-level `const sdl = @import("tamga_sdl3_bridge.zig")` declarations.
+const ImportAliasMap = struct {
+    /// alias → module name: "sdl" → "tamga_sdl3_bridge"
+    map: std.StringHashMapUnmanaged([]const u8) = .{},
+    /// Known sibling module names (from scanZigImports)
+    sibling_modules: []const []const u8 = &.{},
+
+    fn deinit(self: *ImportAliasMap, allocator: Allocator) void {
+        self.map.deinit(allocator);
+    }
+
+    /// Check if a module name is a known sibling
+    fn isSibling(self: *const ImportAliasMap, name: []const u8) bool {
+        for (self.sibling_modules) |s| {
+            if (std.mem.eql(u8, s, name)) return true;
+        }
+        return false;
+    }
+
+    /// Resolve an alias to its module name, or return the name itself if it's a direct sibling
+    fn resolve(self: *const ImportAliasMap, name: []const u8) ?[]const u8 {
+        if (self.map.get(name)) |mod| return mod;
+        if (self.isSibling(name)) return name;
+        return null;
+    }
+};
+
+/// Builds an ImportAliasMap from the AST root declarations.
+/// Scans for `const X = @import("Y.zig")` patterns and maps X → Y (stem).
+fn buildImportAliasMap(tree: *const Ast, sibling_modules: []const []const u8, allocator: Allocator) ImportAliasMap {
+    var result = ImportAliasMap{ .sibling_modules = sibling_modules };
+
+    const root_decls = tree.rootDecls();
+    for (root_decls) |decl_node| {
+        const tag = tree.nodeTag(decl_node);
+        if (tag != .simple_var_decl and tag != .global_var_decl) continue;
+
+        // Get the var decl — must be const (mut_token is 'const')
+        const mut_token = tree.nodeMainToken(decl_node);
+        if (tree.tokenTag(mut_token) != .keyword_const) continue;
+
+        // Get the name (token after 'const')
+        const name_token = mut_token + 1;
+        if (tree.tokenTag(name_token) != .identifier) continue;
+        const alias_name = tree.tokenSlice(name_token);
+
+        // Get the init node
+        const init_node = tree.nodeData(decl_node).opt_node_and_opt_node[1].unwrap() orelse continue;
+
+        const init_tag = tree.nodeTag(init_node);
+        if (init_tag != .builtin_call_two and init_tag != .builtin_call_two_comma and
+            init_tag != .builtin_call and init_tag != .builtin_call_comma) continue;
+
+        // Check that it's @import
+        const builtin_token = tree.nodeMainToken(init_node);
+        const builtin_name = tree.tokenSlice(builtin_token);
+        if (!std.mem.eql(u8, builtin_name, "@import")) continue;
+
+        // Get the first argument — must be a string literal
+        const arg_node = if (init_tag == .builtin_call_two or init_tag == .builtin_call_two_comma)
+            tree.nodeData(init_node).opt_node_and_opt_node[0].unwrap() orelse continue
+        else
+            continue;
+
+        if (tree.nodeTag(arg_node) != .string_literal) continue;
+        const str_token = tree.nodeMainToken(arg_node);
+        const raw = tree.tokenSlice(str_token);
+
+        // Strip quotes: "foo.zig" → foo.zig
+        if (raw.len < 2 or raw[0] != '"' or raw[raw.len - 1] != '"') continue;
+        const import_path = raw[1 .. raw.len - 1];
+
+        // Must end with .zig
+        if (!std.mem.endsWith(u8, import_path, ".zig")) continue;
+
+        // Extract module stem
+        const mod_name = import_path[0 .. import_path.len - 4];
+
+        // Only map if it's a known sibling
+        var is_sibling = false;
+        for (sibling_modules) |s| {
+            if (std.mem.eql(u8, s, mod_name)) {
+                is_sibling = true;
+                break;
+            }
+        }
+        if (!is_sibling) continue;
+
+        result.map.put(allocator, alias_name, mod_name) catch continue;
+    }
+
+    return result;
+}
+
 /// Output buffer for type mapping. Wraps an unmanaged ArrayList(u8).
 pub const TypeBuf = struct {
     buf: std.ArrayList(u8) = .{},
@@ -38,10 +133,10 @@ pub const TypeBuf = struct {
 /// `self_replacement` — when non-null, bare `Self` identifiers are replaced with this string
 /// (e.g., "List(T)") for return types and non-self params of generic inner structs.
 pub fn mapType(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *TypeBuf) anyerror!bool {
-    return mapTypeEx(tree, node, allocator, out, null);
+    return mapTypeEx(tree, node, allocator, out, null, null);
 }
 
-fn mapTypeEx(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *TypeBuf, self_replacement: ?[]const u8) anyerror!bool {
+fn mapTypeEx(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *TypeBuf, self_replacement: ?[]const u8, import_aliases: ?*const ImportAliasMap) anyerror!bool {
     const tag = tree.nodeTag(node);
 
     switch (tag) {
@@ -80,7 +175,7 @@ fn mapTypeEx(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *Typ
         .optional_type => {
             const child = tree.nodeData(node).node;
             try out.append(allocator, "(null | ");
-            const ok = try mapTypeEx(tree, child, allocator, out, self_replacement);
+            const ok = try mapTypeEx(tree, child, allocator, out, self_replacement, import_aliases);
             if (!ok) return false;
             try out.append(allocator, ")");
             return true;
@@ -91,7 +186,7 @@ fn mapTypeEx(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *Typ
         .error_union => {
             const rhs = tree.nodeData(node).node_and_node[1];
             try out.append(allocator, "(Error | ");
-            const ok = try mapTypeEx(tree, rhs, allocator, out, self_replacement);
+            const ok = try mapTypeEx(tree, rhs, allocator, out, self_replacement, import_aliases);
             if (!ok) return false;
             try out.append(allocator, ")");
             return true;
@@ -131,7 +226,7 @@ fn mapTypeEx(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *Typ
                     } else {
                         try out.append(allocator, "mut& ");
                     }
-                    return try mapTypeEx(tree, ptr_info.ast.child_type, allocator, out, self_replacement);
+                    return try mapTypeEx(tree, ptr_info.ast.child_type, allocator, out, self_replacement, import_aliases);
                 },
 
                 // [*]T, [*c]T — many-item and c pointers are unmappable
@@ -141,7 +236,54 @@ fn mapTypeEx(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *Typ
 
         // --- field_access: lhs.rhs — qualified names like std.mem.Allocator ---
         .field_access => {
-            // Qualified names are unmappable (std.mem.Allocator, etc.)
+            const aliases = import_aliases orelse return false;
+
+            // RHS is the type name token (e.g., WindowHandle)
+            const rhs_token = tree.nodeData(node).node_and_token[1];
+            const type_name = tree.tokenSlice(rhs_token);
+
+            // LHS is the qualifier node
+            const lhs_node = tree.nodeData(node).node_and_token[0];
+            const lhs_tag = tree.nodeTag(lhs_node);
+
+            // Case 1: identifier qualifier (e.g., sdl.WindowHandle)
+            if (lhs_tag == .identifier) {
+                const lhs_name = tree.tokenSlice(tree.nodeMainToken(lhs_node));
+                if (aliases.resolve(lhs_name)) |mod_name| {
+                    try out.append(allocator, mod_name);
+                    try out.append(allocator, ".");
+                    try out.append(allocator, type_name);
+                    return true;
+                }
+                return false;
+            }
+
+            // Case 2: @import("sibling.zig").TypeName
+            if (lhs_tag == .builtin_call_two or lhs_tag == .builtin_call_two_comma) {
+                const builtin_token = tree.nodeMainToken(lhs_node);
+                const builtin_name = tree.tokenSlice(builtin_token);
+                if (!std.mem.eql(u8, builtin_name, "@import")) return false;
+
+                const arg_node = tree.nodeData(lhs_node).opt_node_and_opt_node[0].unwrap() orelse return false;
+                if (tree.nodeTag(arg_node) != .string_literal) return false;
+                const raw = tree.tokenSlice(tree.nodeMainToken(arg_node));
+                if (raw.len < 2 or raw[0] != '"' or raw[raw.len - 1] != '"') return false;
+                const import_path = raw[1 .. raw.len - 1];
+
+                const mod_name = if (std.mem.endsWith(u8, import_path, ".zig"))
+                    import_path[0 .. import_path.len - 4]
+                else
+                    import_path;
+
+                if (aliases.isSibling(mod_name)) {
+                    try out.append(allocator, mod_name);
+                    try out.append(allocator, ".");
+                    try out.append(allocator, type_name);
+                    return true;
+                }
+                return false;
+            }
+
             return false;
         },
 
@@ -155,8 +297,8 @@ fn mapTypeEx(tree: *const Ast, node: Node.Index, allocator: Allocator, out: *Typ
 
 /// Extracts a pub fn signature and returns the Orhon declaration string.
 /// Returns null if the function has unmappable parameter types or return type.
-pub fn extractFn(tree: *const Ast, node: Node.Index, allocator: Allocator) anyerror!?[]const u8 {
-    return extractFnInner(tree, node, "", "pub func ", allocator);
+pub fn extractFn(tree: *const Ast, node: Node.Index, allocator: Allocator, import_aliases: ?*const ImportAliasMap) anyerror!?[]const u8 {
+    return extractFnInner(tree, node, "", "pub func ", allocator, import_aliases);
 }
 
 /// Shared fn extraction logic used by both extractFn and extractStructFn.
@@ -170,8 +312,9 @@ fn extractFnInner(
     struct_name: []const u8,
     prefix: []const u8,
     allocator: Allocator,
+    import_aliases: ?*const ImportAliasMap,
 ) anyerror!?[]const u8 {
-    return extractFnInnerEx(tree, node, struct_name, prefix, allocator, null, false);
+    return extractFnInnerEx(tree, node, struct_name, prefix, allocator, null, false, import_aliases);
 }
 
 fn extractFnInnerEx(
@@ -182,6 +325,7 @@ fn extractFnInnerEx(
     allocator: Allocator,
     self_replacement: ?[]const u8,
     allow_unmappable_as_any: bool,
+    import_aliases: ?*const ImportAliasMap,
 ) anyerror!?[]const u8 {
     var buf: [1]Node.Index = undefined;
     var proto = tree.fullFnProto(&buf, node) orelse return null;
@@ -240,7 +384,7 @@ fn extractFnInnerEx(
             } else {
                 var type_buf: TypeBuf = .{};
                 defer type_buf.deinit(allocator);
-                const ok = try mapTypeEx(tree, type_node, allocator, &type_buf, self_replacement);
+                const ok = try mapTypeEx(tree, type_node, allocator, &type_buf, self_replacement, import_aliases);
                 if (!ok) {
                     if (allow_unmappable_as_any) {
                         // Discard any partial output from failed mapping
@@ -262,7 +406,7 @@ fn extractFnInnerEx(
     const ret_node = proto.ast.return_type.unwrap() orelse return null;
     var ret_buf: TypeBuf = .{};
     defer ret_buf.deinit(allocator);
-    const ret_ok = try mapTypeEx(tree, ret_node, allocator, &ret_buf, self_replacement);
+    const ret_ok = try mapTypeEx(tree, ret_node, allocator, &ret_buf, self_replacement, import_aliases);
     if (!ret_ok) {
         if (allow_unmappable_as_any) {
             // Discard any partial output from failed mapping
@@ -292,13 +436,14 @@ fn extractStructFn(
     node: Node.Index,
     struct_name: []const u8,
     allocator: Allocator,
+    import_aliases: ?*const ImportAliasMap,
 ) anyerror!?[]const u8 {
-    return extractFnInner(tree, node, struct_name, "    pub func ", allocator);
+    return extractFnInner(tree, node, struct_name, "    pub func ", allocator, import_aliases);
 }
 
 /// Extracts a generic struct from a `pub fn Foo(comptime T: type) type { return struct { ... }; }` pattern.
 /// Returns the Orhon `pub struct Foo(T: type) { ... }` string, or null if the pattern doesn't match.
-pub fn extractGenericStruct(tree: *const Ast, node: Node.Index, allocator: Allocator) anyerror!?[]const u8 {
+pub fn extractGenericStruct(tree: *const Ast, node: Node.Index, allocator: Allocator, import_aliases: ?*const ImportAliasMap) anyerror!?[]const u8 {
     const tag = tree.nodeTag(node);
     // Must be fn_decl (has a body), not just fn_proto
     if (tag != .fn_decl) return null;
@@ -406,7 +551,7 @@ pub fn extractGenericStruct(tree: *const Ast, node: Node.Index, allocator: Alloc
             member_tag == .fn_proto_multi or member_tag == .fn_proto_one or
             member_tag == .fn_proto_simple)
         {
-            if (try extractFnInnerEx(tree, member, fn_name, "    pub func ", allocator, self_replacement, true)) |sig| {
+            if (try extractFnInnerEx(tree, member, fn_name, "    pub func ", allocator, self_replacement, true, import_aliases)) |sig| {
                 defer allocator.free(sig);
                 if (has_members) try result.append(allocator, '\n');
                 try result.appendSlice(allocator, sig);
@@ -520,7 +665,7 @@ fn mapTypeAlloc(tree: *const Ast, node: Node.Index, allocator: Allocator) anyerr
 
 /// Extracts a pub const declaration. Handles struct values, string literals,
 /// and number literals. Returns null for unmappable values.
-pub fn extractConst(tree: *const Ast, node: Node.Index, allocator: Allocator) anyerror!?[]const u8 {
+pub fn extractConst(tree: *const Ast, node: Node.Index, allocator: Allocator, import_aliases: ?*const ImportAliasMap) anyerror!?[]const u8 {
     const var_decl = tree.fullVarDecl(node) orelse return null;
 
     // Must be pub
@@ -540,7 +685,7 @@ pub fn extractConst(tree: *const Ast, node: Node.Index, allocator: Allocator) an
 
     // If it's a struct/enum/union container → delegate to extractStruct
     if (isContainerDecl(init_tag)) {
-        return try extractStruct(tree, init_node, name, allocator);
+        return try extractStruct(tree, init_node, name, allocator, import_aliases);
     }
 
     // String literal → str type with value
@@ -594,6 +739,7 @@ pub fn extractStruct(
     node: Node.Index,
     name: []const u8,
     allocator: Allocator,
+    import_aliases: ?*const ImportAliasMap,
 ) anyerror!?[]const u8 {
     // Verify the container is a struct (not enum/union)
     const main_token = tree.nodeMainToken(node);
@@ -617,7 +763,7 @@ pub fn extractStruct(
             member_tag == .fn_proto_multi or member_tag == .fn_proto_one or
             member_tag == .fn_proto_simple)
         {
-            if (try extractStructFn(tree, member, name, allocator)) |sig| {
+            if (try extractStructFn(tree, member, name, allocator, import_aliases)) |sig| {
                 defer allocator.free(sig);
                 if (has_members) try result.append(allocator, '\n');
                 try result.appendSlice(allocator, sig);
@@ -643,7 +789,11 @@ pub fn generateModule(
     mod_name: []const u8,
     tree: *const Ast,
     allocator: Allocator,
+    sibling_imports: []const []const u8,
 ) anyerror!?[]const u8 {
+    var import_alias_map = buildImportAliasMap(tree, sibling_imports, allocator);
+    defer import_alias_map.deinit(allocator);
+
     var result: std.ArrayList(u8) = .{};
     errdefer result.deinit(allocator);
 
@@ -659,10 +809,10 @@ pub fn generateModule(
 
         const decl_str: ?[]const u8 = switch (tag) {
             // Function declarations — try generic struct extraction first, fall back to plain fn
-            .fn_decl, .fn_proto, .fn_proto_multi, .fn_proto_one, .fn_proto_simple => try extractGenericStruct(tree, decl_node, allocator) orelse try extractFn(tree, decl_node, allocator),
+            .fn_decl, .fn_proto, .fn_proto_multi, .fn_proto_one, .fn_proto_simple => try extractGenericStruct(tree, decl_node, allocator, &import_alias_map) orelse try extractFn(tree, decl_node, allocator, &import_alias_map),
 
             // Variable declarations (const/var)
-            .simple_var_decl, .global_var_decl, .local_var_decl, .aligned_var_decl => try extractConst(tree, decl_node, allocator),
+            .simple_var_decl, .global_var_decl, .local_var_decl, .aligned_var_decl => try extractConst(tree, decl_node, allocator, &import_alias_map),
 
             else => null,
         };
@@ -839,16 +989,17 @@ pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_d
         var tree = std.zig.Ast.parse(allocator, source_z, .zig) catch continue;
         defer tree.deinit(allocator);
 
-        // Generate the .orh module text
-        const orh_text = generateModule(entry.module_name, &tree, allocator) catch continue orelse continue;
-        defer allocator.free(orh_text);
-
-        // Scan for sibling @import("x.zig") references
+        // Scan for sibling @import("x.zig") references — must happen before generateModule
+        // so that the import alias map can resolve cross-module types.
         const zig_imports = scanZigImports(source_bytes, source_dir, allocator) catch &.{};
         defer {
             for (zig_imports) |imp| allocator.free(imp);
             if (zig_imports.len > 0) allocator.free(zig_imports);
         }
+
+        // Generate the .orh module text
+        const orh_text = generateModule(entry.module_name, &tree, allocator, zig_imports) catch continue orelse continue;
+        defer allocator.free(orh_text);
 
         // If there are sibling imports, inject import declarations after module header
         const final_orh = if (zig_imports.len > 0) blk: {
@@ -1173,7 +1324,7 @@ fn testExtractFn(source: [:0]const u8) !?[]const u8 {
     defer tree.deinit(allocator);
     const root_decls = tree.rootDecls();
     if (root_decls.len == 0) return null;
-    return try extractFn(&tree, root_decls[0], allocator);
+    return try extractFn(&tree, root_decls[0], allocator, null);
 }
 
 /// Helper: parse Zig source and run extractConst on the first root declaration.
@@ -1183,7 +1334,7 @@ fn testExtractConst(source: [:0]const u8) !?[]const u8 {
     defer tree.deinit(allocator);
     const root_decls = tree.rootDecls();
     if (root_decls.len == 0) return null;
-    return try extractConst(&tree, root_decls[0], allocator);
+    return try extractConst(&tree, root_decls[0], allocator, null);
 }
 
 /// Helper: parse Zig source and run generateModule.
@@ -1191,7 +1342,7 @@ fn testGenerateModule(mod_name: []const u8, source: [:0]const u8) !?[]const u8 {
     const allocator = std.testing.allocator;
     var tree = try std.zig.Ast.parse(allocator, source, .zig);
     defer tree.deinit(allocator);
-    return try generateModule(mod_name, &tree, allocator);
+    return try generateModule(mod_name, &tree, allocator, &.{});
 }
 
 test "extractFn — simple pub fn" {
@@ -1342,7 +1493,7 @@ fn testExtractGeneric(source: [:0]const u8) !?[]const u8 {
     defer tree.deinit(allocator);
     const root_decls = tree.rootDecls();
     if (root_decls.len == 0) return null;
-    return try extractGenericStruct(&tree, root_decls[0], allocator);
+    return try extractGenericStruct(&tree, root_decls[0], allocator, null);
 }
 
 test "extractGenericStruct — simple single type param" {
