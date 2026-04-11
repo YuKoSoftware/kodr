@@ -85,6 +85,29 @@ This is far less work than writing a full interface declaration.
 
 ---
 
+## Cross-Module Types
+
+When a `.zig` file imports another sibling `.zig` file and uses its types in public function signatures, the compiler resolves them automatically. Both patterns work:
+
+```zig
+// Alias pattern
+const sdl = @import("tamga_sdl3_bridge.zig");
+pub fn create(handle: sdl.WindowHandle) Renderer { ... }
+
+// Inline pattern
+pub fn create(handle: @import("tamga_sdl3_bridge.zig").WindowHandle) Renderer { ... }
+```
+
+Both produce the same Orhon signature:
+
+```
+pub func create(handle: tamga_sdl3_bridge.WindowHandle) Renderer
+```
+
+The compiler detects sibling `.zig` files in the same directory and injects the corresponding `import` statements into the generated `.orh` module. Only sibling imports are resolved — Zig stdlib types (`std.mem.Allocator`) remain unmappable.
+
+---
+
 ## Underscore Convention
 
 Files starting with `_` are private — they won't be converted to modules:

@@ -149,7 +149,7 @@ src/
     constants.zig           // shared — constants
     cache.zig               // shared — incremental cache
     scope.zig               // shared — scope tracking for ownership/borrow passes
-    zig_module.zig          // zig-as-module auto-conversion
+    zig_module.zig          // zig-as-module auto-conversion (incl. cross-module type resolution)
     interface.zig           // public interface generation for library modules
     std_bundle.zig          // embedded stdlib file extraction
     formatter.zig           // orhon fmt
