@@ -133,7 +133,7 @@ src/
         mir_registry.zig    //   union/struct registry for type tracking
     codegen/                // pass 11 — pure 1:1 translator
         codegen.zig         //   hub — main code generation (MIR → Zig)
-        codegen_decls.zig   //   declaration codegen (structs, enums, functions)
+        codegen_decls.zig   //   declaration codegen (structs, enums, handles, functions)
         codegen_exprs.zig   //   expression codegen
         codegen_stmts.zig   //   statement codegen
         codegen_match.zig   //   match expression codegen

@@ -235,6 +235,38 @@ struct Rectangle: Measurable, Scalable {
 
 ---
 
+## Handle Types
+
+Handles are opaque pointer types — safe, nominally typed, zero-cost values. They cannot be dereferenced, inspected, or cast between handle types. Each `handle` declaration creates a distinct type.
+
+```
+handle WindowHandle
+handle DeviceHandle
+pub handle SocketHandle
+```
+
+Handles are designed for FFI boundaries: wrap a foreign pointer in a handle and pass it through Orhon code without exposing the raw pointer.
+
+```
+func open_window(title: str) WindowHandle {
+    return @cast(WindowHandle, native_open(title))
+}
+
+func close_window(w: WindowHandle) () {
+    native_close(@cast(usize, w))
+}
+```
+
+### Rules
+
+- `handle Name` declares a new opaque pointer type (`*anyopaque` in Zig)
+- Each handle is nominally typed — `WindowHandle` and `DeviceHandle` are incompatible even though both are opaque pointers
+- Handles can be stored, passed, returned, and compared (`==`, `!=`) but never dereferenced
+- `pub handle` exports the handle type from a module
+- Duplicate handle declarations in the same module are a compile error
+
+---
+
 ## Bitfields
 
 Bitfields are now provided by `std::bitfield` — a pure Zig comptime library. See `use std::bitfield` for the `Bitfield` function.
