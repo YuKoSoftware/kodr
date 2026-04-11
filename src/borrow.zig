@@ -85,6 +85,7 @@ pub const BorrowChecker = struct {
                 }
             },
             .enum_decl => {},
+            .handle_decl => {},
             else => {},
         }
     }

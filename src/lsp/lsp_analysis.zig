@@ -394,6 +394,19 @@ pub fn extractSymbols(
                     });
                 }
             },
+            .handle_decl => |h| {
+                const loc = nodeLocInfo(locs, node) orelse continue;
+                try symbols.append(allocator, .{
+                    .name = try allocator.dupe(u8, h.name),
+                    .detail = try allocator.dupe(u8, "handle"),
+                    .kind = .struct_,
+                    .module = try allocator.dupe(u8, mod_name),
+                    .parent = "",
+                    .uri = try makeUri(allocator, source_file, project_root),
+                    .line = if (loc.line > 0) loc.line - 1 else 0,
+                    .col = if (loc.col > 0) loc.col - 1 else 0,
+                });
+            },
             .var_decl => |v| {
                 const loc = nodeLocInfo(locs, node) orelse continue;
                 const sym_kind: SymbolKind = if (v.mutability == .constant) .constant else .variable;

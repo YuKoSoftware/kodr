@@ -187,6 +187,12 @@ fn emitInterfaceDecl(node: *parser.Node, buf: *std.ArrayListUnmanaged(u8), alloc
             }
             try buf.appendSlice(alloc, "}\n\n");
         },
+        .handle_decl => |h| {
+            if (!h.is_pub) return;
+            try buf.appendSlice(alloc, "pub handle ");
+            try buf.appendSlice(alloc, h.name);
+            try buf.append(alloc, '\n');
+        },
         .var_decl => |v| {
             if (!v.is_pub) return;
             const kw = if (v.mutability == .constant) "const " else "var ";

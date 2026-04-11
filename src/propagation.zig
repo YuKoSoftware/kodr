@@ -111,6 +111,7 @@ pub const PropagationChecker = struct {
                 }
             },
             .enum_decl => {},
+            .handle_decl => {},
             .test_decl => |t| {
                 var scope = PropagationScope.init(self.allocator, null);
                 defer scope.deinit();

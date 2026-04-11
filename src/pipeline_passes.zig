@@ -42,6 +42,7 @@ pub fn validateMainReserved(
             .var_decl => |v| v.name,
             .struct_decl => |s| s.name,
             .enum_decl => |e| e.name,
+            .handle_decl => |h| h.name,
             .blueprint_decl => |b| b.name,
             .func_decl => |f| f.name,
             else => null,

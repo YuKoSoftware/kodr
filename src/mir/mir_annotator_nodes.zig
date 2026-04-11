@@ -48,6 +48,10 @@ pub fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
             }
         },
 
+        .handle_decl => |h| {
+            try self.recordNode(node, RT{ .named = h.name });
+        },
+
         .block => |b| {
             for (b.statements) |stmt| {
                 try annotateNode(self, stmt);

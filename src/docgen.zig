@@ -116,6 +116,7 @@ fn writeModuleDoc(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8)
             .func_decl => |f| if (f.is_pub) try functions.append(allocator, node),
             .struct_decl => |s| if (s.is_pub) try types_list.append(allocator, node),
             .enum_decl => |e| if (e.is_pub) try types_list.append(allocator, node),
+            .handle_decl => |h| if (h.is_pub) try types_list.append(allocator, node),
             .var_decl => |v| if (v.is_pub and v.mutability == .constant) try constants.append(allocator, node),
             else => {},
         }
@@ -166,6 +167,16 @@ fn writeModuleDoc(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8)
             switch (node.*) {
                 .struct_decl => |s| try writeStructDoc(allocator, buf, s),
                 .enum_decl => |e| try writeEnumDoc(allocator, buf, e),
+                .handle_decl => |h| {
+                    try buf.appendSlice(allocator, "### `handle ");
+                    try buf.appendSlice(allocator, h.name);
+                    try buf.appendSlice(allocator, "`\n\n");
+                    if (h.doc) |doc| {
+                        try buf.appendSlice(allocator, doc);
+                        try buf.append(allocator, '\n');
+                    }
+                    try buf.append(allocator, '\n');
+                },
                 else => {},
             }
         }

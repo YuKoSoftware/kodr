@@ -213,6 +213,7 @@ pub const OwnershipChecker = struct {
             },
 
             .enum_decl => {},
+            .handle_decl => {},
 
             else => {},
         }
