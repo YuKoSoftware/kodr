@@ -1860,3 +1860,84 @@ test "resolver - stray @tuple outside anytype arg is rejected" {
     // @tuple outside anytype arg context must produce an error
     try std.testing.expect(reporter2.hasErrors());
 }
+
+test "resolver - @tuple accepted when slotted into anytype param" {
+    const alloc = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Build: @tuple(1, 2, 3)
+    const e1 = try a.create(parser.Node);
+    e1.* = .{ .int_literal = "1" };
+    const e2 = try a.create(parser.Node);
+    e2.* = .{ .int_literal = "2" };
+    const e3 = try a.create(parser.Node);
+    e3.* = .{ .int_literal = "3" };
+    const elems = try a.alloc(*parser.Node, 3);
+    elems[0] = e1;
+    elems[1] = e2;
+    elems[2] = e3;
+    const tuple_node = try a.create(parser.Node);
+    tuple_node.* = .{ .tuple_literal = .{ .elements = elems, .names = null } };
+
+    // Build: fake_zig_fn(@tuple(1, 2, 3))
+    const callee_node = try a.create(parser.Node);
+    callee_node.* = .{ .identifier = "fake_zig_fn" };
+    const call_args = try a.alloc(*parser.Node, 1);
+    call_args[0] = tuple_node;
+    const call_node = try a.create(parser.Node);
+    call_node.* = .{ .call_expr = .{
+        .callee = callee_node,
+        .args = call_args,
+        .arg_names = &.{},
+    } };
+
+    // Wrap in a func body: func test_fn(): void { fake_zig_fn(@tuple(1, 2, 3)) }
+    // call_expr nodes are placed directly as statements in blocks (no expr_stmt wrapper).
+    const stmts = try a.alloc(*parser.Node, 1);
+    stmts[0] = call_node;
+    const func_node = try wrapInFunc(a, stmts, "void");
+    const top = try a.alloc(*parser.Node, 1);
+    top[0] = func_node;
+    const prog = try buildTestProgram(a, top);
+
+    // Construct a DeclTable with fake_zig_fn having one `any` parameter.
+    // `any` maps to RT{ .named = "any" } — how zig_module.zig's "anytype → any" text
+    // is classified by types.classifyNamed (not a Primitive, so falls through to .named).
+    // Zig validates the final shape; the resolver only needs to permit @tuple here.
+    //
+    // NOTE: DeclTable.deinit() calls self.allocator.free(sig.params) and
+    //       self.allocator.free(sig.param_nodes), so these slices must be allocated
+    //       with `alloc` (the DeclTable's main allocator), not the type arena.
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+    const params = try alloc.alloc(declarations.ParamSig, 1);
+    params[0] = .{ .name = "x", .type_ = RT{ .named = "any" } };
+    const dummy_param_node = try a.create(parser.Node);
+    dummy_param_node.* = .{ .int_literal = "0" }; // placeholder; no default_value needed
+    // param_nodes is NOT freed by DeclTable.deinit() — use the arena allocator.
+    const param_nodes = try a.alloc(*parser.Node, 1);
+    param_nodes[0] = dummy_param_node;
+    const ret_node = try a.create(parser.Node);
+    ret_node.* = .{ .type_named = "void" };
+    try decl_table.funcs.put("fake_zig_fn", .{
+        .name = "fake_zig_fn",
+        .params = params,
+        .param_nodes = param_nodes,
+        .return_type = RT{ .primitive = .void },
+        .return_type_node = ret_node,
+        .context = .normal,
+        .is_pub = true,
+        .is_instance = false,
+    });
+
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+    var resolver = TypeResolver.init(&ctx);
+    defer resolver.deinit();
+    try resolver.resolve(prog);
+    // @tuple inside anytype arg must be accepted — no errors expected
+    try std.testing.expect(!reporter.hasErrors());
+}

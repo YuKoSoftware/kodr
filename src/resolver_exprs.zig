@@ -179,11 +179,36 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
 
         .call_expr => |c| {
             const callee_type = try resolveExpr(self, c.callee, scope);
+
+            // Look up the callee's FuncSig so we can identify which arg slots into
+            // an `any` param and set `in_anytype_arg` accordingly.
+            // `any` is how zig_module.zig maps `comptime x: anytype` in the generated
+            // .orh interface; RT{ .named = "any" } is how classifyNamed represents it.
+            // We only check plain-identifier callees — field_expr callees are looked up
+            // later in this branch; falling back to null is safe since @tuple will then error.
+            const callee_sig: ?declarations.FuncSig = blk: {
+                if (c.callee.* == .identifier) {
+                    if (self.ctx.decls.funcs.get(c.callee.identifier)) |sig| break :blk sig;
+                }
+                break :blk null;
+            };
+
             // Resolve arg types and check for String/[]u8 coercion.
             // Capped at 16 args — coercion checks skip later args (unlikely in practice).
             var arg_types_buf: [16]RT = undefined;
             const arg_count = @min(c.args.len, 16);
             for (c.args, 0..) |arg, idx| {
+                const prev_any = self.in_anytype_arg;
+                defer self.in_anytype_arg = prev_any;
+                self.in_anytype_arg = false;
+                if (callee_sig) |sig| {
+                    if (idx < sig.params.len) {
+                        const pt = sig.params[idx].type_;
+                        if (pt == .named and std.mem.eql(u8, pt.named, "any")) {
+                            self.in_anytype_arg = true;
+                        }
+                    }
+                }
                 const at = try resolveExpr(self, arg, scope);
                 if (idx < 16) arg_types_buf[idx] = at;
             }
