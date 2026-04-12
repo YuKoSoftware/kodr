@@ -157,6 +157,17 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             }
             try cg.emit("}");
         },
+        .tuple_lit => {
+            try cg.emit(".{ ");
+            for (m.children, 0..) |child, i| {
+                if (i > 0) try cg.emit(", ");
+                if (m.arg_names) |names| {
+                    try cg.emitFmt(".{s} = ", .{names[i]});
+                }
+                try cg.generateExprMir(child);
+            }
+            try cg.emit(" }");
+        },
         .version_lit => {}, // version metadata — not emitted in code
         .type_expr => try generateTypeExprMir(cg, m),
         .passthrough => {}, // architectural nodes (metadata, module_decl) — no codegen
