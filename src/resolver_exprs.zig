@@ -179,11 +179,63 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
 
         .call_expr => |c| {
             const callee_type = try resolveExpr(self, c.callee, scope);
+
+            // Look up the callee's FuncSig so we can identify which arg slots into
+            // an `any` param and set `in_anytype_arg` accordingly.
+            // `any` is how zig_module.zig maps `comptime x: anytype` in the generated
+            // .orh interface; RT{ .named = "any" } is how classifyNamed represents it.
+            const callee_sig: ?declarations.FuncSig = blk: {
+                if (c.callee.* == .identifier) {
+                    if (self.ctx.decls.funcs.get(c.callee.identifier)) |sig| break :blk sig;
+                }
+                if (c.callee.* == .field_expr) {
+                    const fe = c.callee.field_expr;
+                    if (fe.object.* == .identifier) {
+                        const obj_id = fe.object.identifier;
+                        // Module-qualified call: module.func(args).
+                        // Look in the named module's decl table first, then current module.
+                        if (self.ctx.all_decls) |ad| {
+                            if (ad.get(obj_id)) |mod_decls| {
+                                if (mod_decls.funcs.get(fe.field)) |sig| break :blk sig;
+                                // Also check generic structs: Bitfield(T, flags: any) pattern.
+                                // Synthesise a FuncSig from the struct's type_params so the
+                                // anytype-arg detection below can set in_anytype_arg correctly.
+                                if (mod_decls.structs.get(fe.field)) |ss| {
+                                    if (ss.type_params.len > 0) break :blk declarations.FuncSig{
+                                        .name = ss.name,
+                                        .params = ss.type_params,
+                                        .param_nodes = &.{},
+                                        .return_type = RT{ .primitive = .@"type" },
+                                        .return_type_node = undefined,
+                                        .context = .normal,
+                                        .is_pub = ss.is_pub,
+                                        .is_instance = false,
+                                    };
+                                }
+                            }
+                        }
+                        if (self.ctx.decls.funcs.get(fe.field)) |sig| break :blk sig;
+                    }
+                }
+                break :blk null;
+            };
+
             // Resolve arg types and check for String/[]u8 coercion.
             // Capped at 16 args — coercion checks skip later args (unlikely in practice).
             var arg_types_buf: [16]RT = undefined;
             const arg_count = @min(c.args.len, 16);
             for (c.args, 0..) |arg, idx| {
+                const prev_any = self.in_anytype_arg;
+                defer self.in_anytype_arg = prev_any;
+                self.in_anytype_arg = false;
+                if (callee_sig) |sig| {
+                    if (idx < sig.params.len) {
+                        const pt = sig.params[idx].type_;
+                        if (pt == .named and std.mem.eql(u8, pt.named, "any")) {
+                            self.in_anytype_arg = true;
+                        }
+                    }
+                }
                 const at = try resolveExpr(self, arg, scope);
                 if (idx < 16) arg_types_buf[idx] = at;
             }
@@ -212,6 +264,9 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 if (scope.lookup(name)) |t| {
                     if (t == .func_ptr) {
                         // Function pointer call — OK
+                    } else if (t == .primitive and t.primitive == .@"type") {
+                        // Local type alias used as a constructor (e.g. `const Perms: type = ...`)
+                        return RT{ .named = name };
                     } else if (!self.ctx.decls.funcs.contains(name) and
                         !self.ctx.decls.structs.contains(name) and
                         !self.ctx.decls.enums.contains(name) and
@@ -496,6 +551,24 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 .@"type" => RT{ .primitive = .@"type" },
                 .splitAt => RT.inferred,
             };
+        },
+
+        .tuple_literal => |tl| {
+            // Resolve each element so ordinary type errors inside still fire.
+            for (tl.elements) |el| {
+                _ = try resolveExpr(self, el, scope);
+            }
+            // Context check: @tuple is only legal while resolving an arg to an
+            // `anytype` parameter of a Zig-backed function. The call-expr resolver
+            // will set `in_anytype_arg` while iterating matching args (Task 5).
+            if (!self.in_anytype_arg) {
+                try self.ctx.reporter.reportFmt(
+                    self.ctx.nodeLoc(node),
+                    "@tuple(...) can only be used as an anytype argument to a Zig function",
+                    .{},
+                );
+            }
+            return RT.inferred;
         },
 
         .array_literal => |elems| {

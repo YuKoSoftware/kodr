@@ -379,7 +379,8 @@ call_access
 # ============================================================
 
 primary_expr
-    <- compiler_func
+    <- tuple_literal
+     / compiler_func
      / int_literal
      / float_literal
      / string_literal
@@ -406,6 +407,16 @@ compiler_func_name
      / '@' 'splitAt'
      / '@' 'wrap' / '@' 'sat' / '@' 'overflow'
      / '@' 'compileError'
+
+# @tuple(...) — comptime heterogeneous literal for Zig anytype interop (GAP-003).
+# Positional: @tuple(e1, e2, ...). Named: @tuple(k1: e1, k2: e2, ...).
+# Mixing positional and named in the same @tuple is rejected by the AST builder.
+tuple_literal
+    <- '@' 'tuple' '(' _ (tuple_element (_ ',' _ tuple_element)* (_ ',')?)? _ ')'  {label: "@tuple literal"}
+
+tuple_element
+    <- IDENTIFIER _ ':' _ expr
+     / expr
 
 # Literals
 int_literal     <- INT_LITERAL
