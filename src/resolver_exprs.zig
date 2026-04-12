@@ -498,6 +498,24 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             };
         },
 
+        .tuple_literal => |tl| {
+            // Resolve each element so ordinary type errors inside still fire.
+            for (tl.elements) |el| {
+                _ = try resolveExpr(self, el, scope);
+            }
+            // Context check: @tuple is only legal while resolving an arg to an
+            // `anytype` parameter of a Zig-backed function. The call-expr resolver
+            // will set `in_anytype_arg` while iterating matching args (Task 5).
+            if (!self.in_anytype_arg) {
+                try self.ctx.reporter.reportFmt(
+                    self.ctx.nodeLoc(node),
+                    "@tuple(...) can only be used as an anytype argument to a Zig function",
+                    .{},
+                );
+            }
+            return RT.inferred;
+        },
+
         .array_literal => |elems| {
             // Resolve element types; infer array type from first element
             var elem_type: RT = RT.inferred;

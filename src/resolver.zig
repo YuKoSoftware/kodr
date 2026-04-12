@@ -38,6 +38,10 @@ pub const TypeResolver = struct {
     type_decl_depth: u32 = 0, // track nesting depth for Self validation (structs and enums)
     in_generic_struct: bool = false, // true inside a generic struct (type params on struct)
     current_return_type: ?RT = null, // expected return type of current function
+    /// True when resolving an argument expression that will be passed to an
+    /// `anytype` parameter of a Zig-backed function. `@tuple(...)` is only
+    /// allowed when this flag is set.
+    in_anytype_arg: bool = false,
     /// Module names imported with `use` — their types are available unqualified.
     included_modules: std.ArrayListUnmanaged([]const u8) = .{},
     /// Parameter names of the current function — used to detect non-comptime arguments.
@@ -1810,4 +1814,49 @@ test "resolver - reference type in var decl errors" {
     defer resolver.deinit();
     try resolver.resolve(prog);
     try std.testing.expect(reporter.hasErrors());
+}
+
+test "resolver - stray @tuple outside anytype arg is rejected" {
+    const alloc = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    // Build: @tuple(1, 2)
+    const elem1 = try a.create(parser.Node);
+    elem1.* = .{ .int_literal = "1" };
+    const elem2 = try a.create(parser.Node);
+    elem2.* = .{ .int_literal = "2" };
+    const elems = try a.alloc(*parser.Node, 2);
+    elems[0] = elem1;
+    elems[1] = elem2;
+    const tuple_node = try a.create(parser.Node);
+    tuple_node.* = .{ .tuple_literal = .{ .elements = elems, .names = null } };
+
+    // Build: const _x = @tuple(1, 2)
+    const var_decl_node = try a.create(parser.Node);
+    var_decl_node.* = .{ .var_decl = .{
+        .name = "_x",
+        .type_annotation = null,
+        .value = tuple_node,
+        .is_pub = false,
+    } };
+
+    const stmts = try a.alloc(*parser.Node, 1);
+    stmts[0] = var_decl_node;
+    const func_node = try wrapInFunc(a, stmts, "void");
+    const top = try a.alloc(*parser.Node, 1);
+    top[0] = func_node;
+    const prog = try buildTestProgram(a, top);
+
+    var decl_table2 = declarations.DeclTable.init(alloc);
+    defer decl_table2.deinit();
+    var reporter2 = errors.Reporter.init(alloc, .debug);
+    defer reporter2.deinit();
+    const ctx2 = sema.SemanticContext.initForTest(alloc, &reporter2, &decl_table2);
+    var resolver2 = TypeResolver.init(&ctx2);
+    defer resolver2.deinit();
+    try resolver2.resolve(prog);
+    // @tuple outside anytype arg context must produce an error
+    try std.testing.expect(reporter2.hasErrors());
 }
