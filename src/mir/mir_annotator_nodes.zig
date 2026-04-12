@@ -81,34 +81,7 @@ pub fn annotateNode(self: *MirAnnotator, node: *parser.Node) anyerror!void {
             try self.var_types.put(self.allocator, v.name, info);
             // Canonicalize arb union types (exclude Error/null — handled as anyerror!/? by codegen)
             if (t == .union_type) {
-                var filtered = std.ArrayListUnmanaged([]const u8){};
-                defer filtered.deinit(self.allocator);
-                for (t.union_type) |m| {
-                    const name = m.name();
-                    if (!std.mem.eql(u8, name, "Error") and !std.mem.eql(u8, name, "null")) {
-                        try filtered.append(self.allocator, name);
-                    }
-                }
-                if (filtered.items.len >= 2) {
-                    // Build type→module lookup from all_decls for module-qualified union names
-                    var module_context: std.StringHashMapUnmanaged([]const u8) = .{};
-                    defer module_context.deinit(self.allocator);
-                    if (self.all_decls) |all_decls| {
-                        var mod_it = all_decls.iterator();
-                        while (mod_it.next()) |mod_entry| {
-                            const m_name = mod_entry.key_ptr.*;
-                            const dtable = mod_entry.value_ptr.*;
-                            var s_it = dtable.structs.iterator();
-                            while (s_it.next()) |s| try module_context.put(self.allocator, s.key_ptr.*, m_name);
-                            var e_it = dtable.enums.iterator();
-                            while (e_it.next()) |e| try module_context.put(self.allocator, e.key_ptr.*, m_name);
-                            var ty_it = dtable.types.iterator();
-                            while (ty_it.next()) |ty| try module_context.put(self.allocator, ty.key_ptr.*, m_name);
-                        }
-                    }
-                    const ctx: ?*const std.StringHashMapUnmanaged([]const u8) = if (module_context.count() > 0) &module_context else null;
-                    _ = try self.union_registry.canonicalize(filtered.items, ctx);
-                }
+                try registerUnionMembers(self, t.union_type);
             }
 
             // Annotate the value expression
@@ -313,6 +286,37 @@ pub fn annotateDeclCoercions(self: *MirAnnotator, value: *parser.Node, decl_type
             .coerce_tag = coercion.tag,
         });
     }
+}
+
+/// Register an arbitrary union (filtered for null/Error) in the shared registry.
+/// Members are passed as ResolvedTypes; null and Error are skipped.
+fn registerUnionMembers(self: *MirAnnotator, members: []const RT) !void {
+    var filtered = std.ArrayListUnmanaged([]const u8){};
+    defer filtered.deinit(self.allocator);
+    for (members) |m| {
+        const name = m.name();
+        if (!std.mem.eql(u8, name, "Error") and !std.mem.eql(u8, name, "null")) {
+            try filtered.append(self.allocator, name);
+        }
+    }
+    if (filtered.items.len < 2) return;
+    var module_context: std.StringHashMapUnmanaged([]const u8) = .{};
+    defer module_context.deinit(self.allocator);
+    if (self.all_decls) |all_decls| {
+        var mod_it = all_decls.iterator();
+        while (mod_it.next()) |mod_entry| {
+            const m_name = mod_entry.key_ptr.*;
+            const dtable = mod_entry.value_ptr.*;
+            var s_it = dtable.structs.iterator();
+            while (s_it.next()) |s| try module_context.put(self.allocator, s.key_ptr.*, m_name);
+            var e_it = dtable.enums.iterator();
+            while (e_it.next()) |e| try module_context.put(self.allocator, e.key_ptr.*, m_name);
+            var ty_it = dtable.types.iterator();
+            while (ty_it.next()) |ty| try module_context.put(self.allocator, ty.key_ptr.*, m_name);
+        }
+    }
+    const ctx: ?*const std.StringHashMapUnmanaged([]const u8) = if (module_context.count() > 0) &module_context else null;
+    _ = try self.union_registry.canonicalize(filtered.items, ctx);
 }
 
 /// Detect coercions for return statements.

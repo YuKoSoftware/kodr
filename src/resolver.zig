@@ -226,7 +226,7 @@ pub const TypeResolver = struct {
                 if (has_type_param) {
                     self.current_return_type = .inferred;
                 } else {
-                    self.current_return_type = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), f.return_type);
+                    self.current_return_type = try self.resolveTypeAnnotationInScope(f.return_type, &func_scope);
                 }
                 defer self.current_return_type = prev_return;
 

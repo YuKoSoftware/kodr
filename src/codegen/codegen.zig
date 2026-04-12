@@ -766,9 +766,40 @@ pub const CodeGen = struct {
                     break :blk try self.allocTypeStr("?{s}", .{inner});
                 }
                 // Regular arbitrary union: (A | B) → _unions.OrhonUnion_*
+                // For 3+ members, lift null/Error variants to ?/anyerror! wrappers.
                 var members = std.ArrayListUnmanaged(*parser.Node){};
                 defer members.deinit(self.allocator);
                 try self.collectBinaryUnionMembers(b, &members);
+                var has_error = false;
+                var has_null = false;
+                var others = std.ArrayListUnmanaged(*parser.Node){};
+                defer others.deinit(self.allocator);
+                for (members.items) |m| {
+                    if (m.* == .null_literal or
+                        (m.* == .type_named and std.mem.eql(u8, m.type_named, "null")))
+                    {
+                        has_null = true;
+                    } else if ((m.* == .identifier and std.mem.eql(u8, m.identifier, K.Type.ERROR)) or
+                        (m.* == .type_named and std.mem.eql(u8, m.type_named, K.Type.ERROR)))
+                    {
+                        has_error = true;
+                    } else {
+                        try others.append(self.allocator, m);
+                    }
+                }
+                if (has_null or has_error) {
+                    const inner = if (others.items.len == 1)
+                        try self.typeToZig(others.items[0])
+                    else
+                        try self.canonicalUnionRef(others.items);
+                    if (has_null and has_error) {
+                        break :blk try self.allocTypeStr("?anyerror!{s}", .{inner});
+                    } else if (has_error) {
+                        break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
+                    } else {
+                        break :blk try self.allocTypeStr("?{s}", .{inner});
+                    }
+                }
                 break :blk try self.canonicalUnionRef(members.items);
             },
             else => "anyopaque",
