@@ -72,16 +72,11 @@ fn emitUnwrapBindingNamed(cg: *CodeGen, bind_name: []const u8, source_name: []co
     }
 
     // Value narrowing — extract the unwrapped value
+    if (codegen.valueUnwrapForm(type_class)) |form| {
+        try cg.emitFmt("const {s} = {s}{s}{s};", .{ bind_name, form.prefix, source_name, form.suffix });
+        return;
+    }
     switch (type_class) {
-        .null_union => {
-            try cg.emitFmt("const {s} = {s}.?;", .{ bind_name, source_name });
-        },
-        .error_union => {
-            try cg.emitFmt("const {s} = {s} catch unreachable;", .{ bind_name, source_name });
-        },
-        .null_error_union => {
-            try cg.emitFmt("const {s} = ({s}.? catch unreachable);", .{ bind_name, source_name });
-        },
         .arbitrary_union => {
             // Resolve narrowed_type's positional tag against the source variable's
             // union type. var_types covers locals; current_func_mir.params covers
