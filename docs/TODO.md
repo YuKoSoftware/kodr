@@ -85,12 +85,14 @@ is on the roadmap.
 The audit flagged these but flagged them as "may be by design" or "low confidence."
 Read the call sites first; some may turn out to be intentional.
 
-#### `K.Type` constants compared via string equality
-**~30 occurrences** including `src/codegen/codegen_decls.zig:43,45`,
-`src/codegen/codegen_stmts.zig:49,214`, `src/codegen/codegen_exprs.zig:214` — Patterns
-like `std.mem.eql(u8, ret_type.type_named, K.Type.VOID)` repeated throughout. Cleaner
-form is an `enum(u32)` tag set during MIR annotation so `type_class` carries the right
-variant directly. May be intentional for AST compatibility — verify before changing.
+#### ~~`K.Type` constants compared via string equality~~ (verified intentional, 2026-04-13)
+**~50 occurrences** reviewed. Most are load-bearing string work: AST `type_named` field
+comparisons (pre-resolution), constructed AST/MIR nodes, user-written identifier
+comparisons in match patterns, and builtin-name whitelist lookups. The only sites that
+could genuinely become variant checks are the ~5 in `mir_lowerer.zig` /
+`codegen_stmts.zig` narrowing path, and those are downstream of the "MirNode optional
+string fields → tagged union" Larger-refactor item below — folding them in isolation
+would be duplicate work. No action on K.Type itself.
 
 #### Interpolation hoisting via ad-hoc `pre_stmts` buffer
 **`src/codegen/codegen.zig:62,258-261`** and **`codegen_match.zig:570-609`** — The
