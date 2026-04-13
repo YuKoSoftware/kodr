@@ -11,14 +11,6 @@ a whole batch in one pass leaves the touched area cleaner than picking single it
 
 ### Batch B — Coercion + emission tightening `small` (each)
 
-Bundle these with the `_unions` generic factory implementation — they all touch the
-same area and benefit from being done together.
-
-#### Sidecar-emission decision scattered across 8 sites
-**`src/codegen/codegen_decls.zig` (multiple) + `codegen.zig:391`** — `is_zig_module` /
-`has_zig_sidecar` checked in eight places, each making the same emit-vs-re-export
-call. Centralize in one `shouldEmitDeclMir(kind, m)` predicate.
-
 #### Duplicated unwrap-binding logic (partially done)
 **`src/codegen/codegen_match.zig:548,619`** — The unwrap pattern (`.?` for null,
 `catch` for error, `._tag` for union) still has one inline copy in the match-arm
@@ -60,8 +52,9 @@ These need brainstorming first; they're design-loaded, not mechanical.
 optional strings whose meaning depends on which other fields are set. Codegen has to
 check field combinations like `if (coercion == .arbitrary_union_wrap and coerce_tag != null)`.
 Cleaner: tighten the schema by moving optional metadata into the variants of the
-tagged unions that need them. The `_unions` plan addresses `coerce_tag` specifically;
-this is the broader version.
+tagged unions that need them. `CoercionResult` was converted to a tagged union in a
+prior pass; the broader cleanup pushes that same shape into `MirNode` itself so the
+readers in `mir_annotator_nodes.zig` can stop flattening the variant back out.
 
 #### `DeclTable`'s seven parallel StringHashMaps
 **`src/declarations.zig:83-92`** — `funcs`, `structs`, `enums`, `handles`, `vars`,
@@ -113,17 +106,6 @@ function-split, but handles plain match, type match, string match, range pattern
 guarded match, interpolation, and compiler functions in one file. Could split into
 `codegen_match_patterns.zig` (range/guard/string/plain) and a `codegen_match_compt.zig`
 satellite. Low priority — the file is well-structured as-is.
-
-### Skipped: already covered by the `_unions` generic factory plan
-
-For audit completeness — these were flagged but are already addressed by the
-in-flight redesign at `docs/superpowers/specs/2026-04-12-unions-generic-factory-design.md`:
-
-- `mir_registry.canonicalize` manual canonical name building → comptime memoization
-- Union cache entry redundancy (`module_types`, name strings) → drop the cached
-  derived data
-- `inferArbitraryUnionTagMir` re-deriving tags at every emit → positional tags
-  computed once via `union_sort` helper
 
 ---
 
