@@ -506,7 +506,22 @@ fn generateFieldAccessMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             try cg.generateExprMir(obj_mir);
             try cg.emit(".?");
         } else if (eff_tc == .arbitrary_union) {
-            const tag = cg.arbitraryUnionTag(obj_mir.resolved_type, field) orelse field;
+            // Try the obj's MIR resolved_type first, then fall back to var_types
+            // (narrowing may have replaced the live type but we still need the
+            // original union to compute the positional tag).
+            var tag: []const u8 = field;
+            if (cg.arbitraryUnionTag(obj_mir.resolved_type, field)) |t| {
+                tag = t;
+            } else {
+                const obj_name = if (obj_mir.kind == .identifier) (obj_mir.name orelse "") else "";
+                if (obj_name.len > 0) {
+                    if (cg.var_types) |vt| {
+                        if (vt.get(obj_name)) |info| {
+                            if (cg.arbitraryUnionTag(info.resolved_type, field)) |t| tag = t;
+                        }
+                    }
+                }
+            }
             try cg.generateExprMir(obj_mir);
             try cg.emitFmt("._{s}", .{tag});
         } else {

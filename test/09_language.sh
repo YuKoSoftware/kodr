@@ -175,6 +175,19 @@ else
     fail "union flattening compiles" "$FLAT_OUT"
 fi
 
+# arbitrary union over same-module root types — locks in the original
+# _unions cross-import gap repro that the generic factory redesign fixed.
+cd "$TESTDIR"
+mkdir -p arb_union_root/src
+cp "$FIXTURES/arbitrary_union_root_types.orh" arb_union_root/src/arb_union_root.orh
+cd arb_union_root
+ARB_OUT=$("$ORHON" build 2>&1 || true)
+if echo "$ARB_OUT" | grep -q "Built:"; then
+    pass "arbitrary union of same-module root types compiles"
+else
+    fail "arbitrary union of same-module root types compiles" "$ARB_OUT"
+fi
+
 section "Multi-file sidecar"
 
 cd "$TESTDIR"

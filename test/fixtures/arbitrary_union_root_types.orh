@@ -1,0 +1,31 @@
+module arb_union_root
+#version = (1, 0, 0)
+#build   = exe
+
+pub struct A { pub x: i32 }
+pub struct B { pub y: i32 }
+
+func make_a() (A | B) {
+    return A{x: 42}
+}
+
+func make_b() (A | B) {
+    return B{y: 7}
+}
+
+func describe(u: (A | B)) i32 {
+    if (u is A) {
+        return u.A.x
+    } else {
+        return u.B.y
+    }
+}
+
+func main() void {
+    const first: (A | B) = make_a()
+    const second: (A | B) = make_b()
+    const r: i32 = describe(first) + describe(second)
+    if (r > 0) {
+        return
+    }
+}

@@ -84,12 +84,24 @@ fn emitUnwrapBindingNamed(cg: *CodeGen, bind_name: []const u8, source_name: []co
         },
         .arbitrary_union => {
             // Resolve narrowed_type's positional tag against the source variable's
-            // union type from var_types; fall back to the type name if unavailable.
+            // union type. var_types covers locals; current_func_mir.params covers
+            // function parameters. Fall back to the type name as a last resort.
             const resolved_tag = blk: {
                 if (cg.var_types) |vt| {
                     if (vt.get(source_name)) |info| {
                         if (cg.arbitraryUnionTag(info.resolved_type, narrowed_type)) |t| {
                             break :blk t;
+                        }
+                    }
+                }
+                if (cg.current_func_mir) |fm| {
+                    for (fm.params()) |p| {
+                        if (p.name) |pname| {
+                            if (std.mem.eql(u8, pname, source_name)) {
+                                if (cg.arbitraryUnionTag(p.resolved_type, narrowed_type)) |t| {
+                                    break :blk t;
+                                }
+                            }
                         }
                     }
                 }
