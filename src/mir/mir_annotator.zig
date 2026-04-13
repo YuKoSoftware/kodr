@@ -123,8 +123,8 @@ pub const MirAnnotator = struct {
     }
 
     /// Core coercion detection: given a source type and a target type,
-    /// determine if a coercion is needed and which kind. For arbitrary_union_wrap,
-    /// the returned `tag` is a positional index string keyed to the destination
+    /// determine if a coercion is needed and which kind. For `.wrap_union`,
+    /// the carried `tag` is a positional index string keyed to the destination
     /// union's canonical sort order (borrowed slice, program lifetime).
     pub fn detectCoercion(src: RT, dst: RT) CoercionResult {
         // Can't determine coercion without concrete types
