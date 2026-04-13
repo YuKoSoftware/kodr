@@ -632,15 +632,6 @@ pub fn writeGeneratedZig(module_name: []const u8, content: []const u8, allocator
     try file.writeAll(content);
 }
 
-/// Read a generated .zig file from the cache
-pub fn readGeneratedZig(module_name: []const u8, allocator: std.mem.Allocator) !?[]u8 {
-    const path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ GENERATED_DIR, module_name });
-    defer allocator.free(path);
-    const file = std.fs.cwd().openFile(path, .{}) catch return null;
-    defer file.close();
-    return try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
-}
-
 test "cache init and deinit" {
     var cache = Cache.init(std.testing.allocator);
     defer cache.deinit();

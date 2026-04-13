@@ -361,15 +361,6 @@ pub fn collectParamsRecursive(ctx: *BuildContext, cap: *const CaptureNode, out: 
     }
 }
 
-/// Build all children into nodes (any rule)
-pub fn buildAllChildren(ctx: *BuildContext, cap: *const CaptureNode) ![]*Node {
-    var nodes = std.ArrayListUnmanaged(*Node){};
-    for (cap.children) |*child| {
-        try nodes.append(ctx.alloc(), try buildNode(ctx, child));
-    }
-    return nodes.toOwnedSlice(ctx.alloc());
-}
-
 // ============================================================
 // SHARED STRUCT/ENUM HELPERS (used by decls and builder satellites)
 // ============================================================
