@@ -251,12 +251,17 @@ pub fn annotateCallCoercions(self: *MirAnnotator, c: parser.CallExpr) !void {
     for (c.args[0..param_count], effective_params[0..param_count]) |arg, param| {
         const arg_type = self.lookupType(arg) orelse continue;
         const coercion = MirAnnotator.detectCoercion(arg_type, param.type_);
-        if (coercion.kind) |kind| {
-            try self.node_map.put(self.allocator, arg, .{
+        switch (coercion) {
+            .none => {},
+            .simple => |kind| try self.node_map.put(self.allocator, arg, .{
                 .resolved_type = arg_type,
                 .coercion = kind,
-                .coerce_tag = coercion.tag,
-            });
+            }),
+            .wrap_union => |w| try self.node_map.put(self.allocator, arg, .{
+                .resolved_type = arg_type,
+                .coercion = .arbitrary_union_wrap,
+                .coerce_tag = w.tag,
+            }),
         }
     }
 }
@@ -276,12 +281,17 @@ pub fn annotateDeclCoercions(self: *MirAnnotator, value: *parser.Node, decl_type
         return;
     };
     const coercion = MirAnnotator.detectCoercion(val_type, decl_type);
-    if (coercion.kind) |kind| {
-        try self.node_map.put(self.allocator, value, .{
+    switch (coercion) {
+        .none => {},
+        .simple => |kind| try self.node_map.put(self.allocator, value, .{
             .resolved_type = val_type,
             .coercion = kind,
-            .coerce_tag = coercion.tag,
-        });
+        }),
+        .wrap_union => |w| try self.node_map.put(self.allocator, value, .{
+            .resolved_type = val_type,
+            .coercion = .arbitrary_union_wrap,
+            .coerce_tag = w.tag,
+        }),
     }
 }
 
@@ -307,11 +317,16 @@ pub fn annotateReturnCoercions(self: *MirAnnotator, value: *parser.Node) !void {
     const sig = self.decls.funcs.get(func_name) orelse return;
     const val_type = self.lookupType(value) orelse return;
     const coercion = MirAnnotator.detectCoercion(val_type, sig.return_type);
-    if (coercion.kind) |kind| {
-        try self.node_map.put(self.allocator, value, .{
+    switch (coercion) {
+        .none => {},
+        .simple => |kind| try self.node_map.put(self.allocator, value, .{
             .resolved_type = val_type,
             .coercion = kind,
-            .coerce_tag = coercion.tag,
-        });
+        }),
+        .wrap_union => |w| try self.node_map.put(self.allocator, value, .{
+            .resolved_type = val_type,
+            .coercion = .arbitrary_union_wrap,
+            .coerce_tag = w.tag,
+        }),
     }
 }
