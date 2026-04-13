@@ -836,25 +836,6 @@ fn mergeZonConfigs(
     }
 }
 
-// ── Helpers ────────────────────────────────────────────────
-
-fn dupSliceOfSlices(allocator: std.mem.Allocator, items: []const []const u8) ![]const []const u8 {
-    const duped = try allocator.alloc([]const u8, items.len);
-    for (items, 0..) |s, i| duped[i] = try allocator.dupe(u8, s);
-    return duped;
-}
-
-fn dupModuleTypes(allocator: std.mem.Allocator, items: []const cache.CachedUnionEntry.ModuleTypePair) ![]const cache.CachedUnionEntry.ModuleTypePair {
-    const duped = try allocator.alloc(cache.CachedUnionEntry.ModuleTypePair, items.len);
-    for (items, 0..) |mt, i| {
-        duped[i] = .{
-            .type_name = try allocator.dupe(u8, mt.type_name),
-            .module_name = try allocator.dupe(u8, mt.module_name),
-        };
-    }
-    return duped;
-}
-
 // Satellite modules
 test {
     _ = build_helpers;
