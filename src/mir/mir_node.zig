@@ -31,8 +31,6 @@ pub const MirNode = struct {
     /// Explicit coercion to emit.
     coercion: ?Coercion = null,
     coerce_tag: ?[]const u8 = null,
-    /// For type narrowing after `is` checks.
-    narrowed_to: ?[]const u8 = null,
     /// Node kind (grouped from 52 AST kinds to ~32 MIR kinds).
     kind: MirKind,
     /// Child nodes (ordered: statements in block, args in call, etc.).

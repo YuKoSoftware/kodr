@@ -61,7 +61,6 @@ pub const NodeInfo = struct {
     resolved_type: RT,
     coercion: ?Coercion = null,
     coerce_tag: ?[]const u8 = null,
-    narrowed_to: ?[]const u8 = null,
 
     pub fn typeClass(self: NodeInfo) TypeClass {
         return classifyType(self.resolved_type);

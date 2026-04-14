@@ -146,13 +146,6 @@ pub const MirLowerer = struct {
                 mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
                 // Pre-compute type narrowing from `is` checks
                 mir_node_ptr.narrowing = self.extractNarrowing(i.condition, i.then_block);
-                // Stamp narrowed_to on descendant identifier nodes
-                if (mir_node_ptr.narrowing) |narrowing| {
-                    if (narrowing.then_type) |tt| stampNarrowing(mir_node_ptr.thenBlock(), narrowing.var_name, tt);
-                    if (mir_node_ptr.elseBlock()) |else_m| {
-                        if (narrowing.else_type) |et| stampNarrowing(else_m, narrowing.var_name, et);
-                    }
-                }
             },
             .while_stmt => |w| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
@@ -178,19 +171,6 @@ pub const MirLowerer = struct {
                 try children.append(self.allocator, try self.lowerNode(m.value));
                 for (m.arms) |arm| try children.append(self.allocator, try self.lowerNode(arm));
                 mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
-                // Stamp narrowing for arbitrary union match arms
-                if (mir_node_ptr.value().type_class == .arbitrary_union) {
-                    const match_val = mir_node_ptr.value();
-                    const match_var = if (match_val.kind == .identifier) match_val.name else null;
-                    if (match_var) |vname| {
-                        for (mir_node_ptr.matchArms()) |arm_mir| {
-                            const pat_m = arm_mir.pattern();
-                            if (pat_m.kind == .identifier and !std.mem.eql(u8, pat_m.name orelse "", "else")) {
-                                stampNarrowing(arm_mir.body(), vname, pat_m.name orelse "");
-                            }
-                        }
-                    }
-                }
             },
             .match_arm => |arm_data| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
@@ -398,20 +378,6 @@ pub const MirLowerer = struct {
             }
         }
 
-        // Post-narrowing: if an if_stmt has early exit, stamp subsequent siblings
-        const items = result.items;
-        for (items, 0..) |item, idx| {
-            if (item.kind == .if_stmt) {
-                if (item.narrowing) |narrowing| {
-                    if (narrowing.post_type) |pt| {
-                        for (items[idx + 1 ..]) |sibling| {
-                            stampNarrowing(sibling, narrowing.var_name, pt);
-                        }
-                    }
-                }
-            }
-        }
-
         return result.toOwnedSlice(self.allocator);
     }
 
@@ -535,20 +501,6 @@ pub const MirLowerer = struct {
     }
 
     const blockHasEarlyExit = parser.blockHasEarlyExit;
-
-    /// Stamp `narrowed_to` on all identifier MirNodes within a subtree that
-    /// reference `var_name`. Skips nodes that already have a narrowing set
-    /// (inner scopes take precedence).
-    fn stampNarrowing(node: *MirNode, var_name: []const u8, narrowed_type: []const u8) void {
-        if (node.kind == .identifier and node.narrowed_to == null) {
-            if (node.ast.* == .identifier and std.mem.eql(u8, node.ast.identifier, var_name)) {
-                node.narrowed_to = narrowed_type;
-            }
-        }
-        for (node.children) |child| {
-            stampNarrowing(child, var_name, narrowed_type);
-        }
-    }
 };
 
 /// Recursively walk a MIR subtree and stamp `overflow_type` on any binary node
