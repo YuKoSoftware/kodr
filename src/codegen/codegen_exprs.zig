@@ -497,10 +497,12 @@ fn generateFieldAccessMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 try cg.generateExprMir(obj_mir);
                 try cg.emitFmt("._{d}", .{tag});
             } else {
-                // No stamp — emit raw field name (lowerer resolves this whenever
-                // the union RT is known; fallback for edge cases).
+                // Fallback: lowerer couldn't resolve the union RT. Preserve the
+                // old codegen behavior by emitting `._<raw_field>` — matches what
+                // the prior `arbitraryUnionTag` fallback path produced when its
+                // lookup failed.
                 try cg.generateExprMir(obj_mir);
-                try cg.emitFmt(".{s}", .{field});
+                try cg.emitFmt("._{s}", .{field});
             }
         } else {
             try cg.generateExprMir(obj_mir);

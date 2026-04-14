@@ -199,6 +199,7 @@ pub const MirLowerer = struct {
                         const rhs_name: ?[]const u8 = switch (b.right.*) {
                             .identifier => |n| n,
                             .field_expr => |fe| fe.field,
+                            .null_literal => K.Type.NULL,
                             else => null,
                         };
                         if (rhs_name) |rname| {
