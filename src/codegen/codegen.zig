@@ -112,34 +112,6 @@ pub const CodeGen = struct {
         return null;
     }
 
-    /// Look up the positional tag (e.g. "0", "1") of `type_name` within the
-    /// arbitrary union's canonical sort order. Returns null when the union
-    /// type is unknown or the type name is not a member; callers fall back
-    /// to the raw type name in that case.
-    pub fn arbitraryUnionTag(_: *CodeGen, union_resolved: RT, type_name: []const u8) ?[]const u8 {
-        if (union_resolved != .union_type) return null;
-        const max_arity = 32;
-        var buf: [max_arity][]const u8 = undefined;
-        var n: usize = 0;
-        for (union_resolved.union_type) |mem| {
-            const name = mem.name();
-            if (std.mem.eql(u8, name, "Error") or std.mem.eql(u8, name, "null")) continue;
-            if (n >= max_arity) return null;
-            buf[n] = name;
-            n += 1;
-        }
-        mir.union_sort.sortMemberNames(buf[0..n]);
-        const idx = mir.union_sort.positionalIndex(buf[0..n], type_name) orelse return null;
-        const pool = [_][]const u8{
-            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-            "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
-            "20", "21", "22", "23", "24", "25", "26", "27", "28", "29",
-            "30", "31",
-        };
-        if (idx >= pool.len) return null;
-        return pool[idx];
-    }
-
     /// When this module is a pure Zig-backed module, emit a re-export for the
     /// given declaration and signal the caller to stop. Caller returns early on true.
     pub fn reExportIfZigModule(self: *CodeGen, name: []const u8, is_pub: bool) !bool {

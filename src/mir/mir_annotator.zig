@@ -9,7 +9,6 @@ const K = @import("../constants.zig");
 const mir_types = @import("mir_types.zig");
 const mir_registry = @import("mir_registry.zig");
 const nodes_impl = @import("mir_annotator_nodes.zig");
-const union_sort = @import("union_sort.zig");
 
 const RT = mir_types.RT;
 const TypeClass = mir_types.TypeClass;
@@ -88,38 +87,6 @@ pub const MirAnnotator = struct {
 
     pub fn annotateReturnCoercions(self: *MirAnnotator, value: *parser.Node) !void {
         return nodes_impl.annotateReturnCoercions(self, value);
-    }
-
-    /// Static pool of positional tag strings. detectCoercion returns a slice
-    /// into this array instead of allocating, so the tag inside
-    /// CoercionResult.wrap_union is always a borrowed slice with program
-    /// lifetime. Arity > pool.len is rejected (no tag → no wrap) which is
-    /// fine for arity practically seen in code.
-    const positional_tag_pool = [_][]const u8{
-        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-        "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
-        "20", "21", "22", "23", "24", "25", "26", "27", "28", "29",
-        "30", "31",
-    };
-
-    /// Look up the positional tag of `src_name` within `dst_members` (sorted
-    /// canonically, Error/null filtered). Returns a borrowed slice into
-    /// `positional_tag_pool`, or null if the source type is not a member.
-    fn positionalUnionTag(src_name: []const u8, dst_members: []const RT) ?[]const u8 {
-        // Inline bubble sort over stack storage — dst_members is tiny in practice.
-        var buf: [positional_tag_pool.len][]const u8 = undefined;
-        var n: usize = 0;
-        for (dst_members) |m| {
-            const name = m.name();
-            if (std.mem.eql(u8, name, "Error") or std.mem.eql(u8, name, "null")) continue;
-            if (n >= buf.len) return null;
-            buf[n] = name;
-            n += 1;
-        }
-        union_sort.sortMemberNames(buf[0..n]);
-        const idx = union_sort.positionalIndex(buf[0..n], src_name) orelse return null;
-        if (idx >= positional_tag_pool.len) return null;
-        return positional_tag_pool[idx];
     }
 
     /// Core coercion detection: given a source type and a target type,

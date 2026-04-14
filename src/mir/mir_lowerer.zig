@@ -567,7 +567,7 @@ pub const MirLowerer = struct {
         for (members) |m| {
             const n = m.name();
             if (std.mem.eql(u8, n, excluded)) continue;
-            if (std.mem.eql(u8, n, K.Type.ERROR) or std.mem.eql(u8, n, K.Type.NULL)) continue;
+            if (mir_types.isErrorTypeName(n) or mir_types.isNullTypeName(n)) continue;
             if (remaining != null) return null;
             remaining = n;
         }
