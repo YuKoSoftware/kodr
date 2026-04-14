@@ -3,6 +3,8 @@
 const std = @import("std");
 const parser = @import("../parser.zig");
 const types = @import("../types.zig");
+const union_sort = @import("union_sort.zig");
+const K = @import("../constants.zig");
 
 pub const RT = types.ResolvedType;
 
@@ -69,6 +71,46 @@ pub const NodeInfo = struct {
 /// Annotation table: AST node pointer → NodeInfo.
 pub const NodeMap = std.AutoHashMapUnmanaged(*parser.Node, NodeInfo);
 
+// ── Shared union-tag helpers ────────────────────────────────
+
+/// Whether `name` is the built-in Error sentinel type name.
+/// Centralizes the `K.Type.ERROR` string comparison used throughout the
+/// MIR + codegen path. Callers pass `RT.name()` output.
+pub fn isErrorTypeName(name: []const u8) bool {
+    return std.mem.eql(u8, name, K.Type.ERROR);
+}
+
+/// Whether `name` is the built-in null sentinel type name.
+pub fn isNullTypeName(name: []const u8) bool {
+    return std.mem.eql(u8, name, K.Type.NULL);
+}
+
+/// Resolve a union member name to its canonical positional tag (0..31).
+/// Walks the union's members with Error/null filtered out, sorts them in
+/// canonical order via `union_sort.sortMemberNames`, and returns the index
+/// of `member_name`. Returns null if `union_rt` is not a union, if
+/// `member_name` is not a member, or if arity exceeds 32.
+///
+/// This is the single canonical implementation — callers in the annotator
+/// and lowerer use this instead of re-walking member lists themselves.
+pub fn positionalTagOf(union_rt: RT, member_name: []const u8) ?u8 {
+    if (union_rt != .union_type) return null;
+    const max_arity = 32;
+    var buf: [max_arity][]const u8 = undefined;
+    var n: usize = 0;
+    for (union_rt.union_type) |mem| {
+        const name = mem.name();
+        if (isErrorTypeName(name) or isNullTypeName(name)) continue;
+        if (n >= max_arity) return null;
+        buf[n] = name;
+        n += 1;
+    }
+    union_sort.sortMemberNames(buf[0..n]);
+    const idx = union_sort.positionalIndex(buf[0..n], member_name) orelse return null;
+    if (idx > 255) return null;
+    return @intCast(idx);
+}
+
 // ── Tests ───────────────────────────────────────────────────
 
 test "classifyType - primitives" {
@@ -107,4 +149,43 @@ test "classifyType - ptr" {
 test "classifyType - unknown and inferred" {
     try std.testing.expectEqual(TypeClass.plain, classifyType(RT.unknown));
     try std.testing.expectEqual(TypeClass.plain, classifyType(RT.inferred));
+}
+
+test "positionalTagOf - basic lookup" {
+    // Sorted canonically: f64, i32, str → f64 at 0, i32 at 1, str at 2
+    const members = &[_]RT{
+        RT{ .primitive = .string },
+        RT{ .primitive = .i32 },
+        RT{ .primitive = .f64 },
+    };
+    const u = RT{ .union_type = members };
+    try std.testing.expectEqual(@as(?u8, 0), positionalTagOf(u, "f64"));
+    try std.testing.expectEqual(@as(?u8, 1), positionalTagOf(u, "i32"));
+    try std.testing.expectEqual(@as(?u8, 2), positionalTagOf(u, "str"));
+}
+
+test "positionalTagOf - filters Error and null sentinels" {
+    // (Error | null | i32 | str) → sorted (i32, str) → i32 at 0, str at 1
+    const members = &[_]RT{ RT.err, RT.null_type, RT{ .primitive = .i32 }, RT{ .primitive = .string } };
+    const u = RT{ .union_type = members };
+    try std.testing.expectEqual(@as(?u8, 0), positionalTagOf(u, "i32"));
+    try std.testing.expectEqual(@as(?u8, 1), positionalTagOf(u, "str"));
+}
+
+test "positionalTagOf - non-union returns null" {
+    try std.testing.expectEqual(@as(?u8, null), positionalTagOf(RT{ .primitive = .i32 }, "i32"));
+}
+
+test "positionalTagOf - missing member returns null" {
+    const members = &[_]RT{ RT{ .primitive = .i32 }, RT{ .primitive = .string } };
+    const u = RT{ .union_type = members };
+    try std.testing.expectEqual(@as(?u8, null), positionalTagOf(u, "f64"));
+}
+
+test "isErrorTypeName / isNullTypeName" {
+    try std.testing.expect(isErrorTypeName("Error"));
+    try std.testing.expect(!isErrorTypeName("null"));
+    try std.testing.expect(!isErrorTypeName("i32"));
+    try std.testing.expect(isNullTypeName("null"));
+    try std.testing.expect(!isNullTypeName("Error"));
 }
