@@ -9,7 +9,6 @@ const K = @import("../constants.zig");
 const mir_types = @import("mir_types.zig");
 const mir_registry = @import("mir_registry.zig");
 const nodes_impl = @import("mir_annotator_nodes.zig");
-const union_sort = @import("union_sort.zig");
 
 const RT = mir_types.RT;
 const TypeClass = mir_types.TypeClass;
@@ -90,38 +89,6 @@ pub const MirAnnotator = struct {
         return nodes_impl.annotateReturnCoercions(self, value);
     }
 
-    /// Static pool of positional tag strings. detectCoercion returns a slice
-    /// into this array instead of allocating, so the tag inside
-    /// CoercionResult.wrap_union is always a borrowed slice with program
-    /// lifetime. Arity > pool.len is rejected (no tag → no wrap) which is
-    /// fine for arity practically seen in code.
-    const positional_tag_pool = [_][]const u8{
-        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-        "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
-        "20", "21", "22", "23", "24", "25", "26", "27", "28", "29",
-        "30", "31",
-    };
-
-    /// Look up the positional tag of `src_name` within `dst_members` (sorted
-    /// canonically, Error/null filtered). Returns a borrowed slice into
-    /// `positional_tag_pool`, or null if the source type is not a member.
-    fn positionalUnionTag(src_name: []const u8, dst_members: []const RT) ?[]const u8 {
-        // Inline bubble sort over stack storage — dst_members is tiny in practice.
-        var buf: [positional_tag_pool.len][]const u8 = undefined;
-        var n: usize = 0;
-        for (dst_members) |m| {
-            const name = m.name();
-            if (std.mem.eql(u8, name, "Error") or std.mem.eql(u8, name, "null")) continue;
-            if (n >= buf.len) return null;
-            buf[n] = name;
-            n += 1;
-        }
-        union_sort.sortMemberNames(buf[0..n]);
-        const idx = union_sort.positionalIndex(buf[0..n], src_name) orelse return null;
-        if (idx >= positional_tag_pool.len) return null;
-        return positional_tag_pool[idx];
-    }
-
     /// Core coercion detection: given a source type and a target type,
     /// determine if a coercion is needed and which kind. For `.wrap_union`,
     /// the carried `tag` is a positional index string keyed to the destination
@@ -156,20 +123,20 @@ pub const MirAnnotator = struct {
             if (src == .primitive and src.primitive == .numeric_literal) {
                 for (dst.union_type) |member| {
                     if (member == .primitive and member.primitive.isInteger()) {
-                        const tag = positionalUnionTag(member.name(), dst.union_type) orelse return .none;
-                        return .{ .wrap_union = .{ .tag = tag } };
+                        const tag = mir_types.positionalTagOf(dst, member.name()) orelse return .none;
+                        return .{ .wrap_union = tag };
                     }
                 }
             } else if (src == .primitive and src.primitive == .float_literal) {
                 for (dst.union_type) |member| {
                     if (member == .primitive and member.primitive.isFloat()) {
-                        const tag = positionalUnionTag(member.name(), dst.union_type) orelse return .none;
-                        return .{ .wrap_union = .{ .tag = tag } };
+                        const tag = mir_types.positionalTagOf(dst, member.name()) orelse return .none;
+                        return .{ .wrap_union = tag };
                     }
                 }
             }
-            const tag = positionalUnionTag(src.name(), dst.union_type) orelse return .none;
-            return .{ .wrap_union = .{ .tag = tag } };
+            const tag = mir_types.positionalTagOf(dst, src.name()) orelse return .none;
+            return .{ .wrap_union = tag };
         }
         // Null union → plain (optional unwrap)
         if (src.unionContainsNull() and !dst.unionContainsNull())
@@ -197,12 +164,12 @@ pub const MirAnnotator = struct {
         /// No coercion needed — types match or coercion is impossible.
         none,
         /// A plain coercion kind with no extra metadata.
-        /// Covers: implicit_int, null_wrap, error_wrap, optional_unwrap,
+        /// Covers: null_wrap, error_wrap, optional_unwrap,
         /// value_to_const_ref, array_to_slice.
         simple: Coercion,
-        /// Arbitrary union wrap — carries the positional tag string
-        /// (borrowed slice into positional_tag_pool, program lifetime).
-        wrap_union: struct { tag: []const u8 },
+        /// Arbitrary union wrap — carries the positional tag (0..31)
+        /// into the destination union's canonical sort order.
+        wrap_union: u8,
     };
 
     /// Look up a FuncSig for a call expression's callee.
@@ -365,7 +332,7 @@ test "detectCoercion - arbitrary_union_wrap" {
     // Sorted canonically: i32, str → i32 is position 0.
     const members = &[_]RT{ RT{ .primitive = .i32 }, RT{ .primitive = .string } };
     const r1 = MirAnnotator.detectCoercion(RT{ .primitive = .i32 }, RT{ .union_type = members });
-    try std.testing.expectEqualStrings("0", r1.wrap_union.tag);
+    try std.testing.expectEqual(@as(u8, 0), r1.wrap_union);
 
     // union_type → union_type → no coercion
     const r2 = MirAnnotator.detectCoercion(RT{ .union_type = members }, RT{ .union_type = members });
@@ -507,7 +474,7 @@ test "detectCoercion - numeric literal to arbitrary union" {
     const src = RT{ .primitive = .numeric_literal };
     const dst = RT{ .union_type = members };
     const result = MirAnnotator.detectCoercion(src, dst);
-    try std.testing.expectEqualStrings("0", result.wrap_union.tag);
+    try std.testing.expectEqual(@as(u8, 0), result.wrap_union);
 }
 
 test "detectCoercion - float literal to arbitrary union" {
@@ -516,7 +483,7 @@ test "detectCoercion - float literal to arbitrary union" {
     const src = RT{ .primitive = .float_literal };
     const dst = RT{ .union_type = members };
     const result = MirAnnotator.detectCoercion(src, dst);
-    try std.testing.expectEqualStrings("0", result.wrap_union.tag);
+    try std.testing.expectEqual(@as(u8, 0), result.wrap_union);
 }
 
 test "detectCoercion - null literal to null-containing union no wrap" {

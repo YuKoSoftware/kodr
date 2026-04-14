@@ -65,7 +65,6 @@ pub const MirLowerer = struct {
         const resolved = if (info) |i| i.resolved_type else RT.unknown;
         const tc = if (info) |i| i.typeClass() else classifyType(resolved);
         const coercion_val = if (info) |i| i.coercion else null;
-        const coerce_tag_val = if (info) |i| i.coerce_tag else null;
 
         const kind = astToMirKind(node);
 
@@ -75,7 +74,6 @@ pub const MirLowerer = struct {
             .resolved_type = resolved,
             .type_class = tc,
             .coercion = coercion_val,
-            .coerce_tag = coerce_tag_val,
             .kind = kind,
             .children = &.{},
         };
@@ -146,13 +144,6 @@ pub const MirLowerer = struct {
                 mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
                 // Pre-compute type narrowing from `is` checks
                 mir_node_ptr.narrowing = self.extractNarrowing(i.condition, i.then_block);
-                // Stamp narrowed_to on descendant identifier nodes
-                if (mir_node_ptr.narrowing) |narrowing| {
-                    if (narrowing.then_type) |tt| stampNarrowing(mir_node_ptr.thenBlock(), narrowing.var_name, tt);
-                    if (mir_node_ptr.elseBlock()) |else_m| {
-                        if (narrowing.else_type) |et| stampNarrowing(else_m, narrowing.var_name, et);
-                    }
-                }
             },
             .while_stmt => |w| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
@@ -178,19 +169,6 @@ pub const MirLowerer = struct {
                 try children.append(self.allocator, try self.lowerNode(m.value));
                 for (m.arms) |arm| try children.append(self.allocator, try self.lowerNode(arm));
                 mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
-                // Stamp narrowing for arbitrary union match arms
-                if (mir_node_ptr.value().type_class == .arbitrary_union) {
-                    const match_val = mir_node_ptr.value();
-                    const match_var = if (match_val.kind == .identifier) match_val.name else null;
-                    if (match_var) |vname| {
-                        for (mir_node_ptr.matchArms()) |arm_mir| {
-                            const pat_m = arm_mir.pattern();
-                            if (pat_m.kind == .identifier and !std.mem.eql(u8, pat_m.name orelse "", "else")) {
-                                stampNarrowing(arm_mir.body(), vname, pat_m.name orelse "");
-                            }
-                        }
-                    }
-                }
             },
             .match_arm => |arm_data| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
@@ -212,6 +190,38 @@ pub const MirLowerer = struct {
                 try children.append(self.allocator, try self.lowerNode(b.left));
                 try children.append(self.allocator, try self.lowerNode(b.right));
                 mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
+                // Stamp union_tag for type-compare (eq/ne) against a union-member
+                // type name on an arbitrary_union operand. Pre-resolves the tag
+                // once so codegen can read it without walking var_types at emit time.
+                if (b.op == .eq or b.op == .ne) {
+                    if (mir_node_ptr.children.len >= 1) {
+                        const lhs_mir = mir_node_ptr.children[0];
+                        const rhs_name: ?[]const u8 = switch (b.right.*) {
+                            .identifier => |n| n,
+                            .field_expr => |fe| fe.field,
+                            .null_literal => K.Type.NULL,
+                            else => null,
+                        };
+                        if (rhs_name) |rname| {
+                            // Case 1: direct arbitrary-union operand (lhs is the union value)
+                            if (self.resolveSourceUnionRT(lhs_mir)) |rt| {
+                                mir_node_ptr.union_tag = mir_types.positionalTagOf(rt, rname);
+                            }
+                            // Case 2: @type(x) == T desugared form (x is T inside if condition)
+                            // lhs_mir is compiler_fn "@type" whose first child is the union value.
+                            if (mir_node_ptr.union_tag == null and
+                                lhs_mir.kind == .compiler_fn and
+                                std.mem.eql(u8, lhs_mir.name orelse "", K.Type.TYPE) and
+                                lhs_mir.children.len > 0)
+                            {
+                                const val_mir = lhs_mir.children[0];
+                                if (self.resolveSourceUnionRT(val_mir)) |rt| {
+                                    mir_node_ptr.union_tag = mir_types.positionalTagOf(rt, rname);
+                                }
+                            }
+                        }
+                    }
+                }
             },
             .unary_expr => |u| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
@@ -228,6 +238,14 @@ pub const MirLowerer = struct {
                 var children = std.ArrayListUnmanaged(*MirNode){};
                 try children.append(self.allocator, try self.lowerNode(f.object));
                 mir_node_ptr.children = try children.toOwnedSlice(self.allocator);
+                // Stamp union_tag if the obj's effective type is an arbitrary union.
+                // Uses the pre-narrowing RT so narrowing doesn't hide the union identity.
+                if (mir_node_ptr.children.len > 0) {
+                    const obj_mir = mir_node_ptr.children[0];
+                    if (self.resolveSourceUnionRT(obj_mir)) |rt| {
+                        mir_node_ptr.union_tag = mir_types.positionalTagOf(rt, f.field);
+                    }
+                }
             },
             .index_expr => |i| {
                 var children = std.ArrayListUnmanaged(*MirNode){};
@@ -398,20 +416,6 @@ pub const MirLowerer = struct {
             }
         }
 
-        // Post-narrowing: if an if_stmt has early exit, stamp subsequent siblings
-        const items = result.items;
-        for (items, 0..) |item, idx| {
-            if (item.kind == .if_stmt) {
-                if (item.narrowing) |narrowing| {
-                    if (narrowing.post_type) |pt| {
-                        for (items[idx + 1 ..]) |sibling| {
-                            stampNarrowing(sibling, narrowing.var_name, pt);
-                        }
-                    }
-                }
-            }
-        }
-
         return result.toOwnedSlice(self.allocator);
     }
 
@@ -512,12 +516,48 @@ pub const MirLowerer = struct {
         const members_rt = if (info.resolved_type == .union_type) info.resolved_type.union_type else null;
         const remaining = remainingUnionType(members_rt, type_name);
         const has_early_exit = blockHasEarlyExit(then_block);
+        const source_rt = info.resolved_type;
+        const then_name: ?[]const u8 = if (is_eq) type_name else remaining;
+        const else_name: ?[]const u8 = if (is_eq) remaining else type_name;
+        const post_name: ?[]const u8 = if (has_early_exit) (if (is_eq) remaining else type_name) else null;
         return .{
             .var_name = val_node.identifier,
-            .then_type = if (is_eq) type_name else remaining,
-            .else_type = if (is_eq) remaining else type_name,
-            .post_type = if (has_early_exit) (if (is_eq) remaining else type_name) else null,
+            .then_branch = buildNarrowBranch(source_rt, then_name),
+            .else_branch = buildNarrowBranch(source_rt, else_name),
+            .post_branch = buildNarrowBranch(source_rt, post_name),
             .type_class = tc,
+        };
+    }
+
+    /// Return the best-available union RT for `obj_mir`. Prefers the MirNode's
+    /// own resolved_type. If that's not a union (e.g. because narrowing replaced
+    /// it with the narrowed member type), falls back to `var_types` lookup by
+    /// identifier name. Returns null if no union RT can be found.
+    fn resolveSourceUnionRT(self: *const MirLowerer, obj_mir: *MirNode) ?RT {
+        if (obj_mir.resolved_type == .union_type) return obj_mir.resolved_type;
+        if (obj_mir.kind != .identifier) return null;
+        const name = obj_mir.name orelse return null;
+        const info = self.var_types.get(name) orelse return null;
+        if (info.resolved_type == .union_type) return info.resolved_type;
+        return null;
+    }
+
+    /// Construct a NarrowBranch from a type name, pre-computing the positional
+    /// tag (if the source is an arbitrary union and the name is a member) and
+    /// the sentinel kind (Error / null).
+    fn buildNarrowBranch(source_rt: RT, name_opt: ?[]const u8) ?mir_node.NarrowBranch {
+        const name = name_opt orelse return null;
+        const kind: mir_node.NarrowKind = if (mir_types.isErrorTypeName(name))
+            .error_sentinel
+        else if (mir_types.isNullTypeName(name))
+            .null_sentinel
+        else
+            .plain;
+        const tag = mir_types.positionalTagOf(source_rt, name);
+        return .{
+            .type_name = name,
+            .positional_tag = tag,
+            .kind = kind,
         };
     }
 
@@ -527,7 +567,7 @@ pub const MirLowerer = struct {
         for (members) |m| {
             const n = m.name();
             if (std.mem.eql(u8, n, excluded)) continue;
-            if (std.mem.eql(u8, n, K.Type.ERROR) or std.mem.eql(u8, n, K.Type.NULL)) continue;
+            if (mir_types.isErrorTypeName(n) or mir_types.isNullTypeName(n)) continue;
             if (remaining != null) return null;
             remaining = n;
         }
@@ -535,20 +575,6 @@ pub const MirLowerer = struct {
     }
 
     const blockHasEarlyExit = parser.blockHasEarlyExit;
-
-    /// Stamp `narrowed_to` on all identifier MirNodes within a subtree that
-    /// reference `var_name`. Skips nodes that already have a narrowing set
-    /// (inner scopes take precedence).
-    fn stampNarrowing(node: *MirNode, var_name: []const u8, narrowed_type: []const u8) void {
-        if (node.kind == .identifier and node.narrowed_to == null) {
-            if (node.ast.* == .identifier and std.mem.eql(u8, node.ast.identifier, var_name)) {
-                node.narrowed_to = narrowed_type;
-            }
-        }
-        for (node.children) |child| {
-            stampNarrowing(child, var_name, narrowed_type);
-        }
-    }
 };
 
 /// Recursively walk a MIR subtree and stamp `overflow_type` on any binary node

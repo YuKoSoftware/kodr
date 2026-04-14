@@ -30,9 +30,6 @@ pub const MirNode = struct {
     type_class: TypeClass,
     /// Explicit coercion to emit.
     coercion: ?Coercion = null,
-    coerce_tag: ?[]const u8 = null,
-    /// For type narrowing after `is` checks.
-    narrowed_to: ?[]const u8 = null,
     /// Node kind (grouped from 52 AST kinds to ~32 MIR kinds).
     kind: MirKind,
     /// Child nodes (ordered: statements in block, args in call, etc.).
@@ -90,6 +87,11 @@ pub const MirNode = struct {
     /// so codegen doesn't need to walk mutable `type_ctx` state to resolve literal
     /// operand types to a concrete Zig type.
     overflow_type: ?*parser.Node = null,
+    /// Pre-computed positional tag (0..31) for `.field_access` and `.binary`
+    /// nodes whose operand is an arbitrary-union member lookup. Stamped by
+    /// MirLowerer once at lowering time so codegen doesn't re-resolve names
+    /// against the union RT on every emission.
+    union_tag: ?u8 = null,
 
     // ── Child accessors ─────────────────────────────────────
     // Named access into children[] so codegen doesn't use raw indices.
@@ -248,12 +250,35 @@ pub const MirKind = enum {
     passthrough,
 };
 
+/// Distinguishes sentinel narrowing (Error, null) from regular type narrowing.
+/// Replaces K.Type.ERROR / K.Type.NULL string compares in codegen emission.
+pub const NarrowKind = enum {
+    plain, // regular type name
+    error_sentinel, // "Error"
+    null_sentinel, // "null"
+};
+
+/// One branch of a type narrowing (then, else, or post-if).
+/// Carries the type name plus pre-computed positional tag and sentinel kind
+/// so codegen can emit without re-walking union members or re-comparing
+/// sentinel strings.
+pub const NarrowBranch = struct {
+    /// Retained for diagnostics and non-union fallback paths.
+    type_name: []const u8,
+    /// Pre-computed positional tag (0..31) when the source is an arbitrary_union.
+    /// Null when the narrowed type isn't a member, or when the source is a
+    /// null_union / error_union / null_error_union (non-arbitrary unions).
+    positional_tag: ?u8 = null,
+    /// Sentinel classification — replaces runtime string compare against K.Type.
+    kind: NarrowKind = .plain,
+};
+
 /// Pre-computed type narrowing for if_stmt with `is` checks.
 pub const IfNarrowing = struct {
     var_name: []const u8,
-    then_type: ?[]const u8 = null,
-    else_type: ?[]const u8 = null,
-    post_type: ?[]const u8 = null, // after if, if then-block has early exit
+    then_branch: ?NarrowBranch = null,
+    else_branch: ?NarrowBranch = null,
+    post_branch: ?NarrowBranch = null, // after if, if then-block has early exit
     type_class: TypeClass = .plain, // union category for codegen unwrap expression
 };
 

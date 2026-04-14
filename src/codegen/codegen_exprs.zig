@@ -279,13 +279,10 @@ fn generateBinaryMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 }
                 return;
             }
-            if (lhs_mir.type_class == .arbitrary_union or
-                val_mir.type_class == .arbitrary_union)
-            {
-                const tag = cg.arbitraryUnionTag(val_mir.resolved_type, rhs) orelse rhs;
+            if (m.union_tag) |tag| {
                 try cg.emit("(");
                 try cg.generateExprMir(val_mir);
-                try cg.emitFmt(" {s} ._{s})", .{ cmp, tag });
+                try cg.emitFmt(" {s} ._{d})", .{ cmp, tag });
                 return;
             }
             const zig_rhs = types.Primitive.nameToZig(rhs);
@@ -295,14 +292,10 @@ fn generateBinaryMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             return;
         }
         if (rhs_mir.kind == .field_access) {
-            if (lhs_mir.type_class == .arbitrary_union or
-                val_mir.type_class == .arbitrary_union)
-            {
-                const type_name = rhs_mir.name orelse "";
-                const tag = cg.arbitraryUnionTag(val_mir.resolved_type, type_name) orelse type_name;
+            if (m.union_tag) |tag| {
                 try cg.emit("(");
                 try cg.generateExprMir(val_mir);
-                try cg.emitFmt(" {s} ._{s})", .{ cmp, tag });
+                try cg.emitFmt(" {s} ._{d})", .{ cmp, tag });
                 return;
             }
             try cg.emit("(@TypeOf(");
@@ -500,24 +493,17 @@ fn generateFieldAccessMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             try cg.generateExprMir(obj_mir);
             try cg.emit(form.suffix);
         } else if (eff_tc == .arbitrary_union) {
-            // Try the obj's MIR resolved_type first, then fall back to var_types
-            // (narrowing may have replaced the live type but we still need the
-            // original union to compute the positional tag).
-            var tag: []const u8 = field;
-            if (cg.arbitraryUnionTag(obj_mir.resolved_type, field)) |t| {
-                tag = t;
+            if (m.union_tag) |tag| {
+                try cg.generateExprMir(obj_mir);
+                try cg.emitFmt("._{d}", .{tag});
             } else {
-                const obj_name = if (obj_mir.kind == .identifier) (obj_mir.name orelse "") else "";
-                if (obj_name.len > 0) {
-                    if (cg.var_types) |vt| {
-                        if (vt.get(obj_name)) |info| {
-                            if (cg.arbitraryUnionTag(info.resolved_type, field)) |t| tag = t;
-                        }
-                    }
-                }
+                // Fallback: lowerer couldn't resolve the union RT. Preserve the
+                // old codegen behavior by emitting `._<raw_field>` — matches what
+                // the prior arbitrary-union tag fallback path produced when its
+                // lookup failed.
+                try cg.generateExprMir(obj_mir);
+                try cg.emitFmt("._{s}", .{field});
             }
-            try cg.generateExprMir(obj_mir);
-            try cg.emitFmt("._{s}", .{tag});
         } else {
             try cg.generateExprMir(obj_mir);
             try cg.emitFmt(".{s}", .{field});
@@ -580,14 +566,10 @@ pub fn generateCoercedExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         .null_wrap, .error_wrap => {
             try cg.generateExprMir(m);
         },
-        .arbitrary_union_wrap => {
-            if (m.coerce_tag) |tag| {
-                try cg.emitFmt(".{{ ._{s} = ", .{tag});
-                try cg.generateExprMir(m);
-                try cg.emit(" }");
-            } else {
-                try cg.generateExprMir(m);
-            }
+        .arbitrary_union_wrap => |tag| {
+            try cg.emitFmt(".{{ ._{d} = ", .{tag});
+            try cg.generateExprMir(m);
+            try cg.emit(" }");
         },
         .optional_unwrap => {
             // Native ?T: unwrap → .?
