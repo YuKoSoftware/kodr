@@ -353,6 +353,7 @@ run_fixture neg_types3 fail_types.orh "return type mismatch" "fixture: catches r
 run_fixture neg_types4 fail_types.orh "type mismatch.*condition" "fixture: catches non-bool condition"
 run_fixture neg_types5 fail_types.orh "type mismatch" "fixture: catches type mismatch"
 run_fixture neg_types6 fail_types.orh "break.*outside\|continue.*outside" "fixture: catches break/continue outside loop"
+run_fixture neg_cb3_short_name fail_cb3_short_uppercase.orh "type mismatch\|incompatible\|cannot assign\|expected.*Edge.*found.*Node" "CB3: short uppercase struct name is not silently type-compatible"
 
 # ownership errors
 run_fixture neg_own fail_ownership.orh "use of moved value\|moved" "fixture: catches use after move"

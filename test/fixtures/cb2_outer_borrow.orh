@@ -1,0 +1,23 @@
+module fixture
+
+#version = (1, 0, 0)
+#build   = exe
+
+struct Point {
+    x: i32
+    y: i32
+}
+
+func sum_if_positive(p: const& Point) i32 {
+    var result: i32 = 0
+    if(p.x > 0) {
+        // p borrow is from outer scope — must remain live inside this block
+        result = p.x + p.y
+    }
+    return result
+}
+
+func main() void {
+    const pt: Point = Point{x: 3, y: 4}
+    const s: i32 = sum_if_positive(const& pt)
+}

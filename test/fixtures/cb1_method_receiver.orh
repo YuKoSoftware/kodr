@@ -1,0 +1,36 @@
+module fixture
+
+#version = (1, 0, 0)
+#build   = exe
+
+struct Counter {
+    val: i32
+
+    pub func increment(self: mut& Counter) void {
+        self.val = self.val + 1
+    }
+
+    pub func get(self: const& Counter) i32 {
+        return self.val
+    }
+}
+
+struct Logger {
+    tag: i32
+
+    // read-only — different self mutability from Counter.increment
+    pub func increment(self: const& Logger) void {
+        const _t: i32 = self.tag
+    }
+
+    pub func get(self: const& Logger) i32 {
+        return self.tag
+    }
+}
+
+func main() void {
+    var c: Counter = Counter{val: 0}
+    c.increment()
+    const l: Logger = Logger{tag: 42}
+    l.increment()
+}

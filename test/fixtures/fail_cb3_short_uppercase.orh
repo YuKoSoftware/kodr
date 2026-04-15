@@ -1,0 +1,17 @@
+module fixture
+
+#version = (1, 0, 0)
+#build   = exe
+
+struct Node {
+    val: i32
+}
+
+struct Edge {
+    weight: i32
+}
+
+func main() void {
+    const n: Node = Node{val: 1}
+    const e: Edge = n   // type mismatch — Node is not Edge
+}

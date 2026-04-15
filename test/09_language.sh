@@ -274,4 +274,24 @@ else
     fail "zon clib binary runs correctly" "$BINOUT"
 fi
 
+section "Correctness regression fixtures"
+
+cd "$TESTDIR"
+mkdir -p cb1_test/src
+cp "$FIXTURES/cb1_method_receiver.orh" cb1_test/src/cb1_test.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module cb1_test/' cb1_test/src/cb1_test.orh
+cd cb1_test
+OUTPUT=$("$ORHON" build 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Built:"; then pass "CB1: two structs with same-named methods compile without borrow collision"
+else fail "CB1: two structs with same-named methods compile without borrow collision" "$OUTPUT"; fi
+
+cd "$TESTDIR"
+mkdir -p cb2_test/src
+cp "$FIXTURES/cb2_outer_borrow.orh" cb2_test/src/cb2_test.orh
+sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module cb2_test/' cb2_test/src/cb2_test.orh
+cd cb2_test
+OUTPUT=$("$ORHON" build 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Built:"; then pass "CB2: outer-scope borrow survives inner block (NLL guard)"
+else fail "CB2: outer-scope borrow survives inner block (NLL guard)" "$OUTPUT"; fi
+
 report_results
