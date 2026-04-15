@@ -233,6 +233,12 @@ pub const BorrowChecker = struct {
             i -= 1;
             const borrow = self.active_borrows.items[i];
             if (borrow.borrow_ref) |ref_name| {
+                // CB2: Only apply NLL to borrows created at the current scope depth or
+                // deeper. Borrows from outer scopes carry block-relative last-use indices
+                // from the outer block's buildLastUseMap — using inner-block indices to
+                // drive their expiry produces wrong results. The outer block's own
+                // dropExpiredBorrows call (with its own last_use map) handles them.
+                if (borrow.scope_depth < self.scope_depth) continue;
                 // Named borrow: expire after last use of the reference variable
                 const drop = if (last_use.get(ref_name)) |last_idx|
                     last_idx <= current_idx
@@ -1065,4 +1071,43 @@ test "borrow checker - interpolated string checks embedded exprs" {
     var interp = parser.Node{ .interpolated_string = .{ .parts = &parts } };
     try checker.checkExpr(&interp);
     try std.testing.expect(reporter.hasErrors());
+}
+
+test "NLL - CB2: outer-scope borrow not dropped by inner block's dropExpiredBorrows" {
+    // Regression test for CB2: inner blocks must not drop borrows created in outer scopes.
+    // Scenario: borrow created at depth=0, dropExpiredBorrows called from depth=1
+    // (simulating inner block). The borrow must survive because the outer block's
+    // dropExpiredBorrows — not the inner block's — is responsible for it.
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var decl_table = declarations.DeclTable.init(alloc);
+    defer decl_table.deinit();
+    const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
+    var checker = BorrowChecker.init(alloc, &ctx);
+    defer checker.deinit();
+
+    // Outer scope (depth=0) creates a named borrow
+    try checker.addBorrow("x", null, true, "r");
+    try std.testing.expectEqual(@as(usize, 1), checker.active_borrows.items.len);
+
+    // Simulate entering an inner block (depth=1) whose last_use map says r → 0
+    checker.scope_depth = 1;
+    var inner_last_use = std.StringHashMapUnmanaged(usize){};
+    defer inner_last_use.deinit(alloc);
+    try inner_last_use.put(alloc, "r", 0);
+
+    // Inner block calls dropExpiredBorrows — must NOT drop the outer borrow
+    checker.dropExpiredBorrows(&inner_last_use, 0);
+    try std.testing.expectEqual(@as(usize, 1), checker.active_borrows.items.len);
+
+    // Simulate returning to outer scope (depth=0) — now NLL can drop it
+    checker.scope_depth = 0;
+    var outer_last_use = std.StringHashMapUnmanaged(usize){};
+    defer outer_last_use.deinit(alloc);
+    try outer_last_use.put(alloc, "r", 1); // outer last use of r is stmt 1
+
+    checker.dropExpiredBorrows(&outer_last_use, 1); // after stmt 1: drop
+    try std.testing.expectEqual(@as(usize, 0), checker.active_borrows.items.len);
 }
