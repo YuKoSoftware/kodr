@@ -465,6 +465,7 @@ pub fn hashInterface(alloc: std.mem.Allocator, decls: *const declarations.DeclTa
 /// Collect sorted public names from a hashmap whose values have an `is_pub` field.
 fn collectPublicNames(comptime V: type, alloc: std.mem.Allocator, map: *const std.StringHashMap(V)) !std.ArrayList([]const u8) {
     var list: std.ArrayList([]const u8) = .{};
+    errdefer list.deinit(alloc);
     var it = map.iterator();
     while (it.next()) |entry| {
         if (!entry.value_ptr.is_pub) continue;
@@ -477,6 +478,7 @@ fn collectPublicNames(comptime V: type, alloc: std.mem.Allocator, map: *const st
 /// Collect sorted names from a hashmap unconditionally (no is_pub filter).
 fn collectAllNames(comptime V: type, alloc: std.mem.Allocator, map: *const std.StringHashMap(V)) !std.ArrayList([]const u8) {
     var list: std.ArrayList([]const u8) = .{};
+    errdefer list.deinit(alloc);
     var it = map.iterator();
     while (it.next()) |entry| {
         try list.append(alloc, entry.key_ptr.*);
@@ -968,5 +970,67 @@ test "union cache load missing file" {
     var loaded = try loadUnions(alloc);
     defer loaded.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 0), loaded.items.len);
+}
+
+test "interface hash changes beyond 256 symbols" {
+    // Regression test for the old 256-symbol cap: verifies that adding the
+    // 301st public function changes the hash (was silently ignored before the fix).
+    const alloc = std.testing.allocator;
+
+    const parser_mod = @import("parser.zig");
+
+    // Build a DeclTable with 300 public functions named "func0".."func299".
+    // Names are duped into the type_arena (freed with table.deinit).
+    // params slices are allocated with alloc so deinit's allocator.free works.
+    var table_300 = declarations.DeclTable.init(alloc);
+    defer table_300.deinit();
+
+    for (0..300) |i| {
+        const name = try std.fmt.allocPrint(alloc, "func{d}", .{i});
+        const owned = try table_300.type_arena.allocator().dupe(u8, name);
+        alloc.free(name);
+        const params = try alloc.alloc(declarations.ParamSig, 0);
+        const ret_node = try table_300.type_arena.allocator().create(parser_mod.Node);
+        ret_node.* = .{ .type_named = "void" };
+        const sig = declarations.FuncSig{
+            .name = owned,
+            .params = params,
+            .param_nodes = &.{},
+            .return_type = .{ .primitive = .void },
+            .context = .normal,
+            .is_pub = true,
+            .is_instance = false,
+        };
+        try table_300.funcs.put(owned, sig);
+    }
+
+    const hash_300 = try hashInterface(alloc, &table_300);
+
+    // Build an identical table with one additional function "func300".
+    var table_301 = declarations.DeclTable.init(alloc);
+    defer table_301.deinit();
+
+    for (0..301) |i| {
+        const name = try std.fmt.allocPrint(alloc, "func{d}", .{i});
+        const owned = try table_301.type_arena.allocator().dupe(u8, name);
+        alloc.free(name);
+        const params = try alloc.alloc(declarations.ParamSig, 0);
+        const ret_node = try table_301.type_arena.allocator().create(parser_mod.Node);
+        ret_node.* = .{ .type_named = "void" };
+        const sig = declarations.FuncSig{
+            .name = owned,
+            .params = params,
+            .param_nodes = &.{},
+            .return_type = .{ .primitive = .void },
+            .context = .normal,
+            .is_pub = true,
+            .is_instance = false,
+        };
+        try table_301.funcs.put(owned, sig);
+    }
+
+    const hash_301 = try hashInterface(alloc, &table_301);
+
+    try std.testing.expect(hash_300 != hash_301);
 }
 
