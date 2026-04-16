@@ -8,7 +8,6 @@ const mir_types = @import("mir_types.zig");
 const mir_node = @import("mir_node.zig");
 const mir_registry = @import("mir_registry.zig");
 const ast_store_mod = @import("../ast_store.zig");
-const ast_typed = @import("../ast_typed.zig");
 pub const AstNodeIndex = ast_store_mod.AstNodeIndex;
 const AstStore = ast_store_mod.AstStore;
 
