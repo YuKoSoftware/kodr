@@ -139,7 +139,9 @@ pub const AstStore = struct {
         // the first append results in index 1 by skipping index 0).
         // Strategy: reserve slot 0 lazily on the very first append.
         if (store.nodes.len == 0) {
-            // Occupy slot 0 with a dummy none-node so real nodes start at 1.
+            // Slot 0 is the none sentinel — never a real node. .tag = .program
+            // here is an arbitrary placeholder; this slot must never be accessed
+            // through the public API (getNode asserts idx != .none).
             try store.nodes.append(allocator, .{
                 .tag = .program,
                 .span = .none,
@@ -161,7 +163,6 @@ pub const AstStore = struct {
     // Returns the ExtraIndex of the first word appended.
     pub fn appendExtra(store: *AstStore, allocator: std.mem.Allocator, value: anytype) !ExtraIndex {
         const T = @TypeOf(value);
-        const word_count = @sizeOf(T) / @sizeOf(u32);
         const idx: ExtraIndex = @enumFromInt(store.extra_data.items.len);
         // Encode each field as a u32 word.
         const fields = @typeInfo(T).@"struct".fields;
@@ -175,7 +176,6 @@ pub const AstStore = struct {
             };
             try store.extra_data.append(allocator, as_u32);
         }
-        _ = word_count;
         return idx;
     }
 
