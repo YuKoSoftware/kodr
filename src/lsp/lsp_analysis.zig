@@ -250,7 +250,6 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
 
         // Pass 8: Error Propagation (uses scratch arena)
         var prop_checker = propagation.PropagationChecker.init(a, &sema_ctx);
-        prop_checker.store = &conv.store;
         prop_checker.check(&conv.store, ast_root) catch {};
     }
 

@@ -166,7 +166,6 @@ test "full pipeline - hello world" {
 
     // Propagation
     var prop_checker = propagation.PropagationChecker.init(alloc, &sema_ctx);
-    prop_checker.store = &conv.store;
     try prop_checker.check(&conv.store, ast_root);
     try std.testing.expect(!reporter.hasErrors());
 

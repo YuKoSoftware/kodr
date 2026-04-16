@@ -94,14 +94,16 @@ pub const PropagationChecker = struct {
 
     /// Entry point: walk top-level declarations from the AstStore root.
     pub fn check(self: *PropagationChecker, store: *const AstStore, root: AstNodeIndex) !void {
-        _ = store; // stored in self.store by the pipeline
+        self.store = store;
         const prog = ast_typed.Program.unpack(self.store, root);
         const top_level = self.store.extra_data.items[prog.top_level_start..prog.top_level_end];
         for (top_level) |tl_u32| {
             const tl_idx: AstNodeIndex = @enumFromInt(tl_u32);
-            if (self.reverseNode(tl_idx)) |node| {
-                try self.checkTopLevel(node);
-            }
+            const node = self.reverseNode(tl_idx) orelse std.debug.panic(
+                "PropagationChecker.check: reverse_map missing AstNodeIndex {}",
+                .{@intFromEnum(tl_idx)},
+            );
+            try self.checkTopLevel(node);
         }
     }
 
