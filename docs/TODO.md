@@ -4,8 +4,8 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 
 ## Current status
 
-- **Next to start:** Phase 0 — Correctness blockers (can run in parallel with Phase R planning)
-- **Active project:** Phase R — Architecture Rebuild (design approved, implementation pending)
+- **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ (tagged `phase-a-complete`, merged 2026-04-16)
+- **Active project:** Phase R — Phase B (MIR rebuild) is next
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -46,20 +46,20 @@ Full rebuild of parser/AST and MIR storage from pointer-based trees to index-bas
 **Scope:** each chunk is one commit, `./testall.sh` green at every boundary.
 **Bundled audit items:** H3a (source spans) lands in A8; H4d (golden files) expanded in D3.
 
-### Phase A — Parser / AST rebuild `1-2 weeks`
+### Phase A — Parser / AST rebuild `DONE` ✓ merged 2026-04-16, tagged `phase-a-complete`
 
-- [ ] **A1** Land `StringPool` utility with interning + tests
-- [ ] **A2** Scaffold `AstStore` types, `extraData` / `appendExtra` helpers, no population
-- [ ] **A3** Create `ast_typed.zig` — typed wrapper struct per `AstKind` with pack/unpack round-trip tests
-- [ ] **A4** PEG builder dual output — `src/peg/builder.zig` + `engine.zig` produce `AstStore` alongside existing `*parser.Node` tree, parity harness compares
-- [ ] **A5** Migrate `src/resolver.zig` + `src/resolver_validation.zig` to read `AstStore`
-- [ ] **A6** Migrate `src/propagation.zig` to read `AstStore`
-- [ ] **A7** Migrate `src/declarations.zig` + `src/types.zig` to read `AstStore`. **Design note:** redesign the `type_map` API as an explicit `.store(idx, info)` call so the side effect is visible at the call site (today `resolveExpr` silently populates `type_map: AutoHashMap(*parser.Node, ...)` — under the new indexed API, make writes explicit so new expression kinds can't accidentally skip annotation).
-- [ ] **A8** Migrate `src/errors.zig` + reporter — source locations via `AstNodeIndex`. **Bundle H3a here:** upgrade `SourceLoc` → `Span { file, start_line, start_col, end_line, end_col }` and teach `printDiagnostic` to render a caret/underline range.
-- [ ] **A9** MIR temporary adapter — `MirAnnotator` + `MirLowerer` read `AstStore` via indices, still produce old pointer `MirNode` tree
-- [ ] **A10** Drop dual output — PEG builder produces only `AstStore`, delete old `*parser.Node` allocation paths
-- [ ] **A11** Delete old pointer-based `parser.Node` type entirely
-- [ ] **A12** Phase A merge — final `testall.sh`, merge to main, tag
+- [x] **A1** Land `StringPool` utility with interning + tests
+- [x] **A2** Scaffold `AstStore` types, `extraData` / `appendExtra` helpers, no population
+- [x] **A3** Create `ast_typed.zig` — typed wrapper struct per `AstKind` with pack/unpack round-trip tests
+- [x] **A4** PEG builder dual output — `src/peg/builder.zig` produces `AstStore` alongside `*parser.Node` tree, parity harness
+- [x] **A5** Migrate `src/resolver.zig` to read `AstStore` (bridge via `reverse_map`)
+- [x] **A6** Migrate `src/propagation.zig` to read `AstStore`
+- [x] **A7** Migrate `src/declarations.zig` to read `AstStore`
+- [x] **A8** Centralize `nodeLocFromIdx` in `SemanticContext` — source location resolution via `AstNodeIndex`
+- [x] **A9** MIR temporary adapter — `MirAnnotator` + `MirLowerer` entry points read `AstStore`, internal `*parser.Node` bridge remains
+- [x] **A10** Drop dual output — remove `buildASTWithStore`/`DualBuildResult` + parity harness
+- [ ] **A11** Delete old pointer-based `parser.Node` type entirely — **deferred to Phase C** (codegen, borrow/ownership checkers, module system still depend on it)
+- [x] **A12** Phase A merge — `testall.sh` green (361/361), merged to main, tagged `phase-a-complete`
 
 ### Phase B — MIR rebuild `1-2 weeks`
 
