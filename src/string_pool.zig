@@ -22,7 +22,7 @@ pub const StringPool = struct {
         for (pool.entries.items) |s| allocator.free(s);
         pool.entries.deinit(allocator);
         pool.map.deinit(allocator);
-        pool.* = .{};
+        pool.* = StringPool.init();
     }
 
     pub fn intern(pool: *StringPool, allocator: std.mem.Allocator, str: []const u8) !StringIndex {
