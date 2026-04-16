@@ -119,10 +119,12 @@ pub const DualBuildResult = struct {
     ctx: BuildContext,
     ast_store: ast_store_mod.AstStore,
     ast_root: ast_store_mod.AstNodeIndex,
+    reverse_map: std.AutoHashMap(ast_store_mod.AstNodeIndex, *const Node),
 
     pub fn deinit(self: *DualBuildResult, allocator: std.mem.Allocator) void {
         self.ctx.deinit();
         self.ast_store.deinit(allocator);
+        self.reverse_map.deinit();
     }
 };
 
@@ -152,6 +154,7 @@ pub fn buildASTWithStore(cap: *const CaptureNode, tokens: []const Token, allocat
         .ctx = result.ctx,
         .ast_store = conv.store,
         .ast_root = root_idx,
+        .reverse_map = conv.reverse_map,
     };
 }
 

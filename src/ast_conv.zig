@@ -20,16 +20,22 @@ const Node = parser.Node;
 pub const ConvContext = struct {
     allocator: std.mem.Allocator,
     store: AstStore,
+    /// Maps AstNodeIndex back to the original *parser.Node.
+    /// Populated during convertNode so that migrated passes can
+    /// fall back to pointer-based interfaces (type_map, nodeLoc, etc.).
+    reverse_map: std.AutoHashMap(AstNodeIndex, *const parser.Node),
 
     pub fn init(allocator: std.mem.Allocator) ConvContext {
         return .{
             .allocator = allocator,
             .store = AstStore.init(),
+            .reverse_map = std.AutoHashMap(AstNodeIndex, *const parser.Node).init(allocator),
         };
     }
 
     pub fn deinit(self: *ConvContext) void {
         self.store.deinit(self.allocator);
+        self.reverse_map.deinit();
     }
 };
 
@@ -88,6 +94,14 @@ const span_none: SourceSpanIndex = .none;
 /// Convert a *parser.Node tree into an AstStore.
 /// Returns the AstNodeIndex of the converted node.
 pub fn convertNode(ctx: *ConvContext, node: *const Node) anyerror!AstNodeIndex {
+    const idx = try convertNodeInner(ctx, node);
+    if (idx != .none) {
+        try ctx.reverse_map.put(idx, node);
+    }
+    return idx;
+}
+
+fn convertNodeInner(ctx: *ConvContext, node: *const Node) anyerror!AstNodeIndex {
     switch (node.*) {
         .program => |p| {
             const module_idx = try convertNode(ctx, p.module);
@@ -928,6 +942,8 @@ fn parseAndConvert(source: []const u8) !struct { node_count: usize, store_count:
 
     var conv = ConvContext.init(alloc);
     const root_idx = try convertNode(&conv, result.node);
+    // Free the reverse_map — parity tests don't use it.
+    conv.reverse_map.deinit();
 
     // store.nodes.len includes the sentinel at slot 0
     const sc = conv.store.nodes.len - 1;
