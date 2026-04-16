@@ -722,128 +722,131 @@ pub fn convertNode(ctx: *ConvContext, node: *const Node) anyerror!AstNodeIndex {
 // Node counter — walks the pointer-based *Node tree
 // ---------------------------------------------------------------------------
 
-pub fn countNodes(node: *const Node) usize {
+/// Counts the number of AstStore nodes that convertNode will produce for this subtree.
+/// This differs from the pointer-tree node count because convertNode synthesizes FieldDecl
+/// nodes for each NamedTypeField in type_tuple_named (which has no corresponding *Node).
+pub fn expectedStoreNodeCount(node: *const Node) usize {
     var count: usize = 1;
     switch (node.*) {
         .program => |p| {
-            count += countNodes(p.module);
-            for (p.metadata) |m| count += countNodes(m);
-            for (p.imports) |i| count += countNodes(i);
-            for (p.top_level) |t| count += countNodes(t);
+            count += expectedStoreNodeCount(p.module);
+            for (p.metadata) |m| count += expectedStoreNodeCount(m);
+            for (p.imports) |i| count += expectedStoreNodeCount(i);
+            for (p.top_level) |t| count += expectedStoreNodeCount(t);
         },
         .module_decl => {},
         .import_decl => {},
         .metadata => |m| {
-            count += countNodes(m.value);
+            count += expectedStoreNodeCount(m.value);
         },
         .func_decl => |f| {
-            for (f.params) |p| count += countNodes(p);
-            count += countNodes(f.return_type);
-            count += countNodes(f.body);
+            for (f.params) |p| count += expectedStoreNodeCount(p);
+            count += expectedStoreNodeCount(f.return_type);
+            count += expectedStoreNodeCount(f.body);
         },
         .struct_decl => |s| {
-            for (s.type_params) |tp| count += countNodes(tp);
-            for (s.members) |m| count += countNodes(m);
+            for (s.type_params) |tp| count += expectedStoreNodeCount(tp);
+            for (s.members) |m| count += expectedStoreNodeCount(m);
         },
         .blueprint_decl => |bp| {
-            for (bp.methods) |m| count += countNodes(m);
+            for (bp.methods) |m| count += expectedStoreNodeCount(m);
         },
         .enum_decl => |e| {
-            count += countNodes(e.backing_type);
-            for (e.members) |m| count += countNodes(m);
+            count += expectedStoreNodeCount(e.backing_type);
+            for (e.members) |m| count += expectedStoreNodeCount(m);
         },
         .handle_decl => {},
         .var_decl => |v| {
-            if (v.type_annotation) |ta| count += countNodes(ta);
-            count += countNodes(v.value);
+            if (v.type_annotation) |ta| count += expectedStoreNodeCount(ta);
+            count += expectedStoreNodeCount(v.value);
         },
         .destruct_decl => |d| {
-            count += countNodes(d.value);
+            count += expectedStoreNodeCount(d.value);
         },
         .test_decl => |t| {
-            count += countNodes(t.body);
+            count += expectedStoreNodeCount(t.body);
         },
         .field_decl => |f| {
-            count += countNodes(f.type_annotation);
-            if (f.default_value) |dv| count += countNodes(dv);
+            count += expectedStoreNodeCount(f.type_annotation);
+            if (f.default_value) |dv| count += expectedStoreNodeCount(dv);
         },
         .enum_variant => |ev| {
-            if (ev.value) |v| count += countNodes(v);
+            if (ev.value) |v| count += expectedStoreNodeCount(v);
         },
         .param => |p| {
-            count += countNodes(p.type_annotation);
-            if (p.default_value) |dv| count += countNodes(dv);
+            count += expectedStoreNodeCount(p.type_annotation);
+            if (p.default_value) |dv| count += expectedStoreNodeCount(dv);
         },
         .block => |blk| {
-            for (blk.statements) |s| count += countNodes(s);
+            for (blk.statements) |s| count += expectedStoreNodeCount(s);
         },
         .return_stmt => |r| {
-            if (r.value) |v| count += countNodes(v);
+            if (r.value) |v| count += expectedStoreNodeCount(v);
         },
         .if_stmt => |i| {
-            count += countNodes(i.condition);
-            count += countNodes(i.then_block);
-            if (i.else_block) |eb| count += countNodes(eb);
+            count += expectedStoreNodeCount(i.condition);
+            count += expectedStoreNodeCount(i.then_block);
+            if (i.else_block) |eb| count += expectedStoreNodeCount(eb);
         },
         .while_stmt => |w| {
-            count += countNodes(w.condition);
-            count += countNodes(w.body);
-            if (w.continue_expr) |ce| count += countNodes(ce);
+            count += expectedStoreNodeCount(w.condition);
+            count += expectedStoreNodeCount(w.body);
+            if (w.continue_expr) |ce| count += expectedStoreNodeCount(ce);
         },
         .for_stmt => |f| {
-            for (f.iterables) |it| count += countNodes(it);
-            count += countNodes(f.body);
+            for (f.iterables) |it| count += expectedStoreNodeCount(it);
+            count += expectedStoreNodeCount(f.body);
         },
         .defer_stmt => |d| {
-            count += countNodes(d.body);
+            count += expectedStoreNodeCount(d.body);
         },
         .match_stmt => |m| {
-            count += countNodes(m.value);
-            for (m.arms) |a| count += countNodes(a);
+            count += expectedStoreNodeCount(m.value);
+            for (m.arms) |a| count += expectedStoreNodeCount(a);
         },
         .match_arm => |ma| {
-            count += countNodes(ma.pattern);
-            if (ma.guard) |g| count += countNodes(g);
-            count += countNodes(ma.body);
+            count += expectedStoreNodeCount(ma.pattern);
+            if (ma.guard) |g| count += expectedStoreNodeCount(g);
+            count += expectedStoreNodeCount(ma.body);
         },
         .break_stmt, .continue_stmt => {},
         .assignment, .binary_expr, .range_expr => |op| {
-            count += countNodes(op.left);
-            count += countNodes(op.right);
+            count += expectedStoreNodeCount(op.left);
+            count += expectedStoreNodeCount(op.right);
         },
         .unary_expr => |op| {
-            count += countNodes(op.operand);
+            count += expectedStoreNodeCount(op.operand);
         },
         .call_expr => |c| {
-            count += countNodes(c.callee);
-            for (c.args) |a| count += countNodes(a);
+            count += expectedStoreNodeCount(c.callee);
+            for (c.args) |a| count += expectedStoreNodeCount(a);
         },
         .index_expr => |ie| {
-            count += countNodes(ie.object);
-            count += countNodes(ie.index);
+            count += expectedStoreNodeCount(ie.object);
+            count += expectedStoreNodeCount(ie.index);
         },
         .slice_expr => |se| {
-            count += countNodes(se.object);
-            count += countNodes(se.low);
-            count += countNodes(se.high);
+            count += expectedStoreNodeCount(se.object);
+            count += expectedStoreNodeCount(se.low);
+            count += expectedStoreNodeCount(se.high);
         },
         .field_expr => |fe| {
-            count += countNodes(fe.object);
+            count += expectedStoreNodeCount(fe.object);
         },
         .mut_borrow_expr, .const_borrow_expr => |child| {
-            count += countNodes(child);
+            count += expectedStoreNodeCount(child);
         },
         .compiler_func => |cf| {
-            for (cf.args) |a| count += countNodes(a);
+            for (cf.args) |a| count += expectedStoreNodeCount(a);
         },
         .identifier, .int_literal, .float_literal, .string_literal => {},
         .bool_literal => {},
         .null_literal => {},
         .array_literal => |items| {
-            for (items) |it| count += countNodes(it);
+            for (items) |it| count += expectedStoreNodeCount(it);
         },
         .tuple_literal => |tl| {
-            for (tl.elements) |e| count += countNodes(e);
+            for (tl.elements) |e| count += expectedStoreNodeCount(e);
         },
         .version_literal => {},
         .error_literal => {},
@@ -851,48 +854,44 @@ pub fn countNodes(node: *const Node) usize {
             for (is.parts) |part| {
                 switch (part) {
                     .literal => {},
-                    .expr => |e| count += countNodes(e),
+                    .expr => |e| count += expectedStoreNodeCount(e),
                 }
             }
         },
         .type_slice => |elem| {
-            count += countNodes(elem);
+            count += expectedStoreNodeCount(elem);
         },
         .type_array => |ta| {
-            count += countNodes(ta.size);
-            count += countNodes(ta.elem);
+            count += expectedStoreNodeCount(ta.size);
+            count += expectedStoreNodeCount(ta.elem);
         },
         .type_ptr => |tp| {
-            count += countNodes(tp.elem);
+            count += expectedStoreNodeCount(tp.elem);
         },
         .type_union => |members| {
-            for (members) |m| count += countNodes(m);
+            for (members) |m| count += expectedStoreNodeCount(m);
         },
         .type_tuple_named => |fields| {
             for (fields) |f| {
-                count += countNodes(f.type_node);
-                if (f.default) |d| count += countNodes(d);
+                count += expectedStoreNodeCount(f.type_node);
+                if (f.default) |d| count += expectedStoreNodeCount(d);
                 // +1 for the FieldDecl node we synthesize in the store
                 count += 1;
             }
-            // Subtract 1 per field since FieldDecl nodes are extra, not counted in *Node tree
-            // Actually, the *Node tree has one node for type_tuple_named; the store will have
-            // 1 + N (type_tuple_named + N field_decl children). So the *Node tree count for
-            // this branch starts at 1 (this node) and recurses into children; the store will
-            // have 1 + N nodes. We need to account for the extra FieldDecl nodes.
-            // Leave as-is — the parity test will compare: countNodes(root) vs (store.nodes.len - 1).
-            // We need countNodes to count exactly what convertNode produces.
+            // Leave as-is — the parity test will compare:
+            //   expectedStoreNodeCount(root) vs (store.nodes.len - 1).
+            // The +1 per field above accounts for the synthesized FieldDecl nodes.
         },
         .type_func => |tf| {
-            count += countNodes(tf.ret);
-            for (tf.params) |p| count += countNodes(p);
+            count += expectedStoreNodeCount(tf.ret);
+            for (tf.params) |p| count += expectedStoreNodeCount(p);
         },
         .type_generic => |tg| {
-            for (tg.args) |a| count += countNodes(a);
+            for (tg.args) |a| count += expectedStoreNodeCount(a);
         },
         .type_named => {},
         .struct_type => |fields| {
-            for (fields) |f| count += countNodes(f);
+            for (fields) |f| count += expectedStoreNodeCount(f);
         },
     }
     return count;
@@ -925,7 +924,7 @@ fn parseAndConvert(source: []const u8) !struct { node_count: usize, store_count:
     const result = try builder_mod.buildAST(&cap, tokens.items, std.heap.page_allocator);
     // Note: result.ctx owns arena memory; caller must handle cleanup.
 
-    const nc = countNodes(result.node);
+    const nc = expectedStoreNodeCount(result.node);
 
     var conv = ConvContext.init(alloc);
     const root_idx = try convertNode(&conv, result.node);
