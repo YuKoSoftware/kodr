@@ -7,47 +7,40 @@ pub const StringIndex = enum(u32) {
     _,
 };
 
-const Span = struct { start: u32, len: u32 };
-
 pub const StringPool = struct {
-    bytes: std.ArrayListUnmanaged(u8),
-    spans: std.ArrayListUnmanaged(Span),
+    entries: std.ArrayListUnmanaged([]const u8),
     map: std.StringHashMapUnmanaged(StringIndex),
 
     pub fn init() StringPool {
         return .{
-            .bytes = .{},
-            .spans = .{},
+            .entries = .{},
             .map = .{},
         };
     }
 
     pub fn deinit(pool: *StringPool, allocator: std.mem.Allocator) void {
-        pool.bytes.deinit(allocator);
-        pool.spans.deinit(allocator);
+        for (pool.entries.items) |s| allocator.free(s);
+        pool.entries.deinit(allocator);
         pool.map.deinit(allocator);
+        pool.* = .{};
     }
 
     pub fn intern(pool: *StringPool, allocator: std.mem.Allocator, str: []const u8) !StringIndex {
         if (pool.map.get(str)) |idx| return idx;
 
-        const start: u32 = @intCast(pool.bytes.items.len);
-        try pool.bytes.appendSlice(allocator, str);
-        const key = pool.bytes.items[start..];
-
-        // index 0 is .none, real entries start at 1
-        const raw: u32 = @intCast(pool.spans.items.len + 1);
-        const idx: StringIndex = @enumFromInt(raw);
-
-        try pool.spans.append(allocator, .{ .start = start, .len = @intCast(str.len) });
-        try pool.map.put(allocator, key, idx);
+        const owned = try allocator.dupe(u8, str);
+        errdefer allocator.free(owned);
+        const idx: StringIndex = @enumFromInt(pool.entries.items.len + 1);
+        try pool.entries.append(allocator, owned);
+        errdefer _ = pool.entries.pop();
+        try pool.map.put(allocator, owned, idx);
         return idx;
     }
 
     pub fn get(pool: *const StringPool, idx: StringIndex) []const u8 {
+        std.debug.assert(idx != .none);
         const raw = @intFromEnum(idx);
-        const span = pool.spans.items[raw - 1];
-        return pool.bytes.items[span.start..][0..span.len];
+        return pool.entries.items[raw - 1];
     }
 };
 
@@ -83,4 +76,14 @@ test "none index is never returned by intern" {
 
     const idx = try pool.intern(std.testing.allocator, "something");
     try std.testing.expect(idx != .none);
+}
+
+test "intern empty string" {
+    var pool = StringPool.init();
+    defer pool.deinit(std.testing.allocator);
+
+    const a = try pool.intern(std.testing.allocator, "");
+    const b = try pool.intern(std.testing.allocator, "");
+    try std.testing.expectEqual(a, b);
+    try std.testing.expectEqualStrings("", pool.get(a));
 }
