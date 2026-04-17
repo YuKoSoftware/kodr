@@ -20,7 +20,7 @@ const StringIndex = string_pool.StringIndex;
 const RT = mir_types.RT;
 const TypeId = type_store_mod.TypeId;
 
-// ── Helpers (same two-liners as mir_builder_decls.zig) ───────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn internRT(b: *MirBuilder, rt: RT) !TypeId {
     if (rt == .unknown or rt == .inferred) return .none;
