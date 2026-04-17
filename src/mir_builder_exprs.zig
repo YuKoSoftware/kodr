@@ -111,8 +111,7 @@ fn lowerIdentifier(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     });
 }
 
-/// Returns 0=plain, 1=enum_variant, 2=enum_type_name.
-/// Stubbed to 0 — DeclTable API not yet verified. Fill in at B8.
+/// Stub: returns 0 until DeclTable API verified at B8.
 fn resolveIdentifierKind(_: *const MirBuilder, _: AstNodeIndex) u32 {
     return 0;
 }
