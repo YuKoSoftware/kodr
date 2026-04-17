@@ -70,6 +70,7 @@ pub fn build(b: *std.Build) void {
         "src/type_store.zig",
         "src/mir_store.zig",
         "src/mir_typed.zig",
+        "src/mir_builder.zig",   // ← add this line
     };
 
     const test_step = b.step("test", "Run all compiler tests");
