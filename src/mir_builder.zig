@@ -14,6 +14,7 @@ const mir_typed = @import("mir_typed.zig");
 const type_store_mod = @import("type_store.zig");
 const decls_impl = @import("mir_builder_decls.zig");
 const stmts_impl = @import("mir_builder_stmts.zig");
+const exprs_impl = @import("mir_builder_exprs.zig");
 
 const AstNodeIndex = ast_store_mod.AstNodeIndex;
 const AstStore = ast_store_mod.AstStore;
@@ -129,6 +130,15 @@ pub const MirBuilder = struct {
             .break_stmt,
             .continue_stmt,
             => stmts_impl.lowerStmt(self, idx),
+            .int_literal, .float_literal, .string_literal,
+            .bool_literal, .null_literal, .error_literal,
+            .identifier, .binary_expr, .range_expr,
+            .unary_expr, .call_expr, .field_expr,
+            .index_expr, .slice_expr,
+            .mut_borrow_expr, .const_borrow_expr,
+            .interpolated_string, .compiler_func,
+            .array_literal, .tuple_literal, .version_literal,
+            => exprs_impl.lowerExpr(self, idx),
             else => mir_typed.Passthrough.pack(
                 self.store,
                 self.allocator,
