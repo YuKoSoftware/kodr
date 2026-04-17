@@ -63,9 +63,9 @@ Full rebuild of parser/AST and MIR storage from pointer-based trees to index-bas
 
 ### Phase B — MIR rebuild `1-2 weeks`
 
-- [ ] **B1** Land `TypeStore` with `TypeId` interning + tests
-- [ ] **B2** Scaffold `MirStore` types, helpers, no population
-- [ ] **B3** Create `mir_typed.zig` — typed wrapper per `MirKind` with pack/unpack round-trip tests
+- [x] **B1** Land `TypeStore` with `TypeId` interning + tests — `src/type_store.zig`; 8 tests covering round-trip, dedup, named/primitive/special/slice/generic; 361/361 testall green
+- [x] **B2** Scaffold `MirStore` types, helpers, no population — `src/mir_store.zig`; `MirNodeIndex`, `MirExtraIndex`, `MirEntry`, `MirData`, `MirStore` with `TypeStore`+`StringPool`; 7 tests; 361/361 green
+- [x] **B3** Create `mir_typed.zig` — typed wrapper per `MirKind` with pack/unpack round-trip tests — all 32 MirKind variants covered; 12 tests one per data shape; 361/361 green
 - [ ] **B4** `MirBuilder` skeleton with fusion + internal phase separation (`classifyNode`, `inferCoercion`, `lowerNode`), emits `passthrough` only
 - [ ] **B5** Populate declarations cluster
 - [ ] **B6** Populate statements cluster
@@ -74,6 +74,23 @@ Full rebuild of parser/AST and MIR storage from pointer-based trees to index-bas
 - [ ] **B9** Delete parity harness — `MirBuilder` is the sole producer
 - [ ] **B10** Delete `MirAnnotator`, `MirAnnotator_nodes`, `MirLowerer`, old `MirNode`, `NodeMap`
 - [ ] **B11** Phase B merge — final `testall.sh`, merge to main, tag
+
+### Phase B — pre-flight hygiene
+
+Small items from the 2026-04-16 readiness audit. Do before or alongside B1.
+
+- [x] **BH1** Add "pre-rebuild architecture" caveat banner to top of `docs/COMPILER.md` — the pipeline diagram is stale post-Phase A (no `AstStore`; still shows `*parser.Node` end-to-end). Full rewrite stays at D5; this is a signpost so readers don't treat the current doc as current.
+- [x] **BH2** Audit codegen child access — 30 `.children[` accesses in 4 codegen files (`codegen.zig`×1, `codegen_decls.zig`×9, `codegen_stmts.zig`×2, `codegen_exprs.zig`×18); 19 more in `mir_node.zig`+`mir_lowerer.zig`. Scope is mechanical (~50 call sites across 6 files) — confirmed manageable at B9/B10.
+- [x] **BH3** Baseline MirNode peak memory on Tamga (40 generated Zig files, full pipeline): **226 MB peak RSS** (2.83 s wall time). Orhon pipeline completes; Zig subprocess exits 1 on missing system headers (SDL3/Vulkan), so the number cleanly reflects MirNode + all passes 1–10.
+
+### Phase B — risks to watch
+
+Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audit; not blockers, but each one is a silent-miscompile risk if missed.
+
+- [ ] **BR1** `MirNode.ast` back-pointer lifetime — `AstStore` must outlive `MirStore`. Already true (AstStore lives for the whole compilation per design). Document the contract explicitly in the `MirStore` scaffold at B2 so nothing in B5–B8 accidentally frees the AST early.
+- [ ] **BR2** `var_types` two-layer fallback — `MirLowerer.resolveSourceUnionRT()` (`src/mir/mir_lowerer.zig:546`) falls back to `var_types` when a narrowed MirNode type hides the source union. Fused `MirBuilder` must copy `var_types` into builder state or the lookup silently returns the wrong union shape.
+- [ ] **BR3** Interpolation counter threading — `interp_counter: u32` mutates during lowering. Thread through fused phases or refactor to a per-block counter. Aligns with P7's broader `pre_stmts` discipline — assert empty at function boundary.
+- [ ] **BR4** Classify → coerce → lower ordering inside `MirBuilder` — narrowing extraction reads classification output; union-tag stamping runs after classification. Keep explicit internal phase separation (`classifyNode` / `inferCoercion` / `lowerNode`) in the fused builder to prevent invariant loss at B4.
 
 ### Phase C — Codegen migration `0.5-1 week`
 

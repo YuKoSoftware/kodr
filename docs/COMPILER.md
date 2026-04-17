@@ -1,5 +1,7 @@
 # Orhon — Compiler Internals
 
+> **Pre-rebuild architecture snapshot** — This document describes the pipeline as of Phase A completion (2026-04-16). Phase A replaced the pointer-based AST with an index-based `AstStore` (SoA). The pipeline diagram below still shows `*parser.Node` end-to-end and does not yet reflect `AstStore`. Phase B (MIR rebuild) and Phase D (doc rewrite, D5) will update this document to reflect the new architecture. Do not treat the current diagram as current truth.
+
 ---
 
 ## Compilation Pipeline
