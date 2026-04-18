@@ -7,12 +7,15 @@ const std = @import("std");
 const mir_builder_mod = @import("mir_builder.zig");
 const ast_typed = @import("ast_typed.zig");
 const mir_typed = @import("mir_typed.zig");
+const mir_types = @import("mir/mir_types.zig");
 const string_pool = @import("string_pool.zig");
 const declarations = @import("declarations.zig");
+const parser = @import("parser.zig");
 
 const MirBuilder = mir_builder_mod.MirBuilder;
 const AstNodeIndex = @import("ast_store.zig").AstNodeIndex;
 const MirNodeIndex = @import("mir_store.zig").MirNodeIndex;
+const MirExtraIndex = @import("mir_store.zig").MirExtraIndex;
 const TypeId = @import("type_store.zig").TypeId;
 const RT = @import("types.zig").ResolvedType;
 const StringIndex = string_pool.StringIndex;
@@ -71,6 +74,7 @@ fn lowerReturnStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
 
 fn lowerIfStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     const ast_rec = ast_typed.IfStmt.unpack(b.ast, idx);
+    const narrowing_extra = try extractNarrowing(b, ast_rec.condition, ast_rec.then_block);
     const cond = try b.lowerNode(ast_rec.condition);
     const then_b = try b.lowerNode(ast_rec.then_block);
     const else_b = if (ast_rec.else_block != .none) try b.lowerNode(ast_rec.else_block) else .none;
@@ -78,7 +82,7 @@ fn lowerIfStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
         .condition = cond,
         .then_block = then_b,
         .else_block = else_b,
-        .narrowing_extra = .none, // wired in CP4
+        .narrowing_extra = narrowing_extra,
     });
 }
 
@@ -184,4 +188,110 @@ fn lowerBreakStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
 
 fn lowerContinueStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     return mir_typed.ContinueStmt.pack(b.store, b.allocator, idx, .none, .plain, .{});
+}
+
+// ── Narrowing detection ───────────────────────────────────────────────────────
+
+fn buildNarrowBranchExtra(b: *MirBuilder, source_rt: RT, name_opt: ?[]const u8) !mir_typed.NarrowBranchExtra {
+    const name = name_opt orelse return .{
+        .type_name = .none,
+        .positional_tag = 0xFFFF_FFFF,
+        .kind = 0,
+    };
+    const kind: u32 = if (mir_types.isErrorTypeName(name)) 1
+        else if (mir_types.isNullTypeName(name)) 2
+        else 0;
+    const tag = mir_types.positionalTagOf(source_rt, name);
+    const pt: u32 = if (tag) |t| @as(u32, t) else 0xFFFF_FFFF;
+    const si = try b.store.strings.intern(b.allocator, name);
+    return .{ .type_name = si, .positional_tag = pt, .kind = kind };
+}
+
+fn remainingUnionTypeName(members_rt: ?[]const RT, excluded: []const u8) ?[]const u8 {
+    const members = members_rt orelse return null;
+    var remaining: ?[]const u8 = null;
+    for (members) |m| {
+        const n = m.name();
+        if (std.mem.eql(u8, n, excluded)) continue;
+        if (mir_types.isErrorTypeName(n) or mir_types.isNullTypeName(n)) continue;
+        if (remaining != null) return null;
+        remaining = n;
+    }
+    return remaining;
+}
+
+fn extractNarrowing(b: *MirBuilder, cond_idx: AstNodeIndex, then_idx: AstNodeIndex) anyerror!MirExtraIndex {
+    _ = then_idx;
+    const cond_node = b.ast.getNode(cond_idx);
+    if (cond_node.tag != .binary_expr) return .none;
+
+    const bin = ast_typed.BinaryExpr.unpack(b.ast, cond_idx);
+    const bin_op: parser.Operator = @enumFromInt(bin.op);
+    const is_eq = bin_op == .eq;
+    const is_ne = bin_op == .ne;
+    if (!is_eq and !is_ne) return .none;
+
+    const lhs_node = b.ast.getNode(bin.lhs);
+    if (lhs_node.tag != .compiler_func) return .none;
+    const cf = ast_typed.CompilerFunc.unpack(b.ast, bin.lhs);
+    const cf_name = b.ast.strings.get(cf.name);
+    if (!std.mem.eql(u8, cf_name, "type")) return .none;
+    if (cf.args_end <= cf.args_start) return .none;
+
+    const val_ast_idx: AstNodeIndex = @enumFromInt(b.ast.extra_data.items[cf.args_start]);
+    const val_node = b.ast.getNode(val_ast_idx);
+    if (val_node.tag != .identifier) return .none;
+    const val_name = b.ast.strings.get(val_node.data.str);
+
+    const source_rt = blk: {
+        if (b.type_map.get(val_ast_idx)) |rt| {
+            if (rt == .union_type or rt == .null_type or rt == .err) break :blk rt;
+        }
+        if (b.var_types.get(val_name)) |type_id| {
+            const rt = b.store.types.get(type_id);
+            if (rt == .union_type) break :blk rt;
+        }
+        return .none;
+    };
+    const tc = mir_types.classifyType(source_rt);
+    if (tc != .arbitrary_union and tc != .error_union and tc != .null_union and tc != .null_error_union)
+        return .none;
+
+    const rhs_node = b.ast.getNode(bin.rhs);
+    const type_name: []const u8 = switch (rhs_node.tag) {
+        .identifier => b.ast.strings.get(rhs_node.data.str),
+        .null_literal => "null",
+        else => return .none,
+    };
+
+    const members_rt = if (source_rt == .union_type) source_rt.union_type else null;
+    const remaining = remainingUnionTypeName(members_rt, type_name);
+    // astBlockHasEarlyExit is conservative (false) — post-branch narrowing is Phase D polish
+    const has_early_exit = false;
+
+    const then_name: ?[]const u8 = if (is_eq) type_name else remaining;
+    const else_name: ?[]const u8 = if (is_eq) remaining else type_name;
+    const post_name: ?[]const u8 = if (has_early_exit) (if (is_eq) remaining else type_name) else null;
+
+    const var_si = try b.store.strings.intern(b.allocator, val_name);
+    const then_branch = try buildNarrowBranchExtra(b, source_rt, then_name);
+    const else_branch = try buildNarrowBranchExtra(b, source_rt, else_name);
+    const post_branch = try buildNarrowBranchExtra(b, source_rt, post_name);
+
+    return b.store.appendExtra(b.allocator, mir_typed.IfNarrowingExtra{
+        .var_name = var_si,
+        .type_class = @intFromEnum(tc),
+        .has_then = if (then_name != null) 1 else 0,
+        .then_type_name = then_branch.type_name,
+        .then_positional_tag = then_branch.positional_tag,
+        .then_kind = then_branch.kind,
+        .has_else = if (else_name != null) 1 else 0,
+        .else_type_name = else_branch.type_name,
+        .else_positional_tag = else_branch.positional_tag,
+        .else_kind = else_branch.kind,
+        .has_post = if (post_name != null) 1 else 0,
+        .post_type_name = post_branch.type_name,
+        .post_positional_tag = post_branch.positional_tag,
+        .post_kind = post_branch.kind,
+    });
 }
