@@ -53,6 +53,10 @@ pub fn lowerExpr(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
         .index_expr           => lowerIndex(b, idx),
         .slice_expr           => lowerSlice(b, idx),
         .interpolated_string  => lowerInterpolation(b, idx),
+        .compiler_func   => lowerCompilerFn(b, idx),
+        .array_literal   => lowerArrayLit(b, idx),
+        .tuple_literal   => lowerTupleLit(b, idx),
+        .version_literal => lowerVersionLit(b, idx),
         else => mir_typed.Passthrough.pack(b.store, b.allocator, idx, .none, .plain, .{}),
     };
 }
@@ -308,5 +312,66 @@ fn lowerInterpolation(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     const rt = b.type_map.get(idx) orelse .unknown;
     return mir_typed.Interpolation.pack(b.store, b.allocator, idx, try internRT(b, rt), mir_types.classifyType(rt), .{
         .parts_start = parts_start, .parts_end = parts_end,
+    });
+}
+
+fn lowerCompilerFn(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
+    const ast_rec = ast_typed.CompilerFunc.unpack(b.ast, idx);
+    const name = try internStr(b, ast_rec.name);
+    // Temp buffer to avoid interleaving with extra_data from child lowering.
+    var arg_nodes = std.ArrayListUnmanaged(MirNodeIndex){};
+    defer arg_nodes.deinit(b.allocator);
+    for (b.ast.extra_data.items[ast_rec.args_start..ast_rec.args_end]) |au32| {
+        try arg_nodes.append(b.allocator, try b.lowerNode(@enumFromInt(au32)));
+    }
+    const args_start: u32 = @intCast(b.store.extra_data.items.len);
+    for (arg_nodes.items) |m| try b.store.extra_data.append(b.allocator, @intFromEnum(m));
+    const args_end: u32 = @intCast(b.store.extra_data.items.len);
+    return mir_typed.CompilerFn.pack(b.store, b.allocator, idx, .none, .plain, .{
+        .name = name, .args_start = args_start, .args_end = args_end,
+    });
+}
+
+fn lowerArrayLit(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
+    const ast_items = ast_typed.ArrayLiteral.getItems(b.ast, idx);
+    var mir_items = try std.ArrayListUnmanaged(MirNodeIndex).initCapacity(b.allocator, ast_items.len);
+    defer mir_items.deinit(b.allocator);
+    for (ast_items) |item| try mir_items.append(b.allocator, try b.lowerNode(item));
+    return mir_typed.ArrayLit.pack(b.store, b.allocator, idx, .none, .plain, mir_items.items);
+}
+
+fn lowerTupleLit(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
+    const ast_rec = ast_typed.TupleLiteral.unpack(b.ast, idx);
+    const elem_count = ast_rec.elements_end - ast_rec.elements_start;
+    // Temp buffer to avoid interleaving with extra_data from child lowering.
+    var elem_nodes = std.ArrayListUnmanaged(MirNodeIndex){};
+    defer elem_nodes.deinit(b.allocator);
+    for (b.ast.extra_data.items[ast_rec.elements_start..ast_rec.elements_end]) |eu32| {
+        try elem_nodes.append(b.allocator, try b.lowerNode(@enumFromInt(eu32)));
+    }
+    const elements_start: u32 = @intCast(b.store.extra_data.items.len);
+    for (elem_nodes.items) |m| try b.store.extra_data.append(b.allocator, @intFromEnum(m));
+    const elements_end: u32 = @intCast(b.store.extra_data.items.len);
+    // Re-intern optional field names (names_start=0 means no names).
+    const names_start: u32 = @intCast(b.store.extra_data.items.len);
+    if (ast_rec.names_start != 0 and elem_count > 0) {
+        for (b.ast.extra_data.items[ast_rec.names_start .. ast_rec.names_start + elem_count]) |si_u32| {
+            const mir_si = try internStr(b, @enumFromInt(si_u32));
+            try b.store.extra_data.append(b.allocator, @intFromEnum(mir_si));
+        }
+    }
+    return mir_typed.TupleLit.pack(b.store, b.allocator, idx, .none, .plain, .{
+        .elements_start = elements_start,
+        .elements_end = elements_end,
+        .names_start = if (ast_rec.names_start != 0 and elem_count > 0) names_start else 0,
+    });
+}
+
+fn lowerVersionLit(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
+    const ast_rec = ast_typed.VersionLiteral.unpack(b.ast, idx);
+    return mir_typed.VersionLit.pack(b.store, b.allocator, idx, .none, .plain, .{
+        .major = try internStr(b, ast_rec.major),
+        .minor = try internStr(b, ast_rec.minor),
+        .patch = try internStr(b, ast_rec.patch),
     });
 }

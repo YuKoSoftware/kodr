@@ -982,3 +982,76 @@ test "MirBuilder B7: interpolated_string lowers expr parts to MirNodeIndex" {
     const tag1 = ms.extra_data.items[rec.parts_start + 2];
     try std.testing.expectEqual(@as(u32, 1), tag1);
 }
+
+test "MirBuilder B7: compiler_func emits MirKind.compiler_fn" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const name_si = try as_.strings.intern(allocator, "@cast");
+    const arg = try ast_typed.NullLiteral.pack(&as_, allocator, .none, .{});
+    const args_start: u32 = @intCast(as_.extra_data.items.len);
+    try as_.extra_data.append(allocator, @intFromEnum(arg));
+    const args_end: u32 = @intCast(as_.extra_data.items.len);
+    const idx = try ast_typed.CompilerFunc.pack(&as_, allocator, .none, .{
+        .name = name_si, .args_start = args_start, .args_end = args_end,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.compiler_fn, ms.getNode(m).tag);
+    const rec = mir_typed.CompilerFn.unpack(&ms, m);
+    try std.testing.expect(rec.args_end - rec.args_start == 1);
+}
+
+test "MirBuilder B7: array_literal lowers items" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const a = try ast_typed.NullLiteral.pack(&as_, allocator, .none, .{});
+    const b2 = try ast_typed.NullLiteral.pack(&as_, allocator, .none, .{});
+    const idx = try ast_typed.ArrayLiteral.pack(&as_, allocator, .none, &.{ a, b2 });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.array_lit, ms.getNode(m).tag);
+    try std.testing.expectEqual(@as(usize, 2), mir_typed.ArrayLit.getItems(&ms, m).len);
+}
+
+test "MirBuilder B7: tuple_literal emits MirKind.tuple_lit" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const elem = try ast_typed.NullLiteral.pack(&as_, allocator, .none, .{});
+    const elems_start: u32 = @intCast(as_.extra_data.items.len);
+    try as_.extra_data.append(allocator, @intFromEnum(elem));
+    const elems_end: u32 = @intCast(as_.extra_data.items.len);
+    const idx = try ast_typed.TupleLiteral.pack(&as_, allocator, .none, .{
+        .elements_start = elems_start, .elements_end = elems_end, .names_start = 0,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.tuple_lit, ms.getNode(m).tag);
+    const rec = mir_typed.TupleLit.unpack(&ms, m);
+    try std.testing.expect(rec.elements_end - rec.elements_start == 1);
+}
+
+test "MirBuilder B7: version_literal emits MirKind.version_lit" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const maj = try as_.strings.intern(allocator, "1");
+    const min = try as_.strings.intern(allocator, "2");
+    const pat = try as_.strings.intern(allocator, "3");
+    const idx = try ast_typed.VersionLiteral.pack(&as_, allocator, .none, .{
+        .major = maj, .minor = min, .patch = pat,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.version_lit, ms.getNode(m).tag);
+}

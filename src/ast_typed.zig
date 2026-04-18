@@ -952,7 +952,10 @@ fn packListNode(store: *AstStore, allocator: std.mem.Allocator, tag: AstKind, sp
     });
 }
 
-fn unpackListNode(store: *const AstStore, idx: AstNodeIndex) struct { items_start: u32, items_end: u32 } {
+// Shared record type for list nodes (array_literal, type_union, struct_type).
+const ListRecord = struct { items_start: u32, items_end: u32 };
+
+fn unpackListNode(store: *const AstStore, idx: AstNodeIndex) ListRecord {
     const node = store.getNode(idx);
     const raw = @intFromEnum(node.data.extra);
     const count = store.extra_data.items[raw];
@@ -961,7 +964,7 @@ fn unpackListNode(store: *const AstStore, idx: AstNodeIndex) struct { items_star
 }
 
 pub const ArrayLiteral = struct {
-    pub const Record = struct { items_start: u32, items_end: u32 };
+    pub const Record = ListRecord;
     pub fn pack(store: *AstStore, allocator: std.mem.Allocator, span: SourceSpanIndex, item_nodes: []const AstNodeIndex) !AstNodeIndex {
         return packListNode(store, allocator, .array_literal, span, item_nodes);
     }
@@ -975,7 +978,7 @@ pub const ArrayLiteral = struct {
 };
 
 pub const TypeUnion = struct {
-    pub const Record = struct { items_start: u32, items_end: u32 };
+    pub const Record = ListRecord;
     pub fn pack(store: *AstStore, allocator: std.mem.Allocator, span: SourceSpanIndex, items_slice: []const AstNodeIndex) !AstNodeIndex {
         return packListNode(store, allocator, .type_union, span, items_slice);
     }
@@ -985,7 +988,7 @@ pub const TypeUnion = struct {
 };
 
 pub const StructType = struct {
-    pub const Record = struct { items_start: u32, items_end: u32 };
+    pub const Record = ListRecord;
     pub fn pack(store: *AstStore, allocator: std.mem.Allocator, span: SourceSpanIndex, items_slice: []const AstNodeIndex) !AstNodeIndex {
         return packListNode(store, allocator, .struct_type, span, items_slice);
     }
