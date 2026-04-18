@@ -57,7 +57,7 @@ pub fn lowerExpr(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
         .array_literal   => lowerArrayLit(b, idx),
         .tuple_literal   => lowerTupleLit(b, idx),
         .version_literal => lowerVersionLit(b, idx),
-        else => mir_typed.Passthrough.pack(b.store, b.allocator, idx, .none, .plain, .{}),
+        else => unreachable,
     };
 }
 
