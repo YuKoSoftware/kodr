@@ -7,8 +7,43 @@ const codegen = @import("codegen.zig");
 const parser = @import("../parser.zig");
 const mir = @import("../mir/mir.zig");
 const match_impl = @import("codegen_match.zig");
+const mir_typed = @import("../mir_typed.zig");
+const mir_store_mod = @import("../mir_store.zig");
 
 const CodeGen = codegen.CodeGen;
+
+/// Read IfNarrowing from MirStore when available, converting IfNarrowingExtra to mir.IfNarrowing.
+/// String slices borrow from cg.mir_store.strings — valid during generate().
+fn readNarrowingFromStore(cg: *const CodeGen, if_ast: *parser.Node) ?mir.IfNarrowing {
+    const store = cg.mir_store orelse return null;
+    const idx = cg.getMirIdxForParserNode(if_ast);
+    if (idx == .none) return null;
+    const entry = store.getNode(idx);
+    if (entry.tag != .if_stmt) return null;
+    const rec = mir_typed.IfStmt.unpack(store, idx);
+    if (rec.narrowing_extra == .none) return null;
+    const nr = store.extraData(mir_typed.IfNarrowingExtra, rec.narrowing_extra);
+    const tc: mir.TypeClass = @enumFromInt(nr.type_class);
+    return .{
+        .var_name = store.strings.get(nr.var_name),
+        .type_class = tc,
+        .then_branch = if (nr.has_then != 0) .{
+            .type_name = store.strings.get(nr.then_type_name),
+            .positional_tag = if (nr.then_positional_tag == 0xFFFF_FFFF) null else @intCast(nr.then_positional_tag),
+            .kind = @enumFromInt(nr.then_kind),
+        } else null,
+        .else_branch = if (nr.has_else != 0) .{
+            .type_name = store.strings.get(nr.else_type_name),
+            .positional_tag = if (nr.else_positional_tag == 0xFFFF_FFFF) null else @intCast(nr.else_positional_tag),
+            .kind = @enumFromInt(nr.else_kind),
+        } else null,
+        .post_branch = if (nr.has_post != 0) .{
+            .type_name = store.strings.get(nr.post_type_name),
+            .positional_tag = if (nr.post_positional_tag == 0xFFFF_FFFF) null else @intCast(nr.post_positional_tag),
+            .kind = @enumFromInt(nr.post_kind),
+        } else null,
+    };
+}
 
 // ============================================================
 // BLOCKS AND STATEMENTS
@@ -124,7 +159,7 @@ fn emitStatementsWithNarrowing(cg: *CodeGen, stmts: []*mir.MirNode) anyerror!voi
         // Post-if narrowing: if this if_stmt has early exit and post_branch,
         // emit a binding for the narrowed variable and substitute in remaining siblings.
         if (child.kind == .if_stmt) {
-            if (child.narrowing) |narrowing| {
+            if (readNarrowingFromStore(cg, child.ast) orelse child.narrowing) |narrowing| {
                 if (narrowing.post_branch) |pb| {
                     const var_name = narrowing.var_name;
                     // Skip if variable is already fully unwrapped (.plain) from a prior narrowing
@@ -257,8 +292,8 @@ pub fn generateStatementMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             try cg.emit("if (");
             try cg.generateExprMir(m.condition());
             try cg.emit(") ");
-            // Narrowing: emit arm-top bindings when the body uses the narrowed variable
-            if (m.narrowing) |narrowing| {
+            // Narrowing: prefer MirStore IfNarrowingExtra, fall back to old MirNode.narrowing.
+            if (readNarrowingFromStore(cg, m.ast) orelse m.narrowing) |narrowing| {
                 const tc = narrowing.type_class;
                 const vn = narrowing.var_name;
                 // Then-block with narrowing
