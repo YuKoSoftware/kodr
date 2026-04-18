@@ -951,3 +951,34 @@ test "MirBuilder B7: slice_expr emits MirKind.slice" {
     try std.testing.expect(rec.low != .none);
     try std.testing.expect(rec.high != .none);
 }
+
+test "MirBuilder B7: interpolated_string lowers expr parts to MirNodeIndex" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+
+    // Build an interpolation with 2 parts: literal "hello " + expression (null).
+    const lit_si = try as_.strings.intern(allocator, "hello ");
+    const expr_node = try ast_typed.NullLiteral.pack(&as_, allocator, .none, .{});
+    const parts_start: u32 = @intCast(as_.extra_data.items.len);
+    try as_.extra_data.append(allocator, 0);                          // tag=0 (literal)
+    try as_.extra_data.append(allocator, @intFromEnum(lit_si));
+    try as_.extra_data.append(allocator, 1);                          // tag=1 (expr)
+    try as_.extra_data.append(allocator, @intFromEnum(expr_node));
+    const parts_end: u32 = @intCast(as_.extra_data.items.len);
+    const idx = try ast_typed.InterpolatedString.pack(&as_, allocator, .none, .{
+        .parts_start = parts_start, .parts_end = parts_end,
+    });
+
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.interpolation, ms.getNode(m).tag);
+    const rec = mir_typed.Interpolation.unpack(&ms, m);
+    // 2 parts × 2 words each = 4 words in extra_data.
+    try std.testing.expectEqual(@as(u32, 4), rec.parts_end - rec.parts_start);
+    // Second part (words 2-3) should be tag=1.
+    const tag1 = ms.extra_data.items[rec.parts_start + 2];
+    try std.testing.expectEqual(@as(u32, 1), tag1);
+}

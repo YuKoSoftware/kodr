@@ -50,8 +50,9 @@ pub fn lowerExpr(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
         .const_borrow_expr => lowerConstBorrow(b, idx),
         .call_expr       => lowerCall(b, idx),
         .field_expr      => lowerFieldAccess(b, idx),
-        .index_expr      => lowerIndex(b, idx),
-        .slice_expr      => lowerSlice(b, idx),
+        .index_expr           => lowerIndex(b, idx),
+        .slice_expr           => lowerSlice(b, idx),
+        .interpolated_string  => lowerInterpolation(b, idx),
         else => mir_typed.Passthrough.pack(b.store, b.allocator, idx, .none, .plain, .{}),
     };
 }
@@ -272,5 +273,40 @@ fn lowerSlice(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     const rt = b.type_map.get(idx) orelse .unknown;
     return mir_typed.Slice.pack(b.store, b.allocator, idx, try internRT(b, rt), mir_types.classifyType(rt), .{
         .object = object, .low = low, .high = high,
+    });
+}
+
+// ── Interpolated string ───────────────────────────────────────────────────────
+
+fn lowerInterpolation(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
+    const ast_rec = ast_typed.InterpolatedString.unpack(b.ast, idx);
+
+    // Collect output pairs into a temp buffer to avoid interleaving with
+    // extra_data written by child expr lowering (same pattern as lowerCall).
+    var parts_buf = std.ArrayListUnmanaged(u32){};
+    defer parts_buf.deinit(b.allocator);
+
+    var i = ast_rec.parts_start;
+    while (i < ast_rec.parts_end) : (i += 2) {
+        const tag     = b.ast.extra_data.items[i];
+        const payload = b.ast.extra_data.items[i + 1];
+        if (tag == 0) {
+            const mir_si = try internStr(b, @enumFromInt(payload));
+            try parts_buf.append(b.allocator, 0);
+            try parts_buf.append(b.allocator, @intFromEnum(mir_si));
+        } else {
+            const mir_node = try b.lowerNode(@enumFromInt(payload));
+            try parts_buf.append(b.allocator, 1);
+            try parts_buf.append(b.allocator, @intFromEnum(mir_node));
+        }
+    }
+
+    const parts_start: u32 = @intCast(b.store.extra_data.items.len);
+    for (parts_buf.items) |v| try b.store.extra_data.append(b.allocator, v);
+    const parts_end: u32 = @intCast(b.store.extra_data.items.len);
+
+    const rt = b.type_map.get(idx) orelse .unknown;
+    return mir_typed.Interpolation.pack(b.store, b.allocator, idx, try internRT(b, rt), mir_types.classifyType(rt), .{
+        .parts_start = parts_start, .parts_end = parts_end,
     });
 }
