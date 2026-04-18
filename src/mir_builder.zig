@@ -628,6 +628,7 @@ test "MirBuilder B6: if_stmt emits MirKind.if_stmt" {
     const rec = mir_typed.IfStmt.unpack(&mir_store, mir_idx);
     try std.testing.expect(rec.condition != .none);
     try std.testing.expect(rec.then_block != .none);
+    try std.testing.expectEqual(mir_typed.MirExtraIndex.none, rec.narrowing_extra);
 }
 
 test "MirBuilder B6: while_stmt emits MirKind.while_stmt" {

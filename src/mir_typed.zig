@@ -230,17 +230,64 @@ pub const ReturnStmt = struct {
     }
 };
 
+// ── IfNarrowing storage ──────────────────────────────────────────────────────
+// Stored in extra_data for if_stmt nodes whose condition is an `is` check.
+// narrowing_extra == .none means no narrowing on this if_stmt.
+
+/// One branch of type narrowing. 3 u32 fields.
+pub const NarrowBranchExtra = struct {
+    type_name: StringIndex,
+    positional_tag: u32,  // 0xFFFF_FFFF = absent; else 0..31
+    kind: u32,            // 0=plain 1=error_sentinel 2=null_sentinel
+};
+
+/// Full narrowing record for one if_stmt. 14 u32 fields = 56 bytes.
+pub const IfNarrowingExtra = struct {
+    var_name: StringIndex,
+    type_class: u32,
+    has_then: u32,
+    then_type_name: StringIndex,
+    then_positional_tag: u32,
+    then_kind: u32,
+    has_else: u32,
+    else_type_name: StringIndex,
+    else_positional_tag: u32,
+    else_kind: u32,
+    has_post: u32,
+    post_type_name: StringIndex,
+    post_positional_tag: u32,
+    post_kind: u32,
+};
+
 pub const IfStmt = struct {
-    pub const Record = struct { condition: MirNodeIndex, then_block: MirNodeIndex, else_block: MirNodeIndex };
-    const IfExtra = struct { then_block: MirNodeIndex, else_block: MirNodeIndex };
+    pub const Record = struct {
+        condition: MirNodeIndex,
+        then_block: MirNodeIndex,
+        else_block: MirNodeIndex,
+        narrowing_extra: MirExtraIndex, // .none = no narrowing
+    };
+    const IfExtra = struct {
+        then_block: MirNodeIndex,
+        else_block: MirNodeIndex,
+        narrowing_extra: MirExtraIndex,
+    };
     pub fn pack(store: *MirStore, allocator: std.mem.Allocator, span: AstNodeIndex, type_id: TypeId, type_class: TypeClass, rec: Record) !MirNodeIndex {
-        const extra = try store.appendExtra(allocator, IfExtra{ .then_block = rec.then_block, .else_block = rec.else_block });
+        const extra = try store.appendExtra(allocator, IfExtra{
+            .then_block = rec.then_block,
+            .else_block = rec.else_block,
+            .narrowing_extra = rec.narrowing_extra,
+        });
         return store.appendNode(allocator, .{ .tag = .if_stmt, .type_class = type_class, .span = span, .type_id = type_id, .data = .{ .node_and_extra = .{ .node = rec.condition, .extra = extra } } });
     }
     pub fn unpack(store: *const MirStore, idx: MirNodeIndex) Record {
         const entry = store.getNode(idx);
         const extra = store.extraData(IfExtra, entry.data.node_and_extra.extra);
-        return .{ .condition = entry.data.node_and_extra.node, .then_block = extra.then_block, .else_block = extra.else_block };
+        return .{
+            .condition = entry.data.node_and_extra.node,
+            .then_block = extra.then_block,
+            .else_block = extra.else_block,
+            .narrowing_extra = extra.narrowing_extra,
+        };
     }
 };
 
@@ -712,11 +759,12 @@ test "if_stmt round-trip (node_and_extra shape)" {
     const cond = try BreakStmt.pack(&store, std.testing.allocator, .none, .none, .plain, .{});
     const then_b = try ContinueStmt.pack(&store, std.testing.allocator, .none, .none, .plain, .{});
     const else_b = try BreakStmt.pack(&store, std.testing.allocator, .none, .none, .plain, .{});
-    const idx = try IfStmt.pack(&store, std.testing.allocator, .none, .none, .plain, .{ .condition = cond, .then_block = then_b, .else_block = else_b });
+    const idx = try IfStmt.pack(&store, std.testing.allocator, .none, .none, .plain, .{ .condition = cond, .then_block = then_b, .else_block = else_b, .narrowing_extra = .none });
     const rec = IfStmt.unpack(&store, idx);
     try std.testing.expectEqual(cond, rec.condition);
     try std.testing.expectEqual(then_b, rec.then_block);
     try std.testing.expectEqual(else_b, rec.else_block);
+    try std.testing.expectEqual(MirExtraIndex.none, rec.narrowing_extra);
 }
 
 test "var_decl round-trip (str_and_extra shape)" {

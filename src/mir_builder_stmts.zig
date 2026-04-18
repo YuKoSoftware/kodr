@@ -78,6 +78,7 @@ fn lowerIfStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
         .condition = cond,
         .then_block = then_b,
         .else_block = else_b,
+        .narrowing_extra = .none, // wired in CP4
     });
 }
 
