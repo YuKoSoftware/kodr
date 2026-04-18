@@ -94,12 +94,24 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 ### Phase C — Codegen migration `0.5-1 week`
 
-- [ ] **C1** `src/codegen/codegen.zig` top-level dispatch
-- [ ] **C2** `src/codegen/codegen_decls.zig`
-- [ ] **C3** `src/codegen/codegen_exprs.zig`
-- [ ] **C4** `src/codegen/codegen_stmts.zig`
-- [ ] **C5** `src/codegen/codegen_match.zig`
-- [ ] **C6** Remaining codegen files (one per commit)
+> **⬅ RESUME HERE** — Design approved 2026-04-18, spec at
+> `docs/superpowers/specs/2026-04-18-phase-c-codegen-migration-design.md`
+> Implementation plan at `docs/superpowers/plans/` (to be written).
+> Phase C runs **inside Phase B** before B10/B11.
+
+**C-prep — semantic completion (do before C1):**
+- [ ] **CP1** Add `coercion_kind: u8` to `MirEntry` in `src/mir_store.zig`; add `coercionFromKind`/`coercionToKind` helpers + round-trip tests
+- [ ] **CP2** Implement `inferCoercion` in `src/mir_builder.zig` by porting from `src/mir/mir_annotator_nodes.zig`; update all `appendNode` call sites in builder satellites
+- [ ] **CP3** Extend `IfStmt.Record` in `src/mir_typed.zig` with `narrowing_extra: MirExtraIndex`; add `IfNarrowingExtra` + `NarrowBranchExtra` records
+- [ ] **CP4** Implement narrowing detection in `src/mir_builder_stmts.zig` `lowerIfStmt`, porting from `src/mir/mir_annotator_nodes.zig`
+
+**C1–C6 — codegen migration (one commit each, `testall.sh` green after each):**
+- [ ] **C1** `src/codegen/codegen.zig` — add `mir_store`, `mir_root_idx`, `mir_type_store`, `mir_builder_var_types` fields; `span_to_mir` reverse map; wire new fields from pipeline alongside old compat wiring
+- [ ] **C2** `src/codegen/codegen_decls.zig` — migrate to MirStore typed wrappers
+- [ ] **C3** `src/codegen/codegen_exprs.zig` — migrate literals, calls, coercion, interpolation
+- [ ] **C4** `src/codegen/codegen_stmts.zig` — migrate blocks, if/while/for with narrowing, defer
+- [ ] **C5** `src/codegen/codegen_match.zig` — migrate match patterns, intrinsics
+- [ ] **C6** `src/codegen/codegen_unions.zig` and remaining files
 - [ ] **C7** Phase C merge — final `testall.sh`, merge to main
 
 ### Phase D — Cleanup `0.5 week`
