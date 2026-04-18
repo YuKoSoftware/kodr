@@ -14,6 +14,7 @@ const mir_types = @import("mir/mir_types.zig");
 
 pub const MirKind = mir_node.MirKind;
 pub const TypeClass = mir_types.TypeClass;
+pub const Coercion = mir_types.Coercion;
 
 // ---------------------------------------------------------------------------
 // Index types — all enum(u32) with none=0 sentinel
@@ -50,6 +51,8 @@ pub const MirEntry = struct {
     span: AstNodeIndex,
     /// Interned type of this node (index into MirStore.types).
     type_id: TypeId,
+    /// 0=none; see coercionToKind/coercionFromKind for encoding.
+    coercion_kind: u8 = 0,
     data: MirData,
 };
 
@@ -136,6 +139,37 @@ pub const MirStore = struct {
         return result;
     }
 };
+
+// ---------------------------------------------------------------------------
+// Coercion encoding helpers
+// ---------------------------------------------------------------------------
+
+/// Encode a Coercion value into a u8 for storage in MirEntry.coercion_kind.
+/// Encoding: 0=none, 1=array_to_slice, 2=null_wrap, 3=error_wrap,
+/// 4=optional_unwrap, 5=value_to_const_ref, 6+tag=arbitrary_union_wrap.
+pub fn coercionToKind(c: Coercion) u8 {
+    return switch (c) {
+        .array_to_slice => 1,
+        .null_wrap => 2,
+        .error_wrap => 3,
+        .optional_unwrap => 4,
+        .value_to_const_ref => 5,
+        .arbitrary_union_wrap => |tag| 6 + tag,
+    };
+}
+
+/// Decode a u8 coercion_kind back into an optional Coercion.
+pub fn coercionFromKind(k: u8) ?Coercion {
+    return switch (k) {
+        0 => null,
+        1 => .array_to_slice,
+        2 => .null_wrap,
+        3 => .error_wrap,
+        4 => .optional_unwrap,
+        5 => .value_to_const_ref,
+        else => .{ .arbitrary_union_wrap = k - 6 },
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -259,4 +293,31 @@ test "MirStore: StringPool integration via node data" {
     const got = store.getNode(idx);
     try std.testing.expect(got.data == .str);
     try std.testing.expectEqualStrings("my_var", store.strings.get(got.data.str));
+}
+
+test "coercionToKind / coercionFromKind round-trip: none" {
+    try std.testing.expectEqual(@as(?Coercion, null), coercionFromKind(0));
+}
+
+test "coercionToKind / coercionFromKind round-trip: simple variants" {
+    const cases = [_]Coercion{
+        .array_to_slice,
+        .null_wrap,
+        .error_wrap,
+        .optional_unwrap,
+        .value_to_const_ref,
+    };
+    for (cases) |c| {
+        const k = coercionToKind(c);
+        try std.testing.expect(k >= 1 and k <= 5);
+        try std.testing.expectEqual(@as(?Coercion, c), coercionFromKind(k));
+    }
+}
+
+test "coercionToKind / coercionFromKind round-trip: arbitrary_union_wrap" {
+    const c = Coercion{ .arbitrary_union_wrap = 7 };
+    const k = coercionToKind(c);
+    try std.testing.expectEqual(@as(u8, 13), k); // 6 + 7
+    const back = coercionFromKind(k);
+    try std.testing.expectEqual(@as(?Coercion, c), back);
 }
