@@ -70,7 +70,7 @@ Full rebuild of parser/AST and MIR storage from pointer-based trees to index-bas
 - [x] **B5** Populate declarations cluster
 - [x] **B6** Populate statements cluster
 - [x] **B7** Populate expressions cluster
-- [ ] **B8** Populate types + members + injected
+- [x] **B8** Populate types + members + injected
 - [ ] **B9** Delete parity harness — `MirBuilder` is the sole producer
 - [ ] **B10** Delete `MirAnnotator`, `MirAnnotator_nodes`, `MirLowerer`, old `MirNode`, `NodeMap`
 - [ ] **B11** Phase B merge — final `testall.sh`, merge to main, tag

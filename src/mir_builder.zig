@@ -12,9 +12,11 @@ const ast_store_mod = @import("ast_store.zig");
 const mir_store_mod = @import("mir_store.zig");
 const mir_typed = @import("mir_typed.zig");
 const type_store_mod = @import("type_store.zig");
-const decls_impl = @import("mir_builder_decls.zig");
-const stmts_impl = @import("mir_builder_stmts.zig");
-const exprs_impl = @import("mir_builder_exprs.zig");
+const decls_impl   = @import("mir_builder_decls.zig");
+const stmts_impl   = @import("mir_builder_stmts.zig");
+const exprs_impl   = @import("mir_builder_exprs.zig");
+const members_impl = @import("mir_builder_members.zig");
+const types_impl   = @import("mir_builder_types.zig");
 
 const AstNodeIndex = ast_store_mod.AstNodeIndex;
 const AstStore = ast_store_mod.AstStore;
@@ -86,6 +88,16 @@ pub const MirBuilder = struct {
         return self.lowerNode(root);
     }
 
+    /// Create a synthetic temp_var node for interpolation hoisting (BR3).
+    pub fn createTempVar(self: *MirBuilder, name: []const u8) !MirNodeIndex {
+        return types_impl.createTempVar(self, name);
+    }
+
+    /// Create a synthetic injected_defer node for interpolation cleanup (BR3).
+    pub fn createInjectedDefer(self: *MirBuilder, body: MirNodeIndex) !MirNodeIndex {
+        return types_impl.createInjectedDefer(self, body);
+    }
+
     // ── Internal phase separation (BR4) ──────────────────────────────────
     // Ordering within lowerNode: classify → infer coercion → emit.
     // Kept as separate private functions even as stubs so the invariant
@@ -139,6 +151,12 @@ pub const MirBuilder = struct {
             .interpolated_string, .compiler_func,
             .array_literal, .tuple_literal, .version_literal,
             => exprs_impl.lowerExpr(self, idx),
+            .field_decl, .param, .enum_variant,
+            => members_impl.lowerMember(self, idx),
+            .type_slice, .type_array, .type_ptr, .type_union,
+            .type_tuple_named, .type_func, .type_generic,
+            .type_named, .struct_type,
+            => types_impl.lowerTypeExpr(self, idx),
             else => mir_typed.Passthrough.pack(
                 self.store,
                 self.allocator,
@@ -172,8 +190,9 @@ test "MirBuilder: passthrough for non-declaration node" {
     var union_registry = UnionRegistry.init(allocator);
     defer union_registry.deinit();
 
-    // Pack a node that falls through to passthrough (null_literal now emits MirKind.literal).
-    const tu_idx = try ast_typed.TypeUnion.pack(&ast_store, allocator, .none, &.{});
+    // Pack a node that falls through to passthrough. module_decl has no routing arm.
+    const name_si = try ast_store.strings.intern(allocator, "main");
+    const tu_idx = try ast_typed.ModuleDecl.pack(&ast_store, allocator, .none, .{ .name = name_si, .doc = .none });
 
     var builder = testBuilder(allocator, &ast_store, &mir_store, &type_map, &union_registry);
     defer builder.deinit();
@@ -1054,4 +1073,162 @@ test "MirBuilder B7: version_literal emits MirKind.version_lit" {
     var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
     const m = try b.lowerNode(idx);
     try std.testing.expectEqual(MirKind.version_lit, ms.getNode(m).tag);
+}
+
+// ── B8: Members + types + injected cluster tests ──────────────────────────────
+
+test "MirBuilder B8: field_decl emits MirKind.field_def with name and type_annotation" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const name_si = try as_.strings.intern(allocator, "x");
+    const type_ann = try ast_typed.TypeNamed.pack(&as_, allocator, .none, .{ .name = name_si });
+    const idx = try ast_typed.FieldDecl.pack(&as_, allocator, .none, .{
+        .name = name_si, .type_annotation = type_ann, .default_value = .none, .flags = 0,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.field_def, ms.getNode(m).tag);
+    const rec = mir_typed.FieldDef.unpack(&ms, m);
+    try std.testing.expectEqual(type_ann, rec.type_annotation);
+    try std.testing.expectEqual(MirNodeIndex.none, rec.default);
+    try std.testing.expectEqualStrings("x", ms.strings.get(rec.name));
+}
+
+test "MirBuilder B8: field_decl with default value lowers default" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const name_si = try as_.strings.intern(allocator, "count");
+    const type_ann = try ast_typed.TypeNamed.pack(&as_, allocator, .none, .{ .name = name_si });
+    const default_val = try ast_typed.NullLiteral.pack(&as_, allocator, .none, .{});
+    const idx = try ast_typed.FieldDecl.pack(&as_, allocator, .none, .{
+        .name = name_si, .type_annotation = type_ann, .default_value = default_val, .flags = 1,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.field_def, ms.getNode(m).tag);
+    const rec = mir_typed.FieldDef.unpack(&ms, m);
+    try std.testing.expect(rec.default != .none);
+    try std.testing.expectEqual(MirKind.literal, ms.getNode(rec.default).tag);
+    try std.testing.expectEqual(@as(u32, 1), rec.flags);
+}
+
+test "MirBuilder B8: param emits MirKind.param_def" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const name_si = try as_.strings.intern(allocator, "n");
+    const type_ann = try ast_typed.TypeNamed.pack(&as_, allocator, .none, .{ .name = name_si });
+    const idx = try ast_typed.Param.pack(&as_, allocator, .none, .{
+        .name = name_si, .type_annotation = type_ann, .default_value = .none,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.param_def, ms.getNode(m).tag);
+    const rec = mir_typed.ParamDef.unpack(&ms, m);
+    try std.testing.expectEqual(type_ann, rec.type_annotation);
+    try std.testing.expectEqual(MirNodeIndex.none, rec.default);
+    try std.testing.expectEqualStrings("n", ms.strings.get(rec.name));
+}
+
+test "MirBuilder B8: enum_variant emits MirKind.enum_variant_def no discriminant" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const name_si = try as_.strings.intern(allocator, "Red");
+    const idx = try ast_typed.EnumVariant.pack(&as_, allocator, .none, .{
+        .name = name_si, .value = .none,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.enum_variant_def, ms.getNode(m).tag);
+    const rec = mir_typed.EnumVariantDef.unpack(&ms, m);
+    try std.testing.expectEqual(MirNodeIndex.none, rec.value);
+    try std.testing.expectEqualStrings("Red", ms.strings.get(rec.name));
+}
+
+test "MirBuilder B8: enum_variant with discriminant lowers value" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const name_si = try as_.strings.intern(allocator, "Green");
+    const disc_si = try as_.strings.intern(allocator, "1");
+    const disc = try ast_typed.IntLiteral.pack(&as_, allocator, .none, .{ .text = disc_si });
+    const idx = try ast_typed.EnumVariant.pack(&as_, allocator, .none, .{
+        .name = name_si, .value = disc,
+    });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.enum_variant_def, ms.getNode(m).tag);
+    const rec = mir_typed.EnumVariantDef.unpack(&ms, m);
+    try std.testing.expect(rec.value != .none);
+    try std.testing.expectEqual(MirKind.literal, ms.getNode(rec.value).tag);
+}
+
+test "MirBuilder B8: type_named emits MirKind.type_expr" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const name_si = try as_.strings.intern(allocator, "i32");
+    const idx = try ast_typed.TypeNamed.pack(&as_, allocator, .none, .{ .name = name_si });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.type_expr, ms.getNode(m).tag);
+    try std.testing.expectEqual(idx, ms.getNode(m).span);
+}
+
+test "MirBuilder B8: type_slice emits MirKind.type_expr" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    const elem_si = try as_.strings.intern(allocator, "u8");
+    const elem = try ast_typed.TypeNamed.pack(&as_, allocator, .none, .{ .name = elem_si });
+    const idx = try ast_typed.TypeSlice.pack(&as_, allocator, .none, .{ .elem = elem });
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.lowerNode(idx);
+    try std.testing.expectEqual(MirKind.type_expr, ms.getNode(m).tag);
+    try std.testing.expectEqual(idx, ms.getNode(m).span);
+}
+
+test "MirBuilder B8: createTempVar produces MirKind.temp_var" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const m = try b.createTempVar("_orhon_interp_0");
+    try std.testing.expectEqual(MirKind.temp_var, ms.getNode(m).tag);
+    const rec = mir_typed.TempVar.unpack(&ms, m);
+    try std.testing.expectEqualStrings("_orhon_interp_0", ms.strings.get(rec.name));
+}
+
+test "MirBuilder B8: createInjectedDefer produces MirKind.injected_defer" {
+    const allocator = std.testing.allocator;
+    var ms = MirStore.init(); defer ms.deinit(allocator);
+    var as_ = AstStore.init(); defer as_.deinit(allocator);
+    var tm: std.AutoHashMapUnmanaged(AstNodeIndex, RT) = .{}; defer tm.deinit(allocator);
+    var ur = UnionRegistry.init(allocator); defer ur.deinit();
+    var b = testBuilder(allocator, &as_, &ms, &tm, &ur); defer b.deinit();
+    const body = try ast_typed.BreakStmt.pack(&as_, allocator, .none, .{});
+    const body_mir = try b.lowerNode(body);
+    const m = try b.createInjectedDefer(body_mir);
+    try std.testing.expectEqual(MirKind.injected_defer, ms.getNode(m).tag);
+    const rec = mir_typed.InjectedDefer.unpack(&ms, m);
+    try std.testing.expectEqual(body_mir, rec.body);
 }
