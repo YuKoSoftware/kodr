@@ -73,6 +73,7 @@ Full rebuild of parser/AST and MIR storage from pointer-based trees to index-bas
 - [x] **B8** Populate types + members + injected
 - [x] **B9** Delete parity harness — `MirBuilder` is the sole producer
 - [ ] **B10** Delete `MirAnnotator`, `MirAnnotator_nodes`, `MirLowerer`, old `MirNode`, `NodeMap`
+  - Phase C progress (C1–C4): MirStore fields wired to CodeGen; coercion reads prefer MirStore (C3); narrowing reads prefer MirStore (C4); bridge infra added. Full codegen signature migration (C2 proper + C5–C6) needed before B10 can proceed.
 - [ ] **B11** Phase B merge — final `testall.sh`, merge to main, tag
 
 ### Phase B — pre-flight hygiene
