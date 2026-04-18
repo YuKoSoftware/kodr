@@ -14,6 +14,7 @@ const K = @import("../constants.zig");
 const module = @import("../module.zig");
 const types = @import("../types.zig");
 const RT = types.ResolvedType;
+const mir_store_mod = @import("../mir_store.zig");
 
 const CodeGen = codegen.CodeGen;
 
@@ -45,7 +46,12 @@ pub fn findMemberByKind(members_rt: ?[]const RT, kind: TypeKind) ?[]const u8 {
 
 /// MIR-path: wrap a MirNode expression in an arbitrary union tag.
 pub fn generateArbitraryUnionWrappedExprMir(cg: *CodeGen, m: *mir.MirNode, members_rt: ?[]const RT) anyerror!void {
-    if (m.coercion) |_| {
+    // Prefer MirStore coercion (set by MirBuilder) over old MirNode.coercion.
+    const has_coercion = blk: {
+        if (cg.getMirEntryForParserNode(m.ast)) |entry| break :blk entry.coercion_kind != 0;
+        break :blk m.coercion != null;
+    };
+    if (has_coercion) {
         try cg.generateCoercedExprMir(m);
         return;
     }
@@ -554,9 +560,15 @@ fn generateTypeExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     }
 }
 
-/// MIR-path coerced expression — reads coercion from MirNode directly.
+/// MIR-path coerced expression — prefers MirStore coercion_kind, falls back to MirNode.coercion.
 pub fn generateCoercedExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
-    const coercion = m.coercion orelse return cg.generateExprMir(m);
+    // Prefer MirStore coercion data (set by MirBuilder.inferCoercion in CP2).
+    const coercion: mir.Coercion = blk: {
+        if (cg.getMirEntryForParserNode(m.ast)) |entry| {
+            if (mir_store_mod.coercionFromKind(entry.coercion_kind)) |c| break :blk c;
+        }
+        break :blk m.coercion orelse return cg.generateExprMir(m);
+    };
     switch (coercion) {
         .array_to_slice => {
             try cg.emit("&");
