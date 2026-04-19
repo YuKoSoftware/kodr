@@ -73,7 +73,7 @@ Full rebuild of parser/AST and MIR storage from pointer-based trees to index-bas
 - [x] **B8** Populate types + members + injected
 - [x] **B9** Delete parity harness — `MirBuilder` is the sole producer
 - [ ] **B10** Delete `MirAnnotator`, `MirAnnotator_nodes`, `MirLowerer`, old `MirNode`, `NodeMap`
-  - Phase C progress (C1–C4): MirStore fields wired to CodeGen; coercion reads prefer MirStore (C3); narrowing reads prefer MirStore (C4); bridge infra added. Full codegen signature migration (C2 proper + C5–C6) needed before B10 can proceed.
+  - Phase C progress (C1–C6 complete): all codegen signatures migrated to MirNodeIndex; bridge infra with synthetic fallback for nodes not yet in MirStore. B10 can now proceed.
 - [ ] **B11** Phase B merge — final `testall.sh`, merge to main, tag
 
 ### Phase B — pre-flight hygiene
@@ -110,14 +110,12 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 **C1–C6 — codegen migration (one commit each, `testall.sh` green after each):**
 - [x] **C1** `src/codegen/codegen.zig` — add `mir_store`, `mir_root_idx`, `mir_type_store`, `mir_builder_var_types` fields; `span_to_mir` reverse map; wire new fields from pipeline alongside old compat wiring
 - [x] **C1b** `src/codegen/codegen.zig` + `src/mir_builder.zig` — `build()` returns Block (top-level list); `generate()` iterates from MirStore via span→old-MirNode bridge; `mir_typed` import added
-- [ ] **C2** `src/codegen/codegen_decls.zig` — migrate to MirStore typed wrappers
-- [x] **C3** `src/codegen/codegen_exprs.zig` — coercion reads prefer MirStore (augmentation; full sig migration pending)
-- [x] **C4** `src/codegen/codegen_stmts.zig` — narrowing reads prefer MirStore (augmentation; full sig migration pending)
-- [ ] **C5** `src/codegen/codegen_match.zig` — migrate match patterns, intrinsics
-- [ ] **C6** `src/codegen/codegen_unions.zig` and remaining files
+- [x] **C2** `src/codegen/codegen_decls.zig` — all signatures migrated to MirNodeIndex + bridge
+- [x] **C3** `src/codegen/codegen_exprs.zig` — all signatures migrated to MirNodeIndex + bridge
+- [x] **C4** `src/codegen/codegen_stmts.zig` — all signatures migrated to MirNodeIndex + bridge
+- [x] **C5** `src/codegen/codegen_match.zig` — all signatures migrated to MirNodeIndex + bridge
+- [x] **C6** bridge infra in codegen.zig: synth fallback maps for nodes not in MirStore; 361/361 green
 - [ ] **C7** Phase C merge — final `testall.sh`, merge to main
-
-> **Full codegen signature migration** (C2, C5, C6, and completing C3/C4) — change all `*mir.MirNode` signatures to `MirNodeIndex` + typed wrappers — required before B10.
 >
 > **C2-C6 migration note (2026-04-18):** All codegen satellite files call each other through stubs in codegen.zig. Changing any function signature from `*mir.MirNode` to `MirNodeIndex` requires changing ALL callers and callees simultaneously (circular dep). Strategy: do a single large commit changing all 4 satellite files (codegen_decls, codegen_stmts, codegen_exprs, codegen_match) plus codegen.zig stubs at once. Key field mappings documented here:
 > - `m.name` → `store.strings.get(TypedWrapper.unpack(store,idx).name)`

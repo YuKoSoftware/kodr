@@ -17,6 +17,7 @@ const RT = types.ResolvedType;
 const mir_store_mod = @import("../mir_store.zig");
 
 const CodeGen = codegen.CodeGen;
+const MirNodeIndex = mir_store_mod.MirNodeIndex;
 
 // ============================================================
 // UNION HELPERS (moved from codegen.zig per D-06)
@@ -45,7 +46,8 @@ pub fn findMemberByKind(members_rt: ?[]const RT, kind: TypeKind) ?[]const u8 {
 }
 
 /// MIR-path: wrap a MirNode expression in an arbitrary union tag.
-pub fn generateArbitraryUnionWrappedExprMir(cg: *CodeGen, m: *mir.MirNode, members_rt: ?[]const RT) anyerror!void {
+pub fn generateArbitraryUnionWrappedExprMir(cg: *CodeGen, idx: MirNodeIndex, members_rt: ?[]const RT) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     // Use MirStore coercion when non-zero; fall back to old MirNode.coercion when zero/absent.
     const has_coercion = blk: {
         if (cg.getMirEntryForParserNode(m.ast)) |entry| {
@@ -54,16 +56,16 @@ pub fn generateArbitraryUnionWrappedExprMir(cg: *CodeGen, m: *mir.MirNode, membe
         break :blk m.coercion != null;
     };
     if (has_coercion) {
-        try cg.generateCoercedExprMir(m);
+        try cg.generateCoercedExprMir(idx);
         return;
     }
     const tag = inferArbitraryUnionTagMir(m, members_rt);
     if (tag) |t| {
         try cg.emitFmt(".{{ ._{s} = ", .{t});
-        try cg.generateExprMir(m);
+        try cg.generateExprMir(idx);
         try cg.emit(" }");
     } else {
-        try cg.generateExprMir(m);
+        try cg.generateExprMir(idx);
     }
 }
 
@@ -113,7 +115,8 @@ pub fn inferArbitraryUnionTagMir(m: *const mir.MirNode, members_rt: ?[]const RT)
 
 /// MIR-path expression dispatch — switches on MirKind, reads type info from MirNode.
 /// All expression kinds handled via MirNode children — no AST-path fallthrough.
-pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     switch (m.kind) {
         .binary => try generateBinaryMir(cg, m),
         .call => try generateCallMir(cg, m),
@@ -136,45 +139,45 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         .unary => {
             const op = codegen.opToZig(m.op orelse return);
             try cg.emitFmt("{s}(", .{op});
-            try cg.generateExprMir(m.children[0]);
+            try cg.generateExprMir(cg.mirIdx(m.children[0]));
             try cg.emit(")");
         },
         .index => {
-            try cg.generateExprMir(m.children[0]);
+            try cg.generateExprMir(cg.mirIdx(m.children[0]));
             try cg.emit("[");
             const index_is_literal = m.children[1].literal_kind == .int;
             if (!index_is_literal) {
                 try cg.emit("@intCast(");
-                try cg.generateExprMir(m.children[1]);
+                try cg.generateExprMir(cg.mirIdx(m.children[1]));
                 try cg.emit(")");
             } else {
-                try cg.generateExprMir(m.children[1]);
+                try cg.generateExprMir(cg.mirIdx(m.children[1]));
             }
             try cg.emit("]");
         },
         .slice => {
-            try cg.generateExprMir(m.children[0]);
+            try cg.generateExprMir(cg.mirIdx(m.children[0]));
             try cg.emit("[");
             if (m.children[1].literal_kind != .int) {
                 try cg.emit("@intCast(");
-                try cg.generateExprMir(m.children[1]);
+                try cg.generateExprMir(cg.mirIdx(m.children[1]));
                 try cg.emit(")");
             } else {
-                try cg.generateExprMir(m.children[1]);
+                try cg.generateExprMir(cg.mirIdx(m.children[1]));
             }
             try cg.emit("..");
             if (m.children[2].literal_kind != .int) {
                 try cg.emit("@intCast(");
-                try cg.generateExprMir(m.children[2]);
+                try cg.generateExprMir(cg.mirIdx(m.children[2]));
                 try cg.emit(")");
             } else {
-                try cg.generateExprMir(m.children[2]);
+                try cg.generateExprMir(cg.mirIdx(m.children[2]));
             }
             try cg.emit("]");
         },
         .borrow => {
             try cg.emit("&");
-            try cg.generateExprMir(m.children[0]);
+            try cg.generateExprMir(cg.mirIdx(m.children[0]));
         },
         .interpolation => {
             // If the MIR lowerer hoisted this to a temp var, emit just the var name
@@ -184,12 +187,12 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 try cg.generateInterpolatedStringMir(parts, m.children);
             }
         },
-        .compiler_fn => try cg.generateCompilerFuncMir(m),
+        .compiler_fn => try cg.generateCompilerFuncMir(idx),
         .array_lit => {
             try cg.emit(".{");
             for (m.children, 0..) |child, i| {
                 if (i > 0) try cg.emit(", ");
-                try cg.generateExprMir(child);
+                try cg.generateExprMir(cg.mirIdx(child));
             }
             try cg.emit("}");
         },
@@ -200,7 +203,7 @@ pub fn generateExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 if (m.arg_names) |names| {
                     try cg.emitFmt(".{s} = ", .{names[i]});
                 }
-                try cg.generateExprMir(child);
+                try cg.generateExprMir(cg.mirIdx(child));
             }
             try cg.emit(" }");
         },
@@ -241,7 +244,7 @@ fn generateBinaryMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 }
             }
             try cg.emit("(");
-            try cg.generateExprMir(val_mir);
+            try cg.generateExprMir(cg.mirIdx(val_mir));
             try cg.emitFmt(" {s} null)", .{cmp});
             return;
         }
@@ -276,38 +279,38 @@ fn generateBinaryMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     const inner_f = if (is_eq) "true" else "false";
                     const outer_else = if (is_eq) "false" else "true";
                     try cg.emit("(if (");
-                    try cg.generateExprMir(val_mir);
+                    try cg.generateExprMir(cg.mirIdx(val_mir));
                     try cg.emitFmt(") |_oe| (if (_oe) |_| {s} else |_| {s}) else {s})", .{ inner_t, inner_f, outer_else });
                 } else {
                     const t_val = if (is_eq) "false" else "true";
                     const f_val = if (is_eq) "true" else "false";
                     try cg.emit("(if (");
-                    try cg.generateExprMir(val_mir);
+                    try cg.generateExprMir(cg.mirIdx(val_mir));
                     try cg.emitFmt(") |_| {s} else |_| {s})", .{ t_val, f_val });
                 }
                 return;
             }
             if (m.union_tag) |tag| {
                 try cg.emit("(");
-                try cg.generateExprMir(val_mir);
+                try cg.generateExprMir(cg.mirIdx(val_mir));
                 try cg.emitFmt(" {s} ._{d})", .{ cmp, tag });
                 return;
             }
             const zig_rhs = types.Primitive.nameToZig(rhs);
             try cg.emit("(@TypeOf(");
-            try cg.generateExprMir(val_mir);
+            try cg.generateExprMir(cg.mirIdx(val_mir));
             try cg.emitFmt(") {s} {s})", .{ cmp, zig_rhs });
             return;
         }
         if (rhs_mir.kind == .field_access) {
             if (m.union_tag) |tag| {
                 try cg.emit("(");
-                try cg.generateExprMir(val_mir);
+                try cg.generateExprMir(cg.mirIdx(val_mir));
                 try cg.emitFmt(" {s} ._{d})", .{ cmp, tag });
                 return;
             }
             try cg.emit("(@TypeOf(");
-            try cg.generateExprMir(val_mir);
+            try cg.generateExprMir(cg.mirIdx(val_mir));
             try cg.emitFmt(") {s} ", .{cmp});
             try cg.emitTypeMirPath(rhs_mir);
             try cg.emit(")");
@@ -322,58 +325,58 @@ fn generateBinaryMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (!any_vec and bin_op == .div) {
         if (is_float_op) {
             try cg.emit("(");
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emit(" / ");
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
             try cg.emit(")");
         } else {
             try cg.emit("@divTrunc(");
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emit(", ");
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
             try cg.emit(")");
         }
     } else if (!any_vec and bin_op == .mod) {
         if (is_float_op) {
             try cg.emit("(");
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emit(" % ");
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
             try cg.emit(")");
         } else {
             try cg.emit("@mod(");
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emit(", ");
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
             try cg.emit(")");
         }
     } else if (any_vec and lhs_is_vec != rhs_is_vec) {
         const op = codegen.opToZig(bin_op);
         try cg.emit("(");
         if (lhs_is_vec) {
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emitFmt(" {s} ", .{op});
             try cg.emit("@as(@TypeOf(");
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emit("), @splat(");
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
             try cg.emit("))");
         } else {
             try cg.emit("@as(@TypeOf(");
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
             try cg.emit("), @splat(");
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emit("))");
             try cg.emitFmt(" {s} ", .{op});
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
         }
         try cg.emit(")");
     } else {
         const op = codegen.opToZig(bin_op);
         try cg.emit("(");
-        try cg.generateExprMir(m.lhs());
+        try cg.generateExprMir(cg.mirIdx(m.lhs()));
         try cg.emitFmt(" {s} ", .{op});
-        try cg.generateExprMir(m.rhs());
+        try cg.generateExprMir(cg.mirIdx(m.rhs()));
         try cg.emit(")");
     }
 }
@@ -386,14 +389,14 @@ fn generateCallMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const call_arg_names = m.arg_names;
     if (call_arg_names != null and call_arg_names.?.len > 0) {
         const an = call_arg_names.?;
-        try cg.generateExprMir(callee_mir);
+        try cg.generateExprMir(cg.mirIdx(callee_mir));
         try cg.emit("{ ");
         for (call_args, 0..) |arg, i| {
             if (i > 0) try cg.emit(", ");
             if (i < an.len and an[i].len > 0) {
                 try cg.emitFmt(".{s} = ", .{an[i]});
             }
-            try cg.generateExprMir(arg);
+            try cg.generateExprMir(cg.mirIdx(arg));
         }
         try cg.emit(" }");
     } else {
@@ -408,22 +411,22 @@ fn generateCallMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             if (is_struct_type) {
                 try cg.emitFmt("{s}{{}}", .{callee_name});
             } else {
-                try cg.generateExprMir(callee_mir);
+                try cg.generateExprMir(cg.mirIdx(callee_mir));
                 try cg.emit("(");
-                try cg.fillDefaultArgsMir(callee_mir, 0);
+                try cg.fillDefaultArgsMir(cg.mirIdx(callee_mir), 0);
                 try cg.emit(")");
             }
         } else if (call_args.len == 0 and callee_mir.kind == .call) {
-            try cg.generateExprMir(callee_mir);
+            try cg.generateExprMir(cg.mirIdx(callee_mir));
             try cg.emit("{}");
         } else {
-            try cg.generateExprMir(callee_mir);
+            try cg.generateExprMir(cg.mirIdx(callee_mir));
             try cg.emit("(");
             for (call_args, 0..) |arg, i| {
                 if (i > 0) try cg.emit(", ");
-                try cg.generateCoercedExprMir(arg);
+                try cg.generateCoercedExprMir(cg.mirIdx(arg));
             }
-            try cg.fillDefaultArgsMir(callee_mir, call_args.len);
+            try cg.fillDefaultArgsMir(cg.mirIdx(callee_mir), call_args.len);
             try cg.emit(")");
         }
     }
@@ -435,7 +438,6 @@ fn generateFieldAccessMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     const obj_tc = obj_mir.type_class;
 
     // Self-module reference: module.func where module is the current module.
-    // Strip the prefix — re-exports / local defs make it available unqualified.
     if (obj_mir.kind == .identifier) {
         const obj_name = obj_mir.name orelse "";
         if (obj_name.len > 0 and std.mem.eql(u8, obj_name, cg.module_name)) {
@@ -467,11 +469,11 @@ fn generateFieldAccessMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         };
         if (err_tc == .null_error_union) {
             try cg.emit("(if (");
-            try cg.generateExprMir(obj_mir);
+            try cg.generateExprMir(cg.mirIdx(obj_mir));
             try cg.emit(") |_oe| (if (_oe) |_| unreachable else |_e| @errorName(_e)) else unreachable)");
         } else {
             try cg.emit("(if (");
-            try cg.generateExprMir(obj_mir);
+            try cg.generateExprMir(cg.mirIdx(obj_mir));
             try cg.emit(") |_| unreachable else |_e| @errorName(_e))");
         }
     } else if (codegen.isResultValueField(field, cg.decls)) {
@@ -498,26 +500,26 @@ fn generateFieldAccessMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         };
         if (codegen.valueUnwrapForm(eff_tc)) |form| {
             try cg.emit(form.prefix);
-            try cg.generateExprMir(obj_mir);
+            try cg.generateExprMir(cg.mirIdx(obj_mir));
             try cg.emit(form.suffix);
         } else if (eff_tc == .arbitrary_union) {
             if (m.union_tag) |tag| {
-                try cg.generateExprMir(obj_mir);
+                try cg.generateExprMir(cg.mirIdx(obj_mir));
                 try cg.emitFmt("._{d}", .{tag});
             } else {
                 // Fallback: lowerer couldn't resolve the union RT. Preserve the
                 // old codegen behavior by emitting `._<raw_field>` — matches what
                 // the prior arbitrary-union tag fallback path produced when its
                 // lookup failed.
-                try cg.generateExprMir(obj_mir);
+                try cg.generateExprMir(cg.mirIdx(obj_mir));
                 try cg.emitFmt("._{s}", .{field});
             }
         } else {
-            try cg.generateExprMir(obj_mir);
+            try cg.generateExprMir(cg.mirIdx(obj_mir));
             try cg.emitFmt(".{s}", .{field});
         }
     } else {
-        try cg.generateExprMir(obj_mir);
+        try cg.generateExprMir(cg.mirIdx(obj_mir));
         try cg.emitFmt(".{s}", .{field});
     }
 }
@@ -563,41 +565,42 @@ fn generateTypeExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
 }
 
 /// MIR-path coerced expression — prefers MirStore coercion_kind, falls back to MirNode.coercion.
-pub fn generateCoercedExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateCoercedExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     // Prefer MirStore coercion data (set by MirBuilder.inferCoercion in CP2).
     const coercion: mir.Coercion = blk: {
         if (cg.getMirEntryForParserNode(m.ast)) |entry| {
             if (mir_store_mod.coercionFromKind(entry.coercion_kind)) |c| break :blk c;
         }
-        break :blk m.coercion orelse return cg.generateExprMir(m);
+        break :blk m.coercion orelse return cg.generateExprMir(idx);
     };
     switch (coercion) {
         .array_to_slice => {
             try cg.emit("&");
-            try cg.generateExprMir(m);
+            try cg.generateExprMir(idx);
         },
         // Native ?T and anyerror!T — Zig handles coercion automatically
         .null_wrap, .error_wrap => {
-            try cg.generateExprMir(m);
+            try cg.generateExprMir(idx);
         },
         .arbitrary_union_wrap => |tag| {
             try cg.emitFmt(".{{ ._{d} = ", .{tag});
-            try cg.generateExprMir(m);
+            try cg.generateExprMir(idx);
             try cg.emit(" }");
         },
         .optional_unwrap => {
             // Native ?T: unwrap → .?
-            try cg.generateExprMir(m);
+            try cg.generateExprMir(idx);
             try cg.emit(".?");
         },
         .value_to_const_ref => {
             // T → *const T: take address for const & parameter passing
             // Skip extra & if the expression is already an explicit borrow (const &x)
             if (m.kind == .borrow) {
-                try cg.generateExprMir(m);
+                try cg.generateExprMir(idx);
             } else {
                 try cg.emit("&");
-                try cg.generateExprMir(m);
+                try cg.generateExprMir(idx);
             }
         },
     }
@@ -616,45 +619,46 @@ pub fn mirIsVector(m: *const mir.MirNode) bool {
     return false;
 }
 
-// Generate a while continue expression — same as assignment but no trailing semicolon.
 /// MIR-path continue expression for while loops.
-pub fn generateContinueExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateContinueExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     if (m.kind == .assignment) {
         const assign_op = m.op orelse .assign;
         if (assign_op == .div_assign) {
             const is_float_cont = m.lhs().resolved_type == .primitive and m.lhs().resolved_type.primitive.isFloat();
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             if (is_float_cont) {
                 try cg.emit(" = (");
-                try cg.generateExprMir(m.lhs());
+                try cg.generateExprMir(cg.mirIdx(m.lhs()));
                 try cg.emit(" / ");
-                try cg.generateExprMir(m.rhs());
+                try cg.generateExprMir(cg.mirIdx(m.rhs()));
                 try cg.emit(")");
             } else {
                 try cg.emit(" = @divTrunc(");
-                try cg.generateExprMir(m.lhs());
+                try cg.generateExprMir(cg.mirIdx(m.lhs()));
                 try cg.emit(", ");
-                try cg.generateExprMir(m.rhs());
+                try cg.generateExprMir(cg.mirIdx(m.rhs()));
                 try cg.emit(")");
             }
         } else {
-            try cg.generateExprMir(m.lhs());
+            try cg.generateExprMir(cg.mirIdx(m.lhs()));
             try cg.emitFmt(" {s} ", .{assign_op.toZig()});
-            try cg.generateExprMir(m.rhs());
+            try cg.generateExprMir(cg.mirIdx(m.rhs()));
         }
     } else {
-        try cg.generateExprMir(m);
+        try cg.generateExprMir(idx);
     }
 }
 
 /// MIR-path range expression for for-loops.
-pub fn writeRangeExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn writeRangeExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const left_is_literal = m.lhs().literal_kind == .int;
     if (left_is_literal) {
-        try cg.generateExprMir(m.lhs());
+        try cg.generateExprMir(cg.mirIdx(m.lhs()));
     } else {
         try cg.emit("@intCast(");
-        try cg.generateExprMir(m.lhs());
+        try cg.generateExprMir(cg.mirIdx(m.lhs()));
         try cg.emit(")");
     }
     try cg.emit("..");
@@ -662,20 +666,17 @@ pub fn writeRangeExprMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     if (m.rhs().ast.* == .type_named) return;
     const right_is_literal = m.rhs().literal_kind == .int;
     if (right_is_literal) {
-        try cg.generateExprMir(m.rhs());
+        try cg.generateExprMir(cg.mirIdx(m.rhs()));
     } else {
         try cg.emit("@intCast(");
-        try cg.generateExprMir(m.rhs());
+        try cg.generateExprMir(cg.mirIdx(m.rhs()));
         try cg.emit(")");
     }
 }
 
-/// Generate string interpolation using std.fmt.allocPrint.
-/// Hoists the allocPrint call to a temp variable in pre_stmts, then emits only the
 /// MIR-path for loop codegen — Zig-style multi-object for.
-/// Each iterable in the header maps positionally to a capture.
-/// Range captures keep their native usize type — no hidden @intCast.
-pub fn generateForMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateForMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const caps = m.captures orelse &.{};
     const iters = m.iterables();
 
@@ -686,14 +687,14 @@ pub fn generateForMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         try cg.emit(inline_prefix);
         try cg.emit("for (");
         // First iterable: the struct slice
-        try cg.generateExprMir(iters[0]);
+        try cg.generateExprMir(cg.mirIdx(iters[0]));
         // Additional iterables (e.g., 0..)
         for (iters[1..]) |iter_m| {
             try cg.emit(", ");
             if (iter_m.kind == .binary and (iter_m.op orelse .assign) == .range) {
-                try cg.writeRangeExprMir(iter_m);
+                try cg.writeRangeExprMir(cg.mirIdx(iter_m));
             } else {
-                try cg.generateExprMir(iter_m);
+                try cg.generateExprMir(cg.mirIdx(iter_m));
             }
         }
         try cg.emit(") |_orhon_entry");
@@ -718,7 +719,7 @@ pub fn generateForMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         }
         for (m.body().children) |child| {
             try cg.emitIndent();
-            try cg.generateStatementMir(child);
+            try cg.generateStatementMir(cg.mirIdx(child));
             try cg.emit("\n");
         }
         cg.indent -= 1;
@@ -733,9 +734,9 @@ pub fn generateForMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     for (iters, 0..) |iter_m, i| {
         if (i > 0) try cg.emit(", ");
         if (iter_m.kind == .binary and (iter_m.op orelse .assign) == .range) {
-            try cg.writeRangeExprMir(iter_m);
+            try cg.writeRangeExprMir(cg.mirIdx(iter_m));
         } else {
-            try cg.generateExprMir(iter_m);
+            try cg.generateExprMir(cg.mirIdx(iter_m));
         }
     }
     try cg.emit(") |");
@@ -744,7 +745,7 @@ pub fn generateForMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
         try cg.emit(cap);
     }
     try cg.emit("| ");
-    try cg.generateBlockMir(m.body());
+    try cg.generateBlockMir(cg.mirIdx(m.body()));
 }
 
 /// Resolve struct field signatures from a slice/array element type via declarations.
@@ -764,7 +765,8 @@ fn resolveStructFieldNames(iter_type: RT, decls: ?*declarations.DeclTable) ?[]co
 }
 
 /// MIR-path destructuring codegen.
-pub fn generateDestructMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateDestructMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const d_names = m.names orelse &.{};
     const decl_keyword: []const u8 = if (m.is_const) "const" else "var";
     const val_m = m.value();
@@ -775,31 +777,31 @@ pub fn generateDestructMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
             const destruct_idx = cg.destruct_counter;
             cg.destruct_counter += 1;
             try cg.emitFmt("var _orhon_s{d}: usize = @intCast(", .{destruct_idx});
-            try cg.generateExprMir(val_m.children[1]);
+            try cg.generateExprMir(cg.mirIdx(val_m.children[1]));
             try cg.emit(");\n");
             try cg.emitIndent();
             try cg.emitFmt("_ = &_orhon_s{d};\n", .{destruct_idx});
             try cg.emitIndent();
             try cg.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[0] });
-            try cg.generateExprMir(val_m.children[0]);
+            try cg.generateExprMir(cg.mirIdx(val_m.children[0]));
             try cg.emitFmt("[0.._orhon_s{d}];\n", .{destruct_idx});
             try cg.emitIndent();
             try cg.emitFmt("{s} {s} = ", .{ decl_keyword, d_names[1] });
-            try cg.generateExprMir(val_m.children[0]);
+            try cg.generateExprMir(cg.mirIdx(val_m.children[0]));
             try cg.emitFmt("[_orhon_s{d}..];", .{destruct_idx});
             return;
         }
     }
     // Normal tuple destructuring
-    const idx = cg.destruct_counter;
+    const di = cg.destruct_counter;
     cg.destruct_counter += 1;
-    try cg.emitFmt("const _orhon_d{d} = ", .{idx});
-    try cg.generateExprMir(val_m);
+    try cg.emitFmt("const _orhon_d{d} = ", .{di});
+    try cg.generateExprMir(cg.mirIdx(val_m));
     try cg.emit(";");
     for (d_names) |name| {
         try cg.emit("\n");
         try cg.emitIndent();
-        try cg.emitFmt("{s} {s} = _orhon_d{d}.{s};", .{ decl_keyword, name, idx, name });
+        try cg.emitFmt("{s} {s} = _orhon_d{d}.{s};", .{ decl_keyword, name, di, name });
     }
 }
 
@@ -826,4 +828,3 @@ test "findMemberByKind" {
     try std.testing.expect(findMemberByKind(members, .float) == null);
     try std.testing.expect(findMemberByKind(null, .int) == null);
 }
-

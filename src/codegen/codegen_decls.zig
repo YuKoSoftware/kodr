@@ -10,8 +10,10 @@ const declarations = @import("../declarations.zig");
 const errors = @import("../errors.zig");
 const K = @import("../constants.zig");
 const RT = @import("../types.zig").ResolvedType;
+const mir_store_mod = @import("../mir_store.zig");
 
 const CodeGen = codegen.CodeGen;
+const MirNodeIndex = mir_store_mod.MirNodeIndex;
 
 // ============================================================
 // FUNCTIONS
@@ -25,7 +27,8 @@ pub fn generateZigReExport(cg: *CodeGen, name: []const u8, is_pub: bool) anyerro
 }
 
 /// MIR-path function codegen — reads all data from MirNode.
-pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateFuncMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const func_name = m.name orelse return;
 
     // zig-backed module — re-export from zig source module
@@ -130,7 +133,7 @@ pub fn generateFuncMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     try cg.emit(" ");
 
     // Body
-    try cg.generateBlockMir(body_m);
+    try cg.generateBlockMir(cg.mirIdx(body_m));
     try cg.emit("\n");
 }
 
@@ -203,7 +206,8 @@ pub fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 {
 // ============================================================
 
 /// MIR-path struct codegen — iterates MirNode children instead of AST members.
-pub fn generateStructMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateStructMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const struct_name = m.name orelse return;
     if (try cg.reExportIfZigModule(struct_name, m.is_pub)) return;
 
@@ -267,7 +271,7 @@ pub fn emitStructBody(cg: *CodeGen, children: []*mir.MirNode) anyerror!void {
                 try cg.emitFmt("{s}: {s}", .{ fname, try cg.typeToZig(child.type_annotation orelse continue) });
                 if (child.defaultChild()) |dv_mir| {
                     try cg.emit(" = ");
-                    try cg.generateExprMir(dv_mir);
+                    try cg.generateExprMir(cg.mirIdx(dv_mir));
                 }
                 try cg.emit(",\n");
             },
@@ -275,7 +279,7 @@ pub fn emitStructBody(cg: *CodeGen, children: []*mir.MirNode) anyerror!void {
                 const prev = cg.current_func_mir;
                 cg.current_func_mir = child;
                 defer cg.current_func_mir = prev;
-                try cg.generateFuncMir(child);
+                try cg.generateFuncMir(cg.mirIdx(child));
             },
             .var_decl => {
                 const decl_kw: []const u8 = if (child.is_const) "const" else "var";
@@ -284,7 +288,7 @@ pub fn emitStructBody(cg: *CodeGen, children: []*mir.MirNode) anyerror!void {
                 try cg.emitFmt("{s} {s}", .{ decl_kw, cname });
                 if (child.type_annotation) |t| try cg.emitFmt(": {s}", .{try cg.typeToZig(t)});
                 try cg.emit(" = ");
-                try cg.generateExprMir(child.value());
+                try cg.generateExprMir(cg.mirIdx(child.value()));
                 try cg.emit(";\n");
             },
             else => {},
@@ -297,7 +301,8 @@ pub fn emitStructBody(cg: *CodeGen, children: []*mir.MirNode) anyerror!void {
 // ============================================================
 
 /// MIR-path enum codegen — iterates MirNode children instead of AST members.
-pub fn generateEnumMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateEnumMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const enum_name = m.name orelse return;
     if (m.is_pub) try cg.emit("pub ");
 
@@ -330,7 +335,8 @@ pub fn generateEnumMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
 // ============================================================
 
 /// MIR-path handle codegen — emits `const Name = *anyopaque;`
-pub fn generateHandleMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateHandleMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const handle_name = m.name orelse return;
     if (try cg.reExportIfZigModule(handle_name, m.is_pub)) return;
 
@@ -349,7 +355,8 @@ pub fn isTypeAlias(type_annotation: ?*parser.Node) bool {
 }
 
 /// MIR-path top-level var/const/compt declaration.
-pub fn generateTopLevelDeclMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateTopLevelDeclMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const name = m.name orelse return;
     if (try cg.reExportIfZigModule(name, m.is_pub)) return;
 
@@ -370,13 +377,13 @@ pub fn generateTopLevelDeclMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     }
     try cg.emit(" = ");
     if (m.type_class == .arbitrary_union) {
-        try cg.generateCoercedExprMir(m.value());
+        try cg.generateCoercedExprMir(cg.mirIdx(m.value()));
     } else if (m.value().kind == .type_expr) {
         // Type in expression position = default constructor (.{})
         try cg.emit(".{}");
     } else {
         // Native ?T and anyerror!T — Zig handles coercion, no wrapping needed
-        try cg.generateExprMir(m.value());
+        try cg.generateExprMir(cg.mirIdx(m.value()));
     }
     try cg.emit(";\n");
 }
@@ -385,14 +392,15 @@ pub fn generateTopLevelDeclMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
 // TESTS
 // ============================================================
 
-pub fn generateTestMir(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
+pub fn generateTestMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
+    const m = cg.getOldMirNode(idx) orelse return;
     const description = m.name orelse return;
     try cg.emitFmt("test {s} ", .{description});
     const prev_reassigned_vars = cg.reassigned_vars;
     cg.reassigned_vars = .{};
     try collectAssignedMir(m.body(), &cg.reassigned_vars, cg.allocator);
     cg.in_test_block = true;
-    try cg.generateBlockMir(m.body());
+    try cg.generateBlockMir(cg.mirIdx(m.body()));
     cg.in_test_block = false;
     cg.reassigned_vars.deinit(cg.allocator);
     cg.reassigned_vars = prev_reassigned_vars;
