@@ -85,6 +85,8 @@ pub const CodeGen = struct {
     emitted_names: std.StringHashMapUnmanaged(void) = .{},
     // MIR node for the current function — set by generateFuncMir.
     current_func_mir: ?*mir.MirNode = null,
+    // MirStore index for the current function — set by generateFuncMir (MirStore path).
+    current_func_idx: mir_store_mod.MirNodeIndex = .none,
     // Pre-statement hoisting buffer — interpolation temp vars are appended here,
     // flushed to main output before the statement that references them.
     pre_stmts: std.ArrayListUnmanaged(u8) = .{},
@@ -118,6 +120,12 @@ pub const CodeGen = struct {
 
     /// Whether the current function is a compt function (all loops should be inline).
     pub fn inComptFunc(self: *const CodeGen) bool {
+        if (self.current_func_idx != .none) {
+            if (self.mir_store) |store| {
+                const rec = mir_typed.Func.unpack(store, self.current_func_idx);
+                return (rec.flags & 2) != 0; // FLAG_COMPT
+            }
+        }
         if (self.current_func_mir) |m| return m.is_compt;
         return false;
     }
@@ -125,6 +133,11 @@ pub const CodeGen = struct {
     /// Get the TypeClass of the current function's return type from MIR.
     /// Only valid in MIR-path codegen (current_func_mir set by generateFuncMir).
     pub fn funcReturnTypeClass(self: *const CodeGen) mir.TypeClass {
+        if (self.current_func_idx != .none) {
+            if (self.mir_store) |store| {
+                return store.getNode(self.current_func_idx).type_class;
+            }
+        }
         if (self.current_func_mir) |m| return m.type_class;
         return .plain;
     }
@@ -132,6 +145,15 @@ pub const CodeGen = struct {
     /// Get the union members of the current function's return type from MIR.
     /// Only valid in MIR-path codegen (current_func_mir set by generateFuncMir).
     pub fn funcReturnMembers(self: *const CodeGen) ?[]const RT {
+        if (self.current_func_idx != .none) {
+            if (self.mir_store) |store| {
+                const entry = store.getNode(self.current_func_idx);
+                if (entry.type_id != .none) {
+                    const rt = store.types.get(entry.type_id);
+                    if (rt == .union_type) return rt.union_type;
+                }
+            }
+        }
         if (self.current_func_mir) |m| {
             if (m.resolved_type == .union_type) return m.resolved_type.union_type;
         }
@@ -415,16 +437,16 @@ pub const CodeGen = struct {
         try self.emit("\n");
 
         // Generate top-level declarations.
-        // C2-C6: all functions now accept MirNodeIndex; bridge old MirNode tree via span_to_old_mir.
-        const root = self.mir_root orelse return error.CompileError;
-        try self.populateOldMirMap(root);
         if (self.mir_store != null and self.mir_root_idx != .none) {
+            // Populate span_to_old_mir bridge if old tree is available (satellite files still use getOldMirNode).
+            if (self.mir_root) |root| try self.populateOldMirMap(root);
             const store = self.mir_store.?;
             for (mir_typed.Block.getStmts(store, self.mir_root_idx)) |idx| {
                 try self.generateTopLevelMir(idx);
                 try self.emit("\n");
             }
-        } else {
+        } else if (self.mir_root) |root| {
+            try self.populateOldMirMap(root);
             for (root.children) |child_m| {
                 const child_idx = self.mirIdx(child_m);
                 if (child_idx != .none) {
@@ -432,6 +454,8 @@ pub const CodeGen = struct {
                     try self.emit("\n");
                 }
             }
+        } else {
+            return error.CompileError;
         }
 
         // Insert _unions import if any arbitrary unions were used in this module
@@ -488,16 +512,52 @@ pub const CodeGen = struct {
 
     /// MIR-path top-level dispatch — switches on MirKind.
     pub fn generateTopLevelMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void {
+        // MirStore path — preferred when MirStore is available and idx is a real entry
+        if (self.mir_store) |store| {
+            const raw: u32 = @intFromEnum(idx);
+            if (raw > 0 and raw < store.nodes.len) {
+                const entry = store.getNode(idx);
+                // Deduplicate: mixed modules merge sidecar .orh files, which can duplicate
+                // declarations from the user's .orh. Skip if we already emitted this name.
+                if (self.has_zig_sidecar) {
+                    const name_opt: ?[]const u8 = switch (entry.tag) {
+                        .func => store.strings.get(mir_typed.Func.unpack(store, idx).name),
+                        .struct_def => store.strings.get(mir_typed.StructDef.unpack(store, idx).name),
+                        .enum_def => store.strings.get(mir_typed.EnumDef.unpack(store, idx).name),
+                        .handle_def => store.strings.get(mir_typed.HandleDef.unpack(store, idx).name),
+                        .var_decl => store.strings.get(mir_typed.VarDecl.unpack(store, idx).name),
+                        else => null,
+                    };
+                    if (name_opt) |name| {
+                        if (self.emitted_names.contains(name)) return;
+                        try self.emitted_names.put(self.allocator, name, {});
+                    }
+                }
+                switch (entry.tag) {
+                    .func => {
+                        const prev_idx = self.current_func_idx;
+                        self.current_func_idx = idx;
+                        defer self.current_func_idx = prev_idx;
+                        try self.generateFuncMir(idx);
+                    },
+                    .struct_def => try self.generateStructMir(idx),
+                    .enum_def => try self.generateEnumMir(idx),
+                    .handle_def => try self.generateHandleMir(idx),
+                    .var_decl => try self.generateTopLevelDeclMir(idx),
+                    .test_def => try self.generateTestMir(idx),
+                    else => {},
+                }
+                return;
+            }
+        }
+        // Old-path fallback: synthetic index or no MirStore
         const m = self.getOldMirNode(idx) orelse return;
-        // Deduplicate: mixed modules merge sidecar .orh files, which can duplicate
-        // declarations from the user's .orh. Skip if we already emitted this name.
         if (self.has_zig_sidecar) {
             if (m.name) |name| {
                 if (self.emitted_names.contains(name)) return;
                 try self.emitted_names.put(self.allocator, name, {});
             }
         }
-
         switch (m.kind) {
             .func => {
                 const prev = self.current_func_mir;
@@ -510,7 +570,7 @@ pub const CodeGen = struct {
             .handle_def => try self.generateHandleMir(idx),
             .var_decl => try self.generateTopLevelDeclMir(idx),
             .test_def => try self.generateTestMir(idx),
-            .import => {}, // imports handled separately in generate()
+            .import => {},
             else => {},
         }
     }

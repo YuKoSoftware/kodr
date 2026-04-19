@@ -179,35 +179,26 @@ fn generateFuncMirFromStore(cg: *CodeGen, store: *const MirStore, idx: MirNodeIn
                 return;
             }
             // Void empty body with params = sidecar function; without params = legit empty.
-            // Bridge via getOldMirNode for correct param count — params_start/params_end
-            // in MirStore extra_data interleave ParamDefExtra words with MirNodeIndex values.
-            // TODO Task 5: use a clean MirStore param count.
-            if (cg.getOldMirNode(idx)) |func_m_for_check| {
-                if (func_m_for_check.params().len > 0) {
-                    if (try cg.reExportIfSidecar(func_name, is_pub)) return;
-                }
+            if (rec.params_end > rec.params_start) {
+                if (try cg.reExportIfSidecar(func_name, is_pub)) return;
             }
         }
     }
 
     // Track current function for MIR return type queries.
-    // NOTE: The outer caller (generateTopLevelMir) already sets current_func_mir
-    // before calling us. The inner save/restore is kept for the struct-method case,
-    // where emitStructBodyFromStore sets current_func_mir via getOldMirNode.
-    // TODO Task 5: replace with current_func_idx.
     const prev_func_mir = cg.current_func_mir;
+    const prev_func_idx = cg.current_func_idx;
+    cg.current_func_idx = idx;
     const prev_reassigned_vars = cg.reassigned_vars;
     cg.reassigned_vars = .{};
-    // collectAssignedMir still needs old *MirNode — TODO Task 5: replace with MirStore walk.
-    if (cg.getOldMirNode(rec.body)) |body_m| {
-        try collectAssignedMir(body_m, &cg.reassigned_vars, cg.allocator);
-    }
+    try collectAssignedMirFromStore(store, rec.body, &cg.reassigned_vars, cg.allocator);
     const prev_error_narrowed = cg.error_narrowed;
     cg.error_narrowed = .{};
     const prev_null_narrowed = cg.null_narrowed;
     cg.null_narrowed = .{};
     defer {
         cg.current_func_mir = prev_func_mir;
+        cg.current_func_idx = prev_func_idx;
         cg.reassigned_vars.deinit(cg.allocator);
         cg.reassigned_vars = prev_reassigned_vars;
         cg.error_narrowed.deinit(cg.allocator);
@@ -227,38 +218,34 @@ fn generateFuncMirFromStore(cg: *CodeGen, store: *const MirStore, idx: MirNodeIn
 
     try cg.emitFmt("fn {s}(", .{func_name});
 
-    // Parameters — use old MirNode params() for correct traversal.
-    // The params_start..params_end range in MirStore extra_data interleaves
-    // ParamDefExtra words with param MirNodeIndex values; stride is not uniform
-    // when params have default values. Bridge via getOldMirNode for safety.
-    // TODO Task 5: replace with a clean MirStore param iteration.
+    // Parameters — MirStore path: flat MirNodeIndex list in extra_data.
     var first_any_param: ?[]const u8 = null;
-    const func_m_opt = cg.getOldMirNode(idx);
-    if (func_m_opt) |func_m| {
-        for (func_m.params(), 0..) |param_m, i| {
-            if (i > 0) try cg.emit(", ");
-            const pname = param_m.name orelse continue;
-            const pta = param_m.type_annotation orelse continue;
-            const is_any = pta.* == .type_named and
-                std.mem.eql(u8, pta.type_named, K.Type.ANY);
-            const is_type_param = pta.* == .type_named and
-                std.mem.eql(u8, pta.type_named, K.Type.TYPE);
-            if (is_any and first_any_param == null) first_any_param = pname;
-            if (is_type_param) {
-                try cg.emitFmt("comptime {s}: type", .{pname});
-            } else if (is_type_generic and is_any) {
-                try cg.emitFmt("comptime {s}: anytype", .{pname});
-            } else if (is_compt and is_any) {
-                try cg.emitFmt("comptime {s}: anytype", .{pname});
-            } else if (is_any) {
-                try cg.emitFmt("{s}: anytype", .{pname});
-            } else if (is_compt and !is_type_generic) {
-                const zig_type = try cg.typeToZig(pta);
-                try cg.emitFmt("comptime {s}: {s}", .{ pname, zig_type });
-            } else {
-                const zig_type = try cg.typeToZig(pta);
-                try cg.emitFmt("{s}: {s}", .{ pname, zig_type });
-            }
+    const params_extra = store.extra_data.items[rec.params_start..rec.params_end];
+    for (params_extra, 0..) |pu32, i| {
+        const param_idx: MirNodeIndex = @enumFromInt(pu32);
+        const p = mir_typed.ParamDef.unpack(store, param_idx);
+        const pname = store.strings.get(p.name);
+        const pta = cg.getAstNode(p.type_annotation) orelse continue;
+        if (i > 0) try cg.emit(", ");
+        const is_any = pta.* == .type_named and
+            std.mem.eql(u8, pta.type_named, K.Type.ANY);
+        const is_type_param = pta.* == .type_named and
+            std.mem.eql(u8, pta.type_named, K.Type.TYPE);
+        if (is_any and first_any_param == null) first_any_param = pname;
+        if (is_type_param) {
+            try cg.emitFmt("comptime {s}: type", .{pname});
+        } else if (is_type_generic and is_any) {
+            try cg.emitFmt("comptime {s}: anytype", .{pname});
+        } else if (is_compt and is_any) {
+            try cg.emitFmt("comptime {s}: anytype", .{pname});
+        } else if (is_any) {
+            try cg.emitFmt("{s}: anytype", .{pname});
+        } else if (is_compt and !is_type_generic) {
+            const zig_type = try cg.typeToZig(pta);
+            try cg.emitFmt("comptime {s}: {s}", .{ pname, zig_type });
+        } else {
+            const zig_type = try cg.typeToZig(pta);
+            try cg.emitFmt("{s}: {s}", .{ pname, zig_type });
         }
     }
 
@@ -345,6 +332,82 @@ pub fn getRootIdentMir(m: *const mir.MirNode) ?[]const u8 {
         .index => if (m.children.len > 0) getRootIdentMir(m.children[0]) else null,
         else => null,
     };
+}
+
+fn getRootIdentMirFromStore(store: *const MirStore, idx: MirNodeIndex) ?[]const u8 {
+    if (idx == .none) return null;
+    const raw: u32 = @intFromEnum(idx);
+    if (raw >= store.nodes.len) return null;
+    const entry = store.getNode(idx);
+    return switch (entry.tag) {
+        .identifier => store.strings.get(mir_typed.Identifier.unpack(store, idx).name),
+        .field_access => getRootIdentMirFromStore(store, mir_typed.FieldAccess.unpack(store, idx).object),
+        .index => getRootIdentMirFromStore(store, mir_typed.Index.unpack(store, idx).object),
+        else => null,
+    };
+}
+
+fn collectAssignedMirFromStore(store: *const MirStore, idx: MirNodeIndex, set: *std.StringHashMapUnmanaged(void), alloc: std.mem.Allocator) anyerror!void {
+    if (idx == .none) return;
+    const raw: u32 = @intFromEnum(idx);
+    if (raw >= store.nodes.len) return;
+    const entry = store.getNode(idx);
+    switch (entry.tag) {
+        .assignment => {
+            const rec = mir_typed.Assignment.unpack(store, idx);
+            if (getRootIdentMirFromStore(store, rec.lhs)) |name| try set.put(alloc, name, {});
+            try collectAssignedMirFromStore(store, rec.rhs, set, alloc);
+        },
+        .call => {
+            const rec = mir_typed.Call.unpack(store, idx);
+            const callee_entry = store.getNode(rec.callee);
+            if (callee_entry.tag == .field_access) {
+                const fa_rec = mir_typed.FieldAccess.unpack(store, rec.callee);
+                if (getRootIdentMirFromStore(store, fa_rec.object)) |name| {
+                    try set.put(alloc, name, {});
+                }
+            }
+            for (store.extra_data.items[rec.args_start..rec.args_end]) |u|
+                try collectAssignedMirFromStore(store, @enumFromInt(u), set, alloc);
+        },
+        .block => {
+            for (mir_typed.Block.getStmts(store, idx)) |s|
+                try collectAssignedMirFromStore(store, s, set, alloc);
+        },
+        .func => {}, // nested function — own scope
+        .if_stmt => {
+            const rec = mir_typed.IfStmt.unpack(store, idx);
+            try collectAssignedMirFromStore(store, rec.condition, set, alloc);
+            if (rec.then_block != .none) try collectAssignedMirFromStore(store, rec.then_block, set, alloc);
+            if (rec.else_block != .none) try collectAssignedMirFromStore(store, rec.else_block, set, alloc);
+        },
+        .while_stmt => {
+            const rec = mir_typed.WhileStmt.unpack(store, idx);
+            try collectAssignedMirFromStore(store, rec.condition, set, alloc);
+            try collectAssignedMirFromStore(store, rec.body, set, alloc);
+        },
+        .for_stmt => {
+            const rec = mir_typed.ForStmt.unpack(store, idx);
+            try collectAssignedMirFromStore(store, rec.body, set, alloc);
+        },
+        .var_decl => {
+            const rec = mir_typed.VarDecl.unpack(store, idx);
+            if (rec.value != .none) try collectAssignedMirFromStore(store, rec.value, set, alloc);
+        },
+        .match_stmt => {
+            const rec = mir_typed.MatchStmt.unpack(store, idx);
+            for (store.extra_data.items[rec.arms_start..rec.arms_end]) |u| {
+                const arm_idx: MirNodeIndex = @enumFromInt(u);
+                const arm_rec = mir_typed.MatchArm.unpack(store, arm_idx);
+                try collectAssignedMirFromStore(store, arm_rec.body, set, alloc);
+            }
+        },
+        .defer_stmt => {
+            const rec = mir_typed.DeferStmt.unpack(store, idx);
+            try collectAssignedMirFromStore(store, rec.body, set, alloc);
+        },
+        else => {},
+    }
 }
 
 // ============================================================
@@ -548,13 +611,9 @@ fn emitStructBodyFromStore(cg: *CodeGen, store: *const MirStore, member_extras: 
                 try cg.emit(",\n");
             },
             .func => {
-                const prev = cg.current_func_mir;
-                // current_func_mir still expects old *mir.MirNode; bridge via getOldMirNode.
-                // If getOldMirNode returns null (no old-tree entry), current_func_mir retains
-                // the outer struct's value — stale but non-crashing for this migration phase.
-                // TODO Task 5: replace with current_func_idx field.
-                if (cg.getOldMirNode(child_idx)) |old_m| cg.current_func_mir = old_m;
-                defer cg.current_func_mir = prev;
+                const prev_idx = cg.current_func_idx;
+                cg.current_func_idx = child_idx;
+                defer cg.current_func_idx = prev_idx;
                 try cg.generateFuncMir(child_idx);
             },
             .var_decl => {
