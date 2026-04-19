@@ -140,31 +140,118 @@ fn emitUnwrapBindingNamed(cg: *CodeGen, bind_name: []const u8, source_name: []co
     }
 }
 
-/// MIR-path block generation — walks MirNode children instead of AST statements.
-/// NOTE: Uses old MirNode children to preserve injected temp_var/injected_defer nodes
-/// (interpolation hoisting). MirStore Block.getStmts will be used in B10 when
-/// the old MIR tree is removed and MirBuilder handles interpolation injection.
+/// MIR-path block generation — reads stmt list from MirStore Block.
+/// Falls back to old MirNode children when MirStore is unavailable.
 pub fn generateBlockMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    try cg.emit("{\n");
-    cg.indent += 1;
-    try emitStatementsWithNarrowing(cg, m.children);
-    cg.indent -= 1;
-    try cg.emitIndent();
-    try cg.emit("}");
+    if (cg.mir_store) |store| {
+        const stmts = mir_typed.Block.getStmts(store, idx);
+        try cg.emit("{\n");
+        cg.indent += 1;
+        try emitStatementsWithNarrowing(cg, stmts);
+        cg.indent -= 1;
+        try cg.emitIndent();
+        try cg.emit("}");
+    } else {
+        // Old-path fallback when MirStore is unavailable
+        const m = cg.getOldMirNode(idx) orelse return;
+        try cg.emit("{\n");
+        cg.indent += 1;
+        try emitStatementsWithNarrowingOld(cg, m.children);
+        cg.indent -= 1;
+        try cg.emitIndent();
+        try cg.emit("}");
+    }
 }
 
 /// Emit the body statements of a block node, already inside an outer `{`.
 /// Caller must manage indentation and surrounding braces.
-/// NOTE: Uses old MirNode children for the same reason as generateBlockMir.
+/// Falls back to old MirNode children when MirStore is unavailable.
 pub fn generateBodyStatements(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    try emitStatementsWithNarrowing(cg, m.children);
+    if (cg.mir_store) |store| {
+        const stmts = mir_typed.Block.getStmts(store, idx);
+        try emitStatementsWithNarrowing(cg, stmts);
+    } else {
+        const m = cg.getOldMirNode(idx) orelse return;
+        try emitStatementsWithNarrowingOld(cg, m.children);
+    }
 }
 
-/// Emit a slice of statements, handling post-if narrowing at each step.
+/// Emit a slice of MirNodeIndex statements, handling post-if narrowing at each step.
 /// When narrowing fires, emits a binding and recursively processes remaining siblings.
-fn emitStatementsWithNarrowing(cg: *CodeGen, stmts: []*mir.MirNode) anyerror!void {
+fn emitStatementsWithNarrowing(cg: *CodeGen, stmts: []const MirNodeIndex) anyerror!void {
+    const store = cg.mir_store.?;
+    for (stmts, 0..) |child_idx, i| {
+        try cg.flushPreStmts();
+        try cg.emitIndent();
+        try generateStatementMir(cg, child_idx);
+        try cg.emit("\n");
+        // Post-if narrowing: if this if_stmt has early exit and post_branch,
+        // emit a binding for the narrowed variable and substitute in remaining siblings.
+        if (store.getNode(child_idx).tag == .if_stmt) {
+            const narrowing_opt: ?mir.IfNarrowing = if (cg.getOldMirNode(child_idx)) |m|
+                readNarrowingFromStore(cg, m.ast) orelse m.narrowing
+            else
+                null;
+            if (narrowing_opt) |narrowing| {
+                if (narrowing.post_branch) |pb| {
+                    const var_name = narrowing.var_name;
+                    // Skip if variable is already fully unwrapped (.plain) from a prior narrowing
+                    if (cg.match_var_subst) |subst| {
+                        if (subst.eff_tc != null and subst.eff_tc.? == .plain and
+                            std.mem.eql(u8, var_name, subst.original)) continue;
+                    }
+                    // Use the effective name (after any active substitution) for the unwrap source
+                    const source_name = if (cg.match_var_subst) |subst|
+                        (if (std.mem.eql(u8, var_name, subst.original)) subst.capture else var_name)
+                    else
+                        var_name;
+                    // Check if any subsequent sibling references the variable
+                    const remaining = stmts[i + 1 ..];
+                    var any_uses = false;
+                    for (remaining) |sib_idx| {
+                        if (match_impl.mirContainsIdentifier(store, sib_idx, var_name)) {
+                            any_uses = true;
+                            break;
+                        }
+                    }
+                    if (any_uses) {
+                        const bind_name = try std.fmt.allocPrint(cg.allocator, "_is_{d}", .{cg.narrowing_count});
+                        try cg.type_strings.append(cg.allocator, bind_name); // track for cleanup
+                        cg.narrowing_count += 1;
+                        // Determine effective type_class for the unwrap expression.
+                        const already_subst = !std.mem.eql(u8, source_name, var_name);
+                        const eff_tc = blk: {
+                            if (narrowing.type_class == .null_error_union and !already_subst) {
+                                if (narrowing.then_branch) |tb| {
+                                    if (tb.kind == .null_sentinel) break :blk mir.TypeClass.null_union;
+                                    if (tb.kind == .error_sentinel) break :blk mir.TypeClass.null_error_union;
+                                }
+                            }
+                            if (narrowing.then_branch) |tb| {
+                                if (tb.kind == .null_sentinel) break :blk mir.TypeClass.null_union;
+                                if (tb.kind == .error_sentinel) break :blk mir.TypeClass.error_union;
+                            }
+                            break :blk narrowing.type_class;
+                        };
+                        try cg.emitIndent();
+                        try emitUnwrapBindingNamed(cg, bind_name, source_name, pb, eff_tc);
+                        try cg.emit("\n");
+                        const prev = cg.match_var_subst;
+                        const subst_tc: ?mir.TypeClass = if (eff_tc == .null_error_union) .plain else eff_tc;
+                        cg.match_var_subst = .{ .original = var_name, .capture = bind_name, .eff_tc = subst_tc };
+                        // Recursively process remaining siblings — handles cascading narrowing
+                        try emitStatementsWithNarrowing(cg, remaining);
+                        cg.match_var_subst = prev;
+                        return; // remaining siblings already emitted
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Old *MirNode-based fallback for emitStatementsWithNarrowing — used when MirStore is unavailable.
+fn emitStatementsWithNarrowingOld(cg: *CodeGen, stmts: []*mir.MirNode) anyerror!void {
     for (stmts, 0..) |child, idx| {
         try cg.flushPreStmts();
         try cg.emitIndent();
@@ -205,7 +292,6 @@ fn emitStatementsWithNarrowing(cg: *CodeGen, stmts: []*mir.MirNode) anyerror!voi
                             }
                         }
                     } else {
-                        // Old path: no MirStore, fall back to old MirNode recursive scan
                         for (remaining) |sib| {
                             if (match_impl.mirContainsIdentifierOld(sib, var_name)) {
                                 any_uses = true;
@@ -239,7 +325,7 @@ fn emitStatementsWithNarrowing(cg: *CodeGen, stmts: []*mir.MirNode) anyerror!voi
                         const subst_tc: ?mir.TypeClass = if (eff_tc == .null_error_union) .plain else eff_tc;
                         cg.match_var_subst = .{ .original = var_name, .capture = bind_name, .eff_tc = subst_tc };
                         // Recursively process remaining siblings — handles cascading narrowing
-                        try emitStatementsWithNarrowing(cg, remaining);
+                        try emitStatementsWithNarrowingOld(cg, remaining);
                         cg.match_var_subst = prev;
                         return; // remaining siblings already emitted
                     }

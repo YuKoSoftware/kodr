@@ -16,6 +16,7 @@ const types = @import("../types.zig");
 const RT = types.ResolvedType;
 const mir_store_mod = @import("../mir_store.zig");
 const mir_typed = @import("../mir_typed.zig");
+const match_impl = @import("codegen_match.zig");
 
 const CodeGen = codegen.CodeGen;
 const MirNodeIndex = mir_store_mod.MirNodeIndex;
@@ -226,13 +227,8 @@ pub fn generateExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
                 try cg.generateExprMir(rec.operand);
             },
             .interpolation => {
-                // Interpolation: fall back to old MirNode for interp_parts and children.
-                const m = cg.getOldMirNode(idx) orelse return;
-                if (m.injected_name) |var_name| {
-                    try cg.emit(var_name);
-                } else if (m.interp_parts) |parts| {
-                    try cg.generateInterpolatedStringMir(parts, m.children);
-                }
+                const rec = mir_typed.Interpolation.unpack(store, idx);
+                try match_impl.generateInterpolatedStringMirFromStore(cg, store, rec.parts_start, rec.parts_end);
             },
             .compiler_fn => try cg.generateCompilerFuncMir(idx),
             .array_lit => {

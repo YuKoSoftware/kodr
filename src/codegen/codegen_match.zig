@@ -14,6 +14,7 @@ const RT = types.ResolvedType;
 const builtins = @import("../builtins.zig");
 const mir_store_mod = @import("../mir_store.zig");
 const mir_typed = @import("../mir_typed.zig");
+const exprs_impl = @import("codegen_exprs.zig");
 
 const CodeGen = codegen.CodeGen;
 const MirNodeIndex = mir_store_mod.MirNodeIndex;
@@ -698,6 +699,98 @@ pub fn generateInterpolatedStringMir(cg: *CodeGen, parts: []const parser.Interpo
     // Use error propagation only if the enclosing function has an error return type.
     const ret_tc2 = cg.funcReturnTypeClass();
     if (ret_tc2 == .error_union or ret_tc2 == .null_error_union) {
+        try cg.pre_stmts.appendSlice(cg.allocator, "}) catch |err| return err;\n");
+    } else {
+        try cg.pre_stmts.appendSlice(cg.allocator, "}) catch unreachable;\n");
+    }
+    // Append: <indent>defer std.heap.smp_allocator.free(_interp_N);
+    try cg.pre_stmts.appendSlice(cg.allocator, indent_str);
+    try cg.pre_stmts.appendSlice(cg.allocator, "defer std.heap.smp_allocator.free(");
+    try cg.pre_stmts.appendSlice(cg.allocator, var_name);
+    try cg.pre_stmts.appendSlice(cg.allocator, ");\n");
+
+    // Emit just the temp var name as the expression
+    try cg.emit(var_name);
+}
+
+/// MIR-path interpolated string — MirStore variant.
+/// Reads (tag, payload) pairs from extra_data[parts_start..parts_end]:
+///   tag==0: string literal (payload is StringIndex)
+///   tag==1: expression (payload is MirNodeIndex)
+/// Hoists the allocPrint call to a temp variable in pre_stmts (same as old variant).
+pub fn generateInterpolatedStringMirFromStore(cg: *CodeGen, store: *const MirStore, parts_start: u32, parts_end: u32) anyerror!void {
+    const n = cg.interp_count;
+    cg.interp_count += 1;
+
+    // Build indent prefix for hoisted lines
+    var indent_buf: [256]u8 = undefined;
+    var indent_len: usize = 0;
+    var i: usize = 0;
+    while (i < cg.indent and indent_len + 4 <= indent_buf.len) : (i += 1) {
+        @memcpy(indent_buf[indent_len .. indent_len + 4], "    ");
+        indent_len += 4;
+    }
+    const indent_str = indent_buf[0..indent_len];
+
+    var name_buf: [32]u8 = undefined;
+    const var_name = std.fmt.bufPrint(&name_buf, "_interp_{d}", .{n}) catch "_interp";
+    try cg.pre_stmts.appendSlice(cg.allocator, indent_str);
+    try cg.pre_stmts.appendSlice(cg.allocator, "const ");
+    try cg.pre_stmts.appendSlice(cg.allocator, var_name);
+    try cg.pre_stmts.appendSlice(cg.allocator, " = std.fmt.allocPrint(std.heap.smp_allocator, \"");
+
+    // Build format string into pre_stmts
+    // Pairs: extra_data[parts_start..parts_end] = (tag, payload) pairs, step 2
+    var j: u32 = parts_start;
+    while (j + 1 <= parts_end) : (j += 2) {
+        const tag = store.extra_data.items[j];
+        const payload = store.extra_data.items[j + 1];
+        if (tag == 0) {
+            // String literal part — payload is StringIndex
+            const si: mir_typed.StringIndex = @enumFromInt(payload);
+            const text = store.strings.get(si);
+            for (text) |ch| {
+                switch (ch) {
+                    '{' => try cg.pre_stmts.appendSlice(cg.allocator, "{{"),
+                    '}' => try cg.pre_stmts.appendSlice(cg.allocator, "}}"),
+                    '\\' => try cg.pre_stmts.appendSlice(cg.allocator, "\\"),
+                    else => try cg.pre_stmts.append(cg.allocator, ch),
+                }
+            }
+        } else {
+            // Expression part — payload is MirNodeIndex
+            const expr_idx: MirNodeIndex = @enumFromInt(payload);
+            if (exprs_impl.mirIsStringFromStore(store, expr_idx)) {
+                try cg.pre_stmts.appendSlice(cg.allocator, "{s}");
+            } else {
+                try cg.pre_stmts.appendSlice(cg.allocator, "{}");
+            }
+        }
+    }
+    try cg.pre_stmts.appendSlice(cg.allocator, "\", .{");
+
+    // Redirect output to pre_stmts to emit arg expressions
+    const saved_output = cg.output;
+    cg.output = cg.pre_stmts;
+    var first = true;
+    var k: u32 = parts_start;
+    while (k + 1 <= parts_end) : (k += 2) {
+        const tag = store.extra_data.items[k];
+        const payload = store.extra_data.items[k + 1];
+        if (tag == 1) {
+            // Expression part
+            if (!first) try cg.emit(", ");
+            const expr_idx: MirNodeIndex = @enumFromInt(payload);
+            try cg.generateExprMir(expr_idx);
+            first = false;
+        }
+    }
+    cg.pre_stmts = cg.output;
+    cg.output = saved_output;
+
+    // Use error propagation only if the enclosing function has an error return type.
+    const ret_tc = cg.funcReturnTypeClass();
+    if (ret_tc == .error_union or ret_tc == .null_error_union) {
         try cg.pre_stmts.appendSlice(cg.allocator, "}) catch |err| return err;\n");
     } else {
         try cg.pre_stmts.appendSlice(cg.allocator, "}) catch unreachable;\n");

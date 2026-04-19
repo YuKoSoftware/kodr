@@ -617,6 +617,8 @@ pub const CodeGen = struct {
 
     pub fn generateInterpolatedStringMir(self: *CodeGen, parts: []const parser.InterpolatedPart, expr_children: []*mir.MirNode) anyerror!void { return match_impl.generateInterpolatedStringMir(self, parts, expr_children); }
 
+    pub fn generateInterpolatedStringMirFromStore(self: *CodeGen, store: *const mir_store_mod.MirStore, parts_start: u32, parts_end: u32) anyerror!void { return match_impl.generateInterpolatedStringMirFromStore(self, store, parts_start, parts_end); }
+
     pub fn generateCompilerFuncMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return match_impl.generateCompilerFuncMir(self, idx); }
 
     pub fn generateWrappingExprMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return match_impl.generateWrappingExprMir(self, idx); }
