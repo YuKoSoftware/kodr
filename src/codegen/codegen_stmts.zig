@@ -13,12 +13,23 @@ const mir_store_mod = @import("../mir_store.zig");
 const CodeGen = codegen.CodeGen;
 const MirNodeIndex = mir_store_mod.MirNodeIndex;
 
+/// Returns true if idx is a real MirStore entry (not a synthetic fallback index).
+/// Synthetic indices start at 0x80000001 to avoid collision with real store indices.
+fn isRealMirIdx(cg: *const CodeGen, idx: MirNodeIndex) bool {
+    const store = cg.mir_store orelse return false;
+    if (idx == .none) return false;
+    const raw: u32 = @intFromEnum(idx);
+    return raw < store.nodes.len;
+}
+
 /// Read IfNarrowing from MirStore when available, converting IfNarrowingExtra to mir.IfNarrowing.
 /// String slices borrow from cg.mir_store.strings — valid during generate().
 fn readNarrowingFromStore(cg: *const CodeGen, if_ast: *parser.Node) ?mir.IfNarrowing {
     const store = cg.mir_store orelse return null;
     const idx = cg.getMirIdxForParserNode(if_ast);
     if (idx == .none) return null;
+    const raw: u32 = @intFromEnum(idx);
+    if (raw >= store.nodes.len) return null;
     const entry = store.getNode(idx);
     if (entry.tag != .if_stmt) return null;
     const rec = mir_typed.IfStmt.unpack(store, idx);
@@ -65,7 +76,7 @@ fn emitNarrowedBlock(cg: *CodeGen, block: *mir.MirNode, var_name: []const u8, na
     for (block.children) |child| {
         try cg.flushPreStmts();
         try cg.emitIndent();
-        try generateStatementMirImpl(cg, child);
+        try generateStatementMir(cg, cg.mirIdx(child));
         try cg.emit("\n");
     }
     cg.match_var_subst = prev;
@@ -130,6 +141,9 @@ fn emitUnwrapBindingNamed(cg: *CodeGen, bind_name: []const u8, source_name: []co
 }
 
 /// MIR-path block generation — walks MirNode children instead of AST statements.
+/// NOTE: Uses old MirNode children to preserve injected temp_var/injected_defer nodes
+/// (interpolation hoisting). MirStore Block.getStmts will be used in B10 when
+/// the old MIR tree is removed and MirBuilder handles interpolation injection.
 pub fn generateBlockMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
     const m = cg.getOldMirNode(idx) orelse return;
     try cg.emit("{\n");
@@ -142,6 +156,7 @@ pub fn generateBlockMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
 
 /// Emit the body statements of a block node, already inside an outer `{`.
 /// Caller must manage indentation and surrounding braces.
+/// NOTE: Uses old MirNode children for the same reason as generateBlockMir.
 pub fn generateBodyStatements(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
     const m = cg.getOldMirNode(idx) orelse return;
     try emitStatementsWithNarrowing(cg, m.children);
@@ -153,7 +168,7 @@ fn emitStatementsWithNarrowing(cg: *CodeGen, stmts: []*mir.MirNode) anyerror!voi
     for (stmts, 0..) |child, idx| {
         try cg.flushPreStmts();
         try cg.emitIndent();
-        try generateStatementMirImpl(cg, child);
+        try generateStatementMir(cg, cg.mirIdx(child));
         try cg.emit("\n");
         // Post-if narrowing: if this if_stmt has early exit and post_branch,
         // emit a binding for the narrowed variable and substitute in remaining siblings.
@@ -216,15 +231,293 @@ fn emitStatementsWithNarrowing(cg: *CodeGen, stmts: []*mir.MirNode) anyerror!voi
     }
 }
 
-/// Public stub for cross-file calls (e.g. from codegen_exprs generateForMir).
+/// MIR-path statement generator — dispatches on MirStore tag when idx is a real store
+/// entry, falls back to old *MirNode path otherwise.
+/// Collapses the former generateStatementMir + generateStatementMirImpl into one function.
 pub fn generateStatementMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    try generateStatementMirImpl(cg, m);
+    if (isRealMirIdx(cg, idx)) {
+        const store = cg.mir_store.?;
+        const entry = store.getNode(idx);
+        switch (entry.tag) {
+            .var_decl => {
+                const rec = mir_typed.VarDecl.unpack(store, idx);
+                const var_name = store.strings.get(rec.name);
+                const flags = rec.flags;
+                const is_const = (flags & 2) != 0;
+                // Type alias in function body: const Name: type = T
+                if (is_const) {
+                    const type_ann_node = if (rec.type_annotation != .none) cg.getAstNode(rec.type_annotation) else null;
+                    if (codegen.isTypeAlias(type_ann_node)) {
+                        const val_ast = if (rec.value != .none) cg.getAstNode(store.getNode(rec.value).span) else null;
+                        try cg.emitFmt("const {s} = ", .{var_name});
+                        if (val_ast) |va| {
+                            try cg.emit(try cg.typeToZig(va));
+                        }
+                        try cg.emit(";");
+                        return;
+                    }
+                    try cg.generateStmtDeclMir(idx, "const");
+                } else {
+                    const is_mutated = cg.reassigned_vars.contains(var_name);
+                    const decl_keyword: []const u8 = if (is_mutated) "var" else "const";
+                    if (!is_mutated) {
+                        // Source location from old MirNode for the warning
+                        if (cg.getOldMirNode(idx)) |m| {
+                            try cg.reporter.warnFmt(cg.nodeLocMir(m),
+                                "'{s}' is declared as var but never reassigned — use const", .{var_name});
+                        }
+                    }
+                    try cg.generateStmtDeclMir(idx, decl_keyword);
+                }
+            },
+            .return_stmt => {
+                const rec = mir_typed.ReturnStmt.unpack(store, idx);
+                try cg.emit("return");
+                if (rec.value != .none) {
+                    const val_idx = rec.value;
+                    const val_entry = store.getNode(val_idx);
+                    try cg.emit(" ");
+                    // Inside a match arm, the variable is already unwrapped by the capture —
+                    // skip coercions like .optional_unwrap that would double-unwrap.
+                    const is_substituted = if (cg.match_var_subst) |subst| blk: {
+                        if (val_entry.tag == .identifier) {
+                            const id_rec = mir_typed.Identifier.unpack(store, val_idx);
+                            const id_name = store.strings.get(id_rec.name);
+                            break :blk std.mem.eql(u8, id_name, subst.original);
+                        }
+                        break :blk false;
+                    } else false;
+                    // Use MIR coercion from MirStore coercion_kind
+                    const coercion = mir_store_mod.coercionFromKind(val_entry.coercion_kind);
+                    if (!is_substituted and coercion != null) {
+                        switch (coercion.?) {
+                            // Native ?T and anyerror!T — Zig handles coercion natively
+                            .null_wrap, .error_wrap => {
+                                try cg.generateExprMir(val_idx);
+                            },
+                            .arbitrary_union_wrap => |_| {
+                                try cg.generateArbitraryUnionWrappedExprMir(val_idx, cg.funcReturnMembers());
+                            },
+                            .array_to_slice, .value_to_const_ref => {
+                                try cg.emit("&");
+                                try cg.generateExprMir(val_idx);
+                            },
+                            .optional_unwrap => {
+                                // Native ?T: unwrap → .?
+                                try cg.generateExprMir(val_idx);
+                                try cg.emit(".?");
+                            },
+                        }
+                    } else {
+                        // Native ?T and anyerror!T — Zig coerces values automatically
+                        try cg.generateExprMir(val_idx);
+                    }
+                }
+                try cg.emit(";");
+            },
+            .if_stmt => {
+                const rec = mir_typed.IfStmt.unpack(store, idx);
+                try cg.emit("if (");
+                try cg.generateExprMir(rec.condition);
+                try cg.emit(") ");
+                // Narrowing: prefer MirStore IfNarrowingExtra.
+                // Use old MirNode as bridge to readNarrowingFromStore (parser node needed).
+                const narrowing_opt: ?mir.IfNarrowing = if (cg.getOldMirNode(idx)) |m|
+                    readNarrowingFromStore(cg, m.ast) orelse m.narrowing
+                else
+                    null;
+                if (narrowing_opt) |narrowing| {
+                    const tc = narrowing.type_class;
+                    const vn = narrowing.var_name;
+                    // Then-block with narrowing
+                    if (rec.then_block != .none) {
+                        if (narrowing.then_branch) |tb| {
+                            if (cg.getOldMirNode(rec.then_block)) |then_m| {
+                                if (match_impl.mirContainsIdentifier(then_m, vn)) {
+                                    try emitNarrowedBlock(cg, then_m, vn, tb, tc);
+                                } else {
+                                    try cg.generateBlockMir(rec.then_block);
+                                }
+                            } else {
+                                try cg.generateBlockMir(rec.then_block);
+                            }
+                        } else {
+                            try cg.generateBlockMir(rec.then_block);
+                        }
+                    }
+                    // Else-block with narrowing
+                    if (rec.else_block != .none) {
+                        try cg.emit(" else ");
+                        if (store.getNode(rec.else_block).tag == .if_stmt) {
+                            try generateStatementMir(cg, rec.else_block);
+                        } else if (narrowing.else_branch) |eb| {
+                            if (cg.getOldMirNode(rec.else_block)) |else_m| {
+                                if (match_impl.mirContainsIdentifier(else_m, vn)) {
+                                    try emitNarrowedBlock(cg, else_m, vn, eb, tc);
+                                } else {
+                                    try cg.generateBlockMir(rec.else_block);
+                                }
+                            } else {
+                                try cg.generateBlockMir(rec.else_block);
+                            }
+                        } else {
+                            try cg.generateBlockMir(rec.else_block);
+                        }
+                    }
+                } else {
+                    if (rec.then_block != .none) try cg.generateBlockMir(rec.then_block);
+                    if (rec.else_block != .none) {
+                        try cg.emit(" else ");
+                        if (store.getNode(rec.else_block).tag == .if_stmt) {
+                            try generateStatementMir(cg, rec.else_block);
+                        } else {
+                            try cg.generateBlockMir(rec.else_block);
+                        }
+                    }
+                }
+            },
+            .assignment => {
+                const rec = mir_typed.Assignment.unpack(store, idx);
+                const assign_op: parser.Operator = @enumFromInt(rec.op);
+                const lhs_idx = rec.lhs;
+                const rhs_idx = rec.rhs;
+                const lhs_entry = store.getNode(lhs_idx);
+                // Use MirStore type_class supplemented by old MirNode fallback.
+                // MirStore identifier type_class may be .plain when the type_map
+                // doesn't have the resolved union type (e.g. cross-module vars).
+                const lhs_type_class_store = lhs_entry.type_class;
+                const lhs_type_class = blk: {
+                    if (lhs_type_class_store != .plain) break :blk lhs_type_class_store;
+                    // Supplement from old MirNode when MirStore says .plain
+                    if (cg.getOldMirNode(lhs_idx)) |lhs_m| break :blk lhs_m.type_class;
+                    break :blk lhs_type_class_store;
+                };
+                if (assign_op == .div_assign) {
+                    const lhs_rt = if (lhs_entry.type_id != .none) store.types.get(lhs_entry.type_id) else .unknown;
+                    // Supplement is_float from old MirNode when type_id unavailable
+                    const is_float_assign = if (lhs_rt == .primitive)
+                        lhs_rt.primitive.isFloat()
+                    else if (cg.getOldMirNode(lhs_idx)) |lhs_m|
+                        lhs_m.resolved_type == .primitive and lhs_m.resolved_type.primitive.isFloat()
+                    else
+                        false;
+                    try cg.generateExprMir(lhs_idx);
+                    if (is_float_assign) {
+                        try cg.emit(" = (");
+                        try cg.generateExprMir(lhs_idx);
+                        try cg.emit(" / ");
+                        try cg.generateExprMir(rhs_idx);
+                        try cg.emit(");");
+                    } else {
+                        try cg.emit(" = @divTrunc(");
+                        try cg.generateExprMir(lhs_idx);
+                        try cg.emit(", ");
+                        try cg.generateExprMir(rhs_idx);
+                        try cg.emit(");");
+                    }
+                } else if (assign_op == .assign and
+                    (lhs_type_class == .null_union or lhs_type_class == .null_error_union))
+                {
+                    try cg.generateExprMir(lhs_idx);
+                    try cg.emit(" = ");
+                    try cg.generateCoercedExprMir(rhs_idx);
+                    try cg.emit(";");
+                } else if (assign_op == .assign and lhs_type_class == .arbitrary_union) {
+                    const lhs_rt = if (lhs_entry.type_id != .none) store.types.get(lhs_entry.type_id) else .unknown;
+                    const members_rt = if (lhs_rt == .union_type)
+                        lhs_rt.union_type
+                    else if (lhs_entry.tag == .identifier) blk: {
+                        const id_rec = mir_typed.Identifier.unpack(store, lhs_idx);
+                        const from_var = cg.getVarUnionMembers(store.strings.get(id_rec.name));
+                        if (from_var) |fv| break :blk fv;
+                        // Supplement from old MirNode resolved_type
+                        if (cg.getOldMirNode(lhs_idx)) |lhs_m| {
+                            if (lhs_m.resolved_type == .union_type) break :blk lhs_m.resolved_type.union_type;
+                        }
+                        break :blk null;
+                    } else null;
+                    try cg.generateExprMir(lhs_idx);
+                    try cg.emit(" = ");
+                    try cg.generateArbitraryUnionWrappedExprMir(rhs_idx, members_rt);
+                    try cg.emit(";");
+                } else {
+                    try cg.generateExprMir(lhs_idx);
+                    try cg.emitFmt(" {s} ", .{assign_op.toZig()});
+                    try cg.generateExprMir(rhs_idx);
+                    try cg.emit(";");
+                }
+            },
+            .destruct => try cg.generateDestructMir(idx),
+            .while_stmt => {
+                const rec = mir_typed.WhileStmt.unpack(store, idx);
+                try cg.emit("while (");
+                try cg.generateExprMir(rec.condition);
+                try cg.emit(")");
+                // Continue expression is not yet in MirStore (missing from B9 WhileStmt).
+                // Fall back to old MirNode to check for children[2].
+                if (cg.getOldMirNode(idx)) |m| {
+                    if (m.children.len > 2) {
+                        const cont_m = m.children[2];
+                        try cg.emit(" : (");
+                        try cg.generateContinueExprMir(cg.mirIdx(cont_m));
+                        try cg.emit(")");
+                    }
+                }
+                try cg.emit(" ");
+                try cg.generateBlockMir(rec.body);
+            },
+            .for_stmt => try cg.generateForMir(idx),
+            .defer_stmt => {
+                const rec = mir_typed.DeferStmt.unpack(store, idx);
+                try cg.emit("defer ");
+                try cg.generateBlockMir(rec.body);
+            },
+            .match_stmt => try cg.generateMatchMir(idx),
+            .break_stmt => try cg.emit("break;"),
+            .continue_stmt => try cg.emit("continue;"),
+            .block => try cg.generateBlockMir(idx),
+            // Injected nodes from MirLowerer (interpolation hoisting)
+            .temp_var => {
+                const tv_rec = mir_typed.TempVar.unpack(store, idx);
+                const name = store.strings.get(tv_rec.name);
+                try cg.emitFmt("const {s} = ", .{name});
+                // interp_parts and children are on the old MirNode — fall back to retrieve them.
+                if (cg.getOldMirNode(idx)) |m| {
+                    if (m.interp_parts) |parts| {
+                        // Use inline variant — temp_var already provides the const + sibling defer
+                        try cg.generateInterpolatedStringMirInline(parts, m.children);
+                    }
+                }
+                try cg.emit(";");
+            },
+            .injected_defer => {
+                // Retrieve the name from the old MirNode's injected_name field.
+                if (cg.getOldMirNode(idx)) |m| {
+                    if (m.injected_name) |name| {
+                        try cg.emitFmt("defer std.heap.smp_allocator.free({s});", .{name});
+                    }
+                }
+            },
+            // Local function declaration — delegate to top-level func codegen
+            .func => {
+                try cg.generateFuncMir(idx);
+            },
+            // Expression-kind MirNodes used as statements — discard return value.
+            else => {
+                if (entry.tag == .call) try cg.emit("_ = ");
+                try cg.generateExprMir(idx);
+                try cg.emit(";");
+            },
+        }
+    } else {
+        // Fallback: old MirNode tree (no MirStore or synthetic index)
+        const m = cg.getOldMirNode(idx) orelse return;
+        try generateStatementMirImpl(cg, m);
+    }
 }
 
-/// Private implementation — takes *mir.MirNode directly so internal callers
-/// (emitStatementsWithNarrowing, emitNarrowedBlock) can pass injected nodes
-/// (.temp_var, .injected_defer) that have no MirStore entries.
+/// Private implementation — takes *mir.MirNode directly for the old-path fallback.
+/// Called from generateStatementMir when idx is a synthetic or unavailable index.
 fn generateStatementMirImpl(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     switch (m.kind) {
         .var_decl => {
@@ -429,52 +722,114 @@ fn generateStatementMirImpl(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
     }
 }
 
-/// MIR-path statement var/const declaration — uses m.type_class directly.
+/// MIR-path statement var/const declaration — uses VarDecl typed record from MirStore
+/// when idx is a real store entry, falls back to old MirNode otherwise.
 pub fn generateStmtDeclMir(cg: *CodeGen, idx: MirNodeIndex, decl_keyword: []const u8) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    const var_name = m.name orelse return;
-    const val_m = m.value(); // children[0] = value expression
-    try cg.emitFmt("{s} {s}", .{ decl_keyword, var_name });
-    if (m.type_annotation) |t| {
-        // array_to_slice emits &source which gives *const [N]T — only coerces to []const T.
-        if (val_m.coercion != null and std.meta.activeTag(val_m.coercion.?) == .array_to_slice and t.* == .type_slice) {
-            const inner = try cg.typeToZig(t.type_slice);
-            try cg.emitFmt(": []const {s}", .{inner});
+    if (isRealMirIdx(cg, idx)) {
+        const store = cg.mir_store.?;
+        const rec = mir_typed.VarDecl.unpack(store, idx);
+        const var_name = store.strings.get(rec.name);
+        const val_idx = rec.value;
+        const val_entry = store.getNode(val_idx);
+        try cg.emitFmt("{s} {s}", .{ decl_keyword, var_name });
+        if (rec.type_annotation != .none) {
+            if (cg.getAstNode(rec.type_annotation)) |ta| {
+                // array_to_slice emits &source which gives *const [N]T — only coerces to []const T.
+                const val_coercion = mir_store_mod.coercionFromKind(val_entry.coercion_kind);
+                if (val_coercion != null and std.meta.activeTag(val_coercion.?) == .array_to_slice and ta.* == .type_slice) {
+                    const inner = try cg.typeToZig(ta.type_slice);
+                    try cg.emitFmt(": []const {s}", .{inner});
+                } else {
+                    try cg.emitFmt(": {s}", .{try cg.typeToZig(ta)});
+                }
+            }
+        }
+        try cg.emit(" = ");
+        const node_type_class = store.getNode(idx).type_class;
+        const val_coercion = mir_store_mod.coercionFromKind(val_entry.coercion_kind);
+        if (node_type_class == .arbitrary_union) {
+            try cg.generateCoercedExprMir(val_idx);
+        } else if (val_entry.tag == .type_expr) {
+            // Type in expression position = default constructor (.{})
+            try cg.emit(".{}");
+        } else if (val_coercion) |c| {
+            // Inside a match arm, the variable is already unwrapped — skip coercions
+            const is_substituted = if (cg.match_var_subst) |subst| blk: {
+                if (val_entry.tag == .identifier) {
+                    const id_rec = mir_typed.Identifier.unpack(store, val_idx);
+                    const id_name = store.strings.get(id_rec.name);
+                    break :blk std.mem.eql(u8, id_name, subst.original);
+                }
+                break :blk false;
+            } else false;
+            if (is_substituted) {
+                try cg.generateExprMir(val_idx);
+            } else switch (c) {
+                .array_to_slice, .value_to_const_ref => {
+                    try cg.emit("&");
+                    try cg.generateExprMir(val_idx);
+                },
+                .optional_unwrap => {
+                    try cg.generateExprMir(val_idx);
+                    try cg.emit(".?");
+                },
+                else => {
+                    // null_wrap, error_wrap, arbitrary_union_wrap — Zig handles natively
+                    try cg.generateExprMir(val_idx);
+                },
+            }
         } else {
-            try cg.emitFmt(": {s}", .{try cg.typeToZig(t)});
+            // No coercion — emit value directly
+            try cg.generateExprMir(val_idx);
         }
-    }
-    try cg.emit(" = ");
-    if (m.type_class == .arbitrary_union) {
-        try cg.generateCoercedExprMir(cg.mirIdx(val_m));
-    } else if (val_m.kind == .type_expr) {
-        // Type in expression position = default constructor (.{})
-        try cg.emit(".{}");
-    } else if (val_m.coercion) |c| {
-        // Inside a match arm, the variable is already unwrapped — skip coercions
-        const is_substituted = if (cg.match_var_subst) |subst|
-            (val_m.kind == .identifier and std.mem.eql(u8, val_m.name orelse "", subst.original))
-        else
-            false;
-        if (is_substituted) {
-            try cg.generateExprMir(cg.mirIdx(val_m));
-        } else switch (c) {
-            .array_to_slice, .value_to_const_ref => {
-                try cg.emit("&");
-                try cg.generateExprMir(cg.mirIdx(val_m));
-            },
-            .optional_unwrap => {
-                try cg.generateExprMir(cg.mirIdx(val_m));
-                try cg.emit(".?");
-            },
-            else => {
-                // null_wrap, error_wrap, arbitrary_union_wrap — Zig handles natively
-                try cg.generateExprMir(cg.mirIdx(val_m));
-            },
-        }
+        try cg.emitFmt("; _ = &{s};", .{var_name});
     } else {
-        // No coercion — emit value directly
-        try cg.generateExprMir(cg.mirIdx(val_m));
+        // Fallback: old MirNode tree
+        const m = cg.getOldMirNode(idx) orelse return;
+        const var_name = m.name orelse return;
+        const val_m = m.value(); // children[0] = value expression
+        try cg.emitFmt("{s} {s}", .{ decl_keyword, var_name });
+        if (m.type_annotation) |t| {
+            // array_to_slice emits &source which gives *const [N]T — only coerces to []const T.
+            if (val_m.coercion != null and std.meta.activeTag(val_m.coercion.?) == .array_to_slice and t.* == .type_slice) {
+                const inner = try cg.typeToZig(t.type_slice);
+                try cg.emitFmt(": []const {s}", .{inner});
+            } else {
+                try cg.emitFmt(": {s}", .{try cg.typeToZig(t)});
+            }
+        }
+        try cg.emit(" = ");
+        if (m.type_class == .arbitrary_union) {
+            try cg.generateCoercedExprMir(cg.mirIdx(val_m));
+        } else if (val_m.kind == .type_expr) {
+            // Type in expression position = default constructor (.{})
+            try cg.emit(".{}");
+        } else if (val_m.coercion) |c| {
+            // Inside a match arm, the variable is already unwrapped — skip coercions
+            const is_substituted = if (cg.match_var_subst) |subst|
+                (val_m.kind == .identifier and std.mem.eql(u8, val_m.name orelse "", subst.original))
+            else
+                false;
+            if (is_substituted) {
+                try cg.generateExprMir(cg.mirIdx(val_m));
+            } else switch (c) {
+                .array_to_slice, .value_to_const_ref => {
+                    try cg.emit("&");
+                    try cg.generateExprMir(cg.mirIdx(val_m));
+                },
+                .optional_unwrap => {
+                    try cg.generateExprMir(cg.mirIdx(val_m));
+                    try cg.emit(".?");
+                },
+                else => {
+                    // null_wrap, error_wrap, arbitrary_union_wrap — Zig handles natively
+                    try cg.generateExprMir(cg.mirIdx(val_m));
+                },
+            }
+        } else {
+            // No coercion — emit value directly
+            try cg.generateExprMir(cg.mirIdx(val_m));
+        }
+        try cg.emitFmt("; _ = &{s};", .{var_name});
     }
-    try cg.emitFmt("; _ = &{s};", .{var_name});
 }
