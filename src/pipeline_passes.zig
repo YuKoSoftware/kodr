@@ -226,29 +226,7 @@ pub fn runSemanticAndCodegen(
     const mir_root_idx_val = try mir_builder.build(ast_root);
     if (reporter.hasErrors()) return null;
 
-    // ── Pass 9 (compat): MIR Annotation ──────────────────────────────────
-    var mir_annotator = mir.MirAnnotator.init(allocator, reporter, &decl_collector.table, &type_resolver.type_map, union_registry);
-    defer mir_annotator.deinit();
-    mir_annotator.all_decls = all_module_decls;
-    mir_annotator.current_module_name = mod_name;
-
-    mir_annotator.reverse_map = &conv.reverse_map;
-    try mir_annotator.annotate(&conv.store, ast_root);
-    if (reporter.hasErrors()) return null;
-
-    // ── Pass 10 (compat): MIR Tree Lowering ──────────────────
-    var mir_lowerer = mir.MirLowerer.init(
-        allocator,
-        &mir_annotator.node_map,
-        union_registry,
-        &decl_collector.table,
-        &mir_annotator.var_types,
-    );
-    defer mir_lowerer.deinit();
-    mir_lowerer.reverse_map = &conv.reverse_map;
-    const mir_root = try mir_lowerer.lower(&conv.store, ast_root);
-
-    // ── Pass 11 (compat): Zig Code Generation ─────────────────
+    // ── Pass 10 (compat): Zig Code Generation ─────────────────
     const is_debug = cli.optimize == .debug;
     var cg = codegen.CodeGen.init(allocator, reporter, is_debug);
     defer cg.deinit();
@@ -257,11 +235,8 @@ pub fn runSemanticAndCodegen(
     cg.locs = locs_ptr;
     cg.file_offsets = file_offsets;
     cg.module_builds = module_builds;
-    cg.node_map = &mir_annotator.node_map;
     cg.union_registry = union_registry;
     cg.current_module_name = mod_name;
-    cg.var_types = &mir_annotator.var_types;
-    cg.mir_root = mir_root;
     cg.is_zig_module = is_zig_module;
     cg.has_zig_sidecar = has_zig_sidecar;
     cg.mir_store = &mir_store;
