@@ -602,7 +602,7 @@ fn generateStatementMirImpl(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                 if (m.children.len > 1) {
                     const then_m = m.thenBlock();
                     if (narrowing.then_branch) |tb| {
-                        const then_uses = if (old_store) |s| match_impl.mirContainsIdentifier(s, cg.mirIdx(then_m), vn) else false;
+                        const then_uses = if (old_store) |s| match_impl.mirContainsIdentifier(s, cg.mirIdx(then_m), vn) else match_impl.mirContainsIdentifierOld(then_m, vn);
                         if (then_uses) {
                             try emitNarrowedBlock(cg, then_m, vn, tb, tc);
                         } else {
@@ -618,7 +618,7 @@ fn generateStatementMirImpl(cg: *CodeGen, m: *mir.MirNode) anyerror!void {
                     if (else_m.kind == .if_stmt) {
                         try generateStatementMirImpl(cg, else_m);
                     } else if (narrowing.else_branch) |eb| {
-                        const else_uses = if (old_store) |s| match_impl.mirContainsIdentifier(s, cg.mirIdx(else_m), vn) else false;
+                        const else_uses = if (old_store) |s| match_impl.mirContainsIdentifier(s, cg.mirIdx(else_m), vn) else match_impl.mirContainsIdentifierOld(else_m, vn);
                         if (else_uses) {
                             try emitNarrowedBlock(cg, else_m, vn, eb, tc);
                         } else {

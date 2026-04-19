@@ -71,6 +71,35 @@ pub fn mirContainsIdentifier(store: *const MirStore, idx: MirNodeIndex, name: []
             const rec = mir_typed.Unary.unpack(store, idx);
             if (mirContainsIdentifier(store, rec.operand, name)) return true;
         },
+        .return_stmt => {
+            const rec = mir_typed.ReturnStmt.unpack(store, idx);
+            if (rec.value != .none) if (mirContainsIdentifier(store, rec.value, name)) return true;
+        },
+        .assignment => {
+            const rec = mir_typed.Assignment.unpack(store, idx);
+            if (mirContainsIdentifier(store, rec.lhs, name)) return true;
+            if (mirContainsIdentifier(store, rec.rhs, name)) return true;
+        },
+        .index => {
+            const rec = mir_typed.Index.unpack(store, idx);
+            if (mirContainsIdentifier(store, rec.object, name)) return true;
+            if (mirContainsIdentifier(store, rec.index, name)) return true;
+        },
+        .while_stmt => {
+            const rec = mir_typed.WhileStmt.unpack(store, idx);
+            if (mirContainsIdentifier(store, rec.condition, name)) return true;
+            if (mirContainsIdentifier(store, rec.body, name)) return true;
+        },
+        .for_stmt => {
+            const rec = mir_typed.ForStmt.unpack(store, idx);
+            if (mirContainsIdentifier(store, rec.body, name)) return true;
+        },
+        .defer_stmt => {
+            const rec = mir_typed.DeferStmt.unpack(store, idx);
+            if (mirContainsIdentifier(store, rec.body, name)) return true;
+        },
+        // Unknown node kinds are assumed not to contain the identifier. New kinds
+        // must be added here if they can appear in narrowing contexts.
         else => {},
     }
     return false;
