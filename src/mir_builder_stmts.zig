@@ -102,12 +102,16 @@ fn lowerForStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     // Lower body.
     const body = try b.lowerNode(ast_rec.body);
 
-    // Lower iterables: AstNodeIndex → MirNodeIndex.
-    const iterables_start: u32 = @intCast(b.store.extra_data.items.len);
+    // Lower iterables: expression nodes write extra_data internally via their pack functions,
+    // so collect MirNodeIndex values and append them contiguously afterward.
+    var iterable_indices: std.ArrayListUnmanaged(u32) = .{};
+    defer iterable_indices.deinit(b.allocator);
     for (b.ast.extra_data.items[ast_rec.iterables_start..ast_rec.iterables_end]) |iu32| {
         const it_mir = try b.lowerNode(@enumFromInt(iu32));
-        try b.store.extra_data.append(b.allocator, @intFromEnum(it_mir));
+        try iterable_indices.append(b.allocator, @intFromEnum(it_mir));
     }
+    const iterables_start: u32 = @intCast(b.store.extra_data.items.len);
+    try b.store.extra_data.appendSlice(b.allocator, iterable_indices.items);
     const iterables_end: u32 = @intCast(b.store.extra_data.items.len);
 
     // Copy captures: StringIndex values re-interned from AST pool into MIR pool.
@@ -140,12 +144,16 @@ fn lowerMatchStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
 
     const value = try b.lowerNode(ast_rec.value);
 
-    // Lower arms: AstNodeIndex → MirNodeIndex.
-    const arms_start: u32 = @intCast(b.store.extra_data.items.len);
+    // Lower arms: MatchArm.pack writes MatchArmExtra to extra_data internally,
+    // so collect MirNodeIndex values and append them contiguously afterward.
+    var arm_indices: std.ArrayListUnmanaged(u32) = .{};
+    defer arm_indices.deinit(b.allocator);
     for (b.ast.extra_data.items[ast_rec.arms_start..ast_rec.arms_end]) |au32| {
         const arm_mir = try b.lowerNode(@enumFromInt(au32));
-        try b.store.extra_data.append(b.allocator, @intFromEnum(arm_mir));
+        try arm_indices.append(b.allocator, @intFromEnum(arm_mir));
     }
+    const arms_start: u32 = @intCast(b.store.extra_data.items.len);
+    try b.store.extra_data.appendSlice(b.allocator, arm_indices.items);
     const arms_end: u32 = @intCast(b.store.extra_data.items.len);
 
     return mir_typed.MatchStmt.pack(b.store, b.allocator, idx, .none, .plain, .{

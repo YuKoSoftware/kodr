@@ -66,12 +66,17 @@ fn lowerFuncDecl(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     b.current_func_name = name_str;
     defer b.current_func_name = prev_func;
 
-    // Lower params → MirNodeIndex values in MIR extra_data.
-    const params_start: u32 = @intCast(b.store.extra_data.items.len);
+    // Lower params: ParamDef.pack writes ParamDefExtra to extra_data internally,
+    // so we must collect the resulting MirNodeIndex values and append them
+    // contiguously AFTER all params are lowered, not interleaved with their extras.
+    var param_indices: std.ArrayListUnmanaged(u32) = .{};
+    defer param_indices.deinit(b.allocator);
     for (b.ast.extra_data.items[ast_rec.params_start..ast_rec.params_end]) |pu32| {
         const param_mir = try b.lowerNode(@enumFromInt(pu32));
-        try b.store.extra_data.append(b.allocator, @intFromEnum(param_mir));
+        try param_indices.append(b.allocator, @intFromEnum(param_mir));
     }
+    const params_start: u32 = @intCast(b.store.extra_data.items.len);
+    try b.store.extra_data.appendSlice(b.allocator, param_indices.items);
     const params_end: u32 = @intCast(b.store.extra_data.items.len);
 
     const body = try b.lowerNode(ast_rec.body);
@@ -92,12 +97,16 @@ fn lowerFuncDecl(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
 fn lowerStructDecl(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     const ast_rec = ast_typed.StructDecl.unpack(b.ast, idx);
 
-    // Lower members → MirNodeIndex values.
-    const members_start: u32 = @intCast(b.store.extra_data.items.len);
+    // Lower members: FieldDef.pack writes FieldDefExtra to extra_data internally,
+    // so collect MirNodeIndex values and append them contiguously afterward.
+    var member_indices: std.ArrayListUnmanaged(u32) = .{};
+    defer member_indices.deinit(b.allocator);
     for (b.ast.extra_data.items[ast_rec.members_start..ast_rec.members_end]) |mu32| {
         const m_mir = try b.lowerNode(@enumFromInt(mu32));
-        try b.store.extra_data.append(b.allocator, @intFromEnum(m_mir));
+        try member_indices.append(b.allocator, @intFromEnum(m_mir));
     }
+    const members_start: u32 = @intCast(b.store.extra_data.items.len);
+    try b.store.extra_data.appendSlice(b.allocator, member_indices.items);
     const members_end: u32 = @intCast(b.store.extra_data.items.len);
 
     // type_params: copy AstNodeIndex values from AST extra_data.
@@ -137,12 +146,16 @@ fn lowerStructDecl(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
 fn lowerEnumDecl(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     const ast_rec = ast_typed.EnumDecl.unpack(b.ast, idx);
 
-    // Lower members → MirNodeIndex values.
-    const members_start: u32 = @intCast(b.store.extra_data.items.len);
+    // Lower members: enum variants with explicit values call Literal.pack internally,
+    // writing LiteralExtra to extra_data. Collect indices first, append contiguously after.
+    var enum_member_indices: std.ArrayListUnmanaged(u32) = .{};
+    defer enum_member_indices.deinit(b.allocator);
     for (b.ast.extra_data.items[ast_rec.members_start..ast_rec.members_end]) |mu32| {
         const m_mir = try b.lowerNode(@enumFromInt(mu32));
-        try b.store.extra_data.append(b.allocator, @intFromEnum(m_mir));
+        try enum_member_indices.append(b.allocator, @intFromEnum(m_mir));
     }
+    const members_start: u32 = @intCast(b.store.extra_data.items.len);
+    try b.store.extra_data.appendSlice(b.allocator, enum_member_indices.items);
     const members_end: u32 = @intCast(b.store.extra_data.items.len);
 
     const name = try internStr(b, ast_rec.name);

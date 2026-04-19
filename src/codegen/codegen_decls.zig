@@ -537,12 +537,8 @@ fn generateStructMirFromStore(cg: *CodeGen, store: *const MirStore, idx: MirNode
         cg.indent += 1;
     }
 
-    // Use old MirNode children for member emission — members_start..members_end
-    // is not a flat MirNodeIndex list due to extra_data interleaving.
-    // TODO Task 5: use emitStructBodyFromStore when extra_data layout is clean.
-    if (m_opt) |m| {
-        try emitStructBody(cg, m.children);
-    }
+    const members = store.extra_data.items[rec.members_start..rec.members_end];
+    try emitStructBodyFromStore(cg, store, members);
 
     if (is_generic) {
         cg.generic_struct_name = null;
@@ -698,24 +694,18 @@ fn generateEnumMirFromStore(cg: *CodeGen, store: *const MirStore, idx: MirNodeIn
     try cg.emitFmt("const {s} = enum({s}) {{\n", .{ enum_name, backing });
     cg.indent += 1;
 
-    // Use old MirNode children for variant emission — members_start..members_end
-    // in MirStore extra_data interleaves variant extra-data with MirNodeIndex values
-    // when variants have explicit discriminant values (Literal.pack appends to extra_data).
-    // TODO Task 5: use a clean MirStore member iteration.
-    if (cg.getOldMirNode(idx)) |m| {
-        for (m.children) |child| {
-            switch (child.kind) {
-                .enum_variant_def => {
-                    const vname = child.name orelse continue;
-                    try cg.emitIndent();
-                    if (child.literal) |lit| {
-                        try cg.emitFmt("{s} = {s},\n", .{ vname, lit });
-                    } else {
-                        try cg.emitFmt("{s},\n", .{vname});
-                    }
-                },
-                else => {},
-            }
+    const members = store.extra_data.items[rec.members_start..rec.members_end];
+    for (members) |mu32| {
+        const variant_idx: MirNodeIndex = @enumFromInt(mu32);
+        const vrec = mir_typed.EnumVariantDef.unpack(store, variant_idx);
+        const vname = store.strings.get(vrec.name);
+        try cg.emitIndent();
+        if (vrec.value != .none) {
+            try cg.emitFmt("{s} = ", .{vname});
+            try cg.generateExprMir(vrec.value);
+            try cg.emit(",\n");
+        } else {
+            try cg.emitFmt("{s},\n", .{vname});
         }
     }
 

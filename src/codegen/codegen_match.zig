@@ -105,21 +105,15 @@ pub fn mirContainsIdentifier(store: *const MirStore, idx: MirNodeIndex, name: []
     return false;
 }
 
-/// Check if the match arm body references the match variable.
-fn armUsesMatchVar(body: *mir.MirNode, match_var: ?[]const u8) bool {
-    const mv = match_var orelse return false;
-    return mirContainsIdentifierOld(body, mv);
-}
-
 /// Generate a match arm body with variable name substitution.
 /// Inside the body, references to `match_var` compile as `capture` instead.
 /// Saves and restores the previous substitution for nested match support.
-fn generateArmBodyWithSubst(cg: *CodeGen, body: *mir.MirNode, match_var: ?[]const u8, capture: []const u8) anyerror!void {
+fn generateArmBodyWithSubst(cg: *CodeGen, body: MirNodeIndex, match_var: ?[]const u8, capture: []const u8) anyerror!void {
     const prev = cg.match_var_subst;
     if (match_var) |mv| {
         cg.match_var_subst = .{ .original = mv, .capture = capture };
     }
-    try cg.generateBlockMir(cg.mirIdx(body));
+    try cg.generateBlockMir(body);
     cg.match_var_subst = prev;
 }
 
@@ -133,108 +127,105 @@ pub fn hasGuardedArm(arms: []*mir.MirNode) bool {
 
 /// Guarded match — emits as a scoped if/else chain with a temp variable.
 /// Used when any arm has a guard expression (Zig switch cannot express guards).
-///
-/// For guarded binding `(x if x > 0)`, emits:
-///   if (_g0: { const x = _m; break :_g0 x > 0; }) { const x = _m; body }
-///
-/// The labeled block lets the guard expression reference the bound variable while
-/// still producing a bool for the outer if. The `else if` chain then correctly
-/// short-circuits: only the first matching guard fires its body.
 pub fn generateGuardedMatchMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    // Emit wrapper block with temp var: const _m = <match_value>;
+    const store = cg.mir_store orelse return;
+    const rec = mir_typed.MatchStmt.unpack(store, idx);
+    const arms_extra = store.extra_data.items[rec.arms_start..rec.arms_end];
+
     try cg.emitIndent();
     try cg.emit("{\n");
     cg.indent += 1;
     try cg.emitIndent();
     try cg.emit("const _m = ");
-    try cg.generateExprMir(cg.mirIdx(m.value()));
+    try cg.generateExprMir(rec.value);
     try cg.emit(";\n");
 
     var first = true;
-    var else_arm: ?*mir.MirNode = null;
+    var else_body: MirNodeIndex = .none;
     var guard_counter: usize = 0;
 
-    for (m.matchArms()) |arm_mir| {
-        const pat_m = arm_mir.pattern();
-        const pat_name = pat_m.name orelse "";
+    for (arms_extra) |au32| {
+        const arm_idx: MirNodeIndex = @enumFromInt(au32);
+        const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+        const pat = arm.pattern;
+        const pat_entry = store.getNode(pat);
 
         // Collect else arm — emit last
-        if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-            else_arm = arm_mir;
-            continue;
+        if (pat_entry.tag == .identifier) {
+            const id = mir_typed.Identifier.unpack(store, pat);
+            if (std.mem.eql(u8, store.strings.get(id.name), "else")) {
+                else_body = arm.body;
+                continue;
+            }
         }
 
         try cg.emitIndent();
-        if (!first) {
-            try cg.emit(" else ");
-        }
+        if (!first) try cg.emit(" else ");
 
-        if (arm_mir.guard()) |guard_node| {
+        if (arm.guard != .none) {
             // Guarded binding: (x if guard_expr) => body
-            //
-            // Desugar to a labeled comptime block so the guard can reference the
-            // bound variable, while the outer if-else chain still works correctly.
-            //
-            // if (_g0: { const x = _m; break :_g0 x > 0; }) {
-            //     const x = _m;
-            //     body
-            // }
-            //
-            // This is correct for chained else-if: only the first matching guard
-            // fires. The labeled block evaluates to bool, so Zig treats it as a
-            // normal boolean condition for the if expression.
+            const pat_name: []const u8 = if (pat_entry.tag == .identifier)
+                store.strings.get(mir_typed.Identifier.unpack(store, pat).name)
+            else
+                "_";
             try cg.emitFmt("if (_g{d}: {{ const {s} = _m; break :_g{d} ", .{ guard_counter, pat_name, guard_counter });
-            try cg.generateExprMir(cg.mirIdx(guard_node));
+            try cg.generateExprMir(arm.guard);
             try cg.emit("; }) {\n");
             cg.indent += 1;
             try cg.emitIndent();
-            // Bind the guard variable so body statements can reference it.
-            // If the body doesn't reference the variable, suppress with _ = x to
-            // avoid "unused local constant" from Zig. If the body does reference it,
-            // suppress the "pointless discard" by omitting _ = x.
-            const body_uses_var = mirContainsIdentifierOld(arm_mir.body(), pat_name);
+            const body_uses_var = mirContainsIdentifier(store, arm.body, pat_name);
             if (body_uses_var) {
                 try cg.emitFmt("const {s} = _m;\n", .{pat_name});
             } else {
                 try cg.emitFmt("const {s} = _m; _ = {s};\n", .{ pat_name, pat_name });
             }
-            try cg.generateBodyStatements(cg.mirIdx(arm_mir.body()));
+            try cg.generateBodyStatements(arm.body);
             cg.indent -= 1;
             try cg.emitIndent();
             try cg.emit("}");
             guard_counter += 1;
-        } else if (pat_m.kind == .binary and (pat_m.op orelse .eq) == .range) {
-            // Range pattern: (1..10)
-            try cg.emit("if (_m >= ");
-            try cg.generateExprMir(cg.mirIdx(pat_m.lhs()));
-            try cg.emit(" and _m <= ");
-            try cg.generateExprMir(cg.mirIdx(pat_m.rhs()));
-            try cg.emit(") ");
-            try cg.generateBlockMir(cg.mirIdx(arm_mir.body()));
-        } else if (pat_m.literal_kind == .string) {
-            // String pattern
-            try cg.emit("if (std.mem.eql(u8, _m, ");
-            try cg.generateExprMir(cg.mirIdx(pat_m));
-            try cg.emit(")) ");
-            try cg.generateBlockMir(cg.mirIdx(arm_mir.body()));
+        } else if (pat_entry.tag == .binary) {
+            const bin = mir_typed.Binary.unpack(store, pat);
+            const op: parser.Operator = @enumFromInt(bin.op);
+            if (op == .range) {
+                try cg.emit("if (_m >= ");
+                try cg.generateExprMir(bin.lhs);
+                try cg.emit(" and _m <= ");
+                try cg.generateExprMir(bin.rhs);
+                try cg.emit(") ");
+                try cg.generateBlockMir(arm.body);
+            } else {
+                try cg.emit("if (_m == ");
+                try cg.generateExprMir(pat);
+                try cg.emit(") ");
+                try cg.generateBlockMir(arm.body);
+            }
+        } else if (pat_entry.tag == .literal) {
+            const lit = mir_typed.Literal.unpack(store, pat);
+            if (lit.kind == @intFromEnum(mir.LiteralKind.string)) {
+                try cg.emit("if (std.mem.eql(u8, _m, ");
+                try cg.generateExprMir(pat);
+                try cg.emit(")) ");
+                try cg.generateBlockMir(arm.body);
+            } else {
+                try cg.emit("if (_m == ");
+                try cg.generateExprMir(pat);
+                try cg.emit(") ");
+                try cg.generateBlockMir(arm.body);
+            }
         } else {
-            // Plain value: integer, enum variant, etc.
             try cg.emit("if (_m == ");
-            try cg.generateExprMir(cg.mirIdx(pat_m));
+            try cg.generateExprMir(pat);
             try cg.emit(") ");
-            try cg.generateBlockMir(cg.mirIdx(arm_mir.body()));
+            try cg.generateBlockMir(arm.body);
         }
 
         first = false;
     }
 
-    // Emit else arm last
-    if (else_arm) |ea| {
-        if (!first) {
-            try cg.emit(" else ");
-        }
-        try cg.generateBlockMir(cg.mirIdx(ea.body()));
+    if (else_body != .none) {
+        if (!first) try cg.emit(" else ");
+        try cg.generateBlockMir(else_body);
     }
 
     try cg.emit("\n");
@@ -245,36 +236,65 @@ pub fn generateGuardedMatchMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
 
 /// MIR-path match codegen — dispatches to string, type, or regular switch.
 pub fn generateMatchMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
+    const store = cg.mir_store orelse return;
+    const rec = mir_typed.MatchStmt.unpack(store, idx);
+    const arms_extra = store.extra_data.items[rec.arms_start..rec.arms_end];
+    const val_entry = store.getNode(rec.value);
+
     // String match — Zig has no string switch, desugar to if/else chain
     const is_string_match = blk: {
-        for (m.matchArms()) |arm_mir| {
-            if (arm_mir.pattern().literal_kind == .string) break :blk true;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            if (store.getNode(arm.pattern).tag == .literal) {
+                const lit = mir_typed.Literal.unpack(store, arm.pattern);
+                if (lit.kind == @intFromEnum(mir.LiteralKind.string)) break :blk true;
+            }
         }
         break :blk false;
     };
 
-    // Type match — any arm is `Error`, `null`, or value is an arbitrary union
+    // Type match — value is an arbitrary union, or any arm matches Error/null
     const is_type_match = blk: {
-        if (m.value().type_class == .arbitrary_union) break :blk true;
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            if (pat_m.literal_kind == .null_lit) break :blk true;
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR))
-                break :blk true;
+        if (val_entry.type_class == .arbitrary_union) break :blk true;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            const pat = arm.pattern;
+            const pat_entry = store.getNode(pat);
+            if (pat_entry.tag == .literal) {
+                const lit = mir_typed.Literal.unpack(store, pat);
+                if (lit.kind == @intFromEnum(mir.LiteralKind.null_lit)) break :blk true;
+            }
+            if (pat_entry.tag == .identifier) {
+                const id = mir_typed.Identifier.unpack(store, pat);
+                if (std.mem.eql(u8, store.strings.get(id.name), K.Type.ERROR)) break :blk true;
+            }
         }
         break :blk false;
     };
 
     const is_null_union = blk: {
-        for (m.matchArms()) |arm_mir| {
-            if (arm_mir.pattern().literal_kind == .null_lit) break :blk true;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            if (store.getNode(arm.pattern).tag == .literal) {
+                const lit = mir_typed.Literal.unpack(store, arm.pattern);
+                if (lit.kind == @intFromEnum(mir.LiteralKind.null_lit)) break :blk true;
+            }
         }
         break :blk false;
     };
 
     // Check for guarded arms — must use if/else chain (Zig switch cannot express guards)
-    const has_guard = hasGuardedArm(m.matchArms());
+    const has_guard = blk: {
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            if (arm.guard != .none) break :blk true;
+        }
+        break :blk false;
+    };
 
     if (has_guard) {
         try cg.generateGuardedMatchMir(idx);
@@ -285,39 +305,63 @@ pub fn generateMatchMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
     } else {
         // Regular switch
         try cg.emit("switch (");
-        const val_m = m.value();
-        if (val_m.kind == .identifier and val_m.resolved_type == .ptr) {
-            try cg.emitFmt("{s}.*", .{val_m.name orelse ""});
+        if (val_entry.tag == .identifier) {
+            const val_rt = if (val_entry.type_id != .none) store.types.get(val_entry.type_id) else .unknown;
+            if (val_rt == .ptr) {
+                const val_id = mir_typed.Identifier.unpack(store, rec.value);
+                try cg.emitFmt("{s}.*", .{store.strings.get(val_id.name)});
+            } else {
+                try cg.generateExprMir(rec.value);
+            }
         } else {
-            try cg.generateExprMir(cg.mirIdx(val_m));
+            try cg.generateExprMir(rec.value);
         }
         try cg.emit(") {\n");
         cg.indent += 1;
         var has_wildcard = false;
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            const pat = arm.pattern;
+            const pat_entry = store.getNode(pat);
             try cg.emitIndent();
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", "else")) {
-                has_wildcard = true;
-                try cg.emit("else");
-            } else if (pat_m.kind == .binary and (pat_m.op orelse .eq) == .range) {
-                try cg.generateExprMir(cg.mirIdx(pat_m.lhs()));
-                try cg.emit("...");
-                try cg.generateExprMir(cg.mirIdx(pat_m.rhs()));
+            if (pat_entry.tag == .identifier) {
+                const id = mir_typed.Identifier.unpack(store, pat);
+                const id_name = store.strings.get(id.name);
+                if (std.mem.eql(u8, id_name, "else")) {
+                    has_wildcard = true;
+                    try cg.emit("else");
+                } else {
+                    try cg.generateExprMir(pat);
+                }
+            } else if (pat_entry.tag == .binary) {
+                const bin = mir_typed.Binary.unpack(store, pat);
+                const op: parser.Operator = @enumFromInt(bin.op);
+                if (op == .range) {
+                    try cg.generateExprMir(bin.lhs);
+                    try cg.emit("...");
+                    try cg.generateExprMir(bin.rhs);
+                } else {
+                    try cg.generateExprMir(pat);
+                }
             } else {
-                try cg.generateExprMir(cg.mirIdx(pat_m));
+                try cg.generateExprMir(pat);
             }
             try cg.emit(" => ");
-            try cg.generateBlockMir(cg.mirIdx(arm_mir.body()));
+            try cg.generateBlockMir(arm.body);
             try cg.emit(",\n");
         }
         if (!has_wildcard) {
             var is_enum_switch = false;
-            for (m.matchArms()) |arm_mir| {
-                const pat_m = arm_mir.pattern();
-                if (pat_m.kind == .identifier and pat_m.resolved_kind == .enum_variant) {
-                    is_enum_switch = true;
-                    break;
+            for (arms_extra) |au32| {
+                const arm_idx: MirNodeIndex = @enumFromInt(au32);
+                const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+                if (store.getNode(arm.pattern).tag == .identifier) {
+                    const id = mir_typed.Identifier.unpack(store, arm.pattern);
+                    if (id.resolved_kind == 1) { // enum_variant
+                        is_enum_switch = true;
+                        break;
+                    }
                 }
             }
             if (!is_enum_switch) {
@@ -333,81 +377,104 @@ pub fn generateMatchMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
 
 /// MIR-path type match (arbitrary/error/null union switch).
 pub fn generateTypeMatchMir(cg: *CodeGen, idx: MirNodeIndex, is_null_union: bool) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
+    const store = cg.mir_store orelse return;
+    const rec = mir_typed.MatchStmt.unpack(store, idx);
+    const arms_extra = store.extra_data.items[rec.arms_start..rec.arms_end];
+    const val_entry = store.getNode(rec.value);
+
+    const match_var: ?[]const u8 = if (val_entry.tag == .identifier)
+        store.strings.get(mir_typed.Identifier.unpack(store, rec.value).name)
+    else
+        null;
+
     const is_arbitrary = blk: {
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR)) break :blk false;
-            if (pat_m.literal_kind == .null_lit) break :blk false;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            const pat = arm.pattern;
+            const pat_entry = store.getNode(pat);
+            if (pat_entry.tag == .identifier) {
+                const id = mir_typed.Identifier.unpack(store, pat);
+                if (std.mem.eql(u8, store.strings.get(id.name), K.Type.ERROR)) break :blk false;
+            }
+            if (pat_entry.tag == .literal) {
+                const lit = mir_typed.Literal.unpack(store, pat);
+                if (lit.kind == @intFromEnum(mir.LiteralKind.null_lit)) break :blk false;
+            }
         }
         break :blk true;
     };
 
     const is_error_union = blk: {
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", K.Type.ERROR)) break :blk true;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            if (store.getNode(arm.pattern).tag == .identifier) {
+                const id = mir_typed.Identifier.unpack(store, arm.pattern);
+                if (std.mem.eql(u8, store.strings.get(id.name), K.Type.ERROR)) break :blk true;
+            }
         }
         break :blk false;
     };
 
-    // Check if the match value's actual type is null_error_union (?anyerror!T),
-    // which requires the two-step unwrap even when arms don't cover all variants.
-    const val_tc = m.value().type_class;
+    const val_tc = val_entry.type_class;
     const is_null_error = val_tc == .null_error_union or (is_error_union and is_null_union);
 
-    // For native ?T and anyerror!T, use if/else instead of switch
     if (is_null_error) {
-        // match on ?anyerror!T → three-way nested if:
-        //   if (val) |_eu| { if (_eu) |_match_val| { value } else |_match_err| { error } } else { null }
-        var value_arm: ?*mir.MirNode = null;
-        var error_arm: ?*mir.MirNode = null;
-        var null_arm: ?*mir.MirNode = null;
-        var else_arm: ?*mir.MirNode = null;
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            const pat_name = pat_m.name orelse "";
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, K.Type.ERROR)) {
-                error_arm = arm_mir;
-            } else if (pat_m.literal_kind == .null_lit) {
-                null_arm = arm_mir;
-            } else if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-                else_arm = arm_mir;
+        // match on ?anyerror!T → three-way nested if
+        var value_body: MirNodeIndex = .none;
+        var error_body: MirNodeIndex = .none;
+        var null_body: MirNodeIndex = .none;
+        var else_body: MirNodeIndex = .none;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            const pat = arm.pattern;
+            const pat_entry = store.getNode(pat);
+            if (pat_entry.tag == .identifier) {
+                const id = mir_typed.Identifier.unpack(store, pat);
+                const n = store.strings.get(id.name);
+                if (std.mem.eql(u8, n, K.Type.ERROR)) {
+                    error_body = arm.body;
+                } else if (std.mem.eql(u8, n, "else")) {
+                    else_body = arm.body;
+                } else {
+                    value_body = arm.body;
+                }
+            } else if (pat_entry.tag == .literal) {
+                const lit = mir_typed.Literal.unpack(store, pat);
+                if (lit.kind == @intFromEnum(mir.LiteralKind.null_lit)) {
+                    null_body = arm.body;
+                } else {
+                    value_body = arm.body;
+                }
             } else {
-                value_arm = arm_mir;
+                value_body = arm.body;
             }
         }
-        const match_var = m.value().name;
-        // Determine which arms use the match variable for capture selection
-        const val_body = if (value_arm orelse else_arm) |arm| arm.body() else null;
-        const err_body = if (error_arm) |arm| arm.body() else if (else_arm) |arm| arm.body() else null;
-        const val_uses = if (val_body) |b| armUsesMatchVar(b, match_var) else false;
-        const err_uses = if (err_body) |b| armUsesMatchVar(b, match_var) else false;
-        // Outer if: unwrap optional
+        const active_val_body = if (value_body != .none) value_body else else_body;
+        const active_err_body = if (error_body != .none) error_body else else_body;
+        const val_uses = if (active_val_body != .none) (if (match_var) |mv| mirContainsIdentifier(store, active_val_body, mv) else false) else false;
+        const err_uses = if (active_err_body != .none) (if (match_var) |mv| mirContainsIdentifier(store, active_err_body, mv) else false) else false;
         try cg.emit("if (");
-        try cg.generateExprMir(cg.mirIdx(m.value()));
+        try cg.generateExprMir(rec.value);
         try cg.emit(") |_eu| ");
-        // Inner if: unwrap error union
         if (val_uses) try cg.emit("if (_eu) |_match_val| ") else try cg.emit("if (_eu) |_| ");
-        if (value_arm orelse else_arm) |arm| {
-            try generateArmBodyWithSubst(cg, arm.body(), match_var, "_match_val");
+        if (active_val_body != .none) {
+            try generateArmBodyWithSubst(cg, active_val_body, match_var, "_match_val");
         } else {
             try cg.emit("{}");
         }
         if (err_uses) try cg.emit(" else |_match_err| ") else try cg.emit(" else |_| ");
-        if (error_arm) |arm| {
-            try generateArmBodyWithSubst(cg, arm.body(), match_var, "_match_err");
-        } else if (else_arm) |arm| {
-            try generateArmBodyWithSubst(cg, arm.body(), match_var, "_match_err");
+        if (active_err_body != .none) {
+            try generateArmBodyWithSubst(cg, active_err_body, match_var, "_match_err");
         } else {
             try cg.emit("{}");
         }
-        // Outer else: null case
         try cg.emit(" else ");
-        if (null_arm) |arm| {
-            try cg.generateBlockMir(cg.mirIdx(arm.body()));
-        } else if (else_arm) |arm| {
-            try cg.generateBlockMir(cg.mirIdx(arm.body()));
+        const active_null_body = if (null_body != .none) null_body else else_body;
+        if (active_null_body != .none) {
+            try cg.generateBlockMir(active_null_body);
         } else {
             try cg.emit("{}");
         }
@@ -416,36 +483,42 @@ pub fn generateTypeMatchMir(cg: *CodeGen, idx: MirNodeIndex, is_null_union: bool
 
     if (is_error_union) {
         // match on anyerror!T → if (val) |_match_val| { ... } else |_match_err| { ... }
-        var value_arm: ?*mir.MirNode = null;
-        var error_arm: ?*mir.MirNode = null;
-        var else_arm: ?*mir.MirNode = null;
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            const pat_name = pat_m.name orelse "";
-            if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, K.Type.ERROR)) {
-                error_arm = arm_mir;
-            } else if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-                else_arm = arm_mir;
+        var value_body: MirNodeIndex = .none;
+        var error_body: MirNodeIndex = .none;
+        var else_body: MirNodeIndex = .none;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            const pat = arm.pattern;
+            const pat_entry = store.getNode(pat);
+            if (pat_entry.tag == .identifier) {
+                const id = mir_typed.Identifier.unpack(store, pat);
+                const n = store.strings.get(id.name);
+                if (std.mem.eql(u8, n, K.Type.ERROR)) {
+                    error_body = arm.body;
+                } else if (std.mem.eql(u8, n, "else")) {
+                    else_body = arm.body;
+                } else {
+                    value_body = arm.body;
+                }
             } else {
-                value_arm = arm_mir;
+                value_body = arm.body;
             }
         }
-        const match_var = m.value().name;
-        const val_body = if (value_arm orelse else_arm) |arm| arm.body() else null;
-        const err_body = if (error_arm) |arm| arm.body() else null;
-        const val_uses = if (val_body) |b| armUsesMatchVar(b, match_var) else false;
-        const err_uses = if (err_body) |b| armUsesMatchVar(b, match_var) else false;
+        const active_val_body = if (value_body != .none) value_body else else_body;
+        const val_uses = if (active_val_body != .none) (if (match_var) |mv| mirContainsIdentifier(store, active_val_body, mv) else false) else false;
+        const err_uses = if (error_body != .none) (if (match_var) |mv| mirContainsIdentifier(store, error_body, mv) else false) else false;
         try cg.emit("if (");
-        try cg.generateExprMir(cg.mirIdx(m.value()));
+        try cg.generateExprMir(rec.value);
         if (val_uses) try cg.emit(") |_match_val| ") else try cg.emit(") |_| ");
-        if (value_arm orelse else_arm) |arm| {
-            try generateArmBodyWithSubst(cg, arm.body(), match_var, "_match_val");
+        if (active_val_body != .none) {
+            try generateArmBodyWithSubst(cg, active_val_body, match_var, "_match_val");
         } else {
             try cg.emit("{}");
         }
         if (err_uses) try cg.emit(" else |_match_err| ") else try cg.emit(" else |_| ");
-        if (error_arm) |arm| {
-            try generateArmBodyWithSubst(cg, arm.body(), match_var, "_match_err");
+        if (error_body != .none) {
+            try generateArmBodyWithSubst(cg, error_body, match_var, "_match_err");
         } else {
             try cg.emit("{}");
         }
@@ -454,54 +527,62 @@ pub fn generateTypeMatchMir(cg: *CodeGen, idx: MirNodeIndex, is_null_union: bool
 
     if (is_null_union) {
         // match on ?T → if (val) |_match_val| { ... } else { ... }
-        var value_arm: ?*mir.MirNode = null;
-        var null_arm: ?*mir.MirNode = null;
-        var else_arm: ?*mir.MirNode = null;
-        for (m.matchArms()) |arm_mir| {
-            const pat_m = arm_mir.pattern();
-            const pat_name = pat_m.name orelse "";
-            if (pat_m.literal_kind == .null_lit) {
-                null_arm = arm_mir;
-            } else if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-                else_arm = arm_mir;
-            } else {
-                value_arm = arm_mir;
+        var value_body: MirNodeIndex = .none;
+        var null_body: MirNodeIndex = .none;
+        var else_body: MirNodeIndex = .none;
+        for (arms_extra) |au32| {
+            const arm_idx: MirNodeIndex = @enumFromInt(au32);
+            const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+            const pat = arm.pattern;
+            const pat_entry = store.getNode(pat);
+            if (pat_entry.tag == .literal) {
+                const lit = mir_typed.Literal.unpack(store, pat);
+                if (lit.kind == @intFromEnum(mir.LiteralKind.null_lit)) {
+                    null_body = arm.body;
+                    continue;
+                }
             }
+            if (pat_entry.tag == .identifier) {
+                const id = mir_typed.Identifier.unpack(store, pat);
+                if (std.mem.eql(u8, store.strings.get(id.name), "else")) {
+                    else_body = arm.body;
+                    continue;
+                }
+            }
+            value_body = arm.body;
         }
-        const match_var = m.value().name;
-        const val_body = if (value_arm orelse else_arm) |arm| arm.body() else null;
-        const val_uses = if (val_body) |b| armUsesMatchVar(b, match_var) else false;
+        const active_val_body = if (value_body != .none) value_body else else_body;
+        const val_uses = if (active_val_body != .none) (if (match_var) |mv| mirContainsIdentifier(store, active_val_body, mv) else false) else false;
         try cg.emit("if (");
-        try cg.generateExprMir(cg.mirIdx(m.value()));
+        try cg.generateExprMir(rec.value);
         if (val_uses) try cg.emit(") |_match_val| ") else try cg.emit(") |_| ");
-        if (value_arm orelse else_arm) |arm| {
-            try generateArmBodyWithSubst(cg, arm.body(), match_var, "_match_val");
+        if (active_val_body != .none) {
+            try generateArmBodyWithSubst(cg, active_val_body, match_var, "_match_val");
         } else {
             try cg.emit("{}");
         }
         try cg.emit(" else ");
-        if (null_arm) |arm| {
-            try cg.generateBlockMir(cg.mirIdx(arm.body()));
+        const active_null_body = if (null_body != .none) null_body else else_body;
+        if (active_null_body != .none) {
+            try cg.generateBlockMir(active_null_body);
         } else {
             try cg.emit("{}");
         }
         return;
     }
 
-    // Arbitrary union — keep as switch, with positional tag arms computed
-    // against the matched value's canonical sort order.
-    const match_var = m.value().name;
+    // Arbitrary union — switch with positional tag arms.
     try cg.emit("switch (");
-    try cg.generateExprMir(cg.mirIdx(m.value()));
+    try cg.generateExprMir(rec.value);
     try cg.emit(") {\n");
     cg.indent += 1;
 
-    // Build the canonical sorted member names of the matched value's union.
     const max_arity = 32;
     var sorted_buf: [max_arity][]const u8 = undefined;
     var sorted_len: usize = 0;
-    if (m.value().resolved_type == .union_type) {
-        for (m.value().resolved_type.union_type) |mem| {
+    const val_rt = if (val_entry.type_id != .none) store.types.get(val_entry.type_id) else @import("../types.zig").ResolvedType.unknown;
+    if (val_rt == .union_type) {
+        for (val_rt.union_type) |mem| {
             const n = mem.name();
             if (std.mem.eql(u8, n, "Error") or std.mem.eql(u8, n, "null")) continue;
             if (sorted_len >= max_arity) break;
@@ -511,24 +592,34 @@ pub fn generateTypeMatchMir(cg: *CodeGen, idx: MirNodeIndex, is_null_union: bool
         mir.union_sort.sortMemberNames(sorted_buf[0..sorted_len]);
     }
 
-    for (m.matchArms()) |arm_mir| {
-        const pat_m = arm_mir.pattern();
-        const pat_name = pat_m.name orelse "";
+    for (arms_extra) |au32| {
+        const arm_idx: MirNodeIndex = @enumFromInt(au32);
+        const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+        const pat = arm.pattern;
+        const pat_entry = store.getNode(pat);
         try cg.emitIndent();
 
-        if (pat_m.kind == .identifier and std.mem.eql(u8, pat_name, "else")) {
-            try cg.emit("else");
-        } else if (is_arbitrary and pat_m.kind == .identifier) {
-            if (mir.union_sort.positionalIndex(sorted_buf[0..sorted_len], pat_name)) |pos_idx| {
-                try cg.emitFmt("._{d}", .{pos_idx});
+        if (pat_entry.tag == .identifier) {
+            const id = mir_typed.Identifier.unpack(store, pat);
+            const pat_name = store.strings.get(id.name);
+            if (std.mem.eql(u8, pat_name, "else")) {
+                try cg.emit("else");
+            } else if (is_arbitrary) {
+                if (mir.union_sort.positionalIndex(sorted_buf[0..sorted_len], pat_name)) |pos_idx| {
+                    try cg.emitFmt("._{d}", .{pos_idx});
+                } else {
+                    try cg.emitFmt("._{s}", .{pat_name});
+                }
             } else {
-                try cg.emitFmt("._{s}", .{pat_name});
+                try cg.generateExprMir(pat);
             }
+        } else {
+            try cg.generateExprMir(pat);
         }
 
-        const arm_uses = armUsesMatchVar(arm_mir.body(), match_var);
+        const arm_uses = if (match_var) |mv| mirContainsIdentifier(store, arm.body, mv) else false;
         if (arm_uses) try cg.emit(" => |_match_val| ") else try cg.emit(" => ");
-        try generateArmBodyWithSubst(cg, arm_mir.body(), match_var, "_match_val");
+        try generateArmBodyWithSubst(cg, arm.body, match_var, "_match_val");
         try cg.emit(",\n");
     }
 
@@ -539,16 +630,26 @@ pub fn generateTypeMatchMir(cg: *CodeGen, idx: MirNodeIndex, is_null_union: bool
 
 /// MIR-path string match — desugars to if/else chain.
 pub fn generateStringMatchMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
+    const store = cg.mir_store orelse return;
+    const rec = mir_typed.MatchStmt.unpack(store, idx);
+    const arms_extra = store.extra_data.items[rec.arms_start..rec.arms_end];
+    const val_entry = store.getNode(rec.value);
+
     var first = true;
-    var wildcard_arm: ?*mir.MirNode = null;
+    var wildcard_body: MirNodeIndex = .none;
 
-    for (m.matchArms()) |arm_mir| {
-        const pat_m = arm_mir.pattern();
+    for (arms_extra) |au32| {
+        const arm_idx: MirNodeIndex = @enumFromInt(au32);
+        const arm = mir_typed.MatchArm.unpack(store, arm_idx);
+        const pat = arm.pattern;
+        const pat_entry = store.getNode(pat);
 
-        if (pat_m.kind == .identifier and std.mem.eql(u8, pat_m.name orelse "", "else")) {
-            wildcard_arm = arm_mir;
-            continue;
+        if (pat_entry.tag == .identifier) {
+            const id = mir_typed.Identifier.unpack(store, pat);
+            if (std.mem.eql(u8, store.strings.get(id.name), "else")) {
+                wildcard_body = arm.body;
+                continue;
+            }
         }
 
         if (first) {
@@ -558,24 +659,29 @@ pub fn generateStringMatchMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
             try cg.emit(" else if (std.mem.eql(u8, ");
         }
 
-        const val_m = m.value();
-        if (val_m.kind == .identifier and val_m.resolved_type == .ptr) {
-            try cg.emitFmt("{s}.*", .{val_m.name orelse ""});
+        if (val_entry.tag == .identifier) {
+            const val_rt = if (val_entry.type_id != .none) store.types.get(val_entry.type_id) else .unknown;
+            if (val_rt == .ptr) {
+                const val_id = mir_typed.Identifier.unpack(store, rec.value);
+                try cg.emitFmt("{s}.*", .{store.strings.get(val_id.name)});
+            } else {
+                try cg.generateExprMir(rec.value);
+            }
         } else {
-            try cg.generateExprMir(cg.mirIdx(val_m));
+            try cg.generateExprMir(rec.value);
         }
         try cg.emit(", ");
-        try cg.generateExprMir(cg.mirIdx(pat_m));
+        try cg.generateExprMir(pat);
         try cg.emit(")) ");
-        try cg.generateBlockMir(cg.mirIdx(arm_mir.body()));
+        try cg.generateBlockMir(arm.body);
     }
 
-    if (wildcard_arm) |wa| {
+    if (wildcard_body != .none) {
         if (first) {
-            try cg.generateBlockMir(cg.mirIdx(wa.body()));
+            try cg.generateBlockMir(wildcard_body);
         } else {
             try cg.emit(" else ");
-            try cg.generateBlockMir(cg.mirIdx(wa.body()));
+            try cg.generateBlockMir(wildcard_body);
         }
     } else if (!first) {
         try cg.emit(" else {}");
@@ -808,59 +914,78 @@ pub fn generateInterpolatedStringMirFromStore(cg: *CodeGen, store: *const MirSto
 /// If the arg is a type reference (type_expr, or an identifier whose name IS the
 /// resolved type name — i.e. a struct/enum name used directly), emit it as-is.
 /// Otherwise wrap in @TypeOf() to handle value arguments (e.g. a variable).
-fn emitIntrospectionType(cg: *CodeGen, arg: *mir.MirNode) anyerror!void {
-    const is_type_ref = switch (arg.kind) {
+fn emitIntrospectionType(cg: *CodeGen, store: *const MirStore, arg_idx: MirNodeIndex) anyerror!void {
+    const entry = store.getNode(arg_idx);
+    const is_type_ref: bool = switch (entry.tag) {
         .type_expr => true,
         .identifier => blk: {
-            // Identifier is a direct type reference when its name matches the resolved type name.
-            // e.g. Vec2 → name="Vec2", resolved_type=.named{"Vec2"} → true
-            // e.g. v   → name="v",    resolved_type=.named{"Vec2"} → false
-            // Compt type params (T: type) resolve to .primitive(.type) — also a type ref.
-            const id_name = arg.name orelse break :blk false;
-            break :blk switch (arg.resolved_type) {
+            const rec = mir_typed.Identifier.unpack(store, arg_idx);
+            const id_name = store.strings.get(rec.name);
+            if (entry.type_id == .none) break :blk false;
+            const rt = store.types.get(entry.type_id);
+            break :blk switch (rt) {
                 .named => |n| std.mem.eql(u8, id_name, n),
                 .primitive => |p| p == .@"type" and cg.inComptFunc(),
                 else => false,
             };
         },
         else => blk: {
-            // Compiler functions returning type (e.g. @fieldType, @typeOf) are type refs
-            break :blk arg.resolved_type == .primitive and arg.resolved_type.primitive == .@"type";
+            if (entry.type_id == .none) break :blk false;
+            const rt = store.types.get(entry.type_id);
+            break :blk rt == .primitive and rt.primitive == .@"type";
         },
     };
     if (is_type_ref) {
-        try cg.generateExprMir(cg.mirIdx(arg));
+        try cg.generateExprMir(arg_idx);
     } else {
         try cg.emit("@TypeOf(");
-        try cg.generateExprMir(cg.mirIdx(arg));
+        try cg.generateExprMir(arg_idx);
         try cg.emit(")");
     }
 }
 
 /// MIR-path compiler function (@typename, @cast, @size, etc.).
 pub fn generateCompilerFuncMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    const cf_name = m.name orelse return;
-    const args = m.children;
+    const store = cg.mir_store orelse return;
+    const rec = mir_typed.CompilerFn.unpack(store, idx);
+    const cf_name = store.strings.get(rec.name);
+    const args_extra = store.extra_data.items[rec.args_start..rec.args_end];
+
     switch (builtins.CompilerFunc.fromName(cf_name) orelse unreachable) {
         .typename => {
             try cg.emit("@typeName(@TypeOf(");
-            if (args.len > 0) try cg.generateExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateExprMir(@enumFromInt(args_extra[0]));
             try cg.emit("))");
         },
         .typeid => {
             try cg.emit("@intFromPtr(@typeName(@TypeOf(");
-            if (args.len > 0) try cg.generateExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateExprMir(@enumFromInt(args_extra[0]));
             try cg.emit(")).ptr)");
         },
         .cast => {
-            if (args.len >= 2) {
-                const target_type = try cg.typeToZig(args[0].ast); // type trees are structural — typeToZig walks AST
+            if (args_extra.len >= 2) {
+                const arg0: MirNodeIndex = @enumFromInt(args_extra[0]);
+                const arg1: MirNodeIndex = @enumFromInt(args_extra[1]);
+                const arg0_entry = store.getNode(arg0);
+                const arg1_entry = store.getNode(arg1);
+                // typeToZig walks AST — get *parser.Node via span back-pointer
+                const span0 = arg0_entry.span;
+                const ast_node0 = cg.getAstNode(span0) orelse return;
+                const target_type = try cg.typeToZig(ast_node0);
                 const target_is_float = target_type.len > 0 and target_type[0] == 'f';
-                const target_is_enum = args[0].resolved_kind == .enum_type_name;
-                // Detect float source from literal kind OR resolved type
-                const source_is_float = args[1].literal_kind == .float or
-                    (args[1].resolved_type == .primitive and args[1].resolved_type.primitive.isFloat());
+                const target_is_enum = arg0_entry.tag == .identifier and
+                    mir_typed.Identifier.unpack(store, arg0).resolved_kind == 2; // enum_type_name
+                const source_is_float = blk: {
+                    if (arg1_entry.tag == .literal) {
+                        const lit = mir_typed.Literal.unpack(store, arg1);
+                        if (lit.kind == @intFromEnum(mir.LiteralKind.float)) break :blk true;
+                    }
+                    if (arg1_entry.type_id != .none) {
+                        const rt = store.types.get(arg1_entry.type_id);
+                        if (rt == .primitive and rt.primitive.isFloat()) break :blk true;
+                    }
+                    break :blk false;
+                };
                 try cg.emitFmt("@as({s}, ", .{target_type});
                 if (target_is_enum) {
                     try cg.emit("@enumFromInt(");
@@ -873,37 +998,36 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
                 } else {
                     try cg.emit("@intCast(");
                 }
-                try cg.generateExprMir(cg.mirIdx(args[1]));
+                try cg.generateExprMir(arg1);
                 try cg.emit("))");
-            } else if (args.len == 1) {
+            } else if (args_extra.len == 1) {
                 try cg.emit("@intCast(");
-                try cg.generateExprMir(cg.mirIdx(args[0]));
+                try cg.generateExprMir(@enumFromInt(args_extra[0]));
                 try cg.emit(")");
             }
         },
         .size => {
             try cg.emit("@sizeOf(");
-            if (args.len > 0) try emitIntrospectionType(cg, args[0]);
+            if (args_extra.len > 0) try emitIntrospectionType(cg, store, @enumFromInt(args_extra[0]));
             try cg.emit(")");
         },
         .@"align" => {
             try cg.emit("@alignOf(");
-            if (args.len > 0) try emitIntrospectionType(cg, args[0]);
+            if (args_extra.len > 0) try emitIntrospectionType(cg, store, @enumFromInt(args_extra[0]));
             try cg.emit(")");
         },
         .copy => {
-            if (args.len > 0) try cg.generateExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateExprMir(@enumFromInt(args_extra[0]));
         },
         .move => {
-            if (args.len > 0) try cg.generateExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateExprMir(@enumFromInt(args_extra[0]));
         },
         .assert => {
-            if (args.len >= 2) {
-                // @assert(cond, "message") — conditional panic with custom message
+            if (args_extra.len >= 2) {
                 try cg.emit("if (!(");
-                try cg.generateExprMir(cg.mirIdx(args[0]));
+                try cg.generateExprMir(@enumFromInt(args_extra[0]));
                 try cg.emit(")) @panic(");
-                try cg.generateExprMir(cg.mirIdx(args[1]));
+                try cg.generateExprMir(@enumFromInt(args_extra[1]));
                 try cg.emit(")");
             } else {
                 if (cg.in_test_block) {
@@ -911,83 +1035,75 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
                 } else {
                     try cg.emit("std.debug.assert(");
                 }
-                if (args.len > 0) try cg.generateExprMir(cg.mirIdx(args[0]));
+                if (args_extra.len > 0) try cg.generateExprMir(@enumFromInt(args_extra[0]));
                 try cg.emit(")");
             }
         },
         .swap => {
-            if (args.len == 2) {
+            if (args_extra.len == 2) {
+                const arg0: MirNodeIndex = @enumFromInt(args_extra[0]);
+                const arg1: MirNodeIndex = @enumFromInt(args_extra[1]);
                 try cg.emit("std.mem.swap(@TypeOf(");
-                try cg.generateExprMir(cg.mirIdx(args[0]));
+                try cg.generateExprMir(arg0);
                 try cg.emit("), &");
-                try cg.generateExprMir(cg.mirIdx(args[0]));
+                try cg.generateExprMir(arg0);
                 try cg.emit(", &");
-                try cg.generateExprMir(cg.mirIdx(args[1]));
+                try cg.generateExprMir(arg1);
                 try cg.emit(")");
             }
         },
         .hasField => {
             try cg.emit("@hasField(");
-            if (args.len >= 1) {
-                try emitIntrospectionType(cg, args[0]);
-            }
-            if (args.len >= 2) {
+            if (args_extra.len >= 1) try emitIntrospectionType(cg, store, @enumFromInt(args_extra[0]));
+            if (args_extra.len >= 2) {
                 try cg.emit(", ");
-                try cg.generateExprMir(cg.mirIdx(args[1]));
+                try cg.generateExprMir(@enumFromInt(args_extra[1]));
             }
             try cg.emit(")");
         },
         .hasDecl => {
             try cg.emit("@hasDecl(");
-            if (args.len >= 1) {
-                try emitIntrospectionType(cg, args[0]);
-            }
-            if (args.len >= 2) {
+            if (args_extra.len >= 1) try emitIntrospectionType(cg, store, @enumFromInt(args_extra[0]));
+            if (args_extra.len >= 2) {
                 try cg.emit(", ");
-                try cg.generateExprMir(cg.mirIdx(args[1]));
+                try cg.generateExprMir(@enumFromInt(args_extra[1]));
             }
             try cg.emit(")");
         },
         .fieldType => {
             try cg.emit("@FieldType(");
-            if (args.len >= 1) {
-                try emitIntrospectionType(cg, args[0]);
-            }
-            if (args.len >= 2) {
+            if (args_extra.len >= 1) try emitIntrospectionType(cg, store, @enumFromInt(args_extra[0]));
+            if (args_extra.len >= 2) {
                 try cg.emit(", ");
-                try cg.generateExprMir(cg.mirIdx(args[1]));
+                try cg.generateExprMir(@enumFromInt(args_extra[1]));
             }
             try cg.emit(")");
         },
         .fieldNames => {
             try cg.emit("std.meta.fieldNames(");
-            if (args.len >= 1) {
-                try emitIntrospectionType(cg, args[0]);
-            }
+            if (args_extra.len >= 1) try emitIntrospectionType(cg, store, @enumFromInt(args_extra[0]));
             try cg.emit(")");
         },
         .typeOf => {
             try cg.emit("@TypeOf(");
-            if (args.len > 0) try cg.generateExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateExprMir(@enumFromInt(args_extra[0]));
             try cg.emit(")");
         },
         .splitAt => {
-            // @splitAt is handled in generateDestructMir for destructuring context.
-            // Standalone usage is not meaningful — splitAt always produces two values.
             try cg.emit("/* @splitAt must be used with destructuring: const a, b = @splitAt(arr, n) */");
         },
         .wrap => {
-            if (args.len > 0) try cg.generateWrappingExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateWrappingExprMir(@enumFromInt(args_extra[0]));
         },
         .sat => {
-            if (args.len > 0) try cg.generateSaturatingExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateSaturatingExprMir(@enumFromInt(args_extra[0]));
         },
         .overflow => {
-            if (args.len > 0) try cg.generateOverflowExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateOverflowExprMir(@enumFromInt(args_extra[0]));
         },
         .compileError => {
             try cg.emit("@compileError(");
-            if (args.len > 0) try cg.generateExprMir(cg.mirIdx(args[0]));
+            if (args_extra.len > 0) try cg.generateExprMir(@enumFromInt(args_extra[0]));
             try cg.emit(")");
         },
         // @type is an internal desugaring artifact from `x is T` — always handled as
@@ -1028,12 +1144,15 @@ fn mapOverflowBuiltin(op: parser.Operator) ?[]const u8 {
 // ── Wrapping / saturating / overflow: MIR paths ────────────────────
 
 pub fn generateWrappingExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    if (m.kind == .binary) {
-        if (mapWrappingOp(m.op orelse .assign)) |op| {
-            try cg.generateExprMir(cg.mirIdx(m.lhs()));
-            try cg.emitFmt(" {s} ", .{op});
-            try cg.generateExprMir(cg.mirIdx(m.rhs()));
+    const store = cg.mir_store orelse return;
+    const entry = store.getNode(idx);
+    if (entry.tag == .binary) {
+        const bin = mir_typed.Binary.unpack(store, idx);
+        const op: parser.Operator = @enumFromInt(bin.op);
+        if (mapWrappingOp(op)) |wop| {
+            try cg.generateExprMir(bin.lhs);
+            try cg.emitFmt(" {s} ", .{wop});
+            try cg.generateExprMir(bin.rhs);
             return;
         }
     }
@@ -1041,12 +1160,15 @@ pub fn generateWrappingExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
 }
 
 pub fn generateSaturatingExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    if (m.kind == .binary) {
-        if (mapSaturatingOp(m.op orelse .assign)) |op| {
-            try cg.generateExprMir(cg.mirIdx(m.lhs()));
-            try cg.emitFmt(" {s} ", .{op});
-            try cg.generateExprMir(cg.mirIdx(m.rhs()));
+    const store = cg.mir_store orelse return;
+    const entry = store.getNode(idx);
+    if (entry.tag == .binary) {
+        const bin = mir_typed.Binary.unpack(store, idx);
+        const op: parser.Operator = @enumFromInt(bin.op);
+        if (mapSaturatingOp(op)) |sop| {
+            try cg.generateExprMir(bin.lhs);
+            try cg.emitFmt(" {s} ", .{sop});
+            try cg.generateExprMir(bin.rhs);
             return;
         }
     }
@@ -1057,50 +1179,24 @@ pub fn generateSaturatingExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void 
 // overflow(a + b) → (blk: { const _ov = @addWithOverflow(a, b);
 //   if (_ov[1] != 0) break :blk @as(anyerror!@TypeOf(a), error.overflow)
 //   else break :blk @as(anyerror!@TypeOf(a), _ov[0]); })
-// When operands are literals, @TypeOf gives comptime_int which Zig rejects.
-// MirLowerer stamps the enclosing var_decl's type annotation onto the binary
-// operand via `overflow_type`; codegen reads it from the MIR node.
-
-fn resolveOverflowTypeStr(cg: *CodeGen, m: *mir.MirNode, left_is_literal: bool) anyerror!?[]const u8 {
-    if (!left_is_literal) return null;
-    const ann = m.overflow_type orelse return null;
-    if (codegen.extractValueType(ann)) |vt| return try cg.typeToZig(vt);
-    return null;
-}
-
-fn emitOverflowTail(cg: *CodeGen, type_str: ?[]const u8) anyerror!void {
-    if (type_str) |ts| {
-        try cg.emitFmt("); if (_ov[1] != 0) break :blk @as(anyerror!{s}, error.overflow) else break :blk @as(anyerror!{s}, _ov[0]); }})", .{ ts, ts });
-    }
-}
 
 pub fn generateOverflowExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
-    const m = cg.getOldMirNode(idx) orelse return;
-    if (m.kind == .binary) {
-        if (mapOverflowBuiltin(m.op orelse .assign)) |builtin| {
-            const left_is_literal = m.lhs().literal_kind == .int or m.lhs().literal_kind == .float;
-            const type_str = try resolveOverflowTypeStr(cg, m, left_is_literal);
-
+    const store = cg.mir_store orelse return;
+    const entry = store.getNode(idx);
+    if (entry.tag == .binary) {
+        const bin = mir_typed.Binary.unpack(store, idx);
+        const op: parser.Operator = @enumFromInt(bin.op);
+        if (mapOverflowBuiltin(op)) |builtin| {
             try cg.emit("(blk: { const _ov = ");
             try cg.emitFmt("{s}(", .{builtin});
-            if (type_str) |ts| {
-                try cg.emitFmt("@as({s}, ", .{ts});
-                try cg.generateExprMir(cg.mirIdx(m.lhs()));
-                try cg.emit(")");
-            } else {
-                try cg.generateExprMir(cg.mirIdx(m.lhs()));
-            }
+            try cg.generateExprMir(bin.lhs);
             try cg.emit(", ");
-            try cg.generateExprMir(cg.mirIdx(m.rhs()));
-            if (type_str) |_| {
-                try emitOverflowTail(cg, type_str);
-            } else {
-                try cg.emit("); if (_ov[1] != 0) break :blk @as(anyerror!@TypeOf(");
-                try cg.generateExprMir(cg.mirIdx(m.lhs()));
-                try cg.emit("), error.overflow) else break :blk @as(anyerror!@TypeOf(");
-                try cg.generateExprMir(cg.mirIdx(m.lhs()));
-                try cg.emit("), _ov[0]); })");
-            }
+            try cg.generateExprMir(bin.rhs);
+            try cg.emit("); if (_ov[1] != 0) break :blk @as(anyerror!@TypeOf(");
+            try cg.generateExprMir(bin.lhs);
+            try cg.emit("), error.overflow) else break :blk @as(anyerror!@TypeOf(");
+            try cg.generateExprMir(bin.lhs);
+            try cg.emit("), _ov[0]); })");
             return;
         }
     }
