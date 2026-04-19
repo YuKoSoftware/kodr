@@ -221,12 +221,14 @@ fn generateFuncMirFromStore(cg: *CodeGen, store: *const MirStore, idx: MirNodeIn
     // Parameters — MirStore path: flat MirNodeIndex list in extra_data.
     var first_any_param: ?[]const u8 = null;
     const params_extra = store.extra_data.items[rec.params_start..rec.params_end];
-    for (params_extra, 0..) |pu32, i| {
+    var emitted: usize = 0;
+    for (params_extra) |pu32| {
         const param_idx: MirNodeIndex = @enumFromInt(pu32);
         const p = mir_typed.ParamDef.unpack(store, param_idx);
         const pname = store.strings.get(p.name);
         const pta = cg.getAstNode(p.type_annotation) orelse continue;
-        if (i > 0) try cg.emit(", ");
+        if (emitted > 0) try cg.emit(", ");
+        emitted += 1;
         const is_any = pta.* == .type_named and
             std.mem.eql(u8, pta.type_named, K.Type.ANY);
         const is_type_param = pta.* == .type_named and
@@ -343,6 +345,7 @@ fn getRootIdentMirFromStore(store: *const MirStore, idx: MirNodeIndex) ?[]const 
         .identifier => store.strings.get(mir_typed.Identifier.unpack(store, idx).name),
         .field_access => getRootIdentMirFromStore(store, mir_typed.FieldAccess.unpack(store, idx).object),
         .index => getRootIdentMirFromStore(store, mir_typed.Index.unpack(store, idx).object),
+        .slice => getRootIdentMirFromStore(store, mir_typed.Slice.unpack(store, idx).object),
         else => null,
     };
 }
