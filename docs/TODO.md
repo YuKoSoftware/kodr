@@ -95,10 +95,8 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 ### Phase C — Codegen migration `0.5-1 week`
 
-> **⬅ RESUME HERE** — Design approved 2026-04-18, spec at
-> `docs/superpowers/specs/2026-04-18-phase-c-codegen-migration-design.md`
-> Implementation plan at `docs/superpowers/plans/` (to be written).
-> Phase C runs **inside Phase B** before B10/B11.
+> **Phase C complete (2026-04-19)** — all codegen signatures migrated to MirNodeIndex; 361/361 green.
+> **⬅ RESUME HERE: B10** — delete MirAnnotator, MirAnnotator_nodes, MirLowerer, old MirNode, NodeMap.
 
 **C-prep — semantic completion (do before C1):**
 - [x] **CP1** Add `coercion_kind: u8` to `MirEntry` in `src/mir_store.zig`; add `coercionFromKind`/`coercionToKind` helpers + round-trip tests
@@ -115,18 +113,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 - [x] **C4** `src/codegen/codegen_stmts.zig` — all signatures migrated to MirNodeIndex + bridge
 - [x] **C5** `src/codegen/codegen_match.zig` — all signatures migrated to MirNodeIndex + bridge
 - [x] **C6** bridge infra in codegen.zig: synth fallback maps for nodes not in MirStore; 361/361 green
-- [ ] **C7** Phase C merge — final `testall.sh`, merge to main
->
-> **C2-C6 migration note (2026-04-18):** All codegen satellite files call each other through stubs in codegen.zig. Changing any function signature from `*mir.MirNode` to `MirNodeIndex` requires changing ALL callers and callees simultaneously (circular dep). Strategy: do a single large commit changing all 4 satellite files (codegen_decls, codegen_stmts, codegen_exprs, codegen_match) plus codegen.zig stubs at once. Key field mappings documented here:
-> - `m.name` → `store.strings.get(TypedWrapper.unpack(store,idx).name)`
-> - `m.is_pub` → `(rec.flags & 1) != 0`, `m.is_const` → `(rec.flags & 2) != 0`
-> - `m.type_class` → `entry.type_class`, `m.resolved_type` → `store.types.get(entry.type_id)`
-> - `m.coercion` → `entry.coercion_kind` (0=none,1=arr→slice,2=null_wrap,3=err_wrap,4=opt_unwrap,5=val→ref,6+=arb_union)
-> - `m.children` (block) → `Block.getStmts(store,idx)`, `m.body()` → `Func.unpack(store,idx).body`
-> - `m.narrowing` → existing `readNarrowingFromStore()` in codegen_stmts
-> - `m.type_annotation`/`m.return_type`/`m.backing_type` → `cg.getAstNode(rec.field_ast_idx)`
-> - `m.params()` → extra_data slice `rec.params_start..params_end` of ParamDef indices
-> - `m.injected_name`/`m.interp_parts` → MirStore has Interpolation nodes; no temp_var injection in MirBuilder; handle `.interpolation` in generateExprMir via pre_stmts buffer
+- [x] **C7** Phase C merge — 361/361 green, committed 2026-04-19 (v0.51.8)
 > - `m.union_tag` on Binary nodes → MirStore Binary has no union_tag; must compute from var_types at call site
 
 ### Phase D — Cleanup `0.5 week`
