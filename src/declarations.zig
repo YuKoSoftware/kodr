@@ -1189,6 +1189,21 @@ test "Symbol.isPub - each variant" {
     try std.testing.expect(alias.isPub());
     const pub_var = Symbol{ .@"var" = .{ .name = "v", .type_ = null, .is_const = true, .is_pub = true } };
     try std.testing.expect(pub_var.isPub());
+
+    const pub_enum = Symbol{ .@"enum" = .{ .name = "E", .backing_type = .{ .primitive = .void }, .variants = &.{}, .is_pub = true } };
+    try std.testing.expect(pub_enum.isPub());
+    const priv_enum = Symbol{ .@"enum" = .{ .name = "E", .backing_type = .{ .primitive = .void }, .variants = &.{}, .is_pub = false } };
+    try std.testing.expect(!priv_enum.isPub());
+
+    const pub_handle = Symbol{ .handle = .{ .name = "H", .is_pub = true } };
+    try std.testing.expect(pub_handle.isPub());
+    const priv_handle = Symbol{ .handle = .{ .name = "H", .is_pub = false } };
+    try std.testing.expect(!priv_handle.isPub());
+
+    const pub_bp = Symbol{ .blueprint = .{ .name = "B", .methods = &.{}, .is_pub = true } };
+    try std.testing.expect(pub_bp.isPub());
+    const priv_bp = Symbol{ .blueprint = .{ .name = "B", .methods = &.{}, .is_pub = false } };
+    try std.testing.expect(!priv_bp.isPub());
 }
 
 test "Symbol.isType - each variant" {
@@ -1202,4 +1217,5 @@ test "Symbol.isType - each variant" {
         .context = .normal, .is_pub = true, .is_instance = false,
     } }).isType());
     try std.testing.expect(!(Symbol{ .@"var" = .{ .name = "v", .type_ = null, .is_const = true, .is_pub = true } }).isType());
+    try std.testing.expect(!(Symbol{ .blueprint = .{ .name = "B", .methods = &.{}, .is_pub = true } }).isType());
 }
