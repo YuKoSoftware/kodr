@@ -4,6 +4,7 @@
 const std = @import("std");
 const borrow = @import("borrow.zig");
 const parser = @import("parser.zig");
+const declarations = @import("declarations.zig");
 const BorrowChecker = borrow.BorrowChecker;
 
 pub fn checkStatement(self: *BorrowChecker, node: *parser.Node) anyerror!void {
@@ -119,8 +120,14 @@ pub fn checkExpr(self: *BorrowChecker, node: *parser.Node) anyerror!void {
                     // Look up method to check self parameter mutability.
                     // Try top-level funcs first, then struct_methods ("Type.method" key).
                     {
-                        if (self.ctx.decls.funcs.get(method_name) orelse
-                            self.lookupStructMethod(fe.object, method_name)) |sig| {
+                        const method_sig_opt: ?declarations.FuncSig = blk: {
+                            if (self.ctx.decls.symbols.get(method_name)) |sym| switch (sym) {
+                                .func => |sig| break :blk sig,
+                                else => {},
+                            };
+                            break :blk self.lookupStructMethod(fe.object, method_name);
+                        };
+                        if (method_sig_opt) |sig| {
                             if (sig.is_instance) {
                                 const self_node = sig.param_nodes[0];
                                 if (self_node.* == .param) {

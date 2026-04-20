@@ -284,7 +284,10 @@ pub fn extractSymbols(
         switch (node.*) {
             .func_decl => |f| {
                 const loc = nodeLocInfo(locs, node) orelse continue;
-                const func_sig = table.funcs.get(f.name);
+                const func_sig: ?declarations.FuncSig = if (table.symbols.get(f.name)) |sym| switch (sym) {
+                    .func => |s| s,
+                    else => null,
+                } else null;
                 const detail = if (func_sig) |sig|
                     formatFuncSig(allocator, sig) catch try allocator.dupe(u8, "func")
                 else
@@ -327,7 +330,11 @@ pub fn extractSymbols(
             },
             .struct_decl => |s| {
                 const loc = nodeLocInfo(locs, node) orelse continue;
-                const detail = if (table.structs.get(s.name)) |sig|
+                const struct_sig: ?declarations.StructSig = if (table.symbols.get(s.name)) |sym| switch (sym) {
+                    .@"struct" => |ss| ss,
+                    else => null,
+                } else null;
+                const detail = if (struct_sig) |sig|
                     formatStructSig(allocator, sig) catch try allocator.dupe(u8, "struct")
                 else
                     try allocator.dupe(u8, "struct");
@@ -346,7 +353,7 @@ pub fn extractSymbols(
                     if (member.* == .field_decl) {
                         const floc = nodeLocInfo(locs, member) orelse continue;
                         const fd = member.field_decl;
-                        const ftype = if (table.structs.get(s.name)) |sig| blk: {
+                        const ftype = if (struct_sig) |sig| blk: {
                             for (sig.fields) |field| {
                                 if (std.mem.eql(u8, field.name, fd.name)) {
                                     break :blk formatType(allocator, field.type_) catch try allocator.dupe(u8, "field");
@@ -369,7 +376,11 @@ pub fn extractSymbols(
             },
             .enum_decl => |e| {
                 const loc = nodeLocInfo(locs, node) orelse continue;
-                const detail = if (table.enums.get(e.name)) |sig|
+                const enum_sig: ?declarations.EnumSig = if (table.symbols.get(e.name)) |sym| switch (sym) {
+                    .@"enum" => |es| es,
+                    else => null,
+                } else null;
+                const detail = if (enum_sig) |sig|
                     formatEnumSig(allocator, sig) catch try allocator.dupe(u8, "enum")
                 else
                     try allocator.dupe(u8, "enum");
@@ -419,7 +430,11 @@ pub fn extractSymbols(
                 const loc = nodeLocInfo(locs, node) orelse continue;
                 const sym_kind: SymbolKind = if (v.mutability == .constant) .constant else .variable;
                 const default_label = if (v.mutability == .constant) "const" else "var";
-                const detail = if (table.vars.get(v.name)) |sig| blk: {
+                const var_sig: ?declarations.VarSig = if (table.symbols.get(v.name)) |sym| switch (sym) {
+                    .@"var" => |vs| vs,
+                    else => null,
+                } else null;
+                const detail = if (var_sig) |sig| blk: {
                     if (sig.type_) |t| break :blk formatType(allocator, t) catch try allocator.dupe(u8, default_label);
                     break :blk try allocator.dupe(u8, default_label);
                 } else try allocator.dupe(u8, default_label);

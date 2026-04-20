@@ -1089,8 +1089,10 @@ pub fn isResultValueField(name: []const u8, decls: ?*declarations.DeclTable) boo
     if (types.isPrimitiveName(name)) return true;
     // Known user-defined types from the declaration table
     if (decls) |d| {
-        if (d.structs.contains(name)) return true;
-        if (d.enums.contains(name)) return true;
+        if (d.symbols.get(name)) |sym| switch (sym) {
+            .@"struct", .@"enum" => return true,
+            else => {},
+        };
     }
     // Builtin types that can appear in unions
     if (builtins.isBuiltinType(name)) return true;
@@ -1112,7 +1114,7 @@ test "isResultValueField with decls" {
     const alloc = std.testing.allocator;
     var decl_table = declarations.DeclTable.init(alloc);
     defer decl_table.deinit();
-    try decl_table.structs.put("Player", .{ .name = "Player", .fields = &.{}, .is_pub = true });
+    try decl_table.symbols.put("Player", .{ .@"struct" = .{ .name = "Player", .fields = &.{}, .is_pub = true } });
     try std.testing.expect(isResultValueField("Player", &decl_table));
     try std.testing.expect(!isResultValueField("Unknown", &decl_table));
 }

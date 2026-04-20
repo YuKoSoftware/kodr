@@ -388,121 +388,97 @@ pub fn hashSemanticContent(source: []const u8) u64 {
 pub fn hashInterface(alloc: std.mem.Allocator, decls: *const declarations.DeclTable) !u64 {
     var seed: u64 = 0;
 
-    // Category 0x01: public functions
-    var func_names = try collectPublicNames(declarations.FuncSig, alloc, &decls.funcs);
+    // Collect names per category from the unified symbols map.
+    var func_names: std.ArrayList([]const u8) = .{};
     defer func_names.deinit(alloc);
-    seed = try hashCategory(alloc, seed, 0x01, func_names.items, decls.funcs, struct {
-        fn hash(s: u64, sig: declarations.FuncSig, _: std.mem.Allocator) !u64 {
-            var h = s;
-            for (sig.params) |param| h = hashResolvedType(h, param.type_);
-            h = hashResolvedType(h, sig.return_type);
-            return XxHash3.hash(h, &[_]u8{@intFromEnum(sig.context)});
+    var struct_names: std.ArrayList([]const u8) = .{};
+    defer struct_names.deinit(alloc);
+    var enum_names: std.ArrayList([]const u8) = .{};
+    defer enum_names.deinit(alloc);
+    var var_names: std.ArrayList([]const u8) = .{};
+    defer var_names.deinit(alloc);
+    var type_names: std.ArrayList([]const u8) = .{};
+    defer type_names.deinit(alloc);
+
+    var it = decls.symbols.iterator();
+    while (it.next()) |entry| {
+        const name = entry.key_ptr.*;
+        switch (entry.value_ptr.*) {
+            .func => |sig| if (sig.is_pub) try func_names.append(alloc, name),
+            .@"struct" => |sig| if (sig.is_pub) try struct_names.append(alloc, name),
+            .@"enum" => |sig| if (sig.is_pub) try enum_names.append(alloc, name),
+            .@"var" => |sig| if (sig.is_pub) try var_names.append(alloc, name),
+            .type_alias => try type_names.append(alloc, name),
+            .handle, .blueprint => {},
         }
-    }.hash);
+    }
+
+    sortNames(func_names.items);
+    sortNames(struct_names.items);
+    sortNames(enum_names.items);
+    sortNames(var_names.items);
+    sortNames(type_names.items);
+
+    // Category 0x01: public functions
+    seed = XxHash3.hash(seed, &[_]u8{0x01});
+    for (func_names.items) |name| {
+        const sig = decls.symbols.get(name).?.func;
+        seed = XxHash3.hash(seed, name);
+        for (sig.params) |param| seed = hashResolvedType(seed, param.type_);
+        seed = hashResolvedType(seed, sig.return_type);
+        seed = XxHash3.hash(seed, &[_]u8{@intFromEnum(sig.context)});
+    }
 
     // Category 0x02: public structs
-    var struct_names = try collectPublicNames(declarations.StructSig, alloc, &decls.structs);
-    defer struct_names.deinit(alloc);
-    seed = try hashCategory(alloc, seed, 0x02, struct_names.items, decls.structs, struct {
-        fn hash(s: u64, sig: declarations.StructSig, a: std.mem.Allocator) !u64 {
-            var h = s;
-            var field_names: std.ArrayList([]const u8) = .{};
-            defer field_names.deinit(a);
-            for (sig.fields) |field| try field_names.append(a, field.name);
-            sortNames(field_names.items);
-            for (field_names.items) |fname| {
-                for (sig.fields) |field| {
-                    if (std.mem.eql(u8, field.name, fname)) {
-                        h = XxHash3.hash(h, field.name);
-                        h = hashResolvedType(h, field.type_);
-                        h = XxHash3.hash(h, &[_]u8{@intFromBool(field.is_pub)});
-                        break;
-                    }
+    seed = XxHash3.hash(seed, &[_]u8{0x02});
+    for (struct_names.items) |name| {
+        const sig = decls.symbols.get(name).?.@"struct";
+        seed = XxHash3.hash(seed, name);
+        var field_names: std.ArrayList([]const u8) = .{};
+        defer field_names.deinit(alloc);
+        for (sig.fields) |field| try field_names.append(alloc, field.name);
+        sortNames(field_names.items);
+        for (field_names.items) |fname| {
+            for (sig.fields) |field| {
+                if (std.mem.eql(u8, field.name, fname)) {
+                    seed = XxHash3.hash(seed, field.name);
+                    seed = hashResolvedType(seed, field.type_);
+                    seed = XxHash3.hash(seed, &[_]u8{@intFromBool(field.is_pub)});
+                    break;
                 }
             }
-            return h;
         }
-    }.hash);
+    }
 
     // Category 0x03: public enums
-    var enum_names = try collectPublicNames(declarations.EnumSig, alloc, &decls.enums);
-    defer enum_names.deinit(alloc);
-    seed = try hashCategory(alloc, seed, 0x03, enum_names.items, decls.enums, struct {
-        fn hash(s: u64, sig: declarations.EnumSig, a: std.mem.Allocator) !u64 {
-            var h = hashResolvedType(s, sig.backing_type);
-            var vnames: std.ArrayList([]const u8) = .{};
-            defer vnames.deinit(a);
-            for (sig.variants) |v| try vnames.append(a, v);
-            sortNames(vnames.items);
-            for (vnames.items) |vname| h = XxHash3.hash(h, vname);
-            return h;
-        }
-    }.hash);
+    seed = XxHash3.hash(seed, &[_]u8{0x03});
+    for (enum_names.items) |name| {
+        const sig = decls.symbols.get(name).?.@"enum";
+        seed = XxHash3.hash(seed, name);
+        seed = hashResolvedType(seed, sig.backing_type);
+        var vnames: std.ArrayList([]const u8) = .{};
+        defer vnames.deinit(alloc);
+        for (sig.variants) |v| try vnames.append(alloc, v);
+        sortNames(vnames.items);
+        for (vnames.items) |vname| seed = XxHash3.hash(seed, vname);
+    }
 
     // Category 0x05: public variables/constants
-    var var_names = try collectPublicNames(declarations.VarSig, alloc, &decls.vars);
-    defer var_names.deinit(alloc);
-    seed = try hashCategory(alloc, seed, 0x05, var_names.items, decls.vars, struct {
-        fn hash(s: u64, sig: declarations.VarSig, _: std.mem.Allocator) !u64 {
-            var h = s;
-            if (sig.type_) |t| h = hashResolvedType(h, t);
-            return XxHash3.hash(h, &[_]u8{@intFromBool(sig.is_const)});
-        }
-    }.hash);
+    seed = XxHash3.hash(seed, &[_]u8{0x05});
+    for (var_names.items) |name| {
+        const sig = decls.symbols.get(name).?.@"var";
+        seed = XxHash3.hash(seed, name);
+        if (sig.type_) |t| seed = hashResolvedType(seed, t);
+        seed = XxHash3.hash(seed, &[_]u8{@intFromBool(sig.is_const)});
+    }
 
     // Category 0x06: type aliases (all public — no is_pub field)
-    var type_names = try collectAllNames([]const u8, alloc, &decls.types);
-    defer type_names.deinit(alloc);
-    seed = try hashCategory(alloc, seed, 0x06, type_names.items, decls.types, struct {
-        fn hash(s: u64, _: []const u8, _: std.mem.Allocator) !u64 {
-            return s;
-        }
-    }.hash);
+    seed = XxHash3.hash(seed, &[_]u8{0x06});
+    for (type_names.items) |name| {
+        seed = XxHash3.hash(seed, name);
+    }
 
     return seed;
-}
-
-/// Collect sorted public names from a hashmap whose values have an `is_pub` field.
-fn collectPublicNames(comptime V: type, alloc: std.mem.Allocator, map: *const std.StringHashMap(V)) !std.ArrayList([]const u8) {
-    var list: std.ArrayList([]const u8) = .{};
-    errdefer list.deinit(alloc);
-    var it = map.iterator();
-    while (it.next()) |entry| {
-        if (!entry.value_ptr.is_pub) continue;
-        try list.append(alloc, entry.key_ptr.*);
-    }
-    sortNames(list.items);
-    return list;
-}
-
-/// Collect sorted names from a hashmap unconditionally (no is_pub filter).
-fn collectAllNames(comptime V: type, alloc: std.mem.Allocator, map: *const std.StringHashMap(V)) !std.ArrayList([]const u8) {
-    var list: std.ArrayList([]const u8) = .{};
-    errdefer list.deinit(alloc);
-    var it = map.iterator();
-    while (it.next()) |entry| {
-        try list.append(alloc, entry.key_ptr.*);
-    }
-    sortNames(list.items);
-    return list;
-}
-
-/// Hash a category: tag byte, then for each sorted name hash the name + per-entry details.
-fn hashCategory(
-    alloc: std.mem.Allocator,
-    seed: u64,
-    tag: u8,
-    sorted_names: []const []const u8,
-    map: anytype,
-    comptime hashEntry: anytype,
-) !u64 {
-    var s = XxHash3.hash(seed, &[_]u8{tag});
-    for (sorted_names) |name| {
-        const sig = map.get(name).?;
-        s = XxHash3.hash(s, name);
-        s = try hashEntry(s, sig, alloc);
-    }
-    return s;
 }
 
 /// Sort a slice of string slices alphabetically in-place.
@@ -727,21 +703,13 @@ fn makeTestTable(
         .is_pub = is_pub,
         .is_instance = false,
     };
-    try table.funcs.put(func_name, sig);
+    try table.symbols.put(func_name, .{ .func = sig });
     return table;
 }
 
 /// Free a test DeclTable that was built with makeTestTable.
-fn freeTestTable(alloc: std.mem.Allocator, table: *declarations.DeclTable) void {
-    var it = table.funcs.iterator();
-    while (it.next()) |e| alloc.free(e.value_ptr.params);
-    table.funcs.deinit();
-    table.structs.deinit();
-    table.enums.deinit();
-    table.vars.deinit();
-    table.types.deinit();
-    table.struct_methods.deinit(alloc);
-    table.type_arena.deinit();
+fn freeTestTable(_: std.mem.Allocator, table: *declarations.DeclTable) void {
+    table.deinit();
 }
 
 test "interface hash deterministic" {
@@ -789,7 +757,7 @@ test "interface hash ignores private" {
             .is_pub = false, // private — must not affect the hash
             .is_instance = false,
         };
-        try pub_and_priv.funcs.put("helper", priv_sig);
+        try pub_and_priv.symbols.put("helper", .{ .func = priv_sig });
     }
 
     const h1 = try hashInterface(alloc, &pub_table);
@@ -823,7 +791,7 @@ test "interface hash changes on public change" {
             .is_pub = true, // public — must change the hash
             .is_instance = false,
         };
-        try t2.funcs.put("farewell", new_pub);
+        try t2.symbols.put("farewell", .{ .func = new_pub });
     }
 
     const h1 = try hashInterface(alloc, &t1);
@@ -863,7 +831,7 @@ test "interface hash changes on field type change" {
     defer decl1.deinit();
     const fields1 = try alloc.alloc(declarations.FieldSig, 1);
     fields1[0] = .{ .name = "x", .type_ = .{ .primitive = .f32 }, .has_default = false, .is_pub = true };
-    try decl1.structs.put("Point", .{ .name = "Point", .fields = fields1, .is_pub = true });
+    try decl1.symbols.put("Point", .{ .@"struct" = .{ .name = "Point", .fields = fields1, .is_pub = true } });
     const hash1 = try hashInterface(alloc, &decl1);
 
     // Build DeclTable with struct Point { x: f64 } — different field type
@@ -871,7 +839,7 @@ test "interface hash changes on field type change" {
     defer decl2.deinit();
     const fields2 = try alloc.alloc(declarations.FieldSig, 1);
     fields2[0] = .{ .name = "x", .type_ = .{ .primitive = .f64 }, .has_default = false, .is_pub = true };
-    try decl2.structs.put("Point", .{ .name = "Point", .fields = fields2, .is_pub = true });
+    try decl2.symbols.put("Point", .{ .@"struct" = .{ .name = "Point", .fields = fields2, .is_pub = true } });
     const hash2 = try hashInterface(alloc, &decl2);
 
     try std.testing.expect(hash1 != hash2);
@@ -886,7 +854,7 @@ test "interface hash with slice type" {
     inner.* = .{ .primitive = .u8 };
     const fields1 = try alloc.alloc(declarations.FieldSig, 1);
     fields1[0] = .{ .name = "data", .type_ = .{ .slice = inner }, .has_default = false, .is_pub = true };
-    try decl1.structs.put("Buffer", .{ .name = "Buffer", .fields = fields1, .is_pub = true });
+    try decl1.symbols.put("Buffer", .{ .@"struct" = .{ .name = "Buffer", .fields = fields1, .is_pub = true } });
     const hash1 = try hashInterface(alloc, &decl1);
 
     // Same struct, same field → same hash
@@ -896,7 +864,7 @@ test "interface hash with slice type" {
     inner2.* = .{ .primitive = .u8 };
     const fields2 = try alloc.alloc(declarations.FieldSig, 1);
     fields2[0] = .{ .name = "data", .type_ = .{ .slice = inner2 }, .has_default = false, .is_pub = true };
-    try decl2.structs.put("Buffer", .{ .name = "Buffer", .fields = fields2, .is_pub = true });
+    try decl2.symbols.put("Buffer", .{ .@"struct" = .{ .name = "Buffer", .fields = fields2, .is_pub = true } });
     const hash2 = try hashInterface(alloc, &decl2);
 
     try std.testing.expectEqual(hash1, hash2);
@@ -909,7 +877,7 @@ test "interface hash with named type" {
     defer decl1.deinit();
     const fields1 = try alloc.alloc(declarations.FieldSig, 1);
     fields1[0] = .{ .name = "inner", .type_ = .{ .named = "Widget" }, .has_default = false, .is_pub = true };
-    try decl1.structs.put("Container", .{ .name = "Container", .fields = fields1, .is_pub = true });
+    try decl1.symbols.put("Container", .{ .@"struct" = .{ .name = "Container", .fields = fields1, .is_pub = true } });
     const hash1 = try hashInterface(alloc, &decl1);
 
     // Different named type → different hash
@@ -917,7 +885,7 @@ test "interface hash with named type" {
     defer decl2.deinit();
     const fields2 = try alloc.alloc(declarations.FieldSig, 1);
     fields2[0] = .{ .name = "inner", .type_ = .{ .named = "Gadget" }, .has_default = false, .is_pub = true };
-    try decl2.structs.put("Container", .{ .name = "Container", .fields = fields2, .is_pub = true });
+    try decl2.symbols.put("Container", .{ .@"struct" = .{ .name = "Container", .fields = fields2, .is_pub = true } });
     const hash2 = try hashInterface(alloc, &decl2);
 
     try std.testing.expect(hash1 != hash2);
@@ -1001,7 +969,7 @@ test "interface hash changes beyond 256 symbols" {
             .is_pub = true,
             .is_instance = false,
         };
-        try table_300.funcs.put(owned, sig);
+        try table_300.symbols.put(owned, .{ .func = sig });
     }
 
     const hash_300 = try hashInterface(alloc, &table_300);
@@ -1026,7 +994,7 @@ test "interface hash changes beyond 256 symbols" {
             .is_pub = true,
             .is_instance = false,
         };
-        try table_301.funcs.put(owned, sig);
+        try table_301.symbols.put(owned, .{ .func = sig });
     }
 
     const hash_301 = try hashInterface(alloc, &table_301);

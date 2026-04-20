@@ -371,10 +371,13 @@ pub const PropagationChecker = struct {
                         null;
 
                     if (func_name) |fname| {
-                        if (self.ctx.decls.funcs.get(fname)) |sig| {
-                            if (sig.return_type.unionContainsError()) return true;
-                            if (sig.return_type.unionContainsNull()) return false;
-                        }
+                        if (self.ctx.decls.symbols.get(fname)) |sym| switch (sym) {
+                            .func => |sig| {
+                                if (sig.return_type.unionContainsError()) return true;
+                                if (sig.return_type.unionContainsNull()) return false;
+                            },
+                            else => {},
+                        };
                     }
                 }
                 return null;
@@ -529,7 +532,7 @@ test "propagation - call expr resolved via decl table" {
     ret_node.* = .{ .type_named = "i32" };
 
     const params = try alloc.alloc(declarations.ParamSig, 0);
-    try decl_table.funcs.put("divide", .{
+    try decl_table.symbols.put("divide", .{ .func = .{
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
@@ -537,7 +540,7 @@ test "propagation - call expr resolved via decl table" {
         .context = .normal,
         .is_pub = false,
         .is_instance = false,
-    });
+    } });
 
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
@@ -671,7 +674,7 @@ test "propagation - reassignment resets handled status" {
     ret_node.* = .{ .type_named = "i32" };
 
     const params = try alloc.alloc(declarations.ParamSig, 0);
-    try decl_table.funcs.put("divide", .{
+    try decl_table.symbols.put("divide", .{ .func = .{
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
@@ -679,7 +682,7 @@ test "propagation - reassignment resets handled status" {
         .context = .normal,
         .is_pub = false,
         .is_instance = false,
-    });
+    } });
 
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);

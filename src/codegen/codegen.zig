@@ -330,12 +330,20 @@ pub const CodeGen = struct {
             // Re-export each pub declaration from the included module
             if (self.all_decls) |ad| {
                 if (ad.get(imp.path)) |dt| {
-                    inline for (.{ "funcs", "structs", "enums", "vars", "blueprints" }) |field_name| {
-                        var iter = @field(dt, field_name).iterator();
-                        while (iter.next()) |entry| {
-                            if (entry.value_ptr.is_pub)
-                                try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
-                        }
+                    var iter = dt.symbols.iterator();
+                    while (iter.next()) |entry| {
+                        // Skip type aliases — handled separately below in the historic
+                        // pattern; the previous code only re-exported funcs/structs/enums/vars/blueprints.
+                        const should_export = switch (entry.value_ptr.*) {
+                            .func => |s| s.is_pub,
+                            .@"struct" => |s| s.is_pub,
+                            .@"enum" => |s| s.is_pub,
+                            .@"var" => |s| s.is_pub,
+                            .blueprint => |s| s.is_pub,
+                            .handle, .type_alias => false,
+                        };
+                        if (should_export)
+                            try self.emitLineFmt("const {s} = {s}.{s};", .{ entry.key_ptr.*, hidden, entry.key_ptr.* });
                     }
                 }
             }

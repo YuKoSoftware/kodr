@@ -56,13 +56,15 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
 
         .identifier => |id_name| {
             if (scope.lookup(id_name)) |t| return t;
-            if (self.ctx.decls.funcs.contains(id_name)) {
-                const sentinel = &@as(RT, .unknown);
-                return RT{ .func_ptr = .{ .params = &.{}, .return_type = sentinel } };
-            }
-            if (self.ctx.decls.structs.contains(id_name)) return RT{ .named = id_name };
-            if (self.ctx.decls.enums.contains(id_name)) return RT{ .named = id_name };
-            if (self.ctx.decls.vars.get(id_name)) |v| return v.type_ orelse RT.unknown;
+            if (self.ctx.decls.symbols.get(id_name)) |sym| switch (sym) {
+                .func => {
+                    const sentinel = &@as(RT, .unknown);
+                    return RT{ .func_ptr = .{ .params = &.{}, .return_type = sentinel } };
+                },
+                .@"struct", .@"enum", .handle, .type_alias => return RT{ .named = id_name },
+                .@"var" => |v| return v.type_ orelse RT.unknown,
+                .blueprint => {},
+            };
             if (builtins.isBuiltinType(id_name)) return RT{ .named = id_name };
             if (self.isIncludedType(id_name)) return RT{ .named = id_name };
             if (builtins.isBuiltinValue(id_name)) return RT{ .named = id_name };
@@ -89,14 +91,8 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 var it = s.vars.keyIterator();
                 while (it.next()) |k| try candidates.append(self.ctx.allocator, k.*);
             }
-            var fit = self.ctx.decls.funcs.keyIterator();
-            while (fit.next()) |k| try candidates.append(self.ctx.allocator, k.*);
-            var sit = self.ctx.decls.structs.keyIterator();
-            while (sit.next()) |k| try candidates.append(self.ctx.allocator, k.*);
-            var eit = self.ctx.decls.enums.keyIterator();
-            while (eit.next()) |k| try candidates.append(self.ctx.allocator, k.*);
-            var vit = self.ctx.decls.vars.keyIterator();
-            while (vit.next()) |k| try candidates.append(self.ctx.allocator, k.*);
+            var sym_it = self.ctx.decls.symbols.keyIterator();
+            while (sym_it.next()) |k| try candidates.append(self.ctx.allocator, k.*);
 
             // Check if the identifier exists as a pub declaration in any other loaded module
             var cross_module_hint: ?[]const u8 = null;
@@ -107,10 +103,7 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                     const mod_decls = entry.value_ptr.*;
                     // Skip current module — its decls were already checked above
                     if (mod_decls == self.ctx.decls) continue;
-                    const found = (if (mod_decls.funcs.get(id_name)) |f| f.is_pub else false) or
-                        (if (mod_decls.structs.get(id_name)) |st| st.is_pub else false) or
-                        (if (mod_decls.enums.get(id_name)) |e| e.is_pub else false) or
-                        mod_decls.vars.contains(id_name);
+                    const found = if (mod_decls.symbols.get(id_name)) |sym| sym.isPub() else false;
                     if (found) {
                         cross_module_hint = try std.fmt.allocPrint(self.ctx.allocator,
                             " \u{2014} '{s}' exists in module '{s}' (add 'import {s}')", .{ id_name, mod_name, mod_name });
@@ -202,7 +195,10 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             // .orh interface; RT{ .named = "any" } is how classifyNamed represents it.
             const callee_sig: ?declarations.FuncSig = blk: {
                 if (c.callee.* == .identifier) {
-                    if (self.ctx.decls.funcs.get(c.callee.identifier)) |sig| break :blk sig;
+                    if (self.ctx.decls.symbols.get(c.callee.identifier)) |sym| switch (sym) {
+                        .func => |sig| break :blk sig,
+                        else => {},
+                    };
                 }
                 if (c.callee.* == .field_expr) {
                     const fe = c.callee.field_expr;
@@ -212,24 +208,29 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                         // Look in the named module's decl table first, then current module.
                         if (self.ctx.all_decls) |ad| {
                             if (ad.get(obj_id)) |mod_decls| {
-                                if (mod_decls.funcs.get(fe.field)) |sig| break :blk sig;
-                                // Also check generic structs: Bitfield(T, flags: any) pattern.
-                                // Synthesise a FuncSig from the struct's type_params so the
-                                // anytype-arg detection below can set in_anytype_arg correctly.
-                                if (mod_decls.structs.get(fe.field)) |ss| {
-                                    if (ss.type_params.len > 0) break :blk declarations.FuncSig{
-                                        .name = ss.name,
-                                        .params = ss.type_params,
-                                        .param_nodes = &.{},
-                                        .return_type = RT{ .primitive = .@"type" },
-                                        .context = .normal,
-                                        .is_pub = ss.is_pub,
-                                        .is_instance = false,
-                                    };
-                                }
+                                if (mod_decls.symbols.get(fe.field)) |sym| switch (sym) {
+                                    .func => |sig| break :blk sig,
+                                    .@"struct" => |ss| {
+                                        // Synthesise a FuncSig from the struct's type_params so the
+                                        // anytype-arg detection below can set in_anytype_arg correctly.
+                                        if (ss.type_params.len > 0) break :blk declarations.FuncSig{
+                                            .name = ss.name,
+                                            .params = ss.type_params,
+                                            .param_nodes = &.{},
+                                            .return_type = RT{ .primitive = .@"type" },
+                                            .context = .normal,
+                                            .is_pub = ss.is_pub,
+                                            .is_instance = false,
+                                        };
+                                    },
+                                    else => {},
+                                };
                             }
                         }
-                        if (self.ctx.decls.funcs.get(fe.field)) |sig| break :blk sig;
+                        if (self.ctx.decls.symbols.get(fe.field)) |sym| switch (sym) {
+                            .func => |sig| break :blk sig,
+                            else => {},
+                        };
                     }
                 }
                 break :blk null;
@@ -261,14 +262,16 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 const name = c.callee.identifier;
                 // Struct constructor: Player{name: "john", ...} → Player
                 // Tuple constructor: MinMax{min: 1, max: 2} → MinMax (type aliases)
-                if (self.ctx.decls.structs.contains(name) or self.ctx.decls.types.contains(name)) {
-                    // Reject positional arguments — struct/tuple constructors use {} syntax
-                    if (c.args.len > 0 and c.arg_names.len == 0) {
-                        try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
-                            "struct constructors use '{{}}' syntax — use '{s}{{field: value}}' instead of '{s}(value)'", .{ name, name });
-                    }
-                    return RT{ .named = name };
-                }
+                if (self.ctx.decls.symbols.get(name)) |sym| switch (sym) {
+                    .@"struct", .type_alias => {
+                        if (c.args.len > 0 and c.arg_names.len == 0) {
+                            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                                "struct constructors use '{{}}' syntax — use '{s}{{field: value}}' instead of '{s}(value)'", .{ name, name });
+                        }
+                        return RT{ .named = name };
+                    },
+                    else => {},
+                };
                 // Builtin or included type constructor: Ptr(T)(...), List(i32)(...)
                 if (builtins.isBuiltinType(name) or self.isIncludedType(name)) return RT{ .named = name };
                 // Named args only valid for struct/tuple constructors
@@ -282,9 +285,7 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                     } else if (t == .primitive and t.primitive == .@"type") {
                         // Local type alias used as a constructor (e.g. `const Perms: type = ...`)
                         return RT{ .named = name };
-                    } else if (!self.ctx.decls.funcs.contains(name) and
-                        !self.ctx.decls.structs.contains(name) and
-                        !self.ctx.decls.enums.contains(name) and
+                    } else if (self.ctx.decls.symbols.get(name) == null and
                         !builtins.isBuiltinType(name) and
                         !self.isIncludedType(name))
                     {
@@ -293,50 +294,53 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                         return t;
                     }
                 }
-                if (self.ctx.decls.funcs.get(name)) |sig| {
-                    // Argument count validation
-                    const n_defaults = blk: {
-                        var count: usize = 0;
-                        for (sig.param_nodes) |p| {
-                            if (p.* == .param and p.param.default_value != null) count += 1;
+                if (self.ctx.decls.symbols.get(name)) |sym| switch (sym) {
+                    .func => |sig| {
+                        // Argument count validation
+                        const n_defaults = blk: {
+                            var count: usize = 0;
+                            for (sig.param_nodes) |p| {
+                                if (p.* == .param and p.param.default_value != null) count += 1;
+                            }
+                            break :blk count;
+                        };
+                        const min_args = sig.params.len - n_defaults;
+                        const max_args = sig.params.len;
+                        if (c.args.len < min_args or c.args.len > max_args) {
+                            if (min_args == max_args) {
+                                try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                                    "'{s}' expects {d} argument(s), got {d}", .{ name, max_args, c.args.len });
+                            } else {
+                                try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                                    "'{s}' expects {d} to {d} argument(s), got {d}", .{ name, min_args, max_args, c.args.len });
+                            }
                         }
-                        break :blk count;
-                    };
-                    const min_args = sig.params.len - n_defaults;
-                    const max_args = sig.params.len;
-                    if (c.args.len < min_args or c.args.len > max_args) {
-                        if (min_args == max_args) {
-                            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
-                                "'{s}' expects {d} argument(s), got {d}", .{ name, max_args, c.args.len });
-                        } else {
-                            try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
-                                "'{s}' expects {d} to {d} argument(s), got {d}", .{ name, min_args, max_args, c.args.len });
-                        }
-                    }
-                    // Compt constraint validation — reject non-comptime arguments
-                    if (sig.context == .compt) {
-                        for (c.args, 0..) |arg, idx| {
-                            if (!isComptimeKnown(self, arg)) {
-                                const arg_name = if (arg.* == .identifier) arg.identifier else "expression";
-                                const is_type_param = if (idx < sig.params.len)
-                                    switch (sig.params[idx].type_) {
-                                        .primitive => |p| p == .@"type",
-                                        else => false,
+                        // Compt constraint validation — reject non-comptime arguments
+                        if (sig.context == .compt) {
+                            for (c.args, 0..) |arg, idx| {
+                                if (!isComptimeKnown(self, arg)) {
+                                    const arg_name = if (arg.* == .identifier) arg.identifier else "expression";
+                                    const is_type_param = if (idx < sig.params.len)
+                                        switch (sig.params[idx].type_) {
+                                            .primitive => |p| p == .@"type",
+                                            else => false,
+                                        }
+                                    else
+                                        false;
+                                    if (is_type_param) {
+                                        try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                                            "compt function '{s}' expects a type argument, but '{s}' is a function parameter", .{ name, arg_name });
+                                    } else {
+                                        try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
+                                            "compt function '{s}' requires compile-time-known arguments, but '{s}' is a function parameter", .{ name, arg_name });
                                     }
-                                else
-                                    false;
-                                if (is_type_param) {
-                                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
-                                        "compt function '{s}' expects a type argument, but '{s}' is a function parameter", .{ name, arg_name });
-                                } else {
-                                    try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node),
-                                        "compt function '{s}' requires compile-time-known arguments, but '{s}' is a function parameter", .{ name, arg_name });
                                 }
                             }
                         }
-                    }
-                    return sig.return_type;
-                }
+                        return sig.return_type;
+                    },
+                    else => {},
+                };
             }
             if (c.callee.* == .field_expr) {
                 const fe = c.callee.field_expr;
@@ -345,17 +349,20 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                     // Module-level function: module.func()
                     // Only validate arity when obj_id is a known module — otherwise this
                     // may match a same-named top-level function instead of the intended method.
-                    if (self.ctx.decls.funcs.get(fe.field)) |sig| {
-                        const is_module = if (self.ctx.all_decls) |ad| ad.contains(obj_id) else false;
-                        if (is_module) {
-                            try validateCallArity(self, sig, c.args.len, false, fe.field, node);
-                        }
-                        return sig.return_type;
-                    }
+                    if (self.ctx.decls.symbols.get(fe.field)) |sym| switch (sym) {
+                        .func => |sig| {
+                            const is_module = if (self.ctx.all_decls) |ad| ad.contains(obj_id) else false;
+                            if (is_module) {
+                                try validateCallArity(self, sig, c.args.len, false, fe.field, node);
+                            }
+                            return sig.return_type;
+                        },
+                        else => {},
+                    };
                     // Static or instance method on a struct.
                     // obj_id may be the struct type name (static: Renderer.create())
                     // or a variable whose type is a struct (instance: r.draw(m)).
-                    const called_on_type = self.ctx.decls.structs.contains(obj_id);
+                    const called_on_type = if (self.ctx.decls.symbols.get(obj_id)) |sym| sym == .@"struct" else false;
                     const struct_name: []const u8 = blk: {
                         if (called_on_type) break :blk obj_id;
                         if (scope.lookup(obj_id)) |var_type| {
@@ -424,11 +431,12 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 if (inner_c.callee.* == .identifier) {
                     const name = inner_c.callee.identifier;
                     // compt func returning type: Vec2(f32)(...) → named type
-                    if (self.ctx.decls.funcs.get(name)) |sig| {
-                        if (sig.context == .compt) return RT{ .named = name };
-                    }
-                    // Generic struct: List(i32).new() — List is in decls.structs
-                    if (self.ctx.decls.structs.contains(name)) return RT{ .named = name };
+                    // Generic struct: List(i32).new() — struct in symbols
+                    if (self.ctx.decls.symbols.get(name)) |sym| switch (sym) {
+                        .func => |sig| if (sig.context == .compt) return RT{ .named = name },
+                        .@"struct" => return RT{ .named = name },
+                        else => {},
+                    };
                     if (builtins.isBuiltinType(name) or self.isIncludedType(name)) return RT{ .named = name };
                 }
             }
@@ -443,13 +451,16 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 if (obj_type.unionInnerType()) |inner| return inner;
             }
             const obj_name = obj_type.name();
-            if (self.ctx.decls.structs.get(obj_name)) |sig| {
-                for (sig.fields) |field| {
-                    if (std.mem.eql(u8, field.name, f.field)) {
-                        return field.type_;
+            if (self.ctx.decls.symbols.get(obj_name)) |sym| switch (sym) {
+                .@"struct" => |sig| {
+                    for (sig.fields) |field| {
+                        if (std.mem.eql(u8, field.name, f.field)) {
+                            return field.type_;
+                        }
                     }
-                }
-            }
+                },
+                else => {},
+            };
             return RT.inferred;
         },
 
@@ -697,9 +708,10 @@ fn isComptimeKnown(self: *TypeResolver, node: *parser.Node) bool {
         .binary_expr => |b| isComptimeKnown(self, b.left) and isComptimeKnown(self, b.right),
         .call_expr => |c| {
             if (c.callee.* == .identifier) {
-                if (self.ctx.decls.funcs.get(c.callee.identifier)) |sig| {
-                    return sig.context == .compt;
-                }
+                if (self.ctx.decls.symbols.get(c.callee.identifier)) |sym| switch (sym) {
+                    .func => |sig| return sig.context == .compt,
+                    else => {},
+                };
             }
             return true;
         },

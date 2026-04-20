@@ -441,7 +441,9 @@ fn generateCallMir(cg: *CodeGen, store: *const MirStore, idx: MirNodeIndex) anye
         if (is_self_generic_mir) {
             try cg.emit("@This()");
         } else if (arg_count == 0 and callee_is_ident) {
-            const is_struct_type = if (cg.decls) |d| d.structs.contains(callee_name) else false;
+            const is_struct_type = if (cg.decls) |d|
+                (if (d.symbols.get(callee_name)) |sym| sym == .@"struct" else false)
+            else false;
             if (is_struct_type) {
                 try cg.emitFmt("{s}{{}}", .{callee_name});
             } else {
@@ -791,7 +793,10 @@ fn resolveStructFieldNames(iter_type: RT, decls: ?*declarations.DeclTable) ?[]co
         else => return null,
     };
     const d = decls orelse return null;
-    const sig = d.structs.get(type_name) orelse return null;
+    const sig: declarations.StructSig = if (d.symbols.get(type_name)) |sym| switch (sym) {
+        .@"struct" => |s| s,
+        else => return null,
+    } else return null;
     return sig.fields;
 }
 

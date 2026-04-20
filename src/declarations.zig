@@ -119,18 +119,11 @@ pub const StructMethodMap = std.StringHashMapUnmanaged(FuncSig);
 
 /// The declaration table for a module
 pub const DeclTable = struct {
-    funcs: std.StringHashMap(FuncSig),
-    structs: std.StringHashMap(StructSig),
-    enums: std.StringHashMap(EnumSig),
-    handles: std.StringHashMap(HandleSig),
-    vars: std.StringHashMap(VarSig),
-    types: std.StringHashMap([]const u8), // type aliases and compt types
-    blueprints: std.StringHashMap(BlueprintSig),
+    symbols: std.StringHashMap(Symbol),
     /// Bridge struct method signatures: outer map keyed by struct name,
     /// inner map keyed by method name. Used by MIR annotator to detect
     /// const & param coercions for cross-module calls.
     struct_methods: std.StringHashMapUnmanaged(StructMethodMap),
-    symbols: std.StringHashMap(Symbol),
     allocator: std.mem.Allocator,
     type_arena: std.heap.ArenaAllocator, // owns all ResolvedType inner allocations
 
@@ -141,58 +134,32 @@ pub const DeclTable = struct {
 
     pub fn init(allocator: std.mem.Allocator) DeclTable {
         return .{
-            .funcs = std.StringHashMap(FuncSig).init(allocator),
-            .structs = std.StringHashMap(StructSig).init(allocator),
-            .enums = std.StringHashMap(EnumSig).init(allocator),
-            .handles = std.StringHashMap(HandleSig).init(allocator),
-            .vars = std.StringHashMap(VarSig).init(allocator),
-            .types = std.StringHashMap([]const u8).init(allocator),
-            .blueprints = std.StringHashMap(BlueprintSig).init(allocator),
-            .struct_methods = .{},
             .symbols = std.StringHashMap(Symbol).init(allocator),
+            .struct_methods = .{},
             .allocator = allocator,
             .type_arena = std.heap.ArenaAllocator.init(allocator),
         };
     }
 
     pub fn deinit(self: *DeclTable) void {
-        // Free the type arena (all ResolvedType inner pointers)
         self.type_arena.deinit();
-        // Free owned slices stored in FuncSig values
-        var func_it = self.funcs.iterator();
-        while (func_it.next()) |entry| {
-            self.allocator.free(entry.value_ptr.params);
-        }
-        self.funcs.deinit();
-        // Free owned slices stored in StructSig values
-        var struct_it = self.structs.iterator();
-        while (struct_it.next()) |entry| {
-            self.allocator.free(entry.value_ptr.fields);
-            self.allocator.free(entry.value_ptr.type_params);
-        }
-        self.structs.deinit();
-        // Free owned slices stored in EnumSig values
-        var enum_it = self.enums.iterator();
-        while (enum_it.next()) |entry| {
-            self.allocator.free(entry.value_ptr.variants);
-        }
-        self.enums.deinit();
-        self.handles.deinit();
-        self.vars.deinit();
-        self.types.deinit();
-        // Free owned slices stored in BlueprintSig values
-        {
-            var it = self.blueprints.iterator();
-            while (it.next()) |entry| {
-                for (entry.value_ptr.methods) |method| {
-                    self.allocator.free(method.params);
-                }
-                self.allocator.free(entry.value_ptr.methods);
+        var it = self.symbols.iterator();
+        while (it.next()) |entry| {
+            switch (entry.value_ptr.*) {
+                .func => |sig| self.allocator.free(sig.params),
+                .@"struct" => |sig| {
+                    self.allocator.free(sig.fields);
+                    self.allocator.free(sig.type_params);
+                },
+                .@"enum" => |sig| self.allocator.free(sig.variants),
+                .blueprint => |sig| {
+                    for (sig.methods) |method| self.allocator.free(method.params);
+                    self.allocator.free(sig.methods);
+                },
+                .handle, .@"var", .type_alias => {},
             }
-            self.blueprints.deinit();
         }
-        // Free struct_methods: outer keys alias AST-owned strings; each inner
-        // map's FuncSig values own a params slice that must be freed.
+        self.symbols.deinit();
         var sm_it = self.struct_methods.iterator();
         while (sm_it.next()) |entry| {
             var m_it = entry.value_ptr.iterator();
@@ -200,7 +167,10 @@ pub const DeclTable = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.struct_methods.deinit(self.allocator);
-        self.symbols.deinit();
+    }
+
+    pub fn hasDecl(self: *const DeclTable, name: []const u8) bool {
+        return self.symbols.contains(name);
     }
 
     /// Look up a struct method by (struct_name, method_name). Returns null if either is absent.
@@ -220,15 +190,6 @@ pub const DeclTable = struct {
     /// the struct has no registered methods.
     pub fn methodsFor(self: *const DeclTable, struct_name: []const u8) ?StructMethodMap {
         return self.struct_methods.get(struct_name);
-    }
-
-    pub fn hasDecl(self: *const DeclTable, name: []const u8) bool {
-        return self.funcs.contains(name) or
-               self.structs.contains(name) or
-               self.enums.contains(name) or
-               self.handles.contains(name) or
-               self.vars.contains(name) or
-               self.types.contains(name);
     }
 };
 
@@ -361,7 +322,7 @@ pub const DeclCollector = struct {
             .is_instance = false,
         };
 
-        if (self.table.funcs.contains(f.name)) {
+        if (self.table.symbols.contains(f.name)) {
             if (loc) |l| {
                 if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
             }
@@ -369,7 +330,6 @@ pub const DeclCollector = struct {
             return;
         }
 
-        try self.table.funcs.put(f.name, sig);
         try self.table.symbols.put(f.name, .{ .func = sig });
     }
 
@@ -413,7 +373,7 @@ pub const DeclCollector = struct {
             .is_pub = s.is_pub,
         };
 
-        if (self.table.structs.contains(s.name)) {
+        if (self.table.symbols.contains(s.name)) {
             if (loc) |l| {
                 if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
             }
@@ -421,7 +381,6 @@ pub const DeclCollector = struct {
             return;
         }
 
-        try self.table.structs.put(s.name, sig);
         try self.table.symbols.put(s.name, .{ .@"struct" = sig });
 
         // Register struct methods into struct_methods so borrow checker and MIR can
@@ -463,7 +422,7 @@ pub const DeclCollector = struct {
             }
         }
 
-        if (self.table.blueprints.contains(b.name)) {
+        if (self.table.symbols.contains(b.name)) {
             if (loc) |l| {
                 if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
             }
@@ -476,7 +435,6 @@ pub const DeclCollector = struct {
             .methods = try methods.toOwnedSlice(self.allocator),
             .is_pub = b.is_pub,
         };
-        try self.table.blueprints.put(b.name, bp_sig);
         try self.table.symbols.put(b.name, .{ .blueprint = bp_sig });
     }
 
@@ -519,7 +477,7 @@ pub const DeclCollector = struct {
             .is_pub = e.is_pub,
         };
 
-        if (self.table.enums.contains(e.name)) {
+        if (self.table.symbols.contains(e.name)) {
             if (loc) |l| {
                 if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
             }
@@ -527,29 +485,23 @@ pub const DeclCollector = struct {
             return;
         }
 
-        try self.table.enums.put(e.name, sig);
         try self.table.symbols.put(e.name, .{ .@"enum" = sig });
     }
 
     fn collectHandle(self: *DeclCollector, h: parser.HandleDecl, loc: ?errors.SourceLoc) anyerror!void {
-        if (self.table.handles.contains(h.name)) {
+        if (self.table.symbols.contains(h.name)) {
             if (loc) |l| {
                 if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
             }
             try self.reporter.reportFmt(loc, "duplicate handle declaration: '{s}'", .{h.name});
             return;
         }
-        try self.table.handles.put(h.name, .{
-            .name = h.name,
-            .is_pub = h.is_pub,
-        });
         try self.table.symbols.put(h.name, .{ .handle = .{ .name = h.name, .is_pub = h.is_pub } });
     }
 
     fn collectVar(self: *DeclCollector, v: parser.VarDecl, is_const: bool, loc: ?errors.SourceLoc) anyerror!void {
         // Type alias: const Name: type = T — register in types map, not vars
         if (is_const and isTypeAlias(v.type_annotation)) {
-            try self.table.types.put(v.name, v.name);
             try self.table.symbols.put(v.name, .{ .type_alias = v.name });
             return;
         }
@@ -569,7 +521,7 @@ pub const DeclCollector = struct {
             .is_pub = v.is_pub,
         };
 
-        if (self.table.vars.contains(v.name)) {
+        if (self.table.symbols.contains(v.name)) {
             // Sidecar auto-mapped declarations may duplicate user declarations — skip silently.
             // User definitions (scanned first) take precedence.
             if (loc) |l| {
@@ -579,7 +531,6 @@ pub const DeclCollector = struct {
             return;
         }
 
-        try self.table.vars.put(v.name, sig);
         try self.table.symbols.put(v.name, .{ .@"var" = sig });
     }
 
@@ -638,7 +589,7 @@ test "declaration collector - func" {
 
     try testCollect(&collector, prog);
     try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expect(collector.table.funcs.contains("myFunc"));
+    try std.testing.expect(collector.table.symbols.contains("myFunc"));
 }
 
 test "declaration collector - struct" {
@@ -688,7 +639,7 @@ test "declaration collector - struct" {
 
     try testCollect(&collector, prog);
     try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expect(collector.table.structs.contains("Point"));
+    try std.testing.expect(collector.table.symbols.contains("Point"));
 }
 
 test "declaration collector - duplicate func error" {
@@ -769,7 +720,7 @@ test "declaration collector - enum" {
 
     try testCollect(&collector, prog);
     try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expect(collector.table.enums.contains("Color"));
+    try std.testing.expect(collector.table.symbols.contains("Color"));
 }
 
 test "declaration collector - pub func is registered" {
@@ -811,7 +762,7 @@ test "declaration collector - pub func is registered" {
 
     try testCollect(&collector, prog);
     try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expect(collector.table.funcs.contains("print"));
+    try std.testing.expect(collector.table.symbols.contains("print"));
 }
 
 /// Check if a name conflicts with a primitive or builtin type name.
@@ -822,13 +773,13 @@ fn isReservedTypeName(name: []const u8) bool {
     return builtins.isBuiltinType(name);
 }
 
-test "DeclTable.blueprints map initializes empty" {
+test "DeclTable.symbols map initializes empty" {
     const alloc = std.testing.allocator;
     var reporter = @import("errors.zig").Reporter.init(alloc, .debug);
     defer reporter.deinit();
     var table = DeclTable.init(alloc);
     defer table.deinit();
-    try std.testing.expect(table.blueprints.count() == 0);
+    try std.testing.expect(table.symbols.count() == 0);
 }
 
 test "declaration collector - blueprint" {
@@ -889,8 +840,8 @@ test "declaration collector - blueprint" {
     try testCollect(&collector, prog);
 
     try std.testing.expect(!reporter.hasErrors());
-    try std.testing.expect(collector.table.blueprints.contains("Eq"));
-    const bp_sig = collector.table.blueprints.get("Eq").?;
+    try std.testing.expect(collector.table.symbols.contains("Eq"));
+    const bp_sig = collector.table.symbols.get("Eq").?.blueprint;
     try std.testing.expectEqual(@as(usize, 1), bp_sig.methods.len);
     try std.testing.expectEqualStrings("equals", bp_sig.methods[0].name);
     try std.testing.expectEqual(@as(usize, 2), bp_sig.methods[0].params.len);
@@ -931,9 +882,9 @@ test "declaration collector - type alias goes to types map" {
     try testCollect(&collector, prog);
 
     try std.testing.expect(!reporter.hasErrors());
-    // Should be in types map, NOT vars map
-    try std.testing.expect(collector.table.types.contains("Alias"));
-    try std.testing.expect(!collector.table.vars.contains("Alias"));
+    // Should be stored as type_alias, not as var
+    const sym = collector.table.symbols.get("Alias").?;
+    try std.testing.expect(sym == .type_alias);
 }
 
 test "declaration collector - struct methods registered" {
@@ -1089,7 +1040,7 @@ test "declaration collector - hasDecl" {
 
     try std.testing.expect(!table.hasDecl("foo"));
 
-    try table.funcs.put("foo", .{
+    try table.symbols.put("foo", .{ .func = .{
         .name = "foo",
         .params = &.{},
         .param_nodes = &.{},
@@ -1097,7 +1048,7 @@ test "declaration collector - hasDecl" {
         .context = .normal,
         .is_pub = false,
         .is_instance = false,
-    });
+    } });
     try std.testing.expect(table.hasDecl("foo"));
     try std.testing.expect(!table.hasDecl("bar"));
 }

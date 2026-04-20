@@ -748,7 +748,7 @@ test "borrow checker - lookupStructMethod" {
     defer decl_table.deinit();
 
     // Register struct and struct method
-    try decl_table.structs.put("Point", .{ .name = "Point", .fields = &.{}, .is_pub = true });
+    try decl_table.symbols.put("Point", .{ .@"struct" = .{ .name = "Point", .fields = &.{}, .is_pub = true } });
 
     try decl_table.putMethod("Point", "scale", .{
         .name = "scale",
@@ -786,7 +786,7 @@ test "borrow checker - lookupStructMethod resolves by receiver type (CB1)" {
     // Two distinct param_nodes — param_nodes[0] drives isMutableBorrowType checks
     // in the borrow checker. We don't need realistic param shapes for this test, just
     // two signatures that differ in a discriminable way (return type).
-    try decl_table.structs.put("Writer", .{ .name = "Writer", .fields = &.{}, .is_pub = true });
+    try decl_table.symbols.put("Writer", .{ .@"struct" = .{ .name = "Writer", .fields = &.{}, .is_pub = true } });
     try decl_table.putMethod("Writer", "op", .{
         .name = "op_writer",
         .params = &.{},
@@ -797,7 +797,7 @@ test "borrow checker - lookupStructMethod resolves by receiver type (CB1)" {
         .is_instance = true,
     });
 
-    try decl_table.structs.put("Reader", .{ .name = "Reader", .fields = &.{}, .is_pub = true });
+    try decl_table.symbols.put("Reader", .{ .@"struct" = .{ .name = "Reader", .fields = &.{}, .is_pub = true } });
     try decl_table.putMethod("Reader", "op", .{
         .name = "op_reader",
         .params = &.{},

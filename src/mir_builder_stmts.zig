@@ -64,10 +64,13 @@ fn lowerReturnStmt(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     if (ast_rec.value != .none) {
         if (b.current_func_name) |fname| {
             if (b.decls) |d| {
-                if (d.funcs.get(fname)) |sig| {
-                    const ret_type_id = try internRT(b, sig.return_type);
-                    b.stampCoercion(value, b.inferCoercion(ast_rec.value, ret_type_id));
-                }
+                if (d.symbols.get(fname)) |sym| switch (sym) {
+                    .func => |sig| {
+                        const ret_type_id = try internRT(b, sig.return_type);
+                        b.stampCoercion(value, b.inferCoercion(ast_rec.value, ret_type_id));
+                    },
+                    else => {},
+                };
             }
         }
     }
@@ -280,11 +283,14 @@ fn extractNarrowing(b: *MirBuilder, cond_idx: AstNodeIndex, then_idx: AstNodeInd
         // Fallback: look up in current function's parameter list via DeclTable.
         if (b.decls) |decls| {
             if (b.current_func_name) |fname| {
-                if (decls.funcs.get(fname)) |sig| {
-                    for (sig.params) |p| {
-                        if (std.mem.eql(u8, p.name, val_name)) break :blk p.type_;
-                    }
-                }
+                if (decls.symbols.get(fname)) |sym| switch (sym) {
+                    .func => |sig| {
+                        for (sig.params) |p| {
+                            if (std.mem.eql(u8, p.name, val_name)) break :blk p.type_;
+                        }
+                    },
+                    else => {},
+                };
             }
         }
         return .none;

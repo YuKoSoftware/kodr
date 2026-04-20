@@ -39,12 +39,24 @@ fn resolveCallSig(b: *const MirBuilder, call_idx: AstNodeIndex) ?@import("declar
     if (callee_tag == .identifier) {
         const rec = ast_typed.Identifier.unpack(b.ast, ast_rec.callee);
         const name = b.ast.strings.get(rec.name);
-        return if (b.decls) |d| d.funcs.get(name) else null;
+        if (b.decls) |d| {
+            if (d.symbols.get(name)) |sym| switch (sym) {
+                .func => |sig| return sig,
+                else => {},
+            };
+        }
+        return null;
     }
     if (callee_tag == .field_expr) {
         const rec = ast_typed.FieldExpr.unpack(b.ast, ast_rec.callee);
         const field = b.ast.strings.get(rec.field);
-        return if (b.decls) |d| d.funcs.get(field) else null;
+        if (b.decls) |d| {
+            if (d.symbols.get(field)) |sym| switch (sym) {
+                .func => |sig| return sig,
+                else => {},
+            };
+        }
+        return null;
     }
     return null;
 }
@@ -144,7 +156,11 @@ fn lowerIdentifier(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
             if (tid != .none) break :blk b.store.types.get(tid);
         }
         if (b.decls) |d| {
-            if (d.structs.contains(name_str) or d.enums.contains(name_str) or d.handles.contains(name_str)) {
+            const is_type_sym = if (d.symbols.get(name_str)) |sym| switch (sym) {
+                .@"struct", .@"enum", .handle => true,
+                else => false,
+            } else false;
+            if (is_type_sym) {
                 break :blk RT{ .named = name_str };
             }
         }
@@ -160,13 +176,19 @@ fn resolveIdentifierKind(b: *const MirBuilder, idx: AstNodeIndex) u32 {
     const ast_rec = ast_typed.Identifier.unpack(b.ast, idx);
     const name = b.ast.strings.get(ast_rec.name);
     const decls = b.decls orelse return 0;
-    if (decls.enums.contains(name)) return 2;
-    var it = decls.enums.valueIterator();
-    while (it.next()) |sig| {
-        for (sig.variants) |v| {
-            if (std.mem.eql(u8, v, name)) return 1;
-        }
-    }
+    if (decls.symbols.get(name)) |sym| switch (sym) {
+        .@"enum" => return 2,
+        else => {},
+    };
+    var sym_it = decls.symbols.valueIterator();
+    while (sym_it.next()) |sym| switch (sym.*) {
+        .@"enum" => |sig| {
+            for (sig.variants) |v| {
+                if (std.mem.eql(u8, v, name)) return 1;
+            }
+        },
+        else => {},
+    };
     return 0;
 }
 

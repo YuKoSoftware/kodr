@@ -9,6 +9,7 @@ const builtins = @import("builtins.zig");
 const errors = @import("errors.zig");
 const K = @import("constants.zig");
 const cache = @import("cache.zig");
+const declarations = @import("declarations.zig");
 
 const TypeResolver = resolver_mod.TypeResolver;
 const Scope = resolver_mod.Scope;
@@ -56,11 +57,18 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type_raw: RT, arms: [
         },
         .named => |name| {
             // Check enum exhaustiveness — look up variants in local or included DeclTables
-            const enum_sig = self.ctx.decls.enums.get(name) orelse blk: {
+            const enum_sig: ?declarations.EnumSig = blk: {
+                if (self.ctx.decls.symbols.get(name)) |sym| switch (sym) {
+                    .@"enum" => |sig| break :blk sig,
+                    else => {},
+                };
                 if (self.ctx.all_decls) |ad| {
                     for (self.included_modules.items) |mod_name| {
                         if (ad.get(mod_name)) |mod_decls| {
-                            if (mod_decls.enums.get(name)) |sig| break :blk sig;
+                            if (mod_decls.symbols.get(name)) |sym| switch (sym) {
+                                .@"enum" => |sig| break :blk sig,
+                                else => {},
+                            };
                         }
                     }
                 }
@@ -137,9 +145,10 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             const is_qualified = std.mem.indexOfScalar(u8, type_name, '.') != null;
             const is_primitive = types.isPrimitiveName(type_name);
             const is_known = is_qualified or is_primitive or
-                self.ctx.decls.structs.contains(type_name) or
-                self.ctx.decls.enums.contains(type_name) or
-                self.ctx.decls.types.contains(type_name) or // type aliases
+                (if (self.ctx.decls.symbols.get(type_name)) |sym| switch (sym) {
+                    .@"struct", .@"enum", .type_alias => true,
+                    else => false,
+                } else false) or
                 builtins.isBuiltinType(type_name) or
                 self.isIncludedType(type_name) or
                 types.Primitive.fromName(type_name) == .any or
@@ -177,12 +186,11 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 // Build candidate list from declared types + primitives for suggestion
                 var candidates: std.ArrayListUnmanaged([]const u8) = .{};
                 defer candidates.deinit(self.ctx.allocator);
-                var sti = self.ctx.decls.structs.keyIterator();
-                while (sti.next()) |k| try candidates.append(self.ctx.allocator, k.*);
-                var eni = self.ctx.decls.enums.keyIterator();
-                while (eni.next()) |k| try candidates.append(self.ctx.allocator, k.*);
-                var tyi = self.ctx.decls.types.keyIterator();
-                while (tyi.next()) |k| try candidates.append(self.ctx.allocator, k.*);
+                var sym_it = self.ctx.decls.symbols.iterator();
+                while (sym_it.next()) |entry| switch (entry.value_ptr.*) {
+                    .@"struct", .@"enum", .type_alias => try candidates.append(self.ctx.allocator, entry.key_ptr.*),
+                    else => {},
+                };
                 for (&resolver_mod.PRIMITIVE_NAMES) |pn| try candidates.append(self.ctx.allocator, pn);
 
                 // Check if the type exists as a pub declaration in any other loaded module
@@ -193,9 +201,12 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                         const mod_name = entry.key_ptr.*;
                         const mod_decls = entry.value_ptr.*;
                         if (mod_decls == self.ctx.decls) continue;
-                        const found = (if (mod_decls.structs.get(type_name)) |st| st.is_pub else false) or
-                            (if (mod_decls.enums.get(type_name)) |e| e.is_pub else false) or
-                            mod_decls.types.contains(type_name);
+                        const found = if (mod_decls.symbols.get(type_name)) |sym| switch (sym) {
+                            .@"struct" => |s| s.is_pub,
+                            .@"enum" => |e| e.is_pub,
+                            .type_alias => true,
+                            else => false,
+                        } else false;
                         if (found) {
                             cross_module_hint = try std.fmt.allocPrint(self.ctx.allocator,
                                 " \u{2014} '{s}' exists in module '{s}' (add 'use {s}')", .{ type_name, mod_name, mod_name });
@@ -222,8 +233,7 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             const dot_pos = std.mem.indexOfScalar(u8, g.name, '.');
             const is_qualified = dot_pos != null;
             var is_known = builtins.isBuiltinType(g.name) or
-                self.ctx.decls.funcs.contains(g.name) or
-                self.ctx.decls.structs.contains(g.name) or
+                self.ctx.decls.symbols.contains(g.name) or
                 self.isIncludedType(g.name) or
                 scope.lookup(g.name) != null;
 
@@ -234,10 +244,7 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                     const type_name = g.name[dp + 1 ..];
                     if (self.ctx.all_decls) |ad| {
                         if (ad.get(module_name)) |mod_decls| {
-                            is_known = mod_decls.structs.contains(type_name) or
-                                mod_decls.enums.contains(type_name) or
-                                mod_decls.funcs.contains(type_name) or
-                                mod_decls.types.contains(type_name);
+                            is_known = mod_decls.symbols.contains(type_name);
                         } else {
                             // Module not found in all_decls — may not yet be processed;
                             // trust qualified names in this case (Zig validates at compile time)
@@ -307,7 +314,10 @@ pub fn checkByteSliceStringCoercion(self: *TypeResolver, c: parser.CallExpr, arg
         c.callee.field_expr.field
     else
         return;
-    const sig = self.ctx.decls.funcs.get(func_name) orelse return;
+    const sig: declarations.FuncSig = if (self.ctx.decls.symbols.get(func_name)) |sym| switch (sym) {
+        .func => |s| s,
+        else => return,
+    } else return;
 
     const param_count = @min(sig.params.len, arg_types.len);
     for (0..param_count) |i| {
@@ -347,11 +357,18 @@ pub fn checkBlueprintConformance(self: *TypeResolver, s: parser.StructDecl, loc:
 
     for (s.blueprints) |bp_name| {
         // Look up blueprint in local or included module declarations
-        const bp_sig = self.ctx.decls.blueprints.get(bp_name) orelse blk: {
+        const bp_sig: declarations.BlueprintSig = blk: {
+            if (self.ctx.decls.symbols.get(bp_name)) |sym| switch (sym) {
+                .blueprint => |sig| break :blk sig,
+                else => {},
+            };
             if (self.ctx.all_decls) |ad| {
                 for (self.included_modules.items) |mod_name| {
                     if (ad.get(mod_name)) |mod_decls| {
-                        if (mod_decls.blueprints.get(bp_name)) |sig| break :blk sig;
+                        if (mod_decls.symbols.get(bp_name)) |sym| switch (sym) {
+                            .blueprint => |sig| break :blk sig,
+                            else => {},
+                        };
                     }
                 }
             }

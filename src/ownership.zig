@@ -86,7 +86,7 @@ pub const OwnershipChecker = struct {
     pub fn isKnownStruct(self: *const OwnershipChecker, scope: *OwnershipScope, obj_name: []const u8) bool {
         const var_state = scope.getState(obj_name) orelse return false;
         if (var_state.type_name.len > 0) {
-            return self.ctx.decls.structs.contains(var_state.type_name);
+            return if (self.ctx.decls.symbols.get(var_state.type_name)) |sym| sym == .@"struct" else false;
         }
         return false;
     }
@@ -97,13 +97,16 @@ pub const OwnershipChecker = struct {
 
         // Use the variable's type name to find the struct in DeclTable
         if (var_state.type_name.len > 0) {
-            if (decls.structs.get(var_state.type_name)) |sig| {
-                for (sig.fields) |f| {
-                    if (std.mem.eql(u8, f.name, field_name)) {
-                        return f.type_.isPrimitive();
+            if (decls.symbols.get(var_state.type_name)) |sym| switch (sym) {
+                .@"struct" => |sig| {
+                    for (sig.fields) |f| {
+                        if (std.mem.eql(u8, f.name, field_name)) {
+                            return f.type_.isPrimitive();
+                        }
                     }
-                }
-            }
+                },
+                else => {},
+            };
         }
 
         return null;
@@ -429,7 +432,7 @@ test "ownership - primitive field access allowed" {
     const fields = try alloc.alloc(declarations.FieldSig, 2);
     fields[0] = .{ .name = "x", .type_ = .{ .primitive = .f32 }, .has_default = false, .is_pub = true };
     fields[1] = .{ .name = "y", .type_ = .{ .primitive = .f32 }, .has_default = false, .is_pub = true };
-    try decl_table.structs.put("Vec2", .{ .name = "Vec2", .fields = fields, .is_pub = true });
+    try decl_table.symbols.put("Vec2", .{ .@"struct" = .{ .name = "Vec2", .fields = fields, .is_pub = true } });
 
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = OwnershipChecker.init(alloc, &ctx);
@@ -462,7 +465,7 @@ test "ownership - non-primitive field move rejected" {
 
     const fields = try alloc.alloc(declarations.FieldSig, 1);
     fields[0] = .{ .name = "inner", .type_ = .{ .named = "Other" }, .has_default = false, .is_pub = false };
-    try decl_table.structs.put("Container", .{ .name = "Container", .fields = fields, .is_pub = false });
+    try decl_table.symbols.put("Container", .{ .@"struct" = .{ .name = "Container", .fields = fields, .is_pub = false } });
 
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = OwnershipChecker.init(alloc, &ctx);

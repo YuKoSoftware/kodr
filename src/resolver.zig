@@ -124,11 +124,7 @@ pub const TypeResolver = struct {
         const ad = self.ctx.all_decls orelse return false;
         for (self.included_modules.items) |mod_name| {
             if (ad.get(mod_name)) |mod_decls| {
-                if (mod_decls.structs.get(name)) |s| { if (s.is_pub) return true; }
-                if (mod_decls.enums.get(name)) |e| { if (e.is_pub) return true; }
-                if (mod_decls.funcs.get(name)) |f| { if (f.is_pub) return true; }
-                // Type aliases don't have is_pub — they are always visible
-                if (mod_decls.types.contains(name)) return true;
+                if (mod_decls.symbols.get(name)) |sym| if (sym.isPub()) return true;
             }
         }
         return false;
@@ -146,7 +142,10 @@ pub const TypeResolver = struct {
         const resolved = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), node);
         if (resolved == .named) {
             // Module-level type alias
-            if (self.ctx.decls.types.contains(resolved.named)) return RT.inferred;
+            if (self.ctx.decls.symbols.get(resolved.named)) |sym| switch (sym) {
+                .type_alias => return RT.inferred,
+                else => {},
+            };
             // Local type alias: stored in scope as RT.primitive(.@"type") (since "type" is a Primitive)
             if (scope) |s| {
                 if (s.lookup(resolved.named)) |t| {
@@ -555,7 +554,10 @@ pub const TypeResolver = struct {
                     } else RT.inferred;
                     const extra_iterables = if (iter_types.items.len > 1) iter_types.items.len - 1 else 0;
                     const type_name = capture_type.name();
-                    const struct_sig = self.ctx.decls.structs.get(type_name);
+                    const struct_sig: ?declarations.StructSig = if (self.ctx.decls.symbols.get(type_name)) |sym| switch (sym) {
+                        .@"struct" => |sig| sig,
+                        else => null,
+                    } else null;
 
                     if (capture_type == .inferred or capture_type == .unknown) {
                         for (caps_slice) |c_u32| {
@@ -792,10 +794,12 @@ pub const TypeResolver = struct {
     /// Returns true if `name` is a variant of any declared enum.
     /// Used to suppress false "unknown identifier" errors for enum variants used as match patterns.
     pub fn isEnumVariant(self: *const TypeResolver, name: []const u8) bool {
-        var enum_it = self.ctx.decls.enums.valueIterator();
-        while (enum_it.next()) |sig| {
-            for (sig.variants) |v| {
-                if (std.mem.eql(u8, v, name)) return true;
+        var sym_it = self.ctx.decls.symbols.valueIterator();
+        while (sym_it.next()) |sym| {
+            if (sym.* == .@"enum") {
+                for (sym.@"enum".variants) |v| {
+                    if (std.mem.eql(u8, v, name)) return true;
+                }
             }
         }
         return false;
@@ -1093,7 +1097,7 @@ test "resolver - function return type resolves" {
     const ret_node = try a.create(parser.Node);
     ret_node.* = .{ .type_named = "i32" };
 
-    try decl_table.funcs.put("add", .{
+    try decl_table.symbols.put("add", .{ .func = .{
         .name = "add",
         .params = &.{},
         .param_nodes = &.{},
@@ -1101,7 +1105,7 @@ test "resolver - function return type resolves" {
         .context = .normal,
         .is_pub = false,
         .is_instance = false,
-    });
+    } });
 
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -1140,11 +1144,11 @@ test "resolver - struct field type resolves" {
     const fields = try alloc.alloc(declarations.FieldSig, 2);
     fields[0] = .{ .name = "x", .type_ = .{ .primitive = .f32 }, .has_default = false, .is_pub = true };
     fields[1] = .{ .name = "y", .type_ = .{ .primitive = .f32 }, .has_default = false, .is_pub = true };
-    try decl_table.structs.put("Point", .{
+    try decl_table.symbols.put("Point", .{ .@"struct" = .{
         .name = "Point",
         .fields = fields,
         .is_pub = true,
-    });
+    } });
 
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -1337,7 +1341,7 @@ test "resolver - struct constructor resolves to named type" {
 
     const fields = try alloc.alloc(declarations.FieldSig, 1);
     fields[0] = .{ .name = "x", .type_ = .{ .primitive = .i32 }, .has_default = false, .is_pub = true };
-    try decl_table.structs.put("Point", .{ .name = "Point", .fields = fields, .is_pub = true });
+    try decl_table.symbols.put("Point", .{ .@"struct" = .{ .name = "Point", .fields = fields, .is_pub = true } });
 
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -1378,7 +1382,7 @@ test "resolver - positional struct constructor rejected" {
 
     const fields = try alloc.alloc(declarations.FieldSig, 1);
     fields[0] = .{ .name = "x", .type_ = .{ .primitive = .i32 }, .has_default = false, .is_pub = true };
-    try decl_table.structs.put("Point", .{ .name = "Point", .fields = fields, .is_pub = true });
+    try decl_table.symbols.put("Point", .{ .@"struct" = .{ .name = "Point", .fields = fields, .is_pub = true } });
 
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -1729,11 +1733,11 @@ test "resolver - validateType accepts known qualified generic" {
     defer reporter.deinit();
 
     // Add Vec2 to the math module's structs
-    try math_decls.structs.put("Vec2", .{
+    try math_decls.symbols.put("Vec2", .{ .@"struct" = .{
         .name = "Vec2",
         .fields = &.{},
         .is_pub = true,
-    });
+    } });
 
     var all_decls = std.StringHashMap(*declarations.DeclTable).init(alloc);
     defer all_decls.deinit();
@@ -2185,7 +2189,7 @@ test "resolver - @tuple accepted when slotted into anytype param" {
     param_nodes[0] = dummy_param_node;
     const ret_node = try a.create(parser.Node);
     ret_node.* = .{ .type_named = "void" };
-    try decl_table.funcs.put("fake_zig_fn", .{
+    try decl_table.symbols.put("fake_zig_fn", .{ .func = .{
         .name = "fake_zig_fn",
         .params = params,
         .param_nodes = param_nodes,
@@ -2193,7 +2197,7 @@ test "resolver - @tuple accepted when slotted into anytype param" {
         .context = .normal,
         .is_pub = true,
         .is_instance = false,
-    });
+    } });
 
     var reporter = errors.Reporter.init(alloc, .debug);
     defer reporter.deinit();
@@ -2269,7 +2273,7 @@ test "resolver - @tuple accepted when slotted into anytype param via field_expr 
     param_nodes[0] = dummy_param_node;
     const ret_node = try a.create(parser.Node);
     ret_node.* = .{ .type_named = "void" };
-    try bitfield_ptr.funcs.put("fake_bitfield_fn", .{
+    try bitfield_ptr.symbols.put("fake_bitfield_fn", .{ .func = .{
         .name = "fake_bitfield_fn",
         .params = params,
         .param_nodes = param_nodes,
@@ -2277,7 +2281,7 @@ test "resolver - @tuple accepted when slotted into anytype param via field_expr 
         .context = .normal,
         .is_pub = true,
         .is_instance = false,
-    });
+    } });
 
     // Build an empty root DeclTable (current module has no top-level funcs here).
     var root_decl = declarations.DeclTable.init(alloc);
