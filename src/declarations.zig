@@ -1167,8 +1167,6 @@ test "isTypeAlias - detects type keyword annotation" {
 }
 
 test "Symbol.isPub - each variant" {
-    const alloc = std.testing.allocator;
-    _ = alloc;
     const pub_func = Symbol{ .func = .{
         .name = "f", .params = &.{}, .param_nodes = &.{},
         .return_type = .{ .primitive = .void },
@@ -1189,6 +1187,8 @@ test "Symbol.isPub - each variant" {
     try std.testing.expect(alias.isPub());
     const pub_var = Symbol{ .@"var" = .{ .name = "v", .type_ = null, .is_const = true, .is_pub = true } };
     try std.testing.expect(pub_var.isPub());
+    const priv_var = Symbol{ .@"var" = .{ .name = "v", .type_ = null, .is_const = true, .is_pub = false } };
+    try std.testing.expect(!priv_var.isPub());
 
     const pub_enum = Symbol{ .@"enum" = .{ .name = "E", .backing_type = .{ .primitive = .void }, .variants = &.{}, .is_pub = true } };
     try std.testing.expect(pub_enum.isPub());
