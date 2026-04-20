@@ -195,7 +195,7 @@ pub const MirBuilder = struct {
 // ---------------------------------------------------------------------------
 
 /// Determine if a value of type `src` needs coercion to fit `dst`.
-/// Mirrors MirAnnotator.detectCoercion using the same logic.
+/// Mirrors the coercion detection logic from the annotation pass.
 pub fn detectCoercion(src: RT, dst: RT) ?Coercion {
     if (src == .unknown or src == .inferred or dst == .unknown or dst == .inferred)
         return null;
