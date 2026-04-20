@@ -1,0 +1,16 @@
+module structs
+#version = (1, 0, 0)
+#build   = static
+
+blueprint Summable {
+    func sum(self: const& Summable) i32
+}
+
+struct Point: Summable {
+    x: i32
+    y: i32
+
+    pub func sum(self: const& Point) i32 {
+        return self.x + self.y
+    }
+}

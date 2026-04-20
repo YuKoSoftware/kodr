@@ -165,6 +165,19 @@ pub fn runSemanticAndCodegen(
         return null;
     };
 
+    // Debug dump: ORHON_DUMP_AST=1 orhon build (from project dir)
+    if (!is_zig_module) {
+        if (std.process.getEnvVarOwned(allocator, "ORHON_DUMP_AST") catch null) |v| {
+            defer allocator.free(v);
+            if (std.mem.eql(u8, v, "1")) {
+                var buf: std.ArrayList(u8) = .{};
+                defer buf.deinit(allocator);
+                conv.store.dump(buf.writer(allocator)) catch {};
+                std.debug.print("{s}", .{buf.items});
+            }
+        }
+    }
+
     // ── Shared context for type resolution + validation passes 5–9 ──
     var sema_ctx = sema.SemanticContext{
         .allocator = allocator,
@@ -223,6 +236,19 @@ pub fn runSemanticAndCodegen(
     mir_builder.current_module_name = mod_name;
     const mir_root_idx_val = try mir_builder.build(ast_root);
     if (reporter.hasErrors()) return null;
+
+    // Debug dump: ORHON_DUMP_MIR=1 orhon build (from project dir)
+    if (!is_zig_module) {
+        if (std.process.getEnvVarOwned(allocator, "ORHON_DUMP_MIR") catch null) |v| {
+            defer allocator.free(v);
+            if (std.mem.eql(u8, v, "1")) {
+                var buf: std.ArrayList(u8) = .{};
+                defer buf.deinit(allocator);
+                mir_store.dump(buf.writer(allocator)) catch {};
+                std.debug.print("{s}", .{buf.items});
+            }
+        }
+    }
 
     // ── Pass 10 (compat): Zig Code Generation ─────────────────
     const is_debug = cli.optimize == .debug;
