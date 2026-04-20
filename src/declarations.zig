@@ -308,6 +308,14 @@ pub const DeclCollector = struct {
     }
 
     fn collectStruct(self: *DeclCollector, s: parser.StructDecl, loc: ?errors.SourceLoc) anyerror!void {
+        if (self.table.symbols.contains(s.name)) {
+            if (loc) |l| {
+                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
+            }
+            try self.reporter.reportFmt(loc, "duplicate struct declaration: '{s}'", .{s.name});
+            return;
+        }
+
         var fields: std.ArrayListUnmanaged(FieldSig) = .{};
         for (s.members) |member| {
             // Reject mutable static variables — only const is allowed in structs
@@ -368,14 +376,6 @@ pub const DeclCollector = struct {
             .is_pub = s.is_pub,
             .methods = methods_map,
         };
-
-        if (self.table.symbols.contains(s.name)) {
-            if (loc) |l| {
-                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
-            }
-            try self.reporter.reportFmt(loc, "duplicate struct declaration: '{s}'", .{s.name});
-            return;
-        }
 
         try self.table.symbols.put(s.name, .{ .@"struct" = sig });
     }
