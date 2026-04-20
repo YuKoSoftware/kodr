@@ -1,9 +1,5 @@
 # Orhon — Compiler Internals
 
-> **Pre-rebuild architecture snapshot** — This document describes the pipeline as of Phase A completion (2026-04-16). Phase A replaced the pointer-based AST with an index-based `AstStore` (SoA). The pipeline diagram below still shows `*parser.Node` end-to-end and does not yet reflect `AstStore`. Phase B (MIR rebuild) and Phase D (doc rewrite, D5) will update this document to reflect the new architecture. Do not treat the current diagram as current truth.
-
----
-
 ## Compilation Pipeline
 
 Each pass runs only if the previous succeeded. Multiple errors per pass are collected before stopping. See [[13-build-cli]] for how to invoke the pipeline.
@@ -13,7 +9,7 @@ Source (.orh)
     ↓
 1.  Lexer           — raw text → tokens
     ↓
-2.  PEG Parser      — tokens → AST (grammar-driven, src/peg/orhon.peg)
+2.  PEG Parser      — tokens → AstStore (index-based SoA, src/peg/orhon.peg)
     ↓
 3.  Module Resolution
     — group files by module name
@@ -34,17 +30,18 @@ Source (.orh)
     ↓
 8.  Error Propagation Analysis
     ↓
-9.  MIR Annotation — type classification (TypeClass, UnionRegistry)
+9.  MIR Builder (fused)
+    — AstStore → MirStore (index-based SoA, src/mir_store.zig)
+    — fused annotation (TypeClass, Coercion) + lowering in one pass
     ↓
-10. MIR Tree Lowering — AST → self-contained MirNode tree
+10. Zig Code Generation
+    — MirStore → Zig source text
     ↓
-11. Zig Code Generation — MIR → Zig translation (codegen reads MirNode, not AST)
-    ↓
-12. Zig Compiler — produce final binary
+11. Zig Compiler — produce final binary
 ```
 
 ### Incremental compilation
-Checked at step 3. Pass 4 (declaration collection) always runs so cross-module type resolution works for all modules. Unchanged modules with unchanged dependencies skip passes 5–12, reusing cached `.zig` files. Cache stored in `.orh-cache/`.
+Checked at step 3. Pass 4 (declaration collection) always runs so cross-module type resolution works for all modules. Unchanged modules with unchanged dependencies skip passes 5–11, reusing cached `.zig` files. Cache stored in `.orh-cache/`.
 
 Two layers of cache invalidation:
 - **Semantic hashing** — token-stream hashing skips whitespace and comments. Touching a file without changing code does not trigger recompilation.
@@ -95,7 +92,7 @@ src/
     main.zig                // entry point, CLI dispatch, allocator setup
     cli.zig                 // command-line argument parsing (CliArgs, Command, BuildTarget)
     pipeline.zig            // hub — compilation pipeline orchestration (runPipeline)
-    pipeline_passes.zig     //   satellite — per-module pass execution (passes 5–12)
+    pipeline_passes.zig     //   satellite — per-module pass execution (passes 5–11)
     pipeline_build.zig      //   satellite — build helpers and tests
     commands.zig            // secondary command runners (analysis, debug, gendoc, addtopath)
     init.zig                // orhon init project scaffolding
@@ -119,28 +116,33 @@ src/
     resolver.zig            // hub — pass 5 (type resolution)
     resolver_exprs.zig      //   satellite — expression type resolution
     resolver_validation.zig //   satellite — type validation and match exhaustiveness
-    sema.zig                // shared — SemanticContext for passes 5–9
+    sema.zig                // shared — SemanticContext for passes 5–8
     ownership.zig           // hub — pass 6
     ownership_checks.zig    //   satellite — statement and expression ownership checks
     borrow.zig              // hub — pass 7
     borrow_checks.zig       //   satellite — statement and expression borrow checks
     propagation.zig         // pass 8 (error propagation)
-    mir/                    // pass 9 (annotation) + pass 10 (lowering)
-        mir.zig             //   hub — re-exports (TypeClass, NodeMap, MirNode, etc.)
+    mir_store.zig           // pass 9 — MirStore index-based SoA (AstStore → MirStore)
+    mir_typed.zig           //   shared — typed MIR helpers
+    mir_builder.zig         //   hub — fused MIR builder (annotation + lowering)
+    mir_builder_decls.zig   //   satellite — declaration MIR building
+    mir_builder_exprs.zig   //   satellite — expression MIR building
+    mir_builder_stmts.zig   //   satellite — statement MIR building
+    mir_builder_members.zig //   satellite — struct/enum member MIR building
+    mir_builder_types.zig   //   satellite — type MIR building
+    mir/                    // shared MIR support
+        mir.zig             //   re-exports (TypeClass, Coercion, etc.)
         mir_types.zig       //   type classification (TypeClass enum, Coercion)
-        mir_node.zig        //   MIR tree node definitions (MirKind, MirNode)
-        mir_annotator.zig   //   pass 9 — annotation (type analysis)
-        mir_annotator_nodes.zig // satellite — AST annotation and coercion detection
-        mir_lowerer.zig     //   pass 10 — lowering (tree construction)
         mir_registry.zig    //   union/struct registry for type tracking
-    codegen/                // pass 11 — pure 1:1 translator
-        codegen.zig         //   hub — main code generation (MIR → Zig)
+        union_sort.zig      //   union variant sort helpers
+    codegen/                // pass 10 — pure 1:1 translator
+        codegen.zig         //   hub — main code generation (MirStore → Zig)
         codegen_decls.zig   //   declaration codegen (structs, enums, handles, functions)
         codegen_exprs.zig   //   expression codegen
         codegen_stmts.zig   //   statement codegen
         codegen_match.zig   //   match expression codegen
         codegen_unions.zig  //   shared _unions.zig file emitter
-    zig_runner/             // pass 12
+    zig_runner/             // pass 11
         zig_runner.zig      //   hub — main entry point
         zig_runner_build.zig    //   build invocation and multi-target support
         zig_runner_discovery.zig //  Zig compiler discovery (PATH lookup)
