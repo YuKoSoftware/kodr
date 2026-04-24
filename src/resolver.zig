@@ -155,7 +155,8 @@ pub const TypeResolver = struct {
             // Local type alias: stored in scope as RT.primitive(.@"type") (since "type" is a Primitive)
             if (scope) |s| {
                 if (s.lookup(resolved.named)) |t| {
-                    if (t == .primitive and t.primitive == .@"type") return RT.inferred;
+                    if ((t == .primitive and t.primitive == .@"type") or t == .type_param)
+                        return RT.inferred;
                 }
             }
         }
@@ -367,6 +368,7 @@ pub fn inferCaptureTypeIdx(self: *const TypeResolver, iterable_idx: AstNodeIndex
 }
 
 pub fn typesCompatible(a: RT, b: RT) bool {
+    if (a == .type_param or b == .type_param) return true;
     const a_name = a.name();
     const b_name = b.name();
     if (a_name.len > 0 and b_name.len > 0 and std.mem.eql(u8, a_name, b_name)) return true;
@@ -1825,4 +1827,15 @@ test "resolver - duplicate function params rejected" {
     tc.setup(&type_resolver);
     try type_resolver.resolve(&tc.conv.store, tc.root_idx);
     try std.testing.expect(reporter.hasErrors());
+}
+
+test "typesCompatible - type_param is universally compatible" {
+    const binder: AstNodeIndex = @enumFromInt(1);
+    const tp = RT{ .type_param = .{ .name = "T", .binder = binder } };
+    // type_param compat with any concrete type
+    try std.testing.expect(typesCompatible(tp, RT{ .primitive = .i32 }));
+    try std.testing.expect(typesCompatible(RT{ .named = "Foo" }, tp));
+    try std.testing.expect(typesCompatible(tp, tp));
+    // CB3 regression still holds: short uppercase user structs are NOT type params
+    try std.testing.expect(!typesCompatible(RT{ .named = "Node" }, RT{ .primitive = .i32 }));
 }
