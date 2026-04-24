@@ -152,7 +152,7 @@ pub const TypeResolver = struct {
                 .type_alias => return RT.inferred,
                 else => {},
             };
-            // Local type alias: stored in scope as RT.primitive(.@"type") (since "type" is a Primitive)
+            // Local type alias (.primitive = .@"type") or type parameter (.type_param) in scope
             if (scope) |s| {
                 if (s.lookup(resolved.named)) |t| {
                     if ((t == .primitive and t.primitive == .@"type") or t == .type_param)
