@@ -13,6 +13,7 @@ const declarations = @import("declarations.zig");
 
 const TypeResolver = resolver_mod.TypeResolver;
 const Scope = resolver_mod.Scope;
+const ResolveCtx = resolver_mod.ResolveCtx;
 const RT = types.ResolvedType;
 
 /// Check that a match on a union type covers all members
@@ -136,7 +137,7 @@ pub fn validateMatchArm(self: *TypeResolver, pattern_name: []const u8, match_typ
     }
 }
 
-pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anyerror!void {
+pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx: ResolveCtx) anyerror!void {
     switch (node.*) {
         .type_named => |type_name| {
             // Qualified names (module.Type) refer to imported module types.
@@ -156,9 +157,9 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 types.Primitive.fromName(type_name) == .null_type or
                 types.Primitive.fromName(type_name) == .@"type" or
                 // @this is valid inside struct bodies — maps to @This() in codegen
-                (types.Primitive.fromName(type_name) == .this and self.type_decl_depth > 0) or
+                (types.Primitive.fromName(type_name) == .this and rctx.type_decl_depth > 0) or
                 // Self is deprecated in favor of @this
-                (types.Primitive.fromName(type_name) == .self_deprecated and self.type_decl_depth > 0) or
+                (types.Primitive.fromName(type_name) == .self_deprecated and rctx.type_decl_depth > 0) or
                 scope.lookup(type_name) != null;
 
             // Deprecation warning: Self → @this
@@ -223,10 +224,10 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
                 try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "unknown type '{s}'{s}", .{ type_name, hint });
             }
         },
-        .type_slice => |elem| try validateType(self, elem, scope),
-        .type_array => |a| try validateType(self, a.elem, scope),
+        .type_slice => |elem| try validateType(self, elem, scope, rctx),
+        .type_array => |a| try validateType(self, a.elem, scope, rctx),
         .type_union => |u| {
-            for (u) |t| try validateType(self, t, scope);
+            for (u) |t| try validateType(self, t, scope, rctx);
         },
         .type_generic => |g| {
             // Validate the base type name is known (builtin, compt func, or user-defined)
@@ -266,13 +267,13 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope) anye
             const is_vector = types.Primitive.fromName(g.name) == .vector;
             for (g.args, 0..) |arg, idx| {
                 if (is_vector and idx == 0) continue; // lane count, not a type
-                try validateType(self, arg, scope);
+                try validateType(self, arg, scope, rctx);
             }
         },
-        .type_ptr => |p| try validateType(self, p.elem, scope),
+        .type_ptr => |p| try validateType(self, p.elem, scope, rctx),
         .type_func => |f| {
-            for (f.params) |p| try validateType(self, p, scope);
-            try validateType(self, f.ret, scope);
+            for (f.params) |p| try validateType(self, p, scope, rctx);
+            try validateType(self, f.ret, scope, rctx);
         },
         .type_tuple_named => {
             try self.ctx.reporter.reportFmt(self.ctx.nodeLoc(node), "anonymous tuple types are not allowed — define a named type alias with 'const'", .{});

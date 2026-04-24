@@ -36,6 +36,22 @@ pub const PRIMITIVE_NAMES = [_][]const u8{
 /// Scope for variable type tracking
 pub const Scope = scope_mod.ScopeBase(RT);
 
+/// Per-recursion resolution context. Passed by value through the resolve tree
+/// so each stack frame owns its own copy — enabling future per-function parallelism.
+/// Fields that need to change on recursive descent create a local modified copy.
+pub const ResolveCtx = struct {
+    loop_depth: u32 = 0,
+    in_is_condition: bool = false,
+    type_decl_depth: u32 = 0,
+    in_generic_struct: bool = false,
+    current_return_type: ?RT = null,
+    in_anytype_arg: bool = false,
+    /// Parameter names of the current function — used for compt argument validation.
+    /// Slice into a stack-allocated ArrayList; valid only for the duration of
+    /// the enclosing func_decl resolveNode call.
+    param_names: []const []const u8 = &.{},
+};
+
 /// The type resolver
 pub const TypeResolver = struct {
     ctx: *const sema.SemanticContext,
@@ -48,19 +64,8 @@ pub const TypeResolver = struct {
     /// Reads from self.ctx.reverse_map — the separate field is kept for
     /// convenience but must always equal ctx.reverse_map.
     reverse_map: ?*const std.AutoHashMap(AstNodeIndex, *parser.Node) = null,
-    loop_depth: u32 = 0, // track nesting depth for break/continue validation
-    in_is_condition: bool = false, // true while resolving a simple `is` check in if/elif condition
-    type_decl_depth: u32 = 0, // track nesting depth for Self validation (structs and enums)
-    in_generic_struct: bool = false, // true inside a generic struct (type params on struct)
-    current_return_type: ?RT = null, // expected return type of current function
-    /// True when resolving an argument expression that will be passed to an
-    /// `anytype` parameter of a Zig-backed function. `@tuple(...)` is only
-    /// allowed when this flag is set.
-    in_anytype_arg: bool = false,
     /// Module names imported with `use` — their types are available unqualified.
     included_modules: std.ArrayListUnmanaged([]const u8) = .{},
-    /// Parameter names of the current function — used to detect non-comptime arguments.
-    param_names: std.StringHashMapUnmanaged(void) = .{},
 
     pub fn init(ctx: *const sema.SemanticContext) TypeResolver {
         return .{
@@ -74,7 +79,6 @@ pub const TypeResolver = struct {
         self.type_map.deinit(self.ctx.allocator);
         self.ast_type_map.deinit(self.ctx.allocator);
         self.included_modules.deinit(self.ctx.allocator);
-        self.param_names.deinit(self.ctx.allocator);
     }
 
     /// Look up the original *parser.Node for a given AstNodeIndex.
@@ -190,7 +194,7 @@ pub const TypeResolver = struct {
         // Second pass: resolve bodies
         for (top_slice) |tl_u32| {
             const tl_idx: AstNodeIndex = @enumFromInt(tl_u32);
-            try self.resolveNode(tl_idx, &scope);
+            try self.resolveNode(tl_idx, &scope, .{});
         }
     }
 
@@ -198,18 +202,18 @@ pub const TypeResolver = struct {
         return stmts_impl.registerDecl(self, idx, scope);
     }
 
-    pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope) anyerror!void {
-        return stmts_impl.resolveNode(self, idx, scope);
+    pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: ResolveCtx) anyerror!void {
+        return stmts_impl.resolveNode(self, idx, scope, rctx);
     }
 
-    pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope) anyerror!void {
-        return stmts_impl.resolveStatement(self, idx, scope);
+    pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: ResolveCtx) anyerror!void {
+        return stmts_impl.resolveStatement(self, idx, scope, rctx);
     }
 
     /// Resolve an expression and return its ResolvedType.
     /// Accepts AstNodeIndex; delegates to resolver_exprs.zig.
-    pub fn resolveExpr(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope) anyerror!RT {
-        return exprs_impl.resolveExpr(self, idx, scope);
+    pub fn resolveExpr(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: ResolveCtx) anyerror!RT {
+        return exprs_impl.resolveExpr(self, idx, scope, rctx);
     }
 
     pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type: RT, arms: []*parser.Node, match_node: *parser.Node) !void {
@@ -226,10 +230,10 @@ pub const TypeResolver = struct {
         return validation_impl.validateMatchArm(self, pattern_name, match_type, n);
     }
 
-    pub fn validateType(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope) anyerror!void {
+    pub fn validateType(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: ResolveCtx) anyerror!void {
         // Bridge: pass *parser.Node to validation
         const node = try self.mustReverse(idx);
-        return validation_impl.validateType(self, node, scope);
+        return validation_impl.validateType(self, node, scope, rctx);
     }
 
     pub fn checkAssignCompat(self: *TypeResolver, expected: RT, actual: RT, idx: AstNodeIndex) !void {
@@ -583,7 +587,7 @@ test "resolver - function return type resolves" {
     var tc = try TestConv.init(call);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     try std.testing.expectEqualStrings("i32", result.name());
 }
 
@@ -624,7 +628,7 @@ test "resolver - struct field type resolves" {
     var tc = try TestConv.init(field_node);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     try std.testing.expectEqualStrings("f32", result.name());
 }
 
@@ -662,7 +666,7 @@ test "resolver - explicit type annotation preferred" {
     var tc = try TestConv.init(decl);
     defer tc.deinit();
     tc.setup(&resolver);
-    try resolver.resolveNode(tc.root_idx, &scope);
+    try resolver.resolveNode(tc.root_idx, &scope, .{});
     try std.testing.expect(!reporter.hasErrors());
 
     const x_type = scope.lookup("x").?;
@@ -700,7 +704,7 @@ test "resolver - compiler func cast resolves to target type" {
     var tc = try TestConv.init(cast_node);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     try std.testing.expectEqualStrings("i64", result.name());
 }
 
@@ -732,7 +736,7 @@ test "resolver - compiler func copy preserves type" {
     var tc = try TestConv.init(copy_node);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     try std.testing.expectEqualStrings("Player", result.name());
 }
 
@@ -762,7 +766,7 @@ test "resolver - compiler func assert returns void" {
     var tc = try TestConv.init(assert_node);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     try std.testing.expectEqualStrings("void", result.name());
 }
 
@@ -821,7 +825,7 @@ test "resolver - struct constructor resolves to named type" {
     var tc = try TestConv.init(call);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     try std.testing.expectEqualStrings("Point", result.name());
     try std.testing.expect(!reporter.hasErrors());
 }
@@ -860,7 +864,7 @@ test "resolver - positional struct constructor rejected" {
     var tc = try TestConv.init(call);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     // Still resolves to the struct type (soft error)
     try std.testing.expectEqualStrings("Point", result.name());
     // But an error was reported
@@ -894,7 +898,7 @@ test "resolver - validateType catches unknown generic" {
     var tc = try TestConv.init(generic_node);
     defer tc.deinit();
     tc.setup(&resolver);
-    try resolver.validateType(tc.root_idx, &scope);
+    try resolver.validateType(tc.root_idx, &scope, .{});
     try std.testing.expect(reporter.hasErrors());
 }
 
@@ -928,7 +932,7 @@ test "resolver - array literal resolves to array type" {
     var tc = try TestConv.init(arr);
     defer tc.deinit();
     tc.setup(&resolver);
-    const result = try resolver.resolveExpr(tc.root_idx, &scope);
+    const result = try resolver.resolveExpr(tc.root_idx, &scope, .{});
     try std.testing.expect(result == .array);
     try std.testing.expect(result.array.elem.* == .primitive);
     try std.testing.expectEqualStrings("2", result.array.size.int_literal);
@@ -1051,7 +1055,7 @@ test "resolver - validateType catches unknown qualified generic" {
     var tc = try TestConv.init(generic_node);
     defer tc.deinit();
     tc.setup(&resolver);
-    try resolver.validateType(tc.root_idx, &scope);
+    try resolver.validateType(tc.root_idx, &scope, .{});
     try std.testing.expect(reporter.hasErrors());
 }
 
@@ -1221,7 +1225,7 @@ test "resolver - validateType accepts known qualified generic" {
     var tc = try TestConv.init(generic_node);
     defer tc.deinit();
     tc.setup(&resolver);
-    try resolver.validateType(tc.root_idx, &scope);
+    try resolver.validateType(tc.root_idx, &scope, .{});
     try std.testing.expect(!reporter.hasErrors());
 }
 
