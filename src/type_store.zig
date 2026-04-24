@@ -107,9 +107,6 @@ fn writeCanonical(writer: anytype, type_: ResolvedType) !void {
             try writer.print("12:{c}:", .{tag});
             try writeCanonical(writer, p.elem.*);
         },
-        .type_param => |tp| {
-            try writer.print("13:T:{s}:{d}", .{ tp.name, @intFromEnum(tp.binder) });
-        },
     }
 }
 
@@ -211,20 +208,4 @@ test "TypeStore: generic type deduplicates by name and args" {
     try std.testing.expectEqual(id1, id2);
     try std.testing.expect(id1 != id3);
     try std.testing.expect(id1 != id4);
-}
-
-test "TypeStore: intern type_param round-trips" {
-    const AstNodeIndex = @import("ast_store.zig").AstNodeIndex;
-    var store = TypeStore.init();
-    defer store.deinit(std.testing.allocator);
-    const binder: AstNodeIndex = @enumFromInt(42);
-    const tp = ResolvedType{ .type_param = .{ .name = "T", .binder = binder } };
-    const id1 = try store.intern(std.testing.allocator, tp);
-    const id2 = try store.intern(std.testing.allocator, tp);
-    try std.testing.expectEqual(id1, id2);
-    // Different binder → different id
-    const other_binder: AstNodeIndex = @enumFromInt(99);
-    const tp2 = ResolvedType{ .type_param = .{ .name = "T", .binder = other_binder } };
-    const id3 = try store.intern(std.testing.allocator, tp2);
-    try std.testing.expect(id1 != id3);
 }

@@ -221,7 +221,7 @@ pub const ResolvedType = union(enum) {
     /// Type parameter introduced at a generic function or struct binder.
     /// `name` is the source name (e.g. "T"), `binder` is the AstNodeIndex of the
     /// declaring func_decl or struct_decl. Universally compatible until constraint
-    /// checks land. HKT remains out of scope.
+    /// checks land (S6+). HKT remains out of scope.
     type_param: TypeParam,
 
     pub const Array = struct {
