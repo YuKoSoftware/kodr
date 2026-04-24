@@ -54,6 +54,7 @@ pub fn formatType(allocator: std.mem.Allocator, t: types.ResolvedType) anyerror!
         .ptr => |p| try allocator.dupe(u8, if (p.kind == .mut_ref) "mut&" else "const&"),
         .inferred => allocator.dupe(u8, "inferred"),
         .unknown => allocator.dupe(u8, "unknown"),
+        .type_param => |tp| allocator.dupe(u8, tp.name),
         .tuple, .union_type => allocator.dupe(u8, t.name()),
     };
 }

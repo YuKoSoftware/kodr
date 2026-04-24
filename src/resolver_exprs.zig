@@ -291,8 +291,8 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
                 if (scope.lookup(name)) |t| {
                     if (t == .func_ptr) {
                         // Function pointer call — OK
-                    } else if (t == .primitive and t.primitive == .@"type") {
-                        // Local type alias used as a constructor (e.g. `const Perms: type = ...`)
+                    } else if ((t == .primitive and t.primitive == .@"type") or t == .type_param) {
+                        // Local type alias or type parameter used as a constructor
                         return RT{ .named = name };
                     } else if (self.ctx.decls.symbols.get(name) == null and
                         !builtins.isBuiltinType(name) and
