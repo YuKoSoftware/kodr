@@ -4,6 +4,15 @@
 const std = @import("std");
 const parser = @import("parser.zig");
 const K = @import("constants.zig");
+const ast_store_mod = @import("ast_store.zig");
+pub const AstNodeIndex = ast_store_mod.AstNodeIndex;
+
+/// A type parameter bound at a specific func_decl or struct_decl.
+/// `binder` is the AstNodeIndex of the declaring node — unique per declaration site.
+pub const TypeParam = struct {
+    name: []const u8,
+    binder: AstNodeIndex,
+};
 
 /// Primitive type enum — replaces string-based primitive type identification.
 /// Exhaustive switching, zero-cost comparison, no typo risk.
@@ -209,6 +218,11 @@ pub const ResolvedType = union(enum) {
     inferred,
     /// Type from another module or otherwise unknown
     unknown,
+    /// Type parameter introduced at a generic function or struct binder.
+    /// `name` is the source name (e.g. "T"), `binder` is the AstNodeIndex of the
+    /// declaring func_decl or struct_decl. Universally compatible until constraint
+    /// checks land. HKT remains out of scope.
+    type_param: TypeParam,
 
     pub const Array = struct {
         elem: *const ResolvedType,
@@ -241,7 +255,7 @@ pub const ResolvedType = union(enum) {
             .primitive => true,
             .err, .null_type => true,
             .inferred, .unknown => false,
-            .named, .slice, .array, .union_type, .tuple, .func_ptr, .generic, .ptr => false,
+            .named, .slice, .array, .union_type, .tuple, .func_ptr, .generic, .ptr, .type_param => false,
         };
     }
 
@@ -297,6 +311,7 @@ pub const ResolvedType = union(enum) {
             .ptr => |p| if (p.kind == .mut_ref) "mut&" else "const&",
             .inferred => "inferred",
             .unknown => "unknown",
+            .type_param => |tp| tp.name,
         };
     }
 };
@@ -577,4 +592,24 @@ test "resolveUnion - errors on duplicate type" {
     var members = [_]*parser.Node{ n1, n2 };
     const result = resolveUnion(alloc, &members);
     try std.testing.expectError(error.DuplicateUnionMember, result);
+}
+
+test "type_param variant - isPrimitive returns false" {
+    const binder: AstNodeIndex = @enumFromInt(1);
+    const tp = ResolvedType{ .type_param = .{ .name = "T", .binder = binder } };
+    try std.testing.expect(!tp.isPrimitive());
+}
+
+test "type_param variant - name returns the param name" {
+    const binder: AstNodeIndex = @enumFromInt(1);
+    const tp = ResolvedType{ .type_param = .{ .name = "T", .binder = binder } };
+    try std.testing.expectEqualStrings("T", tp.name());
+}
+
+test "type_param variant - distinct binders are distinguishable" {
+    const b1: AstNodeIndex = @enumFromInt(1);
+    const b2: AstNodeIndex = @enumFromInt(2);
+    const t1 = ResolvedType{ .type_param = .{ .name = "T", .binder = b1 } };
+    const t2 = ResolvedType{ .type_param = .{ .name = "T", .binder = b2 } };
+    try std.testing.expect(t1.type_param.binder != t2.type_param.binder);
 }
