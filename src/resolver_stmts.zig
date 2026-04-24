@@ -97,11 +97,21 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                         std.mem.eql(u8, self.store.strings.get(ast_typed.TypeNamed.unpack(self.store, p.type_annotation).name), "type");
                     if (is_type_param) {
                         has_type_param = true;
-                        try defineUnique(self, &func_scope, pname, .{ .primitive = .@"type" }, p_idx);
+                        try defineUnique(self, &func_scope, pname,
+                            .{ .type_param = .{ .name = pname, .binder = idx } }, p_idx);
                     } else {
                         try self.validateType(p.type_annotation, &func_scope, rctx);
-                        const ta_node = try self.mustReverse(p.type_annotation);
-                        const t = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), ta_node);
+                        const t: RT = blk: {
+                            if (ta_tag == .type_named) {
+                                const tname = self.store.strings.get(
+                                    ast_typed.TypeNamed.unpack(self.store, p.type_annotation).name);
+                                if (func_scope.lookup(tname)) |st| {
+                                    if (st == .type_param) break :blk st;
+                                }
+                            }
+                            const ta_node = try self.mustReverse(p.type_annotation);
+                            break :blk try types.resolveTypeNode(self.ctx.decls.typeAllocator(), ta_node);
+                        };
                         try defineUnique(self, &func_scope, pname, t, p_idx);
                         // Type-check default value against declared param type
                         if (p.default_value != .none) {
@@ -176,7 +186,9 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                         std.mem.eql(u8, self.store.strings.get(ast_typed.TypeNamed.unpack(self.store, p.type_annotation).name), "type");
                     if (is_tp) {
                         has_struct_type_params = true;
-                        try struct_scope.define(self.store.strings.get(p.name), .{ .primitive = .@"type" });
+                        const tpname = self.store.strings.get(p.name);
+                        try struct_scope.define(tpname,
+                            .{ .type_param = .{ .name = tpname, .binder = idx } });
                     }
                 }
             }
