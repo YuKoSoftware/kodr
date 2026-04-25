@@ -132,12 +132,67 @@ pub const Reporter = struct {
                     try stderr.print("{s}{d} error(s){s}\n", .{ RED, error_count, RESET });
                 }
             },
-            .json => {}, // Task 2
+            .json => try flushJson(self, stderr),
             .short => {}, // Task 3
         }
         try stderr.flush();
     }
 };
+
+fn flushJson(reporter: *const Reporter, writer: anytype) !void {
+    try writer.writeAll("{\"version\":1,\"diagnostics\":[");
+    var first = true;
+    for (reporter.warnings.items) |diag| {
+        if (!first) try writer.writeAll(",");
+        first = false;
+        try writeDiagJson(&diag, "warning", writer);
+    }
+    for (reporter.errors.items) |diag| {
+        if (!first) try writer.writeAll(",");
+        first = false;
+        try writeDiagJson(&diag, "error", writer);
+    }
+    try writer.writeAll("]}");
+}
+
+fn writeDiagJson(diag: *const OrhonError, severity: []const u8, writer: anytype) !void {
+    try writer.print("{{\"severity\":\"{s}\"", .{severity});
+    if (diag.code) |code| {
+        var buf: [8]u8 = undefined;
+        const code_str = code.toCode(&buf);
+        try writer.print(",\"code\":\"{s}\"", .{code_str});
+    }
+    try writer.writeAll(",\"message\":");
+    try writeJsonString(diag.message, writer);
+    if (diag.loc) |loc| {
+        if (loc.file.len > 0) {
+            try writer.writeAll(",\"file\":");
+            try writeJsonString(loc.file, writer);
+        }
+        if (loc.line > 0) {
+            try writer.print(",\"line\":{d}", .{loc.line});
+        }
+        if (loc.col > 0) {
+            try writer.print(",\"col\":{d}", .{loc.col});
+        }
+    }
+    try writer.writeAll("}");
+}
+
+fn writeJsonString(s: []const u8, writer: anytype) !void {
+    try writer.writeByte('"');
+    for (s) |c| {
+        switch (c) {
+            '"'  => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => try writer.writeByte(c),
+        }
+    }
+    try writer.writeByte('"');
+}
 
 // ANSI codes
 const RED = "\x1b[31m";
@@ -394,4 +449,24 @@ test "closestMatch does not suggest exact match" {
     const candidates = [_][]const u8{ "count", "value" };
     const result = closestMatch("count", &candidates, 2);
     try std.testing.expect(result == null); // d == 0, excluded by d > 0 guard
+}
+
+test "flushJson produces wrapped JSON object" {
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    try reporter.report(.{
+        .code = .unknown_identifier,
+        .message = "unknown identifier 'foo'",
+        .loc = .{ .file = "src/main.orh", .line = 10, .col = 5 },
+    });
+    try reporter.warn(.{
+        .message = "unused import",
+    });
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushJson(&reporter, out.writer(std.testing.allocator));
+    const expected =
+        \\{"version":1,"diagnostics":[{"severity":"warning","message":"unused import"},{"severity":"error","code":"E2040","message":"unknown identifier 'foo'","file":"src/main.orh","line":10,"col":5}]}
+    ;
+    try std.testing.expectEqualStrings(expected, out.items);
 }
