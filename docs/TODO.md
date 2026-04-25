@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 1 (Semantic Layer Cleanup) — S1 done (v0.53.2), S2 done (v0.53.3), S3 done (2026-04-24), S4 done (v0.53.4), S5 done (v0.53.5, 2026-04-24), S6 done (v0.53.6, 2026-04-24); Phase 1 complete
+- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7, 2026-04-25)
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -118,7 +118,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 > **Phase D complete** (v0.53.0, 2026-04-20, 367/367 green). Phase 1 (Semantic Layer Cleanup) is next.
 
-> **⬅ RESUME HERE: Phase 2** — Phase 1 complete (S6 done, v0.53.6, 2026-04-24). Next: diagnostics + testing overhaul.
+> Phase 1 complete (S6 done, v0.53.6, 2026-04-24). Phase 2 started.
 
 ### Phase D — Cleanup `0.5 week`
 
@@ -172,8 +172,10 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 ### Sub-project 2a — Reporter rewrite
 
-- [ ] **T1** 🟠 **Error code catalog (`src/error_codes.zig`)** [H3b / F3] — add `code: ?ErrorCode` field to `OrhonError`. Stable enum with never-reused retired codes. Tests assert on codes, not message text.
+- [x] **T1** 🟠 **Error code catalog (`src/error_codes.zig`)** [H3b / F3] — done v0.53.7, 2026-04-25 — `ErrorCode enum(u16)` with 102 stable codes; `OrhonError.code: ?ErrorCode`; `reportFmt`/`warnFmt` require code first arg; `printDiagnostic` shows `[Exxxx]`; all ~110 call sites annotated.
 - [ ] **T2** 🟠 **JSON / machine-readable diagnostic output** [H3c / F4] — `Reporter.flush(writer, format)` where format is `.human | .json | .short`. Required by CI annotations, vim quickfix, emacs, non-LSP editors.
+
+> **⬅ RESUME HERE: T2** — T1 complete (v0.53.7, 2026-04-25). Next: JSON diagnostic output.
 - [ ] **T3** 🟡 **`NO_COLOR` / TTY detection + `--color=auto|always|never`** [H3d / F5] — `src/errors.zig:134-194`. Detect `isatty(stderr)` + `NO_COLOR` env at reporter init, cache `use_color: bool`, gate every escape sequence.
 - [ ] **T4** 🟡 **Warning gradient with notes** [F8] — add `Severity = .err | .warning | .note | .hint`; multi-location errors chain notes via `parent: ?usize`. Add `-Werror` flag.
 - [ ] **T5** 🟡 **Fix reporter ownership convention** [F7] — `src/errors.zig:58-69`. Current design: callers allocate + report dupes + defer free → double allocation + easy leak. Migrate all manual `allocPrint` + `report` + `defer free` sites to `reportFmt`. Document new contract: `report()` takes ownership.
