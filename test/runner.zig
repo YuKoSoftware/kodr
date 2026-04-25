@@ -44,7 +44,9 @@ fn scanAnnotationsFromContent(content: []const u8, allocator: std.mem.Allocator)
                 if (c < '0' or c > '9') break false;
             } else true;
             if (!digits_ok) continue;
-            try list.append(allocator, .{ .line = line_num, .code = try allocator.dupe(u8, raw) });
+            const code = try allocator.dupe(u8, raw);
+            errdefer allocator.free(code);
+            try list.append(allocator, .{ .line = line_num, .code = code });
         }
     }
     return list.toOwnedSlice(allocator);
@@ -73,6 +75,7 @@ fn compareResults(
     allocator: std.mem.Allocator,
 ) ![]Mismatch {
     var list = std.ArrayList(Mismatch){};
+    errdefer list.deinit(allocator);
     var matched = try allocator.alloc(bool, actual.len);
     defer allocator.free(matched);
     @memset(matched, false);
