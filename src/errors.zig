@@ -13,6 +13,20 @@ pub const BuildMode = enum {
     release,
 };
 
+pub const ColorMode = enum { auto, always, never };
+
+/// Resolve color mode to a concrete bool: check NO_COLOR env var and isatty on .auto.
+pub fn detectColor(mode: ColorMode) bool {
+    return switch (mode) {
+        .always => true,
+        .never => false,
+        .auto => blk: {
+            if (std.posix.getenv("NO_COLOR") != null) break :blk false;
+            break :blk std.posix.isatty(std.fs.File.stderr().handle);
+        },
+    };
+}
+
 /// A source location in a .orh file
 pub const SourceLoc = struct {
     file: []const u8,
@@ -34,6 +48,7 @@ pub const Reporter = struct {
     warnings: std.ArrayListUnmanaged(OrhonError),
     allocator: std.mem.Allocator,
     diag_format: DiagFormat = .human,
+    use_color: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, mode: BuildMode) Reporter {
         return .{
@@ -113,7 +128,7 @@ pub const Reporter = struct {
         var w = std.fs.File.stderr().writer(&buf);
         const stderr = &w.interface;
         switch (self.diag_format) {
-            .human => try diag_fmt.flushHuman(self, self.mode, stderr),
+            .human => try diag_fmt.flushHuman(self, self.mode, stderr, self.use_color),
             .json  => try diag_fmt.flushJson(self, stderr),
             .short => try diag_fmt.flushShort(self, stderr),
         }
@@ -213,6 +228,14 @@ test "reporter collects warnings" {
     try std.testing.expectEqual(@as(usize, 1), reporter.warnings.items.len);
     try std.testing.expectEqualStrings("test warning", reporter.warnings.items[0].message);
     try std.testing.expectEqual(ErrorCode.unused_import, reporter.warnings.items[0].code.?);
+}
+
+test "detectColor .always returns true" {
+    try std.testing.expect(detectColor(.always));
+}
+
+test "detectColor .never returns false" {
+    try std.testing.expect(!detectColor(.never));
 }
 
 test "reporter warnings don't block compilation" {

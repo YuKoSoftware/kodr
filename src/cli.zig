@@ -79,6 +79,7 @@ pub const CliArgs = struct {
     gen_syntax: bool, // -syntax flag for gendoc (generate syntax reference only)
     line_length: u32, // max line length for fmt (0 = disabled)
     diag_format: errors_mod.DiagFormat = .human,
+    color_mode: errors_mod.ColorMode = .auto,
     allocator: std.mem.Allocator, // owns duped strings
 
     pub fn deinit(self: *CliArgs) void {
@@ -114,6 +115,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         .gen_syntax = false,
         .line_length = 100,
         .diag_format = .human,
+        .color_mode = .auto,
         .allocator = allocator,
     };
 
@@ -219,6 +221,17 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
             } else {
                 std.debug.print("warning: unknown --diag-format value '{s}', using default 'human'\n", .{val});
             }
+        } else if (std.mem.startsWith(u8, arg, "--color=")) {
+            const val = arg["--color=".len..];
+            if (std.mem.eql(u8, val, "auto")) {
+                cli.color_mode = .auto;
+            } else if (std.mem.eql(u8, val, "always")) {
+                cli.color_mode = .always;
+            } else if (std.mem.eql(u8, val, "never")) {
+                cli.color_mode = .never;
+            } else {
+                std.debug.print("warning: unknown --color value '{s}', using default 'auto'\n", .{val});
+            }
         } else {
             // Treat as source directory
             cli.source_dir = try allocator.dupe(u8, arg);
@@ -271,6 +284,10 @@ pub fn printHelp() void {
         \\  -fast               Maximum speed optimization
         \\  -small              Minimum binary size optimization
         \\  -verbose            Show raw Zig compiler output
+        \\
+        \\Output flags:
+        \\  --diag-format=      Diagnostic format: human (default), json, short
+        \\  --color=            Color output: auto (default), always, never
         \\
     ;
     std.debug.print("{s}", .{help});

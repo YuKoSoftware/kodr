@@ -6,14 +6,21 @@ pub const DiagFormat = enum { human, json, short };
 
 // ── Human format ────────────────────────────────────────────────────────────
 
-const RED       = "\x1b[31m";
-const YELLOW    = "\x1b[33m";
-const CYAN      = "\x1b[36m";
-const DIM       = "\x1b[2m";
-const BOLD      = "\x1b[1m";
-const RESET     = "\x1b[0m";
-const WHITE     = "\x1b[97m";
+const RED        = "\x1b[31m";
+const YELLOW     = "\x1b[33m";
+const CYAN       = "\x1b[36m";
+const DIM        = "\x1b[2m";
+const BOLD       = "\x1b[1m";
+const RESET      = "\x1b[0m";
+const WHITE      = "\x1b[97m";
+const HEADER_ERR = "\x1b[41m";
+const HEADER_WRN = "\x1b[43m";
+const HEADER_WRN_FG = "\x1b[30m";
 const HEADER_PAD = "                                                  ";
+
+fn esc(comptime code: []const u8, use_color: bool) []const u8 {
+    return if (use_color) code else "";
+}
 
 const DiagKind = enum {
     err,
@@ -27,29 +34,27 @@ const DiagKind = enum {
     }
 };
 
-pub fn flushHuman(reporter: *const errors.Reporter, mode: errors.BuildMode, writer: anytype) !void {
+pub fn flushHuman(reporter: *const errors.Reporter, mode: errors.BuildMode, writer: anytype, use_color: bool) !void {
     for (reporter.warnings.items) |diag| {
-        try printDiagnostic(writer, &diag, .warning, mode);
+        try printDiagnostic(writer, &diag, .warning, mode, use_color);
     }
     for (reporter.errors.items) |diag| {
-        try printDiagnostic(writer, &diag, .err, mode);
+        try printDiagnostic(writer, &diag, .err, mode, use_color);
     }
     const warning_count = reporter.warnings.items.len;
     const error_count = reporter.errors.items.len;
     if (warning_count > 0 or error_count > 0) try writer.print("\n", .{});
     if (warning_count > 0 and error_count > 0) {
-        try writer.print("{s}{d} warning(s){s}, {s}{d} error(s){s}\n", .{ YELLOW, warning_count, RESET, RED, error_count, RESET });
+        try writer.print("{s}{d} warning(s){s}, {s}{d} error(s){s}\n", .{ esc(YELLOW, use_color), warning_count, esc(RESET, use_color), esc(RED, use_color), error_count, esc(RESET, use_color) });
     } else if (warning_count > 0) {
-        try writer.print("{s}{d} warning(s){s}\n", .{ YELLOW, warning_count, RESET });
+        try writer.print("{s}{d} warning(s){s}\n", .{ esc(YELLOW, use_color), warning_count, esc(RESET, use_color) });
     } else if (error_count > 0) {
-        try writer.print("{s}{d} error(s){s}\n", .{ RED, error_count, RESET });
+        try writer.print("{s}{d} error(s){s}\n", .{ esc(RED, use_color), error_count, esc(RESET, use_color) });
     }
 }
 
-fn printDiagnostic(writer: anytype, diag: *const errors.OrhonError, kind: DiagKind, mode: errors.BuildMode) !void {
+fn printDiagnostic(writer: anytype, diag: *const errors.OrhonError, kind: DiagKind, mode: errors.BuildMode, use_color: bool) !void {
     const is_error = kind == .err;
-    const header_bg = if (is_error) "\x1b[41m" else "\x1b[43m";
-    const header_fg = if (is_error) WHITE else "\x1b[30m";
     const lbl = kind.label();
 
     var code_buf: [8]u8 = undefined;
@@ -71,21 +76,24 @@ fn printDiagnostic(writer: anytype, diag: *const errors.OrhonError, kind: DiagKi
         lbl;
     defer if (has_code) std.heap.page_allocator.free(full_lbl);
     const pad_len = if (HEADER_PAD.len > full_lbl.len + 2) HEADER_PAD.len - full_lbl.len - 2 else 0;
-    try writer.print("\n{s}{s}{s}  {s}{s}{s}\n", .{ header_bg, BOLD, header_fg, full_lbl, HEADER_PAD[0..pad_len], RESET });
 
-    try writer.print("\n  {s}{s}{s}\n", .{ BOLD, diag.message, RESET });
+    const header_bg = if (is_error) esc(HEADER_ERR, use_color) else esc(HEADER_WRN, use_color);
+    const header_fg = if (is_error) esc(WHITE, use_color) else esc(HEADER_WRN_FG, use_color);
+    try writer.print("\n{s}{s}{s}  {s}{s}{s}\n", .{ header_bg, esc(BOLD, use_color), header_fg, full_lbl, HEADER_PAD[0..pad_len], esc(RESET, use_color) });
+
+    try writer.print("\n  {s}{s}{s}\n", .{ esc(BOLD, use_color), diag.message, esc(RESET, use_color) });
 
     if (diag.loc) |loc| {
         if (loc.line > 0 and loc.file.len > 0) {
-            try writer.print("  {s}──▸ {s}:{d}{s}\n", .{ CYAN, loc.file, loc.line, RESET });
+            try writer.print("  {s}──▸ {s}:{d}{s}\n", .{ esc(CYAN, use_color), loc.file, loc.line, esc(RESET, use_color) });
         } else if (loc.line > 0) {
-            try writer.print("  {s}at line {d}{s}\n", .{ CYAN, loc.line, RESET });
+            try writer.print("  {s}at line {d}{s}\n", .{ esc(CYAN, use_color), loc.line, esc(RESET, use_color) });
         }
         if (loc.file.len > 0 and loc.line > 0) {
             if (readSourceLine(loc.file, loc.line)) |line| {
-                try writer.print("{s}       │{s}\n", .{ DIM, RESET });
-                try writer.print("{s}{d: >5}{s} {s}│{s}  {s}{s}{s}\n", .{ BOLD, loc.line, RESET, DIM, RESET, BOLD, line, RESET });
-                try writer.print("{s}       │{s}\n", .{ DIM, RESET });
+                try writer.print("{s}       │{s}\n", .{ esc(DIM, use_color), esc(RESET, use_color) });
+                try writer.print("{s}{d: >5}{s} {s}│{s}  {s}{s}{s}\n", .{ esc(BOLD, use_color), loc.line, esc(RESET, use_color), esc(DIM, use_color), esc(RESET, use_color), esc(BOLD, use_color), line, esc(RESET, use_color) });
+                try writer.print("{s}       │{s}\n", .{ esc(DIM, use_color), esc(RESET, use_color) });
             }
         }
     }
@@ -265,4 +273,24 @@ test "flushShort loc with zero col omits col" {
     defer out.deinit(std.testing.allocator);
     try flushShort(&reporter, out.writer(std.testing.allocator));
     try std.testing.expectEqualStrings("src/foo.orh:3: error: type mismatch\n", out.items);
+}
+
+test "flushHuman use_color false produces no ANSI escapes" {
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushHuman(&reporter, .debug, out.writer(std.testing.allocator), false);
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "\x1b[") == null);
+}
+
+test "flushHuman use_color true contains ANSI escapes" {
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushHuman(&reporter, .debug, out.writer(std.testing.allocator), true);
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "\x1b[") != null);
 }
