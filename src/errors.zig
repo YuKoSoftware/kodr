@@ -5,6 +5,21 @@ const std = @import("std");
 
 pub const ErrorCode = @import("error_codes.zig").ErrorCode;
 
+pub const Severity = enum { err, warning, note, hint };
+
+/// A single diagnostic with optional location and severity.
+/// severity defaults to .err so existing struct literals .{ .message = ... } compile unchanged.
+pub const OrhonDiag = struct {
+    severity: Severity = .err,
+    message:  []const u8,
+    loc:      ?SourceLoc = null,
+    code:     ?ErrorCode = null,
+    parent:   ?u32 = null,
+};
+
+/// Backward-compat alias — all existing code using OrhonError continues to compile.
+pub const OrhonError = OrhonDiag;
+
 const diag_fmt = @import("diag_format.zig");
 pub const DiagFormat = diag_fmt.DiagFormat;
 
@@ -32,13 +47,6 @@ pub const SourceLoc = struct {
     file: []const u8,
     line: usize,
     col: usize,
-};
-
-/// A single error with optional location and trace
-pub const OrhonError = struct {
-    message: []const u8,
-    loc: ?SourceLoc = null,
-    code: ?ErrorCode = null,
 };
 
 /// The error reporter — used by every pass
@@ -291,5 +299,13 @@ test "closestMatch does not suggest exact match" {
     const candidates = [_][]const u8{ "count", "value" };
     const result = closestMatch("count", &candidates, 2);
     try std.testing.expect(result == null); // d == 0, excluded by d > 0 guard
+}
+
+test "OrhonDiag has severity and parent with defaults" {
+    const d = OrhonDiag{ .message = "test" };
+    try std.testing.expectEqual(Severity.err, d.severity);
+    try std.testing.expect(d.parent == null);
+    try std.testing.expect(d.loc == null);
+    try std.testing.expect(d.code == null);
 }
 
