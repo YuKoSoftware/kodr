@@ -138,6 +138,7 @@ fn parseJsonDiagnostics(json: []const u8, allocator: std.mem.Allocator) ![]Diag 
             .integer => |n| n,
             else     => continue,
         };
+        if (line_val < 1) continue;
 
         const code = try allocator.dupe(u8, code_str);
         errdefer allocator.free(code);
