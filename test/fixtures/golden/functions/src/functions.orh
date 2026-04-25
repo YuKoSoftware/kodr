@@ -1,0 +1,27 @@
+module functions
+#version = (1, 0, 0)
+#build   = static
+
+pub func triple(x: i32) i32 {
+    return x * 3
+}
+
+pub func apply(f: func(i32) i32, x: i32) i32 {
+    return f(x)
+}
+
+pub func call_via_ptr() i32 {
+    const f: func(i32) i32 = triple
+    return f(4)
+}
+
+pub func greet(name: str, greeting: str = "hello") str {
+    return greeting ++ " " ++ name
+}
+
+pub func factorial(n: i32) i32 {
+    if(n <= 1) {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
