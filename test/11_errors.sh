@@ -613,36 +613,11 @@ if echo "$NEG_OUT" | grep -qi "tuple capture count.*does not match"; then pass "
 else fail "rejects tuple capture count mismatch" "$NEG_OUT"; fi
 
 
-# mixed numeric types
-run_fixture neg_mixed_num fail_mixed_numeric.orh "cannot mix" "fixture: rejects mixed numeric types in binary expressions"
-
 # unreachable code
 run_fixture neg_unreach fail_unreachable.orh "unreachable" "fixture: warns on unreachable code after return"
 
-# unsigned negation
-run_fixture neg_unsigned_neg fail_unsigned_negate.orh "cannot negate unsigned" "fixture: rejects negation of unsigned types"
-
-# compound is in if condition
-run_fixture neg_is_compound fail_is_compound.orh "compound.*is.*not supported" "fixture: rejects compound is in if condition"
-
-# is outside if/elif
-run_fixture neg_is_outside fail_is_outside_if.orh "is.*can only be used in if" "fixture: rejects is outside if/elif"
-
 # @compileError inside compt func
 run_fixture neg_compile_error fail_compile_error.orh "should not compile\|compileError" "fixture: @compileError triggers compile failure"
-
-# compt misuse
-run_fixture neg_compt_runtime fail_compt.orh "compt function.*requires compile-time-known arguments\|compt function.*expects a type argument" "fixture: rejects runtime param to compt func"
-run_fixture neg_compt_expr fail_compt.orh "compt function.*requires compile-time-known arguments\|compt function.*expects a type argument" "fixture: rejects runtime expression to compt func"
-run_fixture neg_compt_type_arg fail_compt.orh "compt function.*requires compile-time-known arguments\|compt function.*expects a type argument" "fixture: rejects runtime param as compt type arg"
-run_fixture neg_compt_nested fail_compt.orh "compt function.*requires compile-time-known arguments\|compt function.*expects a type argument" "fixture: rejects runtime param in nested compt call"
-
-# @tuple context and mixing
-run_fixture neg_tuple_context fail_tuple_literal_stray.orh "@tuple.*anytype argument" "fixture: rejects @tuple outside call context"
-run_fixture neg_tuple_mixed   fail_tuple_literal_mixed.orh "cannot mix positional and named" "fixture: rejects mixed @tuple elements"
-
-# else if → elif
-run_fixture neg_else_if fail_else_if.orh "elif" "fixture: suggests elif instead of else if"
 
 # cross-module unknown identifier should mention source module
 cd "$TESTDIR"
@@ -693,9 +668,5 @@ cd neg_cross_type
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "shapes"; then pass "unknown type mentions source module"
 else fail "unknown type mentions source module" "$NEG_OUT"; fi
-
-# common syntax mistakes
-run_fixture neg_missing_paren fail_common_mistakes.orh "parentheses\|'('" "fixture: suggests parens after if/while/for"
-run_fixture neg_semicolon fail_common_mistakes.orh "semicolon" "fixture: warns about stray semicolons"
 
 report_results

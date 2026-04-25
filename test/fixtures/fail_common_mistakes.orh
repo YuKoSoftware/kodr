@@ -5,13 +5,13 @@ module fixture
 
 // missing parens after if
 func bad_if() void {
-    if true {
+    if true {  //> [E0101]
     }
-}
+}  //> [E0101]
 
 // stray semicolons
 func bad_semi() void {
-    const x: i32 = 5;
+    const x: i32 = 5;  //> [E0101]
 }
 
 func main() void { }

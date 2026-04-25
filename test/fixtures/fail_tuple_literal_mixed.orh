@@ -6,6 +6,6 @@ module fixture
 import std::bitfield
 
 func main() void {
-    const _Flags: type = bitfield.Bitfield(u32, @tuple("Read", count: 2))
+    const _Flags: type = bitfield.Bitfield(u32, @tuple("Read", count: 2))  //> [E0101]
     _ = _Flags
 }

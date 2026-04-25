@@ -7,17 +7,17 @@ module fixture
 
 func neg_u8() u8 {
     const x: u8 = 5
-    return -x
+    return -x  //> [E2045]
 }
 
 func neg_u32() u32 {
     const x: u32 = 5
-    return -x
+    return -x  //> [E2045]
 }
 
 func neg_usize() usize {
     const x: usize = 5
-    return -x
+    return -x  //> [E2045]
 }
 
 // negation on signed/float — should be fine

@@ -5,7 +5,7 @@ module fixture
 
 func check_compound(x: (i32 | str), y: (i32 | str)) i32 {
     if(x is i32 and y is str) {
-        return 1
+        return 1  //> [E2026]
     }
     return 0
 }

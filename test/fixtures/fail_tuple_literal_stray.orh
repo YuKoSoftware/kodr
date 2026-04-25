@@ -4,7 +4,7 @@ module fixture
 #build   = exe
 
 func main() void {
-    const _x = @tuple(1, 2)
+    const _x = @tuple(1, 2)  //> [E2052]
     stray_use(_x)
 }
 

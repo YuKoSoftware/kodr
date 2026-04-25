@@ -10,13 +10,13 @@ compt func doubled(n: i32) i32 {
 }
 
 func use_doubled(x: i32) i32 {
-    return doubled(x)
+    return doubled(x)  //> [E2051]
 }
 
 // ── Case 2: runtime expression passed to compt ─────────────
 
 func compute(a: i32, b: i32) i32 {
-    return doubled(a + b)
+    return doubled(a + b)  //> [E2051]
 }
 
 // ── Case 3: runtime param passed to compt type argument ────
@@ -34,11 +34,11 @@ func bad_runtime_type(x: i32) void {
 // ── Case 4: runtime param in nested compt call ─────────────
 
 compt func tripled(n: i32) i32 {
-    return doubled(n) + n
+    return doubled(n) + n  //> [E2051]
 }
 
 func use_tripled(x: i32) i32 {
-    return tripled(x)
+    return tripled(x)  //> [E2051]
 }
 
 func main() void {
