@@ -18,7 +18,65 @@ const TestResult = union(enum) {
     setup_error: []const u8,  // caller must free
 };
 
+const SidecarExpect = struct {
+    exit:   u8,
+    codes:  []const []const u8,
+    stderr: ?[]const u8,
+};
+
 // ── Pure functions ─────────────────────────────────────────────────────────────
+
+/// Parse a .expect sidecar JSON into a SidecarExpect.
+/// Returns null for missing file, invalid JSON, or non-object root.
+/// All strings are duped into `allocator`.
+fn parseSidecarContent(json: []const u8, allocator: std.mem.Allocator) !?SidecarExpect {
+    var parsed = std.json.parseFromSlice(std.json.Value, allocator, json, .{}) catch
+        return null;
+    defer parsed.deinit();
+
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        else    => return null,
+    };
+
+    const exit_code: u8 = blk: {
+        const v = obj.get("exit") orelse break :blk 1;
+        break :blk switch (v) { .integer => |n| @intCast(n), else => 1 };
+    };
+
+    var codes = std.ArrayList([]const u8){};
+    if (obj.get("codes")) |cv| {
+        if (cv == .array) {
+            for (cv.array.items) |item| {
+                if (item == .string) try codes.append(allocator, try allocator.dupe(u8, item.string));
+            }
+        }
+    }
+
+    const stderr_snippet: ?[]const u8 = blk: {
+        const v = obj.get("stderr") orelse break :blk null;
+        break :blk switch (v) { .string => |s| try allocator.dupe(u8, s), else => null };
+    };
+
+    return SidecarExpect{
+        .exit   = exit_code,
+        .codes  = try codes.toOwnedSlice(allocator),
+        .stderr = stderr_snippet,
+    };
+}
+
+/// Look for a <fixture>.expect file next to the given .orh path.
+/// Returns null if the sidecar does not exist.
+fn readSidecar(fixture_path: []const u8, allocator: std.mem.Allocator) !?SidecarExpect {
+    if (!std.mem.endsWith(u8, fixture_path, ".orh")) return null;
+    const stem         = fixture_path[0 .. fixture_path.len - 4];
+    const sidecar_path = try std.fmt.allocPrint(allocator, "{s}.expect", .{stem});
+    const content      = std.fs.cwd().readFileAlloc(allocator, sidecar_path, 64 * 1024) catch |err| {
+        if (err == error.FileNotFound) return null;
+        return err;
+    };
+    return parseSidecarContent(content, allocator);
+}
 
 /// Scan a fixture's source for //> [Exxxx] annotations.
 /// Returns (line_number, code) pairs — line numbers are 1-based.
@@ -160,7 +218,11 @@ fn runFixture(orhon_path: []const u8, fixture_path: []const u8, gpa: std.mem.All
     const content = try std.fs.cwd().readFileAlloc(alloc, fixture_path, 512 * 1024);
 
     const annotations = try scanAnnotationsFromContent(content, alloc);
-    if (annotations.len == 0) return .skip;
+    if (annotations.len == 0) {
+        const sidecar = try readSidecar(fixture_path, alloc);
+        if (sidecar == null) return .skip;
+        return runFixtureSidecar(orhon_path, content, sidecar.?, gpa, alloc);
+    }
 
     const module_name = extractModuleNameFromContent(content, alloc) catch
         return TestResult{ .setup_error = try gpa.dupe(u8, "missing module declaration") };
@@ -205,6 +267,76 @@ fn runFixture(orhon_path: []const u8, fixture_path: []const u8, gpa: std.mem.All
             .missing    => |ann|  try msg.writer(gpa).print("        missing:    [{s}] at line {d}\n", .{ ann.code,  ann.line }),
             .unexpected => |diag| try msg.writer(gpa).print("        unexpected: [{s}] at line {d}\n", .{ diag.code, diag.line }),
         }
+    }
+    return TestResult{ .fail = try msg.toOwnedSlice(gpa) };
+}
+
+/// Run a fixture using a .expect sidecar for assertions instead of inline annotations.
+/// `content` and `sidecar` are allocated from `alloc` (caller's arena); error messages
+/// are duped into `gpa`.
+fn runFixtureSidecar(
+    orhon_path: []const u8,
+    content:    []const u8,
+    sidecar:    SidecarExpect,
+    gpa:        std.mem.Allocator,
+    alloc:      std.mem.Allocator,
+) !TestResult {
+    const module_name = extractModuleNameFromContent(content, alloc) catch
+        return TestResult{ .setup_error = try gpa.dupe(u8, "missing module declaration") };
+
+    const tmp_root    = try std.fmt.allocPrint(alloc, "/tmp/orhon-test-{d}-{s}",
+        .{ std.time.milliTimestamp(), module_name });
+    const project_path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ tmp_root, module_name });
+    const src_path     = try std.fmt.allocPrint(alloc, "{s}/src",  .{project_path});
+    const dest_file    = try std.fmt.allocPrint(alloc, "{s}/{s}.orh", .{ src_path, module_name });
+
+    try std.fs.makeDirAbsolute(tmp_root);
+    defer std.fs.deleteTreeAbsolute(tmp_root) catch {};
+    try std.fs.makeDirAbsolute(project_path);
+    try std.fs.makeDirAbsolute(src_path);
+    const dest = try std.fs.createFileAbsolute(dest_file, .{});
+    defer dest.close();
+    try dest.writeAll(content);
+
+    const child_args = &[_][]const u8{ orhon_path, "build", "--diag-format=json" };
+    var child = std.process.Child.init(child_args, alloc);
+    child.cwd             = project_path;
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Pipe;
+    try child.spawn();
+
+    const stderr_out = try child.stderr.?.readToEndAlloc(alloc, 512 * 1024);
+    const term       = try child.wait();
+
+    const actual_exit: u8 = switch (term) {
+        .Exited => |code| code,
+        else    => 255,
+    };
+
+    var msg = std.ArrayList(u8){};
+    errdefer msg.deinit(gpa);
+
+    if (actual_exit != sidecar.exit)
+        try msg.writer(gpa).print("        exit: expected {d}, got {d}\n",
+            .{ sidecar.exit, actual_exit });
+
+    const actual_diags = try parseJsonDiagnostics(stderr_out, alloc);
+    for (sidecar.codes) |expected_code| {
+        const found = for (actual_diags) |d| {
+            if (std.mem.eql(u8, d.code, expected_code)) break true;
+        } else false;
+        if (!found)
+            try msg.writer(gpa).print("        missing code: [{s}]\n", .{expected_code});
+    }
+
+    if (sidecar.stderr) |snippet| {
+        if (std.mem.indexOf(u8, stderr_out, snippet) == null)
+            try msg.writer(gpa).print("        missing in stderr: \"{s}\"\n", .{snippet});
+    }
+
+    if (msg.items.len == 0) {
+        msg.deinit(gpa);
+        return .pass;
     }
     return TestResult{ .fail = try msg.toOwnedSlice(gpa) };
 }
@@ -388,4 +520,37 @@ test "parseJsonDiagnostics: multiple errors" {
     try std.testing.expectEqual(@as(usize, 2), diags.len);
     try std.testing.expectEqual(@as(u32, 9),  diags[0].line);
     try std.testing.expectEqual(@as(u32, 12), diags[1].line);
+}
+
+test "parseSidecarContent: full sidecar" {
+    const alloc = std.testing.allocator;
+    const json =
+        \\{"exit":1,"codes":["E1007","E9005"],"stderr":"not supported"}
+    ;
+    const s = (try parseSidecarContent(json, alloc)).?;
+    defer {
+        for (s.codes) |c| alloc.free(c);
+        alloc.free(s.codes);
+        if (s.stderr) |snip| alloc.free(snip);
+    }
+    try std.testing.expectEqual(@as(u8, 1),       s.exit);
+    try std.testing.expectEqual(@as(usize, 2),    s.codes.len);
+    try std.testing.expectEqualStrings("E1007",   s.codes[0]);
+    try std.testing.expectEqualStrings("E9005",   s.codes[1]);
+    try std.testing.expectEqualStrings("not supported", s.stderr.?);
+}
+
+test "parseSidecarContent: exit-0 positive test" {
+    const alloc = std.testing.allocator;
+    const s = (try parseSidecarContent("{\"exit\":0}", alloc)).?;
+    defer alloc.free(s.codes);
+    try std.testing.expectEqual(@as(u8,     0), s.exit);
+    try std.testing.expectEqual(@as(usize,  0), s.codes.len);
+    try std.testing.expect(s.stderr == null);
+}
+
+test "parseSidecarContent: invalid JSON returns null" {
+    const alloc = std.testing.allocator;
+    const result = try parseSidecarContent("not json", alloc);
+    try std.testing.expect(result == null);
 }
