@@ -237,32 +237,37 @@ pub fn main() !void {
     var failed:  u32 = 0;
     var skipped: u32 = 0;
 
-    var it = dir.iterate();
-    while (try it.next()) |entry| {
+    var walker = try dir.walk(gpa);
+    defer walker.deinit();
+    while (try walker.next()) |entry| {
         if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.name, ".orh")) continue;
+        if (!std.mem.endsWith(u8, entry.basename, ".orh")) continue;
 
-        const fixture_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ fixtures_dir, entry.name });
-        defer gpa.free(fixture_path);
+        // entry.path is invalidated on the next walker.next() call — dupe it now
+        const rel_path     = try gpa.dupe(u8, entry.path);
+        const fixture_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ fixtures_dir, rel_path });
 
         const result = try runFixture(orhon_path, fixture_path, gpa);
+        gpa.free(fixture_path);
+
         switch (result) {
             .pass => {
                 passed += 1;
-                try out.print("  \x1b[32mPASS\x1b[0m  {s}\n", .{entry.name});
+                try out.print("  \x1b[32mPASS\x1b[0m  {s}\n", .{rel_path});
             },
             .skip => skipped += 1,
             .fail => |msg| {
                 failed += 1;
-                try out.print("  \x1b[31mFAIL\x1b[0m  {s}\n{s}", .{ entry.name, msg });
+                try out.print("  \x1b[31mFAIL\x1b[0m  {s}\n{s}", .{ rel_path, msg });
                 gpa.free(msg);
             },
             .setup_error => |msg| {
                 failed += 1;
-                try out.print("  \x1b[31mERROR\x1b[0m {s}: {s}\n", .{ entry.name, msg });
+                try out.print("  \x1b[31mERROR\x1b[0m {s}: {s}\n", .{ rel_path, msg });
                 gpa.free(msg);
             },
         }
+        gpa.free(rel_path);
     }
 
     try out.print("\n{d}/{d} passed", .{ passed, passed + failed });
