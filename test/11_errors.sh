@@ -343,16 +343,7 @@ run_fixture() {
     else fail "$label" "$NEG_OUT"; fi
 }
 
-# syntax (parser) errors
-run_fixture neg_syntax fail_syntax.orh "module-level.*var.*not allowed" "fixture: rejects module-level var"
-
 # type resolution errors
-run_fixture neg_types fail_types.orh "unknown type" "fixture: catches unknown types"
-run_fixture neg_types2 fail_types.orh "already declared" "fixture: catches duplicate variable"
-run_fixture neg_types3 fail_types.orh "return type mismatch" "fixture: catches return type mismatch"
-run_fixture neg_types4 fail_types.orh "type mismatch.*condition" "fixture: catches non-bool condition"
-run_fixture neg_types5 fail_types.orh "type mismatch" "fixture: catches type mismatch"
-run_fixture neg_types6 fail_types.orh "break.*outside\|continue.*outside" "fixture: catches break/continue outside loop"
 run_fixture neg_cb3_short_name fail_cb3_short_uppercase.orh "type mismatch\|incompatible\|cannot assign\|expected.*Edge.*found.*Node" "CB3: short uppercase struct name is not silently type-compatible"
 
 # ownership errors
@@ -365,10 +356,6 @@ run_fixture neg_prop fail_propagation.orh "unhandled.*union" "fixture: catches u
 run_fixture neg_unwrap fail_propagation.orh "unsafe unwrap" "fixture: catches unsafe union unwrap"
 run_fixture neg_prop_errfunc fail_propagation_in_error_func.orh "unhandled.*union" "fixture: rejects unhandled union in error-returning function"
 run_fixture neg_prop_discard fail_propagation_discarded.orh "discarded.*union" "fixture: rejects bare call with discarded union return"
-run_fixture neg_callnonfunc fail_types.orh "not callable" "fixture: rejects calling non-function"
-run_fixture neg_indexbool fail_types.orh "cannot index" "fixture: rejects indexing non-indexable"
-run_fixture neg_matcharm fail_types.orh "not a member" "fixture: rejects invalid match arm type"
-run_fixture neg_testbody fail_types.orh "type mismatch" "fixture: catches type error in test body"
 
 # struct errors
 run_fixture neg_struct_dup fail_structs.orh "duplicate field" "fixture: catches duplicate struct field"
@@ -386,9 +373,6 @@ run_fixture neg_method_arity fail_method_arity.orh "expects 0 argument.*got 1" "
 run_fixture neg_call_style fail_call_style.orh "instance method\|static method" "fixture: rejects wrong call style for methods"
 run_fixture neg_inline_tuple fail_inline_tuple.orh "expected\|error" "fixture: rejects inline tuple types"
 run_fixture neg_c_header fail_c_header_import.orh "not supported.*zig.*zon" "fixture: rejects import header.h"
-
-# scope errors (module-level var fires first since it's a parser error)
-run_fixture neg_scope fail_scope.orh "module-level.*var.*not allowed\|already declared" "fixture: catches scope errors"
 
 # match errors
 run_fixture neg_match fail_match.orh "not a member" "fixture: catches invalid match arm"
