@@ -92,9 +92,11 @@ pub const Reporter = struct {
             .col = loc.col,
         } else null;
         try list.append(self.allocator, .{
-            .message = owned_msg,
-            .loc = owned_loc,
-            .code = diag.code,
+            .severity = diag.severity,
+            .message  = owned_msg,
+            .loc      = owned_loc,
+            .code     = diag.code,
+            .parent   = diag.parent,
         });
     }
 
