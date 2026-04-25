@@ -51,85 +51,105 @@ pub const SourceLoc = struct {
 
 /// The error reporter — used by every pass
 pub const Reporter = struct {
-    mode: BuildMode,
-    errors: std.ArrayListUnmanaged(OrhonError),
-    warnings: std.ArrayListUnmanaged(OrhonError),
-    allocator: std.mem.Allocator,
+    mode:        BuildMode,
+    diagnostics: std.ArrayListUnmanaged(OrhonDiag),
+    allocator:   std.mem.Allocator,
     diag_format: DiagFormat = .human,
-    use_color: bool = false,
+    use_color:   bool = false,
+    werror:      bool = false,
 
     pub fn init(allocator: std.mem.Allocator, mode: BuildMode) Reporter {
         return .{
-            .mode = mode,
-            .errors = .{},
-            .warnings = .{},
-            .allocator = allocator,
+            .mode        = mode,
+            .diagnostics = .{},
+            .allocator   = allocator,
         };
     }
 
     pub fn deinit(self: *Reporter) void {
-        for (self.errors.items) |err| {
-            self.allocator.free(err.message);
-            if (err.loc) |loc| {
+        for (self.diagnostics.items) |diag| {
+            self.allocator.free(diag.message);
+            if (diag.loc) |loc| {
                 if (loc.file.len > 0) self.allocator.free(loc.file);
             }
         }
-        self.errors.deinit(self.allocator);
-        for (self.warnings.items) |w| {
-            self.allocator.free(w.message);
-            if (w.loc) |loc| {
-                if (loc.file.len > 0) self.allocator.free(loc.file);
-            }
-        }
-        self.warnings.deinit(self.allocator);
+        self.diagnostics.deinit(self.allocator);
     }
 
-    fn storeOwned(self: *Reporter, diag: OrhonError, list: *std.ArrayListUnmanaged(OrhonError)) !void {
+    fn storeDiag(self: *Reporter, diag: OrhonDiag) !u32 {
         const owned_msg = try self.allocator.dupe(u8, diag.message);
         const owned_loc: ?SourceLoc = if (diag.loc) |loc| .{
             .file = if (loc.file.len > 0) try self.allocator.dupe(u8, loc.file) else "",
             .line = loc.line,
-            .col = loc.col,
+            .col  = loc.col,
         } else null;
-        try list.append(self.allocator, .{
+        const idx: u32 = @intCast(self.diagnostics.items.len);
+        try self.diagnostics.append(self.allocator, .{
             .severity = diag.severity,
             .message  = owned_msg,
             .loc      = owned_loc,
             .code     = diag.code,
             .parent   = diag.parent,
         });
+        return idx;
     }
 
-    pub fn report(self: *Reporter, err: OrhonError) !void {
-        try self.storeOwned(err, &self.errors);
+    pub fn report(self: *Reporter, diag: OrhonDiag) !u32 {
+        var d = diag;
+        d.severity = .err;
+        d.parent   = null;
+        return self.storeDiag(d);
     }
 
     /// Record a non-fatal warning. Compilation continues after warnings.
-    pub fn warn(self: *Reporter, w: OrhonError) !void {
-        try self.storeOwned(w, &self.warnings);
+    pub fn warn(self: *Reporter, diag: OrhonDiag) !u32 {
+        var d = diag;
+        d.severity = .warning;
+        d.parent   = null;
+        return self.storeDiag(d);
     }
 
     /// Format and report an error in one step.
     /// Replaces the repeated allocPrint + defer free + report pattern.
-    pub fn reportFmt(self: *Reporter, code: ErrorCode, loc: ?SourceLoc, comptime fmt: []const u8, args: anytype) !void {
+    pub fn reportFmt(self: *Reporter, code: ErrorCode, loc: ?SourceLoc, comptime fmt: []const u8, args: anytype) !u32 {
         const msg = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(msg);
-        try self.report(.{ .code = code, .message = msg, .loc = loc });
+        return self.report(.{ .code = code, .message = msg, .loc = loc });
     }
 
     /// Format and record a warning in one step. Warn-side counterpart to reportFmt.
-    pub fn warnFmt(self: *Reporter, code: ErrorCode, loc: ?SourceLoc, comptime fmt: []const u8, args: anytype) !void {
+    pub fn warnFmt(self: *Reporter, code: ErrorCode, loc: ?SourceLoc, comptime fmt: []const u8, args: anytype) !u32 {
         const msg = try std.fmt.allocPrint(self.allocator, fmt, args);
         defer self.allocator.free(msg);
-        try self.warn(.{ .code = code, .message = msg, .loc = loc });
+        return self.warn(.{ .code = code, .message = msg, .loc = loc });
+    }
+
+    pub fn note(self: *Reporter, parent: u32, diag: OrhonDiag) !void {
+        var d = diag;
+        d.severity = .note;
+        d.parent   = parent;
+        _ = try self.storeDiag(d);
+    }
+
+    pub fn noteFmt(self: *Reporter, parent: u32, code: ErrorCode, loc: ?SourceLoc, comptime fmt: []const u8, args: anytype) !void {
+        const msg = try std.fmt.allocPrint(self.allocator, fmt, args);
+        defer self.allocator.free(msg);
+        try self.note(parent, .{ .code = code, .message = msg, .loc = loc });
     }
 
     pub fn hasErrors(self: *const Reporter) bool {
-        return self.errors.items.len > 0;
+        for (self.diagnostics.items) |d| {
+            if (d.severity == .err) return true;
+            if (d.severity == .warning and self.werror) return true;
+        }
+        return false;
     }
 
     pub fn hasWarnings(self: *const Reporter) bool {
-        return self.warnings.items.len > 0;
+        for (self.diagnostics.items) |d| {
+            if (d.severity == .warning) return true;
+        }
+        return false;
     }
 
     /// Emit all diagnostics in self.diag_format to stderr.
@@ -216,10 +236,11 @@ test "reporter collects errors" {
     var reporter = Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
 
-    try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
+    _ = try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
     try std.testing.expect(reporter.hasErrors());
-    try std.testing.expectEqual(@as(usize, 1), reporter.errors.items.len);
-    try std.testing.expectEqual(ErrorCode.unknown_identifier, reporter.errors.items[0].code.?);
+    try std.testing.expectEqual(@as(usize, 1), reporter.diagnostics.items.len);
+    try std.testing.expectEqual(Severity.err, reporter.diagnostics.items[0].severity);
+    try std.testing.expectEqual(ErrorCode.unknown_identifier, reporter.diagnostics.items[0].code.?);
 }
 
 test "reporter release mode" {
@@ -232,12 +253,13 @@ test "reporter collects warnings" {
     var reporter = Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
 
-    try reporter.warn(.{ .code = .unused_import, .message = "test warning" });
+    _ = try reporter.warn(.{ .code = .unused_import, .message = "test warning" });
     try std.testing.expect(!reporter.hasErrors());
     try std.testing.expect(reporter.hasWarnings());
-    try std.testing.expectEqual(@as(usize, 1), reporter.warnings.items.len);
-    try std.testing.expectEqualStrings("test warning", reporter.warnings.items[0].message);
-    try std.testing.expectEqual(ErrorCode.unused_import, reporter.warnings.items[0].code.?);
+    try std.testing.expectEqual(@as(usize, 1), reporter.diagnostics.items.len);
+    try std.testing.expectEqual(Severity.warning, reporter.diagnostics.items[0].severity);
+    try std.testing.expectEqualStrings("test warning", reporter.diagnostics.items[0].message);
+    try std.testing.expectEqual(ErrorCode.unused_import, reporter.diagnostics.items[0].code.?);
 }
 
 test "detectColor .always returns true" {
@@ -252,7 +274,7 @@ test "reporter warnings don't block compilation" {
     var reporter = Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
 
-    try reporter.warn(.{ .message = "unused var" });
+    _ = try reporter.warn(.{ .message = "unused var" });
     try std.testing.expect(!reporter.hasErrors()); // warnings don't count as errors
 }
 
@@ -309,5 +331,36 @@ test "OrhonDiag has severity and parent with defaults" {
     try std.testing.expect(d.parent == null);
     try std.testing.expect(d.loc == null);
     try std.testing.expect(d.code == null);
+}
+
+test "report returns index; note chains to parent" {
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    const idx = try reporter.report(.{ .code = .unknown_identifier, .message = "unknown 'x'" });
+    try std.testing.expectEqual(@as(u32, 0), idx);
+    const idx2 = try reporter.report(.{ .message = "second error" });
+    try std.testing.expectEqual(@as(u32, 1), idx2);
+
+    try reporter.note(idx, .{ .message = "defined here" });
+    try std.testing.expectEqual(@as(usize, 3), reporter.diagnostics.items.len);
+    try std.testing.expectEqual(Severity.note, reporter.diagnostics.items[2].severity);
+    try std.testing.expectEqual(@as(u32, 0), reporter.diagnostics.items[2].parent.?);
+}
+
+test "hasErrors respects werror flag" {
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    reporter.werror = true;
+
+    _ = try reporter.warn(.{ .message = "unused var" });
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "hasErrors false when werror=false and only warnings" {
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    _ = try reporter.warn(.{ .message = "unused var" });
+    try std.testing.expect(!reporter.hasErrors());
 }
 

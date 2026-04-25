@@ -4,7 +4,7 @@ const errors = @import("errors.zig");
 
 pub const DiagFormat = enum { human, json, short };
 
-// ── Human format ────────────────────────────────────────────────────────────
+// ── ANSI constants ────────────────────────────────────────────────────────────
 
 const RED        = "\x1b[31m";
 const YELLOW     = "\x1b[33m";
@@ -22,38 +22,58 @@ fn esc(comptime code: []const u8, use_color: bool) []const u8 {
     return if (use_color) code else "";
 }
 
-const DiagKind = enum {
-    err,
-    warning,
-
-    fn label(self: DiagKind) []const u8 {
-        return switch (self) {
-            .err => "ERROR",
-            .warning => "WARNING",
-        };
-    }
-};
+// ── Human format ──────────────────────────────────────────────────────────────
 
 pub fn flushHuman(reporter: *const errors.Reporter, mode: errors.BuildMode, writer: anytype, use_color: bool) !void {
-    for (reporter.warnings.items) |diag| {
-        try printDiagnostic(writer, &diag, .warning, mode, use_color);
+    var err_count: usize = 0;
+    var warn_count: usize = 0;
+
+    for (reporter.diagnostics.items, 0..) |*diag, i| {
+        if (diag.parent != null) continue; // notes/hints emitted via emitChildren
+        switch (diag.severity) {
+            .err => {
+                err_count += 1;
+                try printDiagnostic(writer, diag, .err, mode, use_color);
+                try emitChildren(reporter, @intCast(i), writer, use_color);
+            },
+            .warning => {
+                warn_count += 1;
+                try printDiagnostic(writer, diag, .warning, mode, use_color);
+                try emitChildren(reporter, @intCast(i), writer, use_color);
+            },
+            .note, .hint => {},
+        }
     }
-    for (reporter.errors.items) |diag| {
-        try printDiagnostic(writer, &diag, .err, mode, use_color);
-    }
-    const warning_count = reporter.warnings.items.len;
-    const error_count = reporter.errors.items.len;
-    if (warning_count > 0 or error_count > 0) try writer.print("\n", .{});
-    if (warning_count > 0 and error_count > 0) {
-        try writer.print("{s}{d} warning(s){s}, {s}{d} error(s){s}\n", .{ esc(YELLOW, use_color), warning_count, esc(RESET, use_color), esc(RED, use_color), error_count, esc(RESET, use_color) });
-    } else if (warning_count > 0) {
-        try writer.print("{s}{d} warning(s){s}\n", .{ esc(YELLOW, use_color), warning_count, esc(RESET, use_color) });
-    } else if (error_count > 0) {
-        try writer.print("{s}{d} error(s){s}\n", .{ esc(RED, use_color), error_count, esc(RESET, use_color) });
+
+    if (warn_count > 0 or err_count > 0) try writer.print("\n", .{});
+    if (warn_count > 0 and err_count > 0) {
+        try writer.print("{s}{d} warning(s){s}, {s}{d} error(s){s}\n", .{ esc(YELLOW, use_color), warn_count, esc(RESET, use_color), esc(RED, use_color), err_count, esc(RESET, use_color) });
+    } else if (warn_count > 0) {
+        try writer.print("{s}{d} warning(s){s}\n", .{ esc(YELLOW, use_color), warn_count, esc(RESET, use_color) });
+    } else if (err_count > 0) {
+        try writer.print("{s}{d} error(s){s}\n", .{ esc(RED, use_color), err_count, esc(RESET, use_color) });
     }
 }
 
-fn printDiagnostic(writer: anytype, diag: *const errors.OrhonError, kind: DiagKind, mode: errors.BuildMode, use_color: bool) !void {
+fn emitChildren(reporter: *const errors.Reporter, parent_idx: u32, writer: anytype, use_color: bool) !void {
+    for (reporter.diagnostics.items) |*diag| {
+        if (diag.parent != parent_idx) continue;
+        try printNote(writer, diag, use_color);
+    }
+}
+
+fn printNote(writer: anytype, diag: *const errors.OrhonDiag, use_color: bool) !void {
+    try writer.print("\n  {s}note:{s} {s}\n", .{ esc(CYAN, use_color), esc(RESET, use_color), diag.message });
+    if (diag.loc) |loc| {
+        if (loc.line > 0 and loc.file.len > 0) {
+            try writer.print("  {s}──▸ {s}:{d}{s}\n", .{ esc(CYAN, use_color), loc.file, loc.line, esc(RESET, use_color) });
+        } else if (loc.line > 0) {
+            try writer.print("  {s}at line {d}{s}\n", .{ esc(CYAN, use_color), loc.line, esc(RESET, use_color) });
+        }
+    }
+}
+
+fn printDiagnostic(writer: anytype, diag: *const errors.OrhonDiag, kind: DiagKind, mode: errors.BuildMode, use_color: bool) !void {
     const is_error = kind == .err;
     const lbl = kind.label();
 
@@ -80,7 +100,6 @@ fn printDiagnostic(writer: anytype, diag: *const errors.OrhonError, kind: DiagKi
     const header_bg = if (is_error) esc(HEADER_ERR, use_color) else esc(HEADER_WRN, use_color);
     const header_fg = if (is_error) esc(WHITE, use_color) else esc(HEADER_WRN_FG, use_color);
     try writer.print("\n{s}{s}{s}  {s}{s}{s}\n", .{ header_bg, esc(BOLD, use_color), header_fg, full_lbl, HEADER_PAD[0..pad_len], esc(RESET, use_color) });
-
     try writer.print("\n  {s}{s}{s}\n", .{ esc(BOLD, use_color), diag.message, esc(RESET, use_color) });
 
     if (diag.loc) |loc| {
@@ -98,6 +117,18 @@ fn printDiagnostic(writer: anytype, diag: *const errors.OrhonError, kind: DiagKi
         }
     }
 }
+
+const DiagKind = enum {
+    err,
+    warning,
+
+    fn label(self: DiagKind) []const u8 {
+        return switch (self) {
+            .err     => "ERROR",
+            .warning => "WARNING",
+        };
+    }
+};
 
 var line_buf: [1024]u8 = undefined;
 
@@ -130,21 +161,22 @@ fn copyToLineBuf(line: []const u8) []const u8 {
 pub fn flushJson(reporter: *const errors.Reporter, writer: anytype) !void {
     try writer.writeAll("{\"version\":1,\"diagnostics\":[");
     var first = true;
-    for (reporter.warnings.items) |diag| {
+    for (reporter.diagnostics.items) |*diag| {
         if (!first) try writer.writeAll(",");
         first = false;
-        try writeDiagJson(&diag, "warning", writer);
-    }
-    for (reporter.errors.items) |diag| {
-        if (!first) try writer.writeAll(",");
-        first = false;
-        try writeDiagJson(&diag, "error", writer);
+        try writeDiagJson(diag, writer);
     }
     try writer.writeAll("]}\n");
 }
 
-fn writeDiagJson(diag: *const errors.OrhonError, severity: []const u8, writer: anytype) !void {
-    try writer.print("{{\"severity\":\"{s}\"", .{severity});
+fn writeDiagJson(diag: *const errors.OrhonDiag, writer: anytype) !void {
+    const severity_str: []const u8 = switch (diag.severity) {
+        .err     => "error",
+        .warning => "warning",
+        .note    => "note",
+        .hint    => "hint",
+    };
+    try writer.print("{{\"severity\":\"{s}\"", .{severity_str});
     if (diag.code) |code| {
         var buf: [8]u8 = undefined;
         const code_str = code.toCode(&buf);
@@ -157,12 +189,11 @@ fn writeDiagJson(diag: *const errors.OrhonError, severity: []const u8, writer: a
             try writer.writeAll(",\"file\":");
             try writeJsonString(loc.file, writer);
         }
-        if (loc.line > 0) {
-            try writer.print(",\"line\":{d}", .{loc.line});
-        }
-        if (loc.col > 0) {
-            try writer.print(",\"col\":{d}", .{loc.col});
-        }
+        if (loc.line > 0) try writer.print(",\"line\":{d}", .{loc.line});
+        if (loc.col  > 0) try writer.print(",\"col\":{d}",  .{loc.col});
+    }
+    if (diag.parent) |p| {
+        try writer.print(",\"parent\":{d}", .{p});
     }
     try writer.writeAll("}");
 }
@@ -185,16 +216,19 @@ fn writeJsonString(s: []const u8, writer: anytype) !void {
 // ── Short format ──────────────────────────────────────────────────────────────
 
 pub fn flushShort(reporter: *const errors.Reporter, writer: anytype) !void {
-    for (reporter.warnings.items) |diag| {
-        try writeDiagShort(&diag, "warning", writer);
-    }
-    for (reporter.errors.items) |diag| {
-        try writeDiagShort(&diag, "error", writer);
+    for (reporter.diagnostics.items) |*diag| {
+        try writeDiagShort(diag, writer);
     }
 }
 
-fn writeDiagShort(diag: *const errors.OrhonError, severity: []const u8, writer: anytype) !void {
+fn writeDiagShort(diag: *const errors.OrhonDiag, writer: anytype) !void {
     var code_buf: [8]u8 = undefined;
+    const severity_str: []const u8 = switch (diag.severity) {
+        .err     => "error",
+        .warning => "warning",
+        .note    => "note",
+        .hint    => "hint",
+    };
     if (diag.loc) |loc| {
         if (loc.file.len > 0 and loc.line > 0) {
             if (loc.col > 0) {
@@ -206,9 +240,9 @@ fn writeDiagShort(diag: *const errors.OrhonError, severity: []const u8, writer: 
     }
     if (diag.code) |code| {
         const code_str = code.toCode(&code_buf);
-        try writer.print("{s}[{s}]: {s}\n", .{ severity, code_str, diag.message });
+        try writer.print("{s}[{s}]: {s}\n", .{ severity_str, code_str, diag.message });
     } else {
-        try writer.print("{s}: {s}\n", .{ severity, diag.message });
+        try writer.print("{s}: {s}\n", .{ severity_str, diag.message });
     }
 }
 
@@ -217,19 +251,20 @@ fn writeDiagShort(diag: *const errors.OrhonError, severity: []const u8, writer: 
 test "flushJson produces wrapped JSON object" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
-    try reporter.report(.{
+    _ = try reporter.report(.{
         .code = .unknown_identifier,
         .message = "unknown identifier 'foo'",
         .loc = .{ .file = "src/main.orh", .line = 10, .col = 5 },
     });
-    try reporter.warn(.{
+    _ = try reporter.warn(.{
         .message = "unused import",
     });
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(std.testing.allocator);
     try flushJson(&reporter, out.writer(std.testing.allocator));
+    // insertion order: error first (appended first), then warning
     const expected =
-        \\{"version":1,"diagnostics":[{"severity":"warning","message":"unused import"},{"severity":"error","code":"E2040","message":"unknown identifier 'foo'","file":"src/main.orh","line":10,"col":5}]}
+        \\{"version":1,"diagnostics":[{"severity":"error","code":"E2040","message":"unknown identifier 'foo'","file":"src/main.orh","line":10,"col":5},{"severity":"warning","message":"unused import"}]}
         \\
     ;
     try std.testing.expectEqualStrings(expected, out.items);
@@ -238,7 +273,7 @@ test "flushJson produces wrapped JSON object" {
 test "flushShort with loc and code" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
-    try reporter.report(.{
+    _ = try reporter.report(.{
         .code = .unknown_identifier,
         .message = "unknown identifier 'foo'",
         .loc = .{ .file = "src/main.orh", .line = 10, .col = 5 },
@@ -255,7 +290,7 @@ test "flushShort with loc and code" {
 test "flushShort without loc" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
-    try reporter.report(.{ .message = "internal error" });
+    _ = try reporter.report(.{ .message = "internal error" });
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(std.testing.allocator);
     try flushShort(&reporter, out.writer(std.testing.allocator));
@@ -265,7 +300,7 @@ test "flushShort without loc" {
 test "flushShort loc with zero col omits col" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
-    try reporter.report(.{
+    _ = try reporter.report(.{
         .message = "type mismatch",
         .loc = .{ .file = "src/foo.orh", .line = 3, .col = 0 },
     });
@@ -278,7 +313,7 @@ test "flushShort loc with zero col omits col" {
 test "flushHuman use_color false produces no ANSI escapes" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
-    try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
+    _ = try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(std.testing.allocator);
     try flushHuman(&reporter, .debug, out.writer(std.testing.allocator), false);
@@ -288,9 +323,48 @@ test "flushHuman use_color false produces no ANSI escapes" {
 test "flushHuman use_color true contains ANSI escapes" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
-    try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
+    _ = try reporter.report(.{ .code = .unknown_identifier, .message = "test error" });
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(std.testing.allocator);
     try flushHuman(&reporter, .debug, out.writer(std.testing.allocator), true);
     try std.testing.expect(std.mem.indexOf(u8, out.items, "\x1b[") != null);
+}
+
+test "flushHuman renders note after parent diagnostic" {
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    const idx = try reporter.report(.{ .code = .unknown_identifier, .message = "unknown 'x'" });
+    try reporter.note(idx, .{ .message = "defined here", .loc = .{ .file = "src/a.orh", .line = 5, .col = 0 } });
+
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushHuman(&reporter, .debug, out.writer(std.testing.allocator), false);
+
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "unknown 'x'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "note:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "defined here") != null);
+    const parent_pos = std.mem.indexOf(u8, out.items, "unknown 'x'").?;
+    const note_pos   = std.mem.indexOf(u8, out.items, "note:").?;
+    try std.testing.expect(note_pos > parent_pos);
+}
+
+test "flushJson emits severity and parent on note" {
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    const idx = try reporter.report(.{
+        .code = .unknown_identifier,
+        .message = "unknown 'x'",
+        .loc = .{ .file = "src/a.orh", .line = 3, .col = 1 },
+    });
+    try reporter.note(idx, .{ .message = "defined here" });
+
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushJson(&reporter, out.writer(std.testing.allocator));
+
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "\"severity\":\"error\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "\"severity\":\"note\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out.items, "\"parent\":0") != null);
 }

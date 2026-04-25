@@ -317,7 +317,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         var decl_conv = ast_conv.ConvContext.init(allocator);
         defer decl_conv.deinit();
         const decl_ast_root = ast_conv.convertNode(&decl_conv, ast) catch {
-            try reporter.report(.{ .code = .internal_ast_conv_p4, .message = "internal: AST conversion failed (pass 4)" });
+            _ = try reporter.report(.{ .code = .internal_ast_conv_p4, .message = "internal: AST conversion failed (pass 4)" });
             return null;
         };
         try decl_collector.collect(&decl_conv.store, decl_ast_root, &decl_conv.reverse_map);
@@ -386,7 +386,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             // Replay cached warnings for this module
             for (cached_warnings.items) |w| {
                 if (std.mem.eql(u8, w.module, mod_name)) {
-                    try reporter.warn(.{
+                    _ = try reporter.warn(.{
                         .message = w.message,
                         .loc = .{ .file = w.file, .line = w.line, .col = 0 },
                     });
@@ -412,8 +412,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
             continue;
         }
 
-        // Snapshot warning count to capture new warnings from this module
-        const warn_start = reporter.warnings.items.len;
+        // Snapshot diagnostic count to capture new warnings from this module
+        const diag_start = reporter.diagnostics.items.len;
 
         // ── Zig Module Source Copy ──────────────────────────────
         // Copy the original .zig file to .orh-cache/generated/{name}_zig.zig
@@ -458,7 +458,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         }
 
         // Capture new warnings from this module for caching
-        for (reporter.warnings.items[warn_start..]) |w| {
+        for (reporter.diagnostics.items[diag_start..]) |w| {
+            if (w.severity != .warning) continue;
             try all_warnings.append(allocator, .{
                 .module = try allocator.dupe(u8, mod_name),
                 .file = if (w.loc) |loc| try allocator.dupe(u8, loc.file) else try allocator.dupe(u8, ""),
