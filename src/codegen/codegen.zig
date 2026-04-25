@@ -711,6 +711,14 @@ pub const CodeGen = struct {
                 try buf.appendSlice(self.allocator, "}");
                 break :blk try self.allocTypeStr("{s}", .{buf.items});
             },
+            // @typeOf(val) in type-alias position: const T: type = @typeOf(val)
+            .compiler_func => |cf| blk: {
+                if (std.mem.eql(u8, cf.name, "typeOf") and cf.args.len > 0) {
+                    const arg_str = exprToString(cf.args[0]);
+                    break :blk try self.allocTypeStr("@TypeOf({s})", .{arg_str});
+                }
+                break :blk "anyopaque";
+            },
             // cast(i64, x) — type arg parsed as identifier by parseExpr
             .identifier => |name| types.Primitive.nameToZig(name),
             // Generic type constructors in expression position: List(T), Map(K,V), etc.
