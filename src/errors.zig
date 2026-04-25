@@ -393,6 +393,27 @@ test "closestMatch returns null when nothing close" {
     try std.testing.expect(result == null);
 }
 
+/// Write an internal compiler error message to `writer`. Does not exit.
+/// Callers should call std.process.exit(70) after flushing.
+pub fn writeIceMessage(writer: anytype, err: anyerror) !void {
+    try writer.print(
+        "orhon: internal compiler error: {s}\n" ++
+        "This is a bug in the Orhon compiler. Please report it at:\n" ++
+        "  https://github.com/yukosoftware/orhon/issues\n",
+        .{@errorName(err)},
+    );
+}
+
+test "writeIceMessage includes error name and report URL" {
+    var buf: [512]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try writeIceMessage(fbs.writer(), error.OutOfMemory);
+    const msg = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, msg, "OutOfMemory") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "internal compiler error") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "https://") != null);
+}
+
 test "closestMatch no suggestion for short names" {
     const candidates = [_][]const u8{ "x", "y", "z" };
     const result = closestMatch("a", &candidates, 1);

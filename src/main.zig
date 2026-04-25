@@ -133,7 +133,14 @@ pub fn main() !void {
     const binary_name = _pipeline.runPipeline(allocator, &cli, &reporter) catch |err| blk: {
         switch (err) {
             error.ParseError, error.CompileError => {},
-            else => return err,
+            else => {
+                var buf: [4096]u8 = undefined;
+                var w = std.fs.File.stderr().writer(&buf);
+                const stderr = &w.interface;
+                errors.writeIceMessage(stderr, err) catch {};
+                stderr.flush() catch {};
+                std.process.exit(70);
+            },
         }
         break :blk null;
     };
