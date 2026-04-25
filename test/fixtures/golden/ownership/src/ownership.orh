@@ -1,0 +1,28 @@
+module ownership
+#version = (1, 0, 0)
+#build   = static
+
+pub struct Vec2 {
+    pub x: f32
+    pub y: f32
+}
+
+pub func read_vec(v: const& Vec2) f32 {
+    return v.x + v.y
+}
+
+pub func scale_vec(v: mut& Vec2, factor: f32) void {
+    v.x = v.x * factor
+    v.y = v.y * factor
+}
+
+pub func copy_demo() f32 {
+    const a: Vec2 = Vec2{x: 1.0, y: 2.0}
+    var b: Vec2 = @copy(a)
+    b.x = 10.0
+    return b.x + a.x
+}
+
+pub func by_value(v: Vec2) f32 {
+    return v.x + v.y
+}
