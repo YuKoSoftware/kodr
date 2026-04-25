@@ -217,7 +217,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
             } else if (std.mem.eql(u8, val, "short")) {
                 cli.diag_format = .short;
             } else {
-                errors_mod.fatal("unknown --diag-format value: '{s}' (expected human, json, or short)", .{val});
+                std.debug.print("warning: unknown --diag-format value '{s}', using default 'human'\n", .{val});
             }
         } else {
             // Treat as source directory
