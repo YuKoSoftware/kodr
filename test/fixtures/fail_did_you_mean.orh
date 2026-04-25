@@ -11,5 +11,5 @@ func greet(name: str) void {
 
 func main() void {
     const message: str = "hello"
-    console.println(mesage)
+    console.println(mesage)  //> [E2040]
 }

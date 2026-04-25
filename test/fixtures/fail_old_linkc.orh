@@ -1,2 +1,2 @@
 module fail_old_linkc
-#linkC "SDL3"
+#linkC "SDL3"  //> [E0101]

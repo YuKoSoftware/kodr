@@ -8,7 +8,7 @@ blueprint Eq {
 
 struct Point: Eq {
     x: f32
-    y: f32
+    y: f32  //> [E2082]
 }
 
 func main() void {

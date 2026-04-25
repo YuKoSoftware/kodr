@@ -1,6 +1,6 @@
 module fixture
 #version = (1, 0, 0)
 #build   = exe
-import does_not_exist
+import does_not_exist  //> [E1005]
 func main() void {
 }

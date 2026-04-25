@@ -4,7 +4,7 @@ module fixture
 
 struct Point: NonExistent {
     x: f32
-    y: f32
+    y: f32  //> [E2081]
 }
 
 func main() void {

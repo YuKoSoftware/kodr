@@ -11,7 +11,7 @@ struct Point: Eq {
     y: f32
 
     func eq(self: const& Point) bool {
-        return true
+        return true  //> [E2083]
     }
 }
 
