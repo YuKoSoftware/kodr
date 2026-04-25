@@ -6,7 +6,7 @@ pub struct A { pub x: i32 }
 pub struct B { pub y: i32 }
 
 // B appears in both sides — should error after flattening
-func bad(val: ((A | B) | (B | A))) void {
+func bad(val: ((A | B) | (B | A))) void {  //> [E2009]
 }
 
 func main() void {

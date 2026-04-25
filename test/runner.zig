@@ -223,7 +223,8 @@ pub fn main() !void {
         std.debug.print("usage: orhon-test-runner <orhon-path> <fixtures-dir>\n", .{});
         std.process.exit(1);
     }
-    const orhon_path   = raw_args[1];
+    const orhon_path   = try std.fs.realpathAlloc(gpa, raw_args[1]);
+    defer gpa.free(orhon_path);
     const fixtures_dir = raw_args[2];
 
     var dir = try std.fs.openDirAbsolute(fixtures_dir, .{ .iterate = true });
