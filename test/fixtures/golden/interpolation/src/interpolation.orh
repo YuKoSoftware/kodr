@@ -1,0 +1,15 @@
+module interpolation
+#version = (1, 0, 0)
+#build   = static
+
+pub func greet(name: str) str {
+    return "hello @{name}!"
+}
+
+pub func fmt_int(x: i32) str {
+    return "value is @{x}"
+}
+
+pub func multi(a: str, b: i32) str {
+    return "@{a} has @{b} items"
+}
