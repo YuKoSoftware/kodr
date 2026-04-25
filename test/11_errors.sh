@@ -16,7 +16,7 @@ else fail "fails outside a project"; fi
 # missing module declaration
 cd "$TESTDIR"
 mkdir -p neg_module/src
-cp "$FIXTURES/fail_missing_module.orh" neg_module/src/neg_module.orh
+cp "$FIXTURES/module/fail_missing_module.orh" neg_module/src/neg_module.orh
 cd neg_module
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if [ $? -ne 0 ] || echo "$NEG_OUT" | grep -qi "module\|error"; then
@@ -28,7 +28,7 @@ fi
 # missing import
 cd "$TESTDIR"
 mkdir -p neg_import/src
-cp "$FIXTURES/fail_missing_import.orh" neg_import/src/neg_import.orh
+cp "$FIXTURES/module/fail_missing_import.orh" neg_import/src/neg_import.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_import/' neg_import/src/neg_import.orh
 cd neg_import
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -48,7 +48,7 @@ module neg_anchor
 func main() void {
 }
 ORHON
-cp "$FIXTURES/fail_no_anchor.orh" neg_anchor/src/misnamed.orh
+cp "$FIXTURES/module/fail_no_anchor.orh" neg_anchor/src/misnamed.orh
 cd neg_anchor
 NEG_OUT=$("$ORHON" build 2>&1 || true)
 if echo "$NEG_OUT" | grep -qi "no anchor file"; then
@@ -346,7 +346,7 @@ run_fixture() {
 # old C interop directives rejected (CIMP-04)
 cd "$TESTDIR"
 mkdir -p neg_linkc/src
-cp "$FIXTURES/fail_old_linkc.orh" neg_linkc/src/neg_linkc.orh
+cp "$FIXTURES/parse/fail_old_linkc.orh" neg_linkc/src/neg_linkc.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_linkc/' neg_linkc/src/neg_linkc.orh
 cd neg_linkc
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -361,7 +361,7 @@ fi
 # did you mean suggestion (ERR-01)
 cd "$TESTDIR"
 mkdir -p neg_did_you_mean/src
-cp "$FIXTURES/fail_did_you_mean.orh" neg_did_you_mean/src/neg_did_you_mean.orh
+cp "$FIXTURES/semantic/fail_did_you_mean.orh" neg_did_you_mean/src/neg_did_you_mean.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_did_you_mean/' neg_did_you_mean/src/neg_did_you_mean.orh
 cd neg_did_you_mean
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -374,7 +374,7 @@ fi
 # type mismatch display (ERR-02)
 cd "$TESTDIR"
 mkdir -p neg_type_display/src
-cp "$FIXTURES/fail_type_mismatch_display.orh" neg_type_display/src/neg_type_display.orh
+cp "$FIXTURES/semantic/fail_type_mismatch_display.orh" neg_type_display/src/neg_type_display.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_type_display/' neg_type_display/src/neg_type_display.orh
 cd neg_type_display
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -387,7 +387,7 @@ fi
 # ownership fix hint (ERR-03)
 cd "$TESTDIR"
 mkdir -p neg_ownership_hint/src
-cp "$FIXTURES/fail_ownership.orh" neg_ownership_hint/src/neg_ownership_hint.orh
+cp "$FIXTURES/ownership/fail_ownership.orh" neg_ownership_hint/src/neg_ownership_hint.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_ownership_hint/' neg_ownership_hint/src/neg_ownership_hint.orh
 cd neg_ownership_hint
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -400,7 +400,7 @@ fi
 # borrow ref hint (ERR-03)
 cd "$TESTDIR"
 mkdir -p neg_borrow_hint/src
-cp "$FIXTURES/fail_borrow.orh" neg_borrow_hint/src/neg_borrow_hint.orh
+cp "$FIXTURES/ownership/fail_borrow.orh" neg_borrow_hint/src/neg_borrow_hint.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_borrow_hint/' neg_borrow_hint/src/neg_borrow_hint.orh
 cd neg_borrow_hint
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -413,7 +413,7 @@ fi
 # introspection — wrong argument count / type
 cd "$TESTDIR"
 mkdir -p neg_introspect/src
-cp "$FIXTURES/fail_introspection.orh" neg_introspect/src/neg_introspect.orh
+cp "$FIXTURES/semantic/fail_introspection.orh" neg_introspect/src/neg_introspect.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_introspect/' neg_introspect/src/neg_introspect.orh
 cd neg_introspect
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -431,7 +431,7 @@ fi
 # blueprint: missing method
 cd "$TESTDIR"
 mkdir -p neg_bp_missing/src
-cp "$FIXTURES/fail_blueprint_missing_method.orh" neg_bp_missing/src/neg_bp_missing.orh
+cp "$FIXTURES/semantic/fail_blueprint_missing_method.orh" neg_bp_missing/src/neg_bp_missing.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_bp_missing/' neg_bp_missing/src/neg_bp_missing.orh
 cd neg_bp_missing
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -444,7 +444,7 @@ fi
 # blueprint: wrong signature
 cd "$TESTDIR"
 mkdir -p neg_bp_sig/src
-cp "$FIXTURES/fail_blueprint_wrong_sig.orh" neg_bp_sig/src/neg_bp_sig.orh
+cp "$FIXTURES/semantic/fail_blueprint_wrong_sig.orh" neg_bp_sig/src/neg_bp_sig.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_bp_sig/' neg_bp_sig/src/neg_bp_sig.orh
 cd neg_bp_sig
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -457,7 +457,7 @@ fi
 # blueprint: unknown blueprint
 cd "$TESTDIR"
 mkdir -p neg_bp_unknown/src
-cp "$FIXTURES/fail_blueprint_unknown.orh" neg_bp_unknown/src/neg_bp_unknown.orh
+cp "$FIXTURES/semantic/fail_blueprint_unknown.orh" neg_bp_unknown/src/neg_bp_unknown.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_bp_unknown/' neg_bp_unknown/src/neg_bp_unknown.orh
 cd neg_bp_unknown
 NEG_OUT=$("$ORHON" build 2>&1 || true)
@@ -516,8 +516,8 @@ else fail "rejects #name directive" "$NEG_OUT"; fi
 # circular imports (module A imports B, B imports A)
 cd "$TESTDIR"
 mkdir -p neg_circular/src
-cp "$FIXTURES/fail_circular_a.orh" neg_circular/src/circular_a.orh
-cp "$FIXTURES/fail_circular_b.orh" neg_circular/src/circular_b.orh
+cp "$FIXTURES/module/fail_circular_a.orh" neg_circular/src/circular_a.orh
+cp "$FIXTURES/module/fail_circular_b.orh" neg_circular/src/circular_b.orh
 cat > neg_circular/src/neg_circular.orh <<'ORHON'
 module neg_circular
 #version = (1, 0, 0)
