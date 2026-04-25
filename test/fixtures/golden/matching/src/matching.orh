@@ -1,0 +1,49 @@
+module matching
+#version = (1, 0, 0)
+#build   = static
+
+pub enum(u8) Color {
+    Red
+    Green
+    Blue
+}
+
+pub func on_int(n: i32) i32 {
+    match(n) {
+        0    => { return 0 }
+        1    => { return 10 }
+        else => { return 99 }
+    }
+}
+
+pub func on_range(n: i32) i32 {
+    match(n) {
+        (1..3) => { return 1 }
+        (4..6) => { return 2 }
+        else   => { return 0 }
+    }
+}
+
+pub func on_str(s: str) i32 {
+    match(s) {
+        "hello" => { return 1 }
+        "world" => { return 2 }
+        else    => { return 0 }
+    }
+}
+
+pub func on_guard(n: i32) i32 {
+    match(n) {
+        (x if x > 0) => { return 1 }
+        (x if x < 0) => { return 0 - 1 }
+        else         => { return 0 }
+    }
+}
+
+pub func on_enum(c: Color) i32 {
+    match(c) {
+        Red   => { return 1 }
+        Green => { return 2 }
+        Blue  => { return 3 }
+    }
+}
