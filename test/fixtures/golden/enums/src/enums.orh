@@ -1,0 +1,33 @@
+module enums
+#version = (1, 0, 0)
+#build   = static
+
+pub enum(u8) Color {
+    Red
+    Green
+    Blue
+}
+
+pub enum(u32) Status {
+    Ok = 0
+    Err = 1
+    Pending = 2
+}
+
+pub func make_color() Color {
+    const c: Color = Red
+    return c
+}
+
+pub func color_to_int(c: Color) i32 {
+    match(c) {
+        Red   => { return 1 }
+        Green => { return 2 }
+        Blue  => { return 3 }
+        else  => { return 0 }
+    }
+}
+
+pub func status_ok() Status {
+    return Ok
+}
