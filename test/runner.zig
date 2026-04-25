@@ -45,6 +45,10 @@ fn parseSidecarContent(json: []const u8, allocator: std.mem.Allocator) !?Sidecar
     };
 
     var codes = std.ArrayList([]const u8){};
+    errdefer {
+        for (codes.items) |c| allocator.free(c);
+        codes.deinit(allocator);
+    }
     if (obj.get("codes")) |cv| {
         if (cv == .array) {
             for (cv.array.items) |item| {
