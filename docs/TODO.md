@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25)
+- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25), T4 done (v0.53.11, 2026-04-25)
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -177,8 +177,9 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T3** 🟡 **`NO_COLOR` / TTY detection + `--color=auto|always|never`** [H3d / F5] — done v0.53.10, 2026-04-25 — `ColorMode` enum + `detectColor()` in `errors.zig`; `use_color: bool` on `Reporter`; `esc()` helper gates all ANSI in `diag_format.zig`; `--color=auto|always|never` CLI flag; 2 unit tests.
 
-> **⬅ RESUME HERE: T4** — T3 complete (v0.53.10, 2026-04-25). Next: Warning gradient with notes.
-- [ ] **T4** 🟡 **Warning gradient with notes** [F8] — add `Severity = .err | .warning | .note | .hint`; multi-location errors chain notes via `parent: ?usize`. Add `-Werror` flag.
+- [x] **T4** 🟡 **Warning gradient with notes** [F8] — done v0.53.11, 2026-04-25 — `Severity = .err | .warning | .note | .hint`; unified flat `diagnostics` list; `report()`/`warn()` return `!u32` index; `note()`/`noteFmt()` with explicit parent index; `-Werror` CLI flag; `hasErrors()` respects `werror`; human/JSON/short renderers updated; `lsp_analysis.zig` migrated; 4 unit tests.
+
+> **⬅ RESUME HERE: T5** — T4 complete (v0.53.11, 2026-04-25). Next: Fix reporter ownership convention.
 - [ ] **T5** 🟡 **Fix reporter ownership convention** [F7] — `src/errors.zig:58-69`. Current design: callers allocate + report dupes + defer free → double allocation + easy leak. Migrate all manual `allocPrint` + `report` + `defer free` sites to `reportFmt`. Document new contract: `report()` takes ownership.
 - [ ] **T6** 🟡 **Cache source file contents in reporter** [F6] — `src/errors.zig:198-219`. Per-diagnostic `readSourceLine` re-opens + reads entire file via page allocator, copies into static buffer (blocks concurrent reporting). Fix: `StringHashMap([]const u8)` cache per Reporter.
 - [ ] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — `src/main.zig:130-136`. Top-level `catch` that prints "internal compiler error — please report at <url>" with error tag + minimal repro hint, exits 70, instead of leaking Zig stack traces.
