@@ -133,7 +133,7 @@ pub const Reporter = struct {
                 }
             },
             .json => try flushJson(self, stderr),
-            .short => {}, // Task 3
+            .short => try flushShort(self, stderr),
         }
         try stderr.flush();
     }
@@ -192,6 +192,34 @@ fn writeJsonString(s: []const u8, writer: anytype) !void {
         }
     }
     try writer.writeByte('"');
+}
+
+fn flushShort(reporter: *const Reporter, writer: anytype) !void {
+    for (reporter.warnings.items) |diag| {
+        try writeDiagShort(&diag, "warning", writer);
+    }
+    for (reporter.errors.items) |diag| {
+        try writeDiagShort(&diag, "error", writer);
+    }
+}
+
+fn writeDiagShort(diag: *const OrhonError, severity: []const u8, writer: anytype) !void {
+    var code_buf: [8]u8 = undefined;
+    if (diag.loc) |loc| {
+        if (loc.file.len > 0 and loc.line > 0) {
+            if (loc.col > 0) {
+                try writer.print("{s}:{d}:{d}: ", .{ loc.file, loc.line, loc.col });
+            } else {
+                try writer.print("{s}:{d}: ", .{ loc.file, loc.line });
+            }
+        }
+    }
+    if (diag.code) |code| {
+        const code_str = code.toCode(&code_buf);
+        try writer.print("{s}[{s}]: {s}\n", .{ severity, code_str, diag.message });
+    } else {
+        try writer.print("{s}: {s}\n", .{ severity, diag.message });
+    }
 }
 
 // ANSI codes
@@ -470,4 +498,44 @@ test "flushJson produces wrapped JSON object" {
         \\
     ;
     try std.testing.expectEqualStrings(expected, out.items);
+}
+
+test "flushShort with loc and code" {
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    try reporter.report(.{
+        .code = .unknown_identifier,
+        .message = "unknown identifier 'foo'",
+        .loc = .{ .file = "src/main.orh", .line = 10, .col = 5 },
+    });
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushShort(&reporter, out.writer(std.testing.allocator));
+    try std.testing.expectEqualStrings(
+        "src/main.orh:10:5: error[E2040]: unknown identifier 'foo'\n",
+        out.items,
+    );
+}
+
+test "flushShort without loc" {
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    try reporter.report(.{ .message = "internal error" });
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushShort(&reporter, out.writer(std.testing.allocator));
+    try std.testing.expectEqualStrings("error: internal error\n", out.items);
+}
+
+test "flushShort loc with zero col omits col" {
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+    try reporter.report(.{
+        .message = "type mismatch",
+        .loc = .{ .file = "src/foo.orh", .line = 3, .col = 0 },
+    });
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(std.testing.allocator);
+    try flushShort(&reporter, out.writer(std.testing.allocator));
+    try std.testing.expectEqualStrings("src/foo.orh:3: error: type mismatch\n", out.items);
 }
