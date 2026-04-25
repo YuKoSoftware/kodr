@@ -36,5 +36,17 @@ run_golden basic
 run_golden control
 run_golden structs
 run_golden enums
+run_golden errors
+run_golden matching
+run_golden generics
+run_golden comptime
+run_golden slicing
+run_golden cleanup
+run_golden handles
+run_golden interpolation
+run_golden ownership
+run_golden borrow
+run_golden tuples
+run_golden functions
 
 report_results
