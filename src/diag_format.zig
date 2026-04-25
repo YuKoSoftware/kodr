@@ -24,7 +24,7 @@ fn esc(comptime code: []const u8, use_color: bool) []const u8 {
 
 // ── Human format ──────────────────────────────────────────────────────────────
 
-pub fn flushHuman(reporter: *const errors.Reporter, mode: errors.BuildMode, writer: anytype, use_color: bool) !void {
+pub fn flushHuman(reporter: *errors.Reporter, mode: errors.BuildMode, writer: anytype, use_color: bool) !void {
     var err_count: usize = 0;
     var warn_count: usize = 0;
 
@@ -33,12 +33,12 @@ pub fn flushHuman(reporter: *const errors.Reporter, mode: errors.BuildMode, writ
         switch (diag.severity) {
             .err => {
                 err_count += 1;
-                try printDiagnostic(writer, diag, .err, mode, use_color);
+                try printDiagnostic(reporter, writer, diag, .err, mode, use_color);
                 try emitChildren(reporter, @intCast(i), writer, use_color);
             },
             .warning => {
                 warn_count += 1;
-                try printDiagnostic(writer, diag, .warning, mode, use_color);
+                try printDiagnostic(reporter, writer, diag, .warning, mode, use_color);
                 try emitChildren(reporter, @intCast(i), writer, use_color);
             },
             .note, .hint => {},
@@ -55,7 +55,7 @@ pub fn flushHuman(reporter: *const errors.Reporter, mode: errors.BuildMode, writ
     }
 }
 
-fn emitChildren(reporter: *const errors.Reporter, parent_idx: u32, writer: anytype, use_color: bool) !void {
+fn emitChildren(reporter: *errors.Reporter, parent_idx: u32, writer: anytype, use_color: bool) !void {
     for (reporter.diagnostics.items) |*diag| {
         if (diag.parent != parent_idx) continue;
         try printNote(writer, diag, use_color);
@@ -73,7 +73,7 @@ fn printNote(writer: anytype, diag: *const errors.OrhonDiag, use_color: bool) !v
     }
 }
 
-fn printDiagnostic(writer: anytype, diag: *const errors.OrhonDiag, kind: DiagKind, mode: errors.BuildMode, use_color: bool) !void {
+fn printDiagnostic(reporter: *errors.Reporter, writer: anytype, diag: *const errors.OrhonDiag, kind: DiagKind, mode: errors.BuildMode, use_color: bool) !void {
     const is_error = kind == .err;
     const lbl = kind.label();
 
@@ -109,7 +109,7 @@ fn printDiagnostic(writer: anytype, diag: *const errors.OrhonDiag, kind: DiagKin
             try writer.print("  {s}at line {d}{s}\n", .{ esc(CYAN, use_color), loc.line, esc(RESET, use_color) });
         }
         if (loc.file.len > 0 and loc.line > 0) {
-            if (readSourceLine(loc.file, loc.line)) |line| {
+            if (reporter.getSourceLine(loc.file, loc.line)) |line| {
                 try writer.print("{s}       │{s}\n", .{ esc(DIM, use_color), esc(RESET, use_color) });
                 try writer.print("{s}{d: >5}{s} {s}│{s}  {s}{s}{s}\n", .{ esc(BOLD, use_color), loc.line, esc(RESET, use_color), esc(DIM, use_color), esc(RESET, use_color), esc(BOLD, use_color), line, esc(RESET, use_color) });
                 try writer.print("{s}       │{s}\n", .{ esc(DIM, use_color), esc(RESET, use_color) });
@@ -129,32 +129,6 @@ const DiagKind = enum {
         };
     }
 };
-
-var line_buf: [1024]u8 = undefined;
-
-fn readSourceLine(file_path: []const u8, target_line: usize) ?[]const u8 {
-    const file = std.fs.cwd().openFile(file_path, .{}) catch return null;
-    defer file.close();
-    const content = file.readToEndAlloc(std.heap.page_allocator, 1024 * 1024) catch return null;
-    defer std.heap.page_allocator.free(content);
-    var line_num: usize = 1;
-    var start: usize = 0;
-    for (content, 0..) |ch, i| {
-        if (ch == '\n') {
-            if (line_num == target_line) return copyToLineBuf(content[start..i]);
-            line_num += 1;
-            start = i + 1;
-        }
-    }
-    if (line_num == target_line and start < content.len) return copyToLineBuf(content[start..]);
-    return null;
-}
-
-fn copyToLineBuf(line: []const u8) []const u8 {
-    const len = @min(line.len, line_buf.len);
-    @memcpy(line_buf[0..len], line[0..len]);
-    return line_buf[0..len];
-}
 
 // ── JSON format ───────────────────────────────────────────────────────────────
 

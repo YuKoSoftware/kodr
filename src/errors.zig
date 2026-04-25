@@ -51,12 +51,13 @@ pub const SourceLoc = struct {
 
 /// The error reporter — used by every pass
 pub const Reporter = struct {
-    mode:        BuildMode,
-    diagnostics: std.ArrayListUnmanaged(OrhonDiag),
-    allocator:   std.mem.Allocator,
-    diag_format: DiagFormat = .human,
-    use_color:   bool = false,
-    werror:      bool = false,
+    mode:         BuildMode,
+    diagnostics:  std.ArrayListUnmanaged(OrhonDiag),
+    allocator:    std.mem.Allocator,
+    diag_format:  DiagFormat = .human,
+    use_color:    bool = false,
+    werror:       bool = false,
+    source_cache: std.StringHashMapUnmanaged([]const u8) = .{},
 
     pub fn init(allocator: std.mem.Allocator, mode: BuildMode) Reporter {
         return .{
@@ -74,6 +75,36 @@ pub const Reporter = struct {
             }
         }
         self.diagnostics.deinit(self.allocator);
+        var it = self.source_cache.iterator();
+        while (it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.source_cache.deinit(self.allocator);
+    }
+
+    /// Return the text of `target_line` (1-based) from `file_path`, reading and
+    /// caching the file content on the first access.  Returns null on I/O error
+    /// or when the line number is out of range.
+    pub fn getSourceLine(self: *Reporter, file_path: []const u8, target_line: usize) ?[]const u8 {
+        const content = if (self.source_cache.get(file_path)) |cached|
+            cached
+        else blk: {
+            const file = std.fs.cwd().openFile(file_path, .{}) catch return null;
+            defer file.close();
+            const data = file.readToEndAlloc(self.allocator, 1024 * 1024) catch return null;
+            const key = self.allocator.dupe(u8, file_path) catch {
+                self.allocator.free(data);
+                return null;
+            };
+            self.source_cache.put(self.allocator, key, data) catch {
+                self.allocator.free(key);
+                self.allocator.free(data);
+                return null;
+            };
+            break :blk data;
+        };
+        return extractSourceLine(content, target_line);
     }
 
     // storeDiag dupes diag.message — safe for string literals and borrowed slices.
@@ -182,7 +213,7 @@ pub const Reporter = struct {
     }
 
     /// Emit all diagnostics in self.diag_format to stderr.
-    pub fn flush(self: *const Reporter) !void {
+    pub fn flush(self: *Reporter) !void {
         var buf: [4096]u8 = undefined;
         var w = std.fs.File.stderr().writer(&buf);
         const stderr = &w.interface;
@@ -194,6 +225,26 @@ pub const Reporter = struct {
         try stderr.flush();
     }
 };
+
+fn extractSourceLine(content: []const u8, target_line: usize) ?[]const u8 {
+    var line_num: usize = 1;
+    var start: usize = 0;
+    for (content, 0..) |ch, i| {
+        if (ch == '\n') {
+            if (line_num == target_line) return trimRight(content[start..i]);
+            line_num += 1;
+            start = i + 1;
+        }
+    }
+    if (line_num == target_line and start < content.len) return trimRight(content[start..]);
+    return null;
+}
+
+fn trimRight(s: []const u8) []const u8 {
+    var end = s.len;
+    while (end > 0 and (s[end - 1] == '\r' or s[end - 1] == ' ')) end -= 1;
+    return s[0..end];
+}
 
 // Maximum identifier length considered for Levenshtein suggestions.
 // Names longer than this are treated as no match to avoid pathological cases.
@@ -402,5 +453,28 @@ test "reportOwned takes ownership; deinit frees without double-free" {
     try std.testing.expectEqual(@as(u32, 0), idx);
     try std.testing.expectEqualStrings("owned message", reporter.diagnostics.items[0].message);
     try std.testing.expect(reporter.hasErrors());
+}
+
+test "source cache reads file once and returns correct line" {
+    const tmp_path = "/tmp/t6_source_cache_test.orh";
+    {
+        const f = try std.fs.cwd().createFile(tmp_path, .{});
+        defer f.close();
+        try f.writeAll("first line\nsecond line\nthird line\n");
+    }
+    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+
+    var reporter = Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    const result = reporter.getSourceLine(tmp_path, 2);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("second line", result.?);
+    try std.testing.expectEqual(@as(usize, 1), reporter.source_cache.count());
+
+    // Second call: same result, still only one cache entry (no re-read)
+    const result2 = reporter.getSourceLine(tmp_path, 2);
+    try std.testing.expectEqualStrings("second line", result2.?);
+    try std.testing.expectEqual(@as(usize, 1), reporter.source_cache.count());
 }
 

@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25), T4 done (v0.53.11, 2026-04-25), T5 done (v0.53.12, 2026-04-25)
+- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25), T4 done (v0.53.11, 2026-04-25), T5 done (v0.53.12, 2026-04-25), T6 done (v0.53.13, 2026-04-25)
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -181,8 +181,9 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T5** 🟡 **Fix reporter ownership convention** [F7] — done v0.53.12, 2026-04-25 — Added `storeDiagOwned` (no-dupe internal path) + public `reportOwned`; `reportFmt`/`warnFmt`/`noteFmt` now use owned path (single allocation, no defer free). Migrated 2 manual `allocPrint`+`report`+`defer free` sites (`module_parse.zig`, `zig_runner.zig`) to `reportOwned`. Contract: `report`/`warn`/`note` dupe (safe for string literals); `reportOwned` takes ownership (message must be from `reporter.allocator`); `reportFmt`/`warnFmt`/`noteFmt` allocate once internally.
 
-> **⬅ RESUME HERE: T6** — T5 complete (v0.53.12, 2026-04-25). Next: Cache source file contents in reporter.
-- [ ] **T6** 🟡 **Cache source file contents in reporter** [F6] — `src/errors.zig:198-219`. Per-diagnostic `readSourceLine` re-opens + reads entire file via page allocator, copies into static buffer (blocks concurrent reporting). Fix: `StringHashMap([]const u8)` cache per Reporter.
+- [x] **T6** 🟡 **Cache source file contents in reporter** [F6] — done v0.53.13, 2026-04-25 — `source_cache: StringHashMapUnmanaged([]const u8)` on `Reporter`; `getSourceLine` reads + caches file content on first access, returns slice into cached data (no static buffer, no page_allocator per diagnostic); `flush`/`flushHuman`/`printDiagnostic` take `*Reporter`; `deinit` frees cache; old `readSourceLine`/`copyToLineBuf`/`line_buf` removed from `diag_format.zig`.
+
+> **⬅ RESUME HERE: T7** — T6 complete (v0.53.13, 2026-04-25). Next: Top-level ICE handler.
 - [ ] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — `src/main.zig:130-136`. Top-level `catch` that prints "internal compiler error — please report at <url>" with error tag + minimal repro hint, exits 70, instead of leaking Zig stack traces.
 
 ### Sub-project 2b — Test runner rewrite
