@@ -198,7 +198,7 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
         const locs_ptr: ?*const parser.LocMap = if (mod_ptr.locs) |*l| l else null;
         const file_offsets = mod_ptr.file_offsets;
         const source_file: []const u8 = if (mod_ptr.files.len > 0) mod_ptr.files[0] else "";
-        const errors_before = reporter.errors.items.len;
+        const diag_count_before = reporter.diagnostics.items.len;
 
         // Convert AST to AstStore for index-based passes (Phase A)
         var conv = ast_conv.ConvContext.init(a);
@@ -212,7 +212,11 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
         dc.locs = locs_ptr;
         dc.file_offsets = file_offsets;
         dc.collect(&conv.store, ast_root, &conv.reverse_map) catch {};
-        if (reporter.errors.items.len > errors_before) {
+        var new_err_count: usize = 0;
+        for (reporter.diagnostics.items[diag_count_before..]) |d| {
+            if (d.severity == .err) new_err_count += 1;
+        }
+        if (new_err_count > 0) {
             // Still extract what symbols we can from partial declarations
             extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
             continue;
@@ -235,17 +239,29 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
         // Symbol strings are allocated with the long-lived allocator so they outlive the arena.
         extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
 
-        if (reporter.errors.items.len > errors_before) continue;
+        new_err_count = 0;
+        for (reporter.diagnostics.items[diag_count_before..]) |d| {
+            if (d.severity == .err) new_err_count += 1;
+        }
+        if (new_err_count > 0) continue;
 
         // Pass 6: Ownership (uses scratch arena)
         var oc = ownership.OwnershipChecker.init(a, &sema_ctx);
         oc.check(ast) catch {};
-        if (reporter.errors.items.len > errors_before) continue;
+        new_err_count = 0;
+        for (reporter.diagnostics.items[diag_count_before..]) |d| {
+            if (d.severity == .err) new_err_count += 1;
+        }
+        if (new_err_count > 0) continue;
 
         // Pass 7: Borrow Checking (uses scratch arena)
         var bc = borrow.BorrowChecker.init(a, &sema_ctx);
         bc.check(ast) catch {};
-        if (reporter.errors.items.len > errors_before) continue;
+        new_err_count = 0;
+        for (reporter.diagnostics.items[diag_count_before..]) |d| {
+            if (d.severity == .err) new_err_count += 1;
+        }
+        if (new_err_count > 0) continue;
 
         // Pass 8: Error Propagation (uses scratch arena)
         var prop_checker = propagation.PropagationChecker.init(a, &sema_ctx);
@@ -533,24 +549,27 @@ fn makeUri(allocator: std.mem.Allocator, source_file: []const u8, project_root: 
     return pathToUri(allocator, full_path);
 }
 
-/// Convert Reporter errors/warnings into LSP Diagnostics with file URIs.
+/// Convert Reporter diagnostics into LSP Diagnostics with file URIs.
 pub fn toDiagnostics(allocator: std.mem.Allocator, reporter: *errors.Reporter, project_root: []const u8) ![]Diagnostic {
     var diags: std.ArrayListUnmanaged(Diagnostic) = .{};
     defer diags.deinit(allocator);
 
-    for (reporter.errors.items) |err| {
-        const d = makeDiag(allocator, err, 1, project_root) catch continue;
-        try diags.append(allocator, d);
-    }
-    for (reporter.warnings.items) |warn| {
-        const d = makeDiag(allocator, warn, 2, project_root) catch continue;
+    for (reporter.diagnostics.items) |diag| {
+        if (diag.parent != null) continue; // skip notes/hints
+        const lsp_severity: u8 = switch (diag.severity) {
+            .err     => 1,
+            .warning => 2,
+            .note    => 3,
+            .hint    => 4,
+        };
+        const d = makeDiag(allocator, diag, lsp_severity, project_root) catch continue;
         try diags.append(allocator, d);
     }
 
     return if (diags.items.len > 0) try allocator.dupe(Diagnostic, diags.items) else &.{};
 }
 
-fn makeDiag(allocator: std.mem.Allocator, err: errors.OrhonError, severity: u8, project_root: []const u8) !Diagnostic {
+fn makeDiag(allocator: std.mem.Allocator, err: errors.OrhonDiag, severity: u8, project_root: []const u8) !Diagnostic {
     const loc = err.loc orelse return error.NoLoc;
     if (loc.file.len == 0) return error.NoLoc;
 

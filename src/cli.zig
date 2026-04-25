@@ -80,6 +80,7 @@ pub const CliArgs = struct {
     line_length: u32, // max line length for fmt (0 = disabled)
     diag_format: errors_mod.DiagFormat = .human,
     color_mode: errors_mod.ColorMode = .auto,
+    werror: bool = false,
     allocator: std.mem.Allocator, // owns duped strings
 
     pub fn deinit(self: *CliArgs) void {
@@ -116,6 +117,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         .line_length = 100,
         .diag_format = .human,
         .color_mode = .auto,
+        .werror = false,
         .allocator = allocator,
     };
 
@@ -232,6 +234,8 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
             } else {
                 std.debug.print("warning: unknown --color value '{s}', using default 'auto'\n", .{val});
             }
+        } else if (std.mem.eql(u8, arg, "-Werror")) {
+            cli.werror = true;
         } else {
             // Treat as source directory
             cli.source_dir = try allocator.dupe(u8, arg);
@@ -288,6 +292,7 @@ pub fn printHelp() void {
         \\Output flags:
         \\  --diag-format=      Diagnostic format: human (default), json, short
         \\  --color=            Color output: auto (default), always, never
+        \\  -Werror             Treat all warnings as errors
         \\
     ;
     std.debug.print("{s}", .{help});

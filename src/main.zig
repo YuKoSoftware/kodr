@@ -125,7 +125,8 @@ pub fn main() !void {
 
     var reporter = errors.Reporter.init(allocator, mode);
     reporter.diag_format = cli.diag_format;
-    reporter.use_color = errors.detectColor(cli.color_mode);
+    reporter.use_color   = errors.detectColor(cli.color_mode);
+    reporter.werror      = cli.werror;
     defer reporter.deinit();
 
     // Run the pipeline
