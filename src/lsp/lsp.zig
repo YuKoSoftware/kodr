@@ -7,6 +7,7 @@ const lsp_types = @import("lsp_types.zig");
 const lsp_json = @import("lsp_json.zig");
 const lsp_utils = @import("lsp_utils.zig");
 const lsp_analysis = @import("lsp_analysis.zig");
+const pipeline_passes = @import("../pipeline_passes.zig");
 const lsp_nav = @import("lsp_nav.zig");
 const lsp_edit = @import("lsp_edit.zig");
 const lsp_view = @import("lsp_view.zig");
@@ -324,6 +325,8 @@ pub fn serve(allocator: std.mem.Allocator) !void {
                                         try updateDocStore(&doc_store, allocator, uri, text);
                                 }
                             }
+                            if (project_root) |r|
+                                analyzeQuick(allocator, r, &cached_symbols) catch {};
                         }
                     }
                 }
@@ -415,6 +418,20 @@ fn analyzeAndCache(
     cached_symbols.* = result.symbols;
     freeDiagnostics(allocator, cached_diags.*);
     cached_diags.* = result.diags;
+}
+
+/// Run a quick analysis (pass 4 only: declaration collection) to keep
+/// completion symbols fresh while the user is typing. Does not publish
+/// diagnostics — those are only updated on didSave via analyzeAndCache.
+fn analyzeQuick(
+    allocator: std.mem.Allocator,
+    root: []const u8,
+    cached_symbols: *[]SymbolInfo,
+) !void {
+    const result = try runAnalysis(allocator, root, .decl_collect);
+    freeSymbols(allocator, cached_symbols.*);
+    cached_symbols.* = result.symbols;
+    lspLog("quick analysis: {d} symbols", .{result.symbols.len});
 }
 
 // ============================================================
