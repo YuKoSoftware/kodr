@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 3 (Parallelism + LSP + Codegen Quality) — P1 done (v0.53.23), P2 done (v0.53.25), P3 done (v0.53.26), P4 done (v0.53.27), P5 done (v0.53.28)
+- **Active project:** Phase 3 (Parallelism + LSP + Codegen Quality) — P1 done (v0.53.23), P2 done (v0.53.25), P3 done (v0.53.26), P4 done (v0.53.27), P5 done (v0.53.28), P6 done (v0.53.30)
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **Session bookmark** (v0.53.28, 2026-04-26). P5 done — `checkUnusedImports` now uses `TypeResolver.used_imports` set; no more file I/O or substring search; moved to after pass 5. ⬅ **RESUME HERE: Phase 3 (P6)** — source-location propagation from generated Zig to `.orh`; or **Phase 3 (P7)** — `pre_stmts` interpolation hoisting as stack of frames; or **Phase 4 (X1)** — table-driven CLI parser (independent).
+> **Session bookmark** (v0.53.30, 2026-04-26). P6 done — source-location propagation live; `reformatZigErrors` maps Zig error lines to `.orh` file+line via per-module source map. ⬅ **RESUME HERE: Phase 3 (P7)** — `pre_stmts` interpolation hoisting as stack of frames; or **Phase 4 (X1)** — table-driven CLI parser (independent).
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -212,7 +212,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **P4** 🟠 **Rewrite `typeToZig` as pure function over `ResolvedType`** [H2a] — done v0.53.27, 2026-04-26 — `zigOfRT(ResolvedType)` replaces dual AST-walking paths; `binary_expr` branch deleted; `anyopaque` fallbacks replaced by internal error
 - [x] **P5** 🟠 **Rewrite `checkUnusedImports` to use resolver data** [H2b] — done v0.53.28, 2026-04-26 — `TypeResolver.used_imports` set populated when identifier resolves as module name prefix; `checkUnusedImports` does set lookup instead of file I/O + substring search; moved to after pass 5 inside `runSemanticAndCodegen`
-- [ ] **P6** 🟠 **Source-location propagation from generated Zig to `.orh`** [H2c] — all of `src/codegen/*.zig`. Zig errors currently show `.orh-cache/generated/foo.zig:412:9`; users reverse-map. Fix: populate `(generated_file, line) → (orh_file, line)` side-table during emit. `reformatZigErrors` becomes an exact lookup.
+- [x] **P6** 🟠 **Source-location propagation from generated Zig to `.orh`** [H2c] — done v0.53.30, 2026-04-26 — all of `src/codegen/*.zig`. Zig errors currently show `.orh-cache/generated/foo.zig:412:9`; users reverse-map. Fix: populate `(generated_file, line) → (orh_file, line)` side-table during emit. `reformatZigErrors` becomes an exact lookup.
 - [ ] **P7** 🟠 **`pre_stmts` interpolation hoisting as stack of frames** [H2g] — `src/codegen/codegen.zig:64`. Global mutable buffer; nested interpolation can clobber. No assertion empty at statement boundaries → silent data loss if new statement codegen forgets `flushPreStmts`. Fix: stack of frames, auto-flush at statement boundaries, assert empty at function boundary.
 
 ---
