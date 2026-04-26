@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **Session bookmark** (v0.53.30, 2026-04-26). P6 done — source-location propagation live; `reformatZigErrors` maps Zig error lines to `.orh` file+line via per-module source map. ⬅ **RESUME HERE: Phase 3 (P7)** — `pre_stmts` interpolation hoisting as stack of frames; or **Phase 4 (X1)** — table-driven CLI parser (independent).
+> **Session bookmark** (v0.53.31, 2026-04-26). P7 done — `pre_stmts` replaced with stack-of-frames; codegen ready for full `@{}` expression support. ⬅ **RESUME HERE: Phase 4 (X1)** — table-driven CLI parser (independent); or **Phase 5 (I1)** — lexer sub-expression tokenization to enable full expressions inside `@{}`.
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -213,7 +213,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 - [x] **P4** 🟠 **Rewrite `typeToZig` as pure function over `ResolvedType`** [H2a] — done v0.53.27, 2026-04-26 — `zigOfRT(ResolvedType)` replaces dual AST-walking paths; `binary_expr` branch deleted; `anyopaque` fallbacks replaced by internal error
 - [x] **P5** 🟠 **Rewrite `checkUnusedImports` to use resolver data** [H2b] — done v0.53.28, 2026-04-26 — `TypeResolver.used_imports` set populated when identifier resolves as module name prefix; `checkUnusedImports` does set lookup instead of file I/O + substring search; moved to after pass 5 inside `runSemanticAndCodegen`
 - [x] **P6** 🟠 **Source-location propagation from generated Zig to `.orh`** [H2c] — done v0.53.30, 2026-04-26 — all of `src/codegen/*.zig`. Zig errors currently show `.orh-cache/generated/foo.zig:412:9`; users reverse-map. Fix: populate `(generated_file, line) → (orh_file, line)` side-table during emit. `reformatZigErrors` becomes an exact lookup.
-- [ ] **P7** 🟠 **`pre_stmts` interpolation hoisting as stack of frames** [H2g] — `src/codegen/codegen.zig:64`. Global mutable buffer; nested interpolation can clobber. No assertion empty at statement boundaries → silent data loss if new statement codegen forgets `flushPreStmts`. Fix: stack of frames, auto-flush at statement boundaries, assert empty at function boundary.
+- [x] **P7** 🟠 **`pre_stmts` interpolation hoisting as stack of frames** [H2g] — done v0.53.31, 2026-04-26 — `pre_stmts: ArrayListUnmanaged(u8)` replaced with `pre_stmts_stack`; `pushPreStmtsFrame`/`popPreStmtsFrame`/`topPreStmts` helpers; statement loop pushes frame before each stmt + depth assertion; `generateInterpolatedStringMirFromStore` builds decl in local buffer with per-arg capture frames; manual save/restore in `generateBlockMir` and `emitNarrowedBlockFromStore` removed. Codegen is now ready for full `@{}` expression support (I1–I5).
 
 ---
 
@@ -234,6 +234,20 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 ## Phase 5 — Medium/Low Cleanup Sweep `opportunistic` `ANY TIME POST-REBUILD`
 
 No dependencies. Pick up items as time permits, in any order. Grouped by subsystem for scannability.
+
+### String interpolation — full expression support `~2-3 days`
+
+`@{...}` currently accepts only bare identifiers — the lexer emits the entire string as
+one token, so the builder extracts expression text with a raw `}` scan and stores it as
+`.identifier`. Supporting arbitrary expressions (`@{x + 1}`, `@{obj.field}`, `@{f(a, b)}`)
+requires threading the full token stream through `@{...}`. Codegen (P7) is already ready.
+**Internal ordering:** I1 → I2 → I3 → I4 → I5 (sequential dependency chain).
+
+- [ ] **I1** 🟠 **Lexer: sub-expression tokenization inside string literals** — `src/lexer.zig`. Currently `STRING_LITERAL` is one token swallowing `@{...}` raw. Change: when scanning a string, `@{` starts a sub-expression mode — track brace depth, tokenize content as normal code until the matching `}`, then resume string scan. Emit interleaved token types: `string_part` (literal text segments) + normal expression tokens + `string_interp_end`. Must handle balanced braces (`@{arr[i]}`, `@{f(a, b)}`).
+- [ ] **I2** 🟡 **Grammar: update `string_literal` rule for interleaved tokens** — `src/peg/orhon.peg`. Replace `STRING_LITERAL` with a rule that matches `string_part* (@{ expr } string_part*)* string_end` using the new token types from I1.
+- [ ] **I3** 🟡 **PEG builder: emit real AST expression nodes from `buildStringLiteral`** — `src/peg/builder_exprs.zig`. Replace the raw-text scan + `.identifier = expr_text` with reads of the new token stream; call `buildNode` on each expression sub-sequence to produce a proper `*Node` per `@{...}` slot.
+- [ ] **I4** 🟡 **MIR builder: lower arbitrary expression parts in interpolation** — `src/mir_builder_exprs.zig`. Interpolation parts are currently lowered as name lookups. With real AST nodes from I3, call `lowerNode` on each part expression instead — arbitrary expressions fold in naturally; type_class inference for format specifier selection (`{s}` vs `{}`) needs to handle any expression type.
+- [ ] **I5** 🟡 **Resolver: type-check expressions inside `@{}`** — `src/resolver_exprs.zig`. Interpolated string parts currently resolve as identifier lookups. With real expression nodes from I3, call `checkExpr` on each part — type errors inside `@{}` surface with proper locations. Add negative fixture `fail_interp_bad_expr.orh`.
 
 ### Semantic layer — medium
 
