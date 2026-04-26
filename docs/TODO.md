@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25), T4 done (v0.53.11, 2026-04-25), T5 done (v0.53.12, 2026-04-25), T6 done (v0.53.13, 2026-04-25), T7 done (v0.53.14, 2026-04-25), T8a done (v0.53.16, 2026-04-25), T8b done (v0.53.17, 2026-04-25), T9 done (v0.53.18, 2026-04-25), T10 done (v0.53.20, 2026-04-25), T11 done (v0.53.21, 2026-04-26), T12 done (v0.53.22, 2026-04-26)
+- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25), T4 done (v0.53.11, 2026-04-25), T5 done (v0.53.12, 2026-04-25), T6 done (v0.53.13, 2026-04-25), T7 done (v0.53.14, 2026-04-25), T8a done (v0.53.16, 2026-04-25), T8b done (v0.53.17, 2026-04-25), T9 done (v0.53.18, 2026-04-25), T10 done (v0.53.20, 2026-04-25), T11 done (v0.53.21, 2026-04-26), T12 done (v0.53.22, 2026-04-26); Phase 3 (Parallelism + LSP + Codegen Quality) started — P1 done (v0.53.23, 2026-04-26)
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **T12 complete** (v0.53.22, 2026-04-26). ⬅ **RESUME HERE: Phase 3 (P1)** — `ModuleCompile` struct with per-module arena, or Phase 4 (X1) — table-driven CLI parser (both unblocked).
+> **P1 complete** (v0.53.23, 2026-04-26). ⬅ **RESUME HERE: Phase 3 (P2)** — transitive cache invalidation (now unblocked by P1's BuildContext), or Phase 4 (X1) — table-driven CLI parser, or Phase 3 (P4) — rewrite typeToZig as pure function (independent).
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -204,7 +204,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 ### Sub-project 3a — Parallelism foundation
 
-- [ ] **P1** 🟠 **`ModuleCompile` struct with per-module arena** [H2d] — `src/pipeline.zig:299-476`. Every module currently mutates shared state; no isolation. Create a `ModuleCompile { arena, decls, output }` struct. Pipeline becomes (1) parse all modules into per-module arenas, (2) build global `Interface` snapshot, (3) parallel `compileOne(mod, &snapshot)` jobs, (4) merge outputs. Foundational for everything else in P3.
+- [x] **P1** 🟠 **`ModuleCompile` struct with per-module arena** [H2d] — done v0.53.23, 2026-04-26 — `src/pipeline_context.zig` defines `BuildContext` (12-field shared-state bundle) and `ModuleCompile` (per-module arena + decl collector). `runPipeline` constructs an `ArrayList(ModuleCompile)` with capacity reserved up front; arenas live until end of build (decl tables remain valid for cross-module resolution via `all_module_decls`). 185-line per-module loop body extracted to `compileOne(ctx, mc) !void`; soft compile errors return `error.AbortBuild`. `runSemanticAndCodegen` collapsed from 13 params to 6. `decl_collector_ptrs` removed. Single-threaded execution preserved; structure parallelism-ready. Peak-memory split (iface vs body arena) deferred to M4.
 - [ ] **P2** 🟠 **Transitive cache invalidation** [H2e, absorbs existing "BuildGraph" item] — `src/pipeline.zig:337-368`, `cache.zig:188-225`. Only checks direct deps, not transitive. `moduleNeedsRecompile` is dead code. No atomic writes (no `tmp + rename`). Cycle detection reports one back-edge only. Additionally: `hashSemanticContent` **excludes doc comments** — latent cache lie if doc comments ever feed codegen (e.g., via `@compileError` messages, future docgen integration). Fix: compute transitive closure once after parsing, delete dead path, atomic ZON writes, full cycle path in error messages, include doc comments in semantic hash or prove they never affect codegen.
 - [ ] **P3** 🟠 **LSP reuses pipeline via `runPasses(stop_after:)` entry point** [H3e / existing "LSP feature-gated passes" and "LSP incremental sync" items] — `src/lsp/*` is 3500 lines re-implementing parsing. No feature gating, no cancellation, no debouncing. Fix: `Pipeline.runPasses(modules, stop_after: Pass)` entry point; LSP reuses the per-module compile struct from P1. Gate passes by request type: completion→1-4, hover→1-5, diagnostics→1-9.
 

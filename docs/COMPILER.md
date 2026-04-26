@@ -47,6 +47,37 @@ Two layers of cache invalidation:
 - **Semantic hashing** — token-stream hashing skips whitespace and comments. Touching a file without changing code does not trigger recompilation.
 - **Interface diffing** — public DeclTable hashing. When an upstream module's implementation changes but its public API stays the same, downstream importers skip recompilation.
 
+### Per-module compile context
+
+`runPipeline` constructs one **`BuildContext`** (build-wide shared state:
+cache, union registry, decl tables, reporter, CLI, cache-writeback sinks)
+and an **`ArrayList(ModuleCompile)`** with one entry per module being
+compiled this build. Each `ModuleCompile` owns:
+
+- `arena` — a `std.heap.ArenaAllocator` backing all per-module
+  allocations (AST conversion, decl collector, type resolver, MIR
+  builder, codegen scratch). Lives until end of build.
+- `decl_collector` — heap-allocated inside `arena`. Cross-module decl
+  resolution stores `&decl_collector.table` in
+  `BuildContext.all_module_decls`; that reference stays valid because
+  the arena's heap buffers are stable across `ArrayList` growth.
+- `mod_name`, `mod_ptr` — borrowed identity, owned by `module.Resolver`.
+
+The per-module loop body lives in `fn compileOne(ctx, mc) !void`. It
+returns `error.AbortBuild` for soft compile errors; `runPipeline`
+catches that and returns `null` (preserving the public API). Hard errors
+(OOM, I/O) propagate via `try`.
+
+Each `ModuleCompile` is initialized in place at its slot in the outer
+`ArrayList`. This is required because `ArenaAllocator.allocator()`
+returns an `Allocator` whose internal pointer captures the arena's
+address — copying a `ModuleCompile` value after `init` would dangle the
+pointer.
+
+The structure is parallelism-ready: every `ModuleCompile` is
+self-contained, so a future thread pool can hand each to a worker.
+Actual parallelism is tracked as P3.
+
 ---
 
 ## Backend
@@ -91,7 +122,8 @@ Hub-and-spoke pattern — large passes split into hub + satellite files. Tests a
 src/
     main.zig                // entry point, CLI dispatch, allocator setup
     cli.zig                 // command-line argument parsing (CliArgs, Command, BuildTarget)
-    pipeline.zig            // hub — compilation pipeline orchestration (runPipeline)
+    pipeline.zig            // hub — compilation pipeline orchestration (runPipeline, compileOne)
+    pipeline_context.zig    //   BuildContext (build-wide shared state) + ModuleCompile (per-module arena + decl collector)
     pipeline_passes.zig     //   satellite — per-module pass execution (passes 5–11)
     pipeline_build.zig      //   satellite — build helpers and tests
     commands.zig            // secondary command runners (analysis, debug, gendoc, addtopath)
