@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **P1 complete** (v0.53.23, 2026-04-26). ⬅ **RESUME HERE: Phase 3 (P2)** — transitive cache invalidation (now unblocked by P1's BuildContext), or Phase 4 (X1) — table-driven CLI parser, or Phase 3 (P4) — rewrite typeToZig as pure function (independent).
+> **Session bookmark** (v0.53.24, 2026-04-26). P1 just landed — `BuildContext` + `ModuleCompile` + `compileOne` are now in `src/pipeline.zig` and `src/pipeline_context.zig`. Single-threaded today, parallelism-ready. ⬅ **RESUME HERE: Phase 3 (P2)** — transitive cache invalidation (best next; builds directly on `BuildContext.comp_cache` and `prev_iface_hashes`); or Phase 4 (X1) — table-driven CLI parser (independent, no overlap with pipeline work); or Phase 3 (P4) — rewrite `typeToZig` as pure function (independent codegen cleanup).
 
 ### Sub-project 2b — Test runner rewrite
 
