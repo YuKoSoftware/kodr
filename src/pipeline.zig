@@ -260,14 +260,6 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     // Accumulate declaration tables across modules for cross-module default arg resolution
     var all_module_decls = std.StringHashMap(*declarations.DeclTable).init(allocator);
     defer all_module_decls.deinit();
-    var decl_collector_ptrs = std.ArrayListUnmanaged(*declarations.DeclCollector){};
-    defer {
-        for (decl_collector_ptrs.items) |dc| {
-            dc.deinit();
-            allocator.destroy(dc);
-        }
-        decl_collector_ptrs.deinit(allocator);
-    }
 
     // Snapshot the interface hashes as they were at the start of this build.
     // Used to detect whether a dependency's interface changed during this build:
@@ -297,216 +289,49 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         all_union_entries.deinit(allocator);
     }
 
+    // Bundle build-wide shared state for compileOne().
+    var ctx: pipeline_context.BuildContext = .{
+        .gpa = allocator,
+        .comp_cache = &comp_cache,
+        .union_registry = &union_registry,
+        .all_module_decls = &all_module_decls,
+        .prev_iface_hashes = &prev_iface_hashes,
+        .module_builds = &module_builds,
+        .reporter = reporter,
+        .cli = cli,
+        .all_warnings = &all_warnings,
+        .all_union_entries = &all_union_entries,
+        .cached_warnings = &cached_warnings,
+        .cached_unions = &cached_unions,
+    };
+
+    // One ModuleCompile per module being compiled this build. Capacity
+    // reserved up front so &modules.items[i] pointers stay valid across
+    // iterations (and we know order.len exactly).
+    var modules: std.ArrayList(pipeline_context.ModuleCompile) = .{};
+    try modules.ensureTotalCapacity(allocator, order.len);
+    defer {
+        var i: usize = modules.items.len;
+        while (i > 0) : (i -= 1) modules.items[i - 1].deinit();
+        modules.deinit(allocator);
+    }
+
     // Process each module in dependency order
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
-        const ast = mod_ptr.ast orelse continue;
+        if (mod_ptr.ast == null) continue;
 
-        // Get source location map and file offsets for error reporting
-        const locs_ptr: ?*const parser.LocMap = if (mod_ptr.locs) |*l| l else null;
-        const file_offsets = mod_ptr.file_offsets;
+        // Append an undefined slot first, then init in place. Capacity was
+        // reserved above so the slot's address is stable; init captures
+        // &mc_ptr.arena, so the struct must not move after initialization.
+        try modules.append(allocator, undefined);
+        const mc_ptr = &modules.items[modules.items.len - 1];
+        try mc_ptr.init(allocator, reporter, mod_name, mod_ptr);
 
-        // ── Pass 4: Declaration Collection ────────────────────
-        // Always collect declarations so cross-module type resolution works
-        // (e.g., `use std::collections` needs collections DeclTable in all_module_decls)
-        const decl_collector = try allocator.create(declarations.DeclCollector);
-        decl_collector.* = declarations.DeclCollector.init(allocator, reporter);
-        try decl_collector_ptrs.append(allocator, decl_collector);
-        decl_collector.locs = locs_ptr;
-        decl_collector.file_offsets = file_offsets;
-
-        var decl_conv = ast_conv.ConvContext.init(allocator);
-        defer decl_conv.deinit();
-        const decl_ast_root = ast_conv.convertNode(&decl_conv, ast) catch {
-            _ = try reporter.report(.{ .code = .internal_ast_conv_p4, .message = "internal: AST conversion failed (pass 4)" });
-            return null;
+        compileOne(&ctx, mc_ptr) catch |err| switch (err) {
+            error.AbortBuild => return null,
+            else => return err,
         };
-        try decl_collector.collect(&decl_conv.store, decl_ast_root, &decl_conv.reverse_map);
-        if (reporter.hasErrors()) return null;
-        try all_module_decls.put(mod_name, &decl_collector.table);
-
-        // ── Passes 5–11: Temporary BuildContext + ModuleCompile shim ──
-        // Declared early so _tmp_mc.arena.allocator() is available to all
-        // per-module passes below (checkUnusedImports, runSemanticAndCodegen).
-        // Until Task 3 extracts compileOne, decl_collector is heap-allocated
-        // outside the arena; the stub borrows it. Real cleanup goes through
-        // decl_collector_ptrs.
-        var _tmp_ctx: pipeline_context.BuildContext = .{
-            .gpa = allocator,
-            .comp_cache = &comp_cache,
-            .union_registry = &union_registry,
-            .all_module_decls = &all_module_decls,
-            .prev_iface_hashes = &prev_iface_hashes,
-            .module_builds = &module_builds,
-            .reporter = reporter,
-            .cli = cli,
-            .all_warnings = &all_warnings,
-            .all_union_entries = &all_union_entries,
-        };
-        var _tmp_mc: pipeline_context.ModuleCompile = .{
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .mod_name = mod_name,
-            .mod_ptr = mod_ptr,
-            .decl_collector = decl_collector,
-        };
-        defer _tmp_mc.arena.deinit();
-
-        // ── Validate 'main' as reserved name ─────────────────
-        if (try passes.validateMainReserved(ast, mod_ptr, locs_ptr, file_offsets, reporter))
-            return null;
-
-        // ── Check for unused imports ────────────────────────
-        try passes.checkUnusedImports(_tmp_mc.arena.allocator(), ast, mod_ptr, locs_ptr, file_offsets, reporter);
-
-        // Compute this module's current interface hash (after pass 4, before skip decision).
-        // Stored here so it is available whether or not we recompile.
-        const current_iface_hash = try cache.hashInterface(allocator, &decl_collector.table);
-
-        // Check if module needs recompilation (passes 5–12).
-        // Interface-aware logic:
-        //   a) If any own source file changed → must recompile.
-        //   b) If own sources unchanged, check dependency interfaces: if any dep's
-        //      interface hash changed (or has no cached hash), recompile.
-        //   c) If nothing changed, skip passes 5–12.
-        var own_source_changed = false;
-        for (mod_ptr.files) |file| {
-            if (try comp_cache.hasChanged(file)) {
-                own_source_changed = true;
-                break;
-            }
-        }
-
-        var dep_interface_changed = false;
-        if (!own_source_changed) {
-            if (comp_cache.deps.get(mod_name)) |dep_list| {
-                for (dep_list.items) |dep_name| {
-                    // Check if dep's generated .zig file exists
-                    const zig_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ cache.GENERATED_DIR, dep_name });
-                    defer allocator.free(zig_path);
-                    std.fs.cwd().access(zig_path, .{}) catch {
-                        dep_interface_changed = true;
-                        break;
-                    };
-                    // Compare dep's current interface hash (in comp_cache.interface_hashes,
-                    // updated when the dep was processed this build) against the previous
-                    // build's value (in prev_iface_hashes, snapshotted before the loop).
-                    const prev_hash = prev_iface_hashes.get(dep_name);
-                    const curr_hash = comp_cache.interface_hashes.get(dep_name);
-                    if (prev_hash == null or curr_hash == null or prev_hash.? != curr_hash.?) {
-                        dep_interface_changed = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        const needs_recompile = own_source_changed or dep_interface_changed;
-        if (!needs_recompile) {
-            // Store the current interface hash for this skipped module so that
-            // downstream dependents can compare against it this build.
-            const skip_iface_result = try comp_cache.interface_hashes.getOrPut(mod_name);
-            if (!skip_iface_result.found_existing) {
-                skip_iface_result.key_ptr.* = try allocator.dupe(u8, mod_name);
-            }
-            skip_iface_result.value_ptr.* = current_iface_hash;
-
-            // Replay cached warnings for this module
-            for (cached_warnings.items) |w| {
-                if (std.mem.eql(u8, w.module, mod_name)) {
-                    _ = try reporter.warn(.{
-                        .message = w.message,
-                        .loc = .{ .file = w.file, .line = w.line, .col = 0 },
-                    });
-                    try all_warnings.append(allocator, .{
-                        .module = try allocator.dupe(u8, w.module),
-                        .file = try allocator.dupe(u8, w.file),
-                        .line = w.line,
-                        .message = try allocator.dupe(u8, w.message),
-                    });
-                }
-            }
-
-            // Restore cached union arity for this skipped module
-            for (cached_unions.items) |u| {
-                if (std.mem.eql(u8, u.module, mod_name)) {
-                    try union_registry.restoreArity(u.module, u.arity);
-                    try all_union_entries.append(allocator, .{
-                        .module = try allocator.dupe(u8, u.module),
-                        .arity = u.arity,
-                    });
-                }
-            }
-            continue;
-        }
-
-        // Snapshot diagnostic count to capture new warnings from this module
-        const diag_start = reporter.diagnostics.items.len;
-
-        // ── Zig Module Source Copy ──────────────────────────────
-        // Copy the original .zig file to .orh-cache/generated/{name}_zig.zig
-        // so the build system can register it as a named module.
-        // Skip std modules — already copied with import rewriting in the early pipeline.
-        // Also handles mixed modules (user .orh + .zig sidecar).
-        if (mod_ptr.is_zig_module or mod_ptr.has_zig_sidecar) {
-            if (mod_ptr.zig_source_path) |zig_src| {
-                if (!std.mem.startsWith(u8, zig_src, cache.CACHE_DIR)) {
-                    try cache.ensureGeneratedDir();
-                    const zig_dst = try std.fmt.allocPrint(allocator, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, mod_name });
-                    defer allocator.free(zig_dst);
-
-                    const content = try std.fs.cwd().readFileAlloc(allocator, zig_src, 1024 * 1024);
-                    defer allocator.free(content);
-
-                    const dst_file = try std.fs.cwd().createFile(zig_dst, .{});
-                    defer dst_file.close();
-                    try dst_file.writeAll(content);
-                }
-            }
-        }
-
-        // ── Passes 5–11: Type Resolution through Zig Code Generation ──
-        _ = try passes.runSemanticAndCodegen(
-            _tmp_mc.arena.allocator(), &_tmp_ctx, &_tmp_mc, ast,
-            mod_ptr.is_zig_module, mod_ptr.has_zig_sidecar,
-        ) orelse return null;
-
-        // Capture this module's arity contribution for caching. The registry
-        // already records max-per-module via registerArity calls made during
-        // semantic/codegen passes; just read it back.
-        var arity_iter = union_registry.iterator();
-        while (arity_iter.next()) |entry| {
-            if (!std.mem.eql(u8, entry.key_ptr.*, mod_name)) continue;
-            try all_union_entries.append(allocator, .{
-                .module = try allocator.dupe(u8, mod_name),
-                .arity = entry.value_ptr.*,
-            });
-            break;
-        }
-
-        // Capture new warnings from this module for caching
-        for (reporter.diagnostics.items[diag_start..]) |w| {
-            if (w.severity != .warning) continue;
-            try all_warnings.append(allocator, .{
-                .module = try allocator.dupe(u8, mod_name),
-                .file = if (w.loc) |loc| try allocator.dupe(u8, loc.file) else try allocator.dupe(u8, ""),
-                .line = if (w.loc) |loc| loc.line else 0,
-                .message = try allocator.dupe(u8, w.message),
-            });
-        }
-
-        // Update content hash cache
-        for (mod_ptr.files) |file| {
-            try comp_cache.updateHash(file);
-        }
-
-        // Store the freshly computed interface hash for this module.
-        // Downstream modules processed later in topological order will see this
-        // updated value when checking dep_interface_changed.
-        const iface_result = try comp_cache.interface_hashes.getOrPut(mod_name);
-        if (!iface_result.found_existing) {
-            iface_result.key_ptr.* = try allocator.dupe(u8, mod_name);
-        }
-        iface_result.value_ptr.* = current_iface_hash;
     }
 
     // Emit shared _unions.zig if any arbitrary unions were registered
@@ -794,6 +619,182 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
     // Return exe name for `orhon run`; empty string signals lib-only success
     return exe_binary_name orelse try allocator.dupe(u8, "");
+}
+
+/// Compile one module: passes 4 (decl collection) through 11 (Zig codegen).
+/// Returns:
+///   * normally — module compiled (or skipped via cache hit) successfully
+///   * `error.AbortBuild` — semantic/codegen errors were reported via
+///     `ctx.reporter`; caller should stop the build and return null
+///   * any other error — hard failure (OOM, I/O); propagate
+fn compileOne(
+    ctx: *pipeline_context.BuildContext,
+    mc: *pipeline_context.ModuleCompile,
+) !void {
+    const allocator = ctx.gpa;
+    const arena = mc.arena.allocator();
+    const reporter = ctx.reporter;
+    const mod_name = mc.mod_name;
+    const mod_ptr = mc.mod_ptr;
+    const ast = mod_ptr.ast.?;
+
+    // Get source location map and file offsets for error reporting
+    const locs_ptr: ?*const parser.LocMap = if (mod_ptr.locs) |*l| l else null;
+    const file_offsets = mod_ptr.file_offsets;
+
+    // ── Pass 4: Declaration Collection ────────────────────
+    // Always collect declarations so cross-module type resolution works
+    // (e.g., `use std::collections` needs collections DeclTable in
+    // ctx.all_module_decls).
+    mc.decl_collector.locs = locs_ptr;
+    mc.decl_collector.file_offsets = file_offsets;
+
+    var decl_conv = ast_conv.ConvContext.init(arena);
+    defer decl_conv.deinit();
+    const decl_ast_root = ast_conv.convertNode(&decl_conv, ast) catch {
+        _ = try reporter.report(.{ .code = .internal_ast_conv_p4, .message = "internal: AST conversion failed (pass 4)" });
+        return error.AbortBuild;
+    };
+    try mc.decl_collector.collect(&decl_conv.store, decl_ast_root, &decl_conv.reverse_map);
+    if (reporter.hasErrors()) return error.AbortBuild;
+
+    // Cross-module decl access: store the table reference under the borrowed
+    // mod_name (which lives in mod_resolver, outliving this build).
+    try ctx.all_module_decls.put(mod_name, &mc.decl_collector.table);
+
+    // ── Validate 'main' as reserved name ─────────────────
+    if (try passes.validateMainReserved(ast, mod_ptr, locs_ptr, file_offsets, reporter))
+        return error.AbortBuild;
+
+    // ── Check for unused imports ────────────────────────
+    try passes.checkUnusedImports(arena, ast, mod_ptr, locs_ptr, file_offsets, reporter);
+
+    // Compute this module's current interface hash (after pass 4, before
+    // skip decision). Stored here so it is available whether or not we
+    // recompile.
+    const current_iface_hash = try cache.hashInterface(allocator, &mc.decl_collector.table);
+
+    // Check if module needs recompilation (passes 5–12).
+    var own_source_changed = false;
+    for (mod_ptr.files) |file| {
+        if (try ctx.comp_cache.hasChanged(file)) {
+            own_source_changed = true;
+            break;
+        }
+    }
+
+    var dep_interface_changed = false;
+    if (!own_source_changed) {
+        if (ctx.comp_cache.deps.get(mod_name)) |dep_list| {
+            for (dep_list.items) |dep_name| {
+                const zig_path = try std.fmt.allocPrint(arena, "{s}/{s}.zig", .{ cache.GENERATED_DIR, dep_name });
+                std.fs.cwd().access(zig_path, .{}) catch {
+                    dep_interface_changed = true;
+                    break;
+                };
+                const prev_hash = ctx.prev_iface_hashes.get(dep_name);
+                const curr_hash = ctx.comp_cache.interface_hashes.get(dep_name);
+                if (prev_hash == null or curr_hash == null or prev_hash.? != curr_hash.?) {
+                    dep_interface_changed = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    const needs_recompile = own_source_changed or dep_interface_changed;
+    if (!needs_recompile) {
+        const skip_iface_result = try ctx.comp_cache.interface_hashes.getOrPut(mod_name);
+        if (!skip_iface_result.found_existing) {
+            skip_iface_result.key_ptr.* = try allocator.dupe(u8, mod_name);
+        }
+        skip_iface_result.value_ptr.* = current_iface_hash;
+
+        // Replay cached warnings for this module
+        for (ctx.cached_warnings.items) |w| {
+            if (std.mem.eql(u8, w.module, mod_name)) {
+                _ = try reporter.warn(.{
+                    .message = w.message,
+                    .loc = .{ .file = w.file, .line = w.line, .col = 0 },
+                });
+                try ctx.all_warnings.append(allocator, .{
+                    .module = try allocator.dupe(u8, w.module),
+                    .file = try allocator.dupe(u8, w.file),
+                    .line = w.line,
+                    .message = try allocator.dupe(u8, w.message),
+                });
+            }
+        }
+
+        // Restore cached union arity for this skipped module
+        for (ctx.cached_unions.items) |u| {
+            if (std.mem.eql(u8, u.module, mod_name)) {
+                try ctx.union_registry.restoreArity(u.module, u.arity);
+                try ctx.all_union_entries.append(allocator, .{
+                    .module = try allocator.dupe(u8, u.module),
+                    .arity = u.arity,
+                });
+            }
+        }
+        return;
+    }
+
+    // Snapshot diagnostic count to capture new warnings from this module
+    const diag_start = reporter.diagnostics.items.len;
+
+    // ── Zig Module Source Copy ──────────────────────────────
+    if (mod_ptr.is_zig_module or mod_ptr.has_zig_sidecar) {
+        if (mod_ptr.zig_source_path) |zig_src| {
+            if (!std.mem.startsWith(u8, zig_src, cache.CACHE_DIR)) {
+                try cache.ensureGeneratedDir();
+                const zig_dst = try std.fmt.allocPrint(arena, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, mod_name });
+                const content = try std.fs.cwd().readFileAlloc(arena, zig_src, 1024 * 1024);
+                const dst_file = try std.fs.cwd().createFile(zig_dst, .{});
+                defer dst_file.close();
+                try dst_file.writeAll(content);
+            }
+        }
+    }
+
+    // ── Passes 5–11: Type Resolution through Zig Code Generation ──
+    _ = try passes.runSemanticAndCodegen(
+        arena, ctx, mc, ast,
+        mod_ptr.is_zig_module, mod_ptr.has_zig_sidecar,
+    ) orelse return error.AbortBuild;
+
+    // Capture this module's arity contribution for caching.
+    var arity_iter = ctx.union_registry.iterator();
+    while (arity_iter.next()) |entry| {
+        if (!std.mem.eql(u8, entry.key_ptr.*, mod_name)) continue;
+        try ctx.all_union_entries.append(allocator, .{
+            .module = try allocator.dupe(u8, mod_name),
+            .arity = entry.value_ptr.*,
+        });
+        break;
+    }
+
+    // Capture new warnings from this module for caching
+    for (reporter.diagnostics.items[diag_start..]) |w| {
+        if (w.severity != .warning) continue;
+        try ctx.all_warnings.append(allocator, .{
+            .module = try allocator.dupe(u8, mod_name),
+            .file = if (w.loc) |loc| try allocator.dupe(u8, loc.file) else try allocator.dupe(u8, ""),
+            .line = if (w.loc) |loc| loc.line else 0,
+            .message = try allocator.dupe(u8, w.message),
+        });
+    }
+
+    // Update content hash cache
+    for (mod_ptr.files) |file| {
+        try ctx.comp_cache.updateHash(file);
+    }
+
+    // Store the freshly computed interface hash for this module.
+    const iface_result = try ctx.comp_cache.interface_hashes.getOrPut(mod_name);
+    if (!iface_result.found_existing) {
+        iface_result.key_ptr.* = try allocator.dupe(u8, mod_name);
+    }
+    iface_result.value_ptr.* = current_iface_hash;
 }
 
 /// Merges .zon build configs from zig-backed modules into the accumulator lists.

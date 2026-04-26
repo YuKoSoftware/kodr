@@ -39,6 +39,11 @@ pub const BuildContext = struct {
     // flushes them to disk after the loop.
     all_warnings: *std.ArrayListUnmanaged(cache.CachedWarning),
     all_union_entries: *std.ArrayListUnmanaged(cache.CachedUnionEntry),
+
+    // Read-only during compileOne. Populated at start of runPipeline from
+    // cache.loadWarnings/loadUnions; modules iterate to replay their entries.
+    cached_warnings: *const std.ArrayListUnmanaged(cache.CachedWarning),
+    cached_unions: *const std.ArrayListUnmanaged(cache.CachedUnionEntry),
 };
 
 /// Per-module lifetime container. Owns the arena that backs all per-module
@@ -64,25 +69,30 @@ pub const ModuleCompile = struct {
     mod_ptr: *module.Module,
     decl_collector: *declarations.DeclCollector,
 
+    /// Initialize a ModuleCompile in place. The caller must provide a pointer
+    /// to stable storage (e.g. an ArrayList slot whose capacity has been
+    /// reserved); the returned `decl_collector` and arena allocator both
+    /// capture the address of `self.arena`, so moving the struct after
+    /// initialization would invalidate them.
     pub fn init(
+        self: *ModuleCompile,
         gpa: std.mem.Allocator,
         reporter: *errors.Reporter,
         mod_name: []const u8,
         mod_ptr: *module.Module,
-    ) !ModuleCompile {
-        var mc: ModuleCompile = .{
+    ) !void {
+        self.* = .{
             .arena = std.heap.ArenaAllocator.init(gpa),
             .mod_name = mod_name,
             .mod_ptr = mod_ptr,
             .decl_collector = undefined,
         };
-        errdefer mc.arena.deinit();
+        errdefer self.arena.deinit();
 
-        const arena_alloc = mc.arena.allocator();
+        const arena_alloc = self.arena.allocator();
         const dc = try arena_alloc.create(declarations.DeclCollector);
         dc.* = declarations.DeclCollector.init(arena_alloc, reporter);
-        mc.decl_collector = dc;
-        return mc;
+        self.decl_collector = dc;
     }
 
     pub fn deinit(self: *ModuleCompile) void {
@@ -99,7 +109,8 @@ test "ModuleCompile.init creates arena and decl collector" {
     defer reporter.deinit();
 
     var fake_mod: module.Module = undefined;
-    var mc = try ModuleCompile.init(std.testing.allocator, &reporter, "test_mod", &fake_mod);
+    var mc: ModuleCompile = undefined;
+    try mc.init(std.testing.allocator, &reporter, "test_mod", &fake_mod);
     defer mc.deinit();
 
     try std.testing.expectEqualStrings("test_mod", mc.mod_name);
@@ -111,7 +122,8 @@ test "ModuleCompile.deinit frees arena (no leaks)" {
     defer reporter.deinit();
 
     var fake_mod: module.Module = undefined;
-    var mc = try ModuleCompile.init(std.testing.allocator, &reporter, "m", &fake_mod);
+    var mc: ModuleCompile = undefined;
+    try mc.init(std.testing.allocator, &reporter, "m", &fake_mod);
 
     // Allocate something inside the arena to verify it's freed by deinit.
     const arena_alloc = mc.arena.allocator();
@@ -126,8 +138,10 @@ test "two ModuleCompiles have independent arenas" {
     defer reporter.deinit();
 
     var fake_mod: module.Module = undefined;
-    var a = try ModuleCompile.init(std.testing.allocator, &reporter, "a", &fake_mod);
-    var b = try ModuleCompile.init(std.testing.allocator, &reporter, "b", &fake_mod);
+    var a: ModuleCompile = undefined;
+    try a.init(std.testing.allocator, &reporter, "a", &fake_mod);
+    var b: ModuleCompile = undefined;
+    try b.init(std.testing.allocator, &reporter, "b", &fake_mod);
 
     const a_buf = try a.arena.allocator().alloc(u8, 8);
     @memset(a_buf, 0xAA);
