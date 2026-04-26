@@ -47,7 +47,7 @@ pub fn elapsed(start: i64) i64 {
 /// Formats a millisecond timestamp as an ISO 8601 UTC string.
 pub fn format(ms: i64) []const u8 {
     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(@divTrunc(ms, 1000)) };
-    const day = epoch.getDaySeconds();
+    const day_secs = epoch.getDaySeconds();
     const year_day = epoch.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
 
@@ -55,9 +55,9 @@ pub fn format(ms: i64) []const u8 {
         year_day.year,
         month_day.month.numeric(),
         month_day.day_index + 1,
-        day.getHoursIntoDay(),
-        day.getMinutesIntoHour(),
-        day.getSecondsIntoMinute(),
+        day_secs.getHoursIntoDay(),
+        day_secs.getMinutesIntoHour(),
+        day_secs.getSecondsIntoMinute(),
     }) catch return "";
 }
 
