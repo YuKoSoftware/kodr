@@ -375,11 +375,14 @@ pub const Resolver = struct {
         defer visited.deinit();
         var in_stack = std.StringHashMap(bool).init(self.allocator);
         defer in_stack.deinit();
+        var path: std.ArrayList([]const u8) = .{};
+        defer path.deinit(self.allocator);
 
         var it = self.modules.iterator();
         while (it.next()) |entry| {
             if (!visited.contains(entry.key_ptr.*)) {
-                try self.dfsCircularCheck(entry.key_ptr.*, &visited, &in_stack);
+                path.clearRetainingCapacity();
+                try self.dfsCircularCheck(entry.key_ptr.*, &visited, &in_stack, &path);
             }
         }
     }
@@ -389,19 +392,39 @@ pub const Resolver = struct {
         mod_name: []const u8,
         visited: *std.StringHashMap(bool),
         in_stack: *std.StringHashMap(bool),
+        path: *std.ArrayList([]const u8),
     ) anyerror!void {
         try visited.put(mod_name, true);
         try in_stack.put(mod_name, true);
+        try path.append(self.allocator, mod_name);
 
-        const mod = self.modules.get(mod_name) orelse return;
+        const mod = self.modules.get(mod_name) orelse {
+            _ = path.pop();
+            try in_stack.put(mod_name, false);
+            return;
+        };
         for (mod.imports) |imp| {
             if (!visited.contains(imp)) {
-                try self.dfsCircularCheck(imp, visited, in_stack);
+                try self.dfsCircularCheck(imp, visited, in_stack, path);
             } else if (in_stack.get(imp) orelse false) {
-                _ = try self.reporter.reportFmt(.circular_import, null, "circular import detected: {s} → {s}", .{ mod_name, imp });
+                // Build the full cycle path from where `imp` first appears in
+                // the DFS stack through to the current node, then close the cycle.
+                var cycle_buf: std.ArrayList(u8) = .{};
+                defer cycle_buf.deinit(self.allocator);
+                var in_cycle = false;
+                for (path.items) |node| {
+                    if (!in_cycle and std.mem.eql(u8, node, imp)) in_cycle = true;
+                    if (in_cycle) {
+                        try cycle_buf.appendSlice(self.allocator, node);
+                        try cycle_buf.appendSlice(self.allocator, " → ");
+                    }
+                }
+                try cycle_buf.appendSlice(self.allocator, imp);
+                _ = try self.reporter.reportFmt(.circular_import, null, "circular import: {s}", .{cycle_buf.items});
             }
         }
 
+        _ = path.pop();
         try in_stack.put(mod_name, false);
     }
 
@@ -626,4 +649,71 @@ test "read module name - no module keyword" {
 test "extractVersion - non-version node" {
     var node = parser.Node{ .int_literal = "42" };
     try std.testing.expect(extractVersion(&node) == null);
+}
+
+/// Build a minimal resolver with the given module→imports pairs (no files/AST).
+fn makeTestResolver(
+    allocator: std.mem.Allocator,
+    reporter: *errors.Reporter,
+    mods: []const struct { name: []const u8, imports: []const []const u8 },
+) !Resolver {
+    var resolver = Resolver.init(allocator, reporter);
+    errdefer resolver.deinit();
+    for (mods) |m| {
+        const name_owned = try allocator.dupe(u8, m.name);
+        const imps_owned = try allocator.alloc([]const u8, m.imports.len);
+        for (m.imports, 0..) |imp, i| imps_owned[i] = try allocator.dupe(u8, imp);
+        const files_owned = try allocator.alloc([]const u8, 0);
+        try resolver.modules.put(name_owned, .{
+            .name = name_owned,
+            .files = files_owned,
+            .imports = imps_owned,
+            .imports_owned = true,
+            .is_root = false,
+            .build_type = .none,
+            .ast = null,
+            .ast_arena = null,
+            .locs = null,
+            .file_offsets = &.{},
+        });
+    }
+    return resolver;
+}
+
+test "checkCircularImports - full cycle path A→B→C→A" {
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    var resolver = try makeTestResolver(std.testing.allocator, &reporter, &.{
+        .{ .name = "A", .imports = &.{"B"} },
+        .{ .name = "B", .imports = &.{"C"} },
+        .{ .name = "C", .imports = &.{"A"} },
+    });
+    defer resolver.deinit();
+
+    try resolver.checkCircularImports();
+
+    try std.testing.expect(reporter.diagnostics.items.len > 0);
+    const msg = reporter.diagnostics.items[0].message;
+    // Full path must contain all three nodes and the arrow separator
+    try std.testing.expect(std.mem.indexOf(u8, msg, "A") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "B") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "C") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "→") != null);
+}
+
+test "checkCircularImports - no cycle" {
+    var reporter = errors.Reporter.init(std.testing.allocator, .debug);
+    defer reporter.deinit();
+
+    var resolver = try makeTestResolver(std.testing.allocator, &reporter, &.{
+        .{ .name = "A", .imports = &.{"B"} },
+        .{ .name = "B", .imports = &.{"C"} },
+        .{ .name = "C", .imports = &.{} },
+    });
+    defer resolver.deinit();
+
+    try resolver.checkCircularImports();
+
+    try std.testing.expect(reporter.diagnostics.items.len == 0);
 }

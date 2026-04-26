@@ -289,6 +289,23 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         all_union_entries.deinit(allocator);
     }
 
+    // Compute the full transitive dep closure for every module once, before the
+    // compile loop. Keys are borrowed from mod_resolver (which outlives this
+    // block). The outer []const []const u8 slices are owned and freed below.
+    var transitive_deps = std.StringHashMapUnmanaged([]const []const u8){};
+    defer {
+        var tc_it = transitive_deps.iterator();
+        while (tc_it.next()) |entry| allocator.free(entry.value_ptr.*);
+        transitive_deps.deinit(allocator);
+    }
+    for (order) |mod_name| {
+        var visited = std.StringHashMapUnmanaged(void){};
+        defer visited.deinit(allocator);
+        var deps_list = std.ArrayListUnmanaged([]const u8){};
+        try collectTransitiveDeps(&mod_resolver, mod_name, &visited, &deps_list, allocator);
+        try transitive_deps.put(allocator, mod_name, try deps_list.toOwnedSlice(allocator));
+    }
+
     // Bundle build-wide shared state for compileOne().
     var ctx: pipeline_context.BuildContext = .{
         .gpa = allocator,
@@ -297,6 +314,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         .all_module_decls = &all_module_decls,
         .prev_iface_hashes = &prev_iface_hashes,
         .module_builds = &module_builds,
+        .transitive_deps = &transitive_deps,
         .reporter = reporter,
         .cli = cli,
         .all_warnings = &all_warnings,
@@ -621,6 +639,25 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     return exe_binary_name orelse try allocator.dupe(u8, "");
 }
 
+/// Collect all transitively reachable module names from `start`, excluding
+/// `start` itself. Results are appended to `result`; strings are borrowed from
+/// `resolver.modules` (no allocation of the name slices themselves).
+fn collectTransitiveDeps(
+    resolver: *module.Resolver,
+    start: []const u8,
+    visited: *std.StringHashMapUnmanaged(void),
+    result: *std.ArrayListUnmanaged([]const u8),
+    allocator: std.mem.Allocator,
+) anyerror!void {
+    const mod = resolver.modules.get(start) orelse return;
+    for (mod.imports) |imp| {
+        if (visited.contains(imp)) continue;
+        try visited.put(allocator, imp, {});
+        try result.append(allocator, imp);
+        try collectTransitiveDeps(resolver, imp, visited, result, allocator);
+    }
+}
+
 /// Compile one module: passes 4 (decl collection) through 11 (Zig codegen).
 /// Returns:
 ///   * normally — module compiled (or skipped via cache hit) successfully
@@ -674,6 +711,23 @@ fn compileOne(
     // recompile.
     const current_iface_hash = try cache.hashInterface(allocator, &mc.decl_collector.table);
 
+    // Persist this module's direct imports so the dep graph is always current.
+    // `comp_cache.deps` is loaded from a previous build; updating it here keeps
+    // it accurate even when imports change between builds.
+    {
+        const put = try ctx.comp_cache.deps.getOrPut(mod_name);
+        if (!put.found_existing) {
+            put.key_ptr.* = try allocator.dupe(u8, mod_name);
+            put.value_ptr.* = .{};
+        } else {
+            for (put.value_ptr.items) |dep| allocator.free(dep);
+            put.value_ptr.clearRetainingCapacity();
+        }
+        for (mod_ptr.imports) |imp| {
+            try put.value_ptr.append(allocator, try allocator.dupe(u8, imp));
+        }
+    }
+
     // Check if module needs recompilation (passes 5–12).
     var own_source_changed = false;
     for (mod_ptr.files) |file| {
@@ -683,15 +737,14 @@ fn compileOne(
         }
     }
 
+    // Check all transitive deps' interface hashes. We use the closure computed
+    // once before the compile loop (rather than just direct deps) so that a dep
+    // two hops away that gains a new public symbol is detected even when the
+    // intermediate module's interface didn't change.
     var dep_interface_changed = false;
     if (!own_source_changed) {
-        if (ctx.comp_cache.deps.get(mod_name)) |dep_list| {
-            for (dep_list.items) |dep_name| {
-                const zig_path = try std.fmt.allocPrint(arena, "{s}/{s}.zig", .{ cache.GENERATED_DIR, dep_name });
-                std.fs.cwd().access(zig_path, .{}) catch {
-                    dep_interface_changed = true;
-                    break;
-                };
+        if (ctx.transitive_deps.get(mod_name)) |all_deps| {
+            for (all_deps) |dep_name| {
                 const prev_hash = ctx.prev_iface_hashes.get(dep_name);
                 const curr_hash = ctx.comp_cache.interface_hashes.get(dep_name);
                 if (prev_hash == null or curr_hash == null or prev_hash.? != curr_hash.?) {
@@ -875,4 +928,94 @@ fn mergeZonConfigs(
 test {
     _ = build_helpers;
     _ = passes;
+}
+
+test "collectTransitiveDeps - diamond graph deduplicates" {
+    // A → B, A → C, B → D, C → D. Transitive deps of A = {B, C, D} (D once).
+    const alloc = std.testing.allocator;
+    var reporter = @import("errors.zig").Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var resolver = module.Resolver.init(alloc, &reporter);
+    defer resolver.deinit();
+
+    // Helper to insert a minimal module entry
+    const put = struct {
+        fn run(r: *module.Resolver, name: []const u8, imports: []const []const u8) !void {
+            const name_owned = try r.allocator.dupe(u8, name);
+            const imps_owned = try r.allocator.alloc([]const u8, imports.len);
+            for (imports, 0..) |imp, i| imps_owned[i] = try r.allocator.dupe(u8, imp);
+            const files_owned = try r.allocator.alloc([]const u8, 0);
+            try r.modules.put(name_owned, .{
+                .name = name_owned,
+                .files = files_owned,
+                .imports = imps_owned,
+                .imports_owned = true,
+                .is_root = false,
+                .build_type = .none,
+                .ast = null,
+                .ast_arena = null,
+                .locs = null,
+                .file_offsets = &.{},
+            });
+        }
+    }.run;
+
+    try put(&resolver, "A", &.{ "B", "C" });
+    try put(&resolver, "B", &.{"D"});
+    try put(&resolver, "C", &.{"D"});
+    try put(&resolver, "D", &.{});
+
+    var visited = std.StringHashMapUnmanaged(void){};
+    defer visited.deinit(alloc);
+    var result = std.ArrayListUnmanaged([]const u8){};
+    defer result.deinit(alloc);
+
+    try collectTransitiveDeps(&resolver, "A", &visited, &result, alloc);
+
+    // D must appear exactly once despite two paths reaching it
+    var d_count: usize = 0;
+    for (result.items) |name| {
+        if (std.mem.eql(u8, name, "D")) d_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), d_count);
+    try std.testing.expectEqual(@as(usize, 3), result.items.len); // B, C, D
+}
+
+test "collectTransitiveDeps - missing dep in resolver is skipped" {
+    const alloc = std.testing.allocator;
+    var reporter = @import("errors.zig").Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+
+    var resolver = module.Resolver.init(alloc, &reporter);
+    defer resolver.deinit();
+
+    // A imports B, but B is not in resolver
+    const name_owned = try alloc.dupe(u8, "A");
+    const imp_owned = try alloc.dupe(u8, "B");
+    const imps = try alloc.alloc([]const u8, 1);
+    imps[0] = imp_owned;
+    const files = try alloc.alloc([]const u8, 0);
+    try resolver.modules.put(name_owned, .{
+        .name = name_owned,
+        .files = files,
+        .imports = imps,
+        .imports_owned = true,
+        .is_root = false,
+        .build_type = .none,
+        .ast = null,
+        .ast_arena = null,
+        .locs = null,
+        .file_offsets = &.{},
+    });
+
+    var visited = std.StringHashMapUnmanaged(void){};
+    defer visited.deinit(alloc);
+    var result = std.ArrayListUnmanaged([]const u8){};
+    defer result.deinit(alloc);
+
+    // Should not error — missing B is silently skipped
+    try collectTransitiveDeps(&resolver, "A", &visited, &result, alloc);
+    // B appears in result (it was in A's imports) but has no further deps
+    try std.testing.expectEqual(@as(usize, 1), result.items.len);
 }

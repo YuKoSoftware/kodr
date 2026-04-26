@@ -76,14 +76,22 @@ fn readZonCache(
 }
 
 /// Serialize a value to a ZON cache file at `path`.
+/// Writes to a sibling `.tmp` file first, then renames atomically so a crash
+/// mid-write can never leave a partially-written cache file.
 fn writeZonCache(path: []const u8, value: anytype) !void {
     try ensureGeneratedDir();
-    const file = try std.fs.cwd().createFile(path, .{});
-    defer file.close();
-    var buf: [8192]u8 = undefined;
-    var w = file.writer(&buf);
-    try std.zon.stringify.serialize(value, .{}, &w.interface);
-    try w.interface.flush();
+    // All callers pass compile-time path constants (max ~25 chars); 512 is safe.
+    var tmp_buf: [512]u8 = undefined;
+    const tmp_path = try std.fmt.bufPrint(&tmp_buf, "{s}.tmp", .{path});
+    {
+        const file = try std.fs.cwd().createFile(tmp_path, .{});
+        defer file.close();
+        var buf: [8192]u8 = undefined;
+        var w = file.writer(&buf);
+        try std.zon.stringify.serialize(value, .{}, &w.interface);
+        try w.interface.flush();
+    }
+    try std.fs.cwd().rename(tmp_path, path);
 }
 
 /// The cache state
@@ -205,25 +213,6 @@ pub const Cache = struct {
         result.value_ptr.* = hash_val;
     }
 
-    /// Check if a module needs recompilation (any file changed or dependency changed)
-    pub fn moduleNeedsRecompile(self: *Cache, module_name: []const u8, files: []const []const u8) !bool {
-        // Check if any source file changed
-        for (files) |file| {
-            if (try self.hasChanged(file)) return true;
-        }
-
-        // Check if any dependency changed
-        const deps = self.deps.get(module_name) orelse return false;
-        for (deps.items) |dep| {
-            // Check if dep module's generated zig file exists
-            const zig_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.zig", .{ GENERATED_DIR, dep });
-            defer self.allocator.free(zig_path);
-            std.fs.cwd().access(zig_path, .{}) catch return true;
-        }
-
-        return false;
-    }
-
     /// Load interface hashes from .orh-cache/interfaces
     /// Load interface hashes from .orh-cache/interfaces (ZON format).
     pub fn loadInterfaceHashes(self: *Cache) !void {
@@ -337,9 +326,12 @@ pub fn saveUnions(unions: []const CachedUnionEntry, allocator: std.mem.Allocator
 }
 
 /// Compute a semantic hash of Orhon source by hashing the token stream.
-/// Whitespace (newlines) and doc comments are excluded so that formatting-only
-/// changes do not invalidate the cache. Token kinds and literal text are both
-/// included so that real code changes always produce a different hash.
+/// Newlines and doc comments are excluded so formatting-only changes do not
+/// invalidate the cache.
+///
+/// Doc comments are excluded because they do not affect code generation — they
+/// are parsed into the `.doc` field on AST nodes but never emitted in generated
+/// Zig. If future docgen integration reads them during codegen, include them here.
 ///
 /// No allocation — the lexer is driven incrementally and XxHash3 is seeded
 /// with the previous result to build a rolling hash.

@@ -30,6 +30,14 @@ pub const BuildContext = struct {
     all_module_decls: *std.StringHashMap(*declarations.DeclTable),
     prev_iface_hashes: *std.StringHashMap(u64),
     module_builds: *std.StringHashMapUnmanaged(module.BuildType),
+    /// Transitive dep closure for each module: module_name → all reachable dep names.
+    /// Computed once in `runPipeline` after `validateAndOrder`; used by `compileOne`
+    /// to check whether any transitive dep's interface changed since last build.
+    /// Keys and dep-name slices are borrowed from `module.Resolver` (which outlives
+    /// `runPipeline`). The outer `[]const []const u8` slice is owned (must be freed).
+    /// ORDERING: `mod_resolver` must be declared before `transitive_deps` in
+    /// `runPipeline` so that defers run in reverse order (transitive_deps freed first).
+    transitive_deps: *const std.StringHashMapUnmanaged([]const []const u8),
 
     // I/O
     reporter: *errors.Reporter,
