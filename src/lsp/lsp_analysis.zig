@@ -14,6 +14,8 @@ const sema = @import("../sema.zig");
 const errors = @import("../errors.zig");
 const cache = @import("../cache.zig");
 const ast_conv = @import("../ast_conv.zig");
+const pipeline_passes = @import("../pipeline_passes.zig");
+const pipeline_context = @import("../pipeline_context.zig");
 const types = @import("../types.zig");
 
 const SymbolInfo = lsp_types.SymbolInfo;
@@ -126,7 +128,11 @@ pub fn formatEnumSig(allocator: std.mem.Allocator, sig: declarations.EnumSig) ![
 // ANALYSIS — run passes 1-9, collect diagnostics + symbols
 // ============================================================
 
-pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !AnalysisResult {
+pub fn runAnalysis(
+    allocator: std.mem.Allocator,
+    project_root: []const u8,
+    stop_after: pipeline_passes.Pass,
+) !AnalysisResult {
     var empty = AnalysisResult{ .diagnostics = &.{}, .symbols = &.{} };
 
     const saved_cwd = std.fs.cwd();
@@ -186,12 +192,20 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
     };
     // order is arena-allocated -- freed automatically by scratch.deinit()
 
-    // Collect symbols from all modules
     var all_symbols: std.ArrayListUnmanaged(SymbolInfo) = .{};
-    lspLog("analysis: processing {d} modules", .{order.len});
+    lspLog("analysis: processing {d} modules (stop_after={})", .{ order.len, stop_after });
 
-    // Passes 4-9 per module -- continue to next module on errors so we
-    // still get symbols from modules that compiled successfully.
+    // Cross-module decl accumulator for pass 5 type resolution.
+    var all_module_decls = std.StringHashMap(*declarations.DeclTable).init(a);
+
+    var modules: std.ArrayList(pipeline_context.ModuleCompile) = .{};
+    try modules.ensureTotalCapacity(a, order.len);
+    defer {
+        var i: usize = modules.items.len;
+        while (i > 0) : (i -= 1) modules.items[i - 1].deinit();
+        modules.deinit(a);
+    }
+
     for (order) |mod_name| {
         const mod_ptr = mod_resolver.modules.getPtr(mod_name) orelse continue;
         const ast = mod_ptr.ast orelse continue;
@@ -200,44 +214,47 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
         const source_file: []const u8 = if (mod_ptr.files.len > 0) mod_ptr.files[0] else "";
         const diag_count_before = reporter.diagnostics.items.len;
 
-        // Convert AST to AstStore for index-based passes (Phase A)
-        var conv = ast_conv.ConvContext.init(a);
-        defer conv.deinit();
-        const ast_root = ast_conv.convertNode(&conv, ast) catch {
-            continue;
-        };
+        try modules.append(a, undefined);
+        const mc = &modules.items[modules.items.len - 1];
+        try mc.init(a, &reporter, mod_name, mod_ptr);
+        mc.decl_collector.locs = locs_ptr;
+        mc.decl_collector.file_offsets = file_offsets;
+        const ma = mc.arena.allocator();
 
-        // Pass 4: Declarations (uses scratch arena; symbol strings use long-lived allocator)
-        var dc = declarations.DeclCollector.init(a, &reporter);
-        dc.locs = locs_ptr;
-        dc.file_offsets = file_offsets;
-        dc.collect(&conv.store, ast_root, &conv.reverse_map) catch {};
+        // Pass 4: Declaration collection (always runs)
+        var conv = ast_conv.ConvContext.init(ma);
+        defer conv.deinit();
+        const ast_root = ast_conv.convertNode(&conv, ast) catch continue;
+        mc.decl_collector.collect(&conv.store, ast_root, &conv.reverse_map) catch {};
+        try all_module_decls.put(mod_name, &mc.decl_collector.table);
+
+        extractSymbols(allocator, &all_symbols, &mc.decl_collector.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
+
+        if (!stop_after.atLeast(.type_resolve)) continue;
+
         var new_err_count: usize = 0;
         for (reporter.diagnostics.items[diag_count_before..]) |d| {
             if (d.severity == .err) new_err_count += 1;
         }
-        if (new_err_count > 0) {
-            // Still extract what symbols we can from partial declarations
-            extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
-            continue;
-        }
+        if (new_err_count > 0) continue;
 
-        // Shared context for passes 5-8 — uses scratch arena allocator
+        // Pass 5: Type resolution
         var sema_ctx = sema.SemanticContext{
-            .allocator = a,
+            .allocator = ma,
             .reporter = &reporter,
-            .decls = &dc.table,
+            .decls = &mc.decl_collector.table,
             .locs = locs_ptr,
             .file_offsets = file_offsets,
+            .all_decls = &all_module_decls,
             .ast = &conv.store,
             .reverse_map = &conv.reverse_map,
         };
         var tr = resolver.TypeResolver.init(&sema_ctx);
+        defer tr.deinit();
         tr.resolve(&conv.store, ast_root) catch {};
+        sema_ctx.type_map = &tr.type_map;
 
-        // Extract symbols from DeclTable + AST locations (even if type resolution had errors).
-        // Symbol strings are allocated with the long-lived allocator so they outlive the arena.
-        extractSymbols(allocator, &all_symbols, &dc.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
+        if (!stop_after.atLeast(.ownership)) continue;
 
         new_err_count = 0;
         for (reporter.diagnostics.items[diag_count_before..]) |d| {
@@ -245,36 +262,41 @@ pub fn runAnalysis(allocator: std.mem.Allocator, project_root: []const u8) !Anal
         }
         if (new_err_count > 0) continue;
 
-        // Pass 6: Ownership (uses scratch arena)
-        var oc = ownership.OwnershipChecker.init(a, &sema_ctx);
+        // Pass 6: Ownership analysis
+        var oc = ownership.OwnershipChecker.init(ma, &sema_ctx);
         oc.check(ast) catch {};
+
+        if (!stop_after.atLeast(.borrow)) continue;
+
         new_err_count = 0;
         for (reporter.diagnostics.items[diag_count_before..]) |d| {
             if (d.severity == .err) new_err_count += 1;
         }
         if (new_err_count > 0) continue;
 
-        // Pass 7: Borrow Checking (uses scratch arena)
-        var bc = borrow.BorrowChecker.init(a, &sema_ctx);
+        // Pass 7: Borrow checking
+        var bc = borrow.BorrowChecker.init(ma, &sema_ctx);
+        defer bc.deinit();
         bc.check(ast) catch {};
+
+        if (!stop_after.atLeast(.propagation)) continue;
+
         new_err_count = 0;
         for (reporter.diagnostics.items[diag_count_before..]) |d| {
             if (d.severity == .err) new_err_count += 1;
         }
         if (new_err_count > 0) continue;
 
-        // Pass 8: Error Propagation (uses scratch arena)
-        var prop_checker = propagation.PropagationChecker.init(a, &sema_ctx);
+        // Pass 8: Error propagation
+        var prop_checker = propagation.PropagationChecker.init(ma, &sema_ctx);
         prop_checker.check(&conv.store, ast_root) catch {};
     }
 
-    // Diagnostics and symbols are allocated with the long-lived allocator so they
-    // survive the scratch arena deinit and can be freed by freeDiagnostics/freeSymbols.
-    const diags = toDiagnostics(allocator, &reporter, project_root) catch
+    const diags = if (stop_after.atLeast(.type_resolve))
+        toDiagnostics(allocator, &reporter, project_root) catch @as([]Diagnostic, &.{})
+    else
         @as([]Diagnostic, &.{});
-    // Dupe the symbol list into a flat slice, then free the ArrayList backing buffer.
-    // The symbol string fields within each SymbolInfo are already long-lived (allocated
-    // by extractSymbols with `allocator`), so only the ArrayList capacity needs freeing.
+
     const symbols = if (all_symbols.items.len > 0) blk: {
         const duped = allocator.dupe(SymbolInfo, all_symbols.items) catch @as([]SymbolInfo, &.{});
         all_symbols.deinit(allocator);
@@ -597,7 +619,7 @@ test "runAnalysis arena does not leak or corrupt returned data" {
     // runAnalysis creates a scratch arena internally; returned diagnostics/symbols
     // must be allocated with the long-lived allocator (std.testing.allocator here)
     // and survive the arena deinit.
-    const result = runAnalysis(std.testing.allocator, ".") catch |err| {
+    const result = runAnalysis(std.testing.allocator, ".", .propagation) catch |err| {
         // Analysis may fail on missing project structure -- that's OK.
         // The important thing is that the arena was cleaned up without error.
         _ = err;
@@ -613,7 +635,7 @@ test "runAnalysis can be called twice without accumulation" {
     // Two sequential calls prove the arena from the first call is fully released.
     // std.testing.allocator detects leaks at test end.
     for (0..2) |_| {
-        const result = runAnalysis(std.testing.allocator, ".") catch {
+        const result = runAnalysis(std.testing.allocator, ".", .propagation) catch {
             continue;
         };
         lsp_types.freeDiagnostics(std.testing.allocator, result.diagnostics);

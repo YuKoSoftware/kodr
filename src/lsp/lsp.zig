@@ -428,7 +428,7 @@ fn runAndPublishWithDiags(
     open_docs: *std.StringHashMap(void),
     old_symbols: []SymbolInfo,
 ) !PublishResult {
-    const result = try runAnalysis(allocator, project_root);
+    const result = try runAnalysis(allocator, project_root, .propagation);
 
     // Free old symbols
     freeSymbols(allocator, old_symbols);
