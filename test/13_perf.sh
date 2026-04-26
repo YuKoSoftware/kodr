@@ -8,7 +8,7 @@ GOLDEN_ROOT="$(dirname "$0")/fixtures/golden"
 LOG="$(dirname "$0")/perf.log"
 TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-FIXTURES=(
+PERF_FIXTURES=(
     basic control structs enums errors matching generics comptime
     slicing cleanup handles interpolation ownership borrow tuples functions
 )
@@ -47,7 +47,7 @@ perf_line() {
     printf "  PERF  %-20s %5dms  %s\n" "$name" "$ms" "$note"
 }
 
-for name in "${FIXTURES[@]}"; do
+for name in "${PERF_FIXTURES[@]}"; do
     fixture_tmp="$TESTDIR/$name"
     cp -r "$GOLDEN_ROOT/$name" "$fixture_tmp"
     rm -rf "$fixture_tmp/.orh-cache" 2>/dev/null || true
