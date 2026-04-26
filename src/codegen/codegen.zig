@@ -1258,3 +1258,68 @@ test "codegen - zigOfRT primitive str" {
     try std.testing.expectEqualStrings("[]const u8", s);
 }
 
+test "codegen - zigOfRT err" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var gen = CodeGen.init(alloc, &reporter, true);
+    defer gen.deinit();
+    try std.testing.expectEqualStrings("anyerror", try gen.zigOfRT(.err));
+}
+
+test "codegen - zigOfRT slice" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var gen = CodeGen.init(alloc, &reporter, true);
+    defer gen.deinit();
+    const elem = RT{ .primitive = .i32 };
+    try std.testing.expectEqualStrings("[]i32", try gen.zigOfRT(.{ .slice = &elem }));
+}
+
+test "codegen - zigOfRT error union" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var gen = CodeGen.init(alloc, &reporter, true);
+    defer gen.deinit();
+    const members = [_]RT{ .err, .{ .primitive = .i32 } };
+    try std.testing.expectEqualStrings("anyerror!i32",
+        try gen.zigOfRT(.{ .union_type = &members }));
+}
+
+test "codegen - zigOfRT null union" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var gen = CodeGen.init(alloc, &reporter, true);
+    defer gen.deinit();
+    const members = [_]RT{ .null_type, .{ .primitive = .string } };
+    try std.testing.expectEqualStrings("?[]const u8",
+        try gen.zigOfRT(.{ .union_type = &members }));
+}
+
+test "codegen - zigOfRT ptr" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var gen = CodeGen.init(alloc, &reporter, true);
+    defer gen.deinit();
+    const elem = RT{ .named = "Point" };
+    try std.testing.expectEqualStrings("*const Point",
+        try gen.zigOfRT(.{ .ptr = .{ .kind = .const_ref, .elem = &elem } }));
+    try std.testing.expectEqualStrings("*Point",
+        try gen.zigOfRT(.{ .ptr = .{ .kind = .mut_ref, .elem = &elem } }));
+}
+
+test "codegen - zigOfRT generic" {
+    const alloc = std.testing.allocator;
+    var reporter = errors.Reporter.init(alloc, .debug);
+    defer reporter.deinit();
+    var gen = CodeGen.init(alloc, &reporter, true);
+    defer gen.deinit();
+    const arg = RT{ .primitive = .i32 };
+    try std.testing.expectEqualStrings("List(i32)",
+        try gen.zigOfRT(.{ .generic = .{ .name = "List", .args = &.{arg} } }));
+}
+
