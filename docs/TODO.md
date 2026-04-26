@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25), T4 done (v0.53.11, 2026-04-25), T5 done (v0.53.12, 2026-04-25), T6 done (v0.53.13, 2026-04-25), T7 done (v0.53.14, 2026-04-25), T8a done (v0.53.16, 2026-04-25), T8b done (v0.53.17, 2026-04-25), T9 done (v0.53.18, 2026-04-25), T10 done (v0.53.20, 2026-04-25), T11 done (v0.53.21, 2026-04-26)
+- **Active project:** Phase 2 (Diagnostics + Testing Overhaul) — T1 done (v0.53.7), T2 done (v0.53.8), T3 done (v0.53.10, 2026-04-25), T4 done (v0.53.11, 2026-04-25), T5 done (v0.53.12, 2026-04-25), T6 done (v0.53.13, 2026-04-25), T7 done (v0.53.14, 2026-04-25), T8a done (v0.53.16, 2026-04-25), T8b done (v0.53.17, 2026-04-25), T9 done (v0.53.18, 2026-04-25), T10 done (v0.53.20, 2026-04-25), T11 done (v0.53.21, 2026-04-26), T12 done (v0.53.22, 2026-04-26)
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **T11 complete** (v0.53.21, 2026-04-26). ⬅ **RESUME HERE: T12** — Property-based pipeline tests.
+> **T12 complete** (v0.53.22, 2026-04-26). ⬅ **RESUME HERE: Phase 3 (P1)** — `ModuleCompile` struct with per-module arena, or Phase 4 (X1) — table-driven CLI parser (both unblocked).
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -193,7 +193,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 - [x] **T9** 🟡 **Fixture reorganization** [F15] — subdirs `fixtures/parse/`, `fixtures/borrow/`, `fixtures/runtime/`, `fixtures/codegen/`. Per-fixture `.expect` sidecar with expected exit code, error codes, stderr snippets.
 - [x] **T10** 🟡 **Expand snapshot coverage** — one snapshot per language feature category. Land on top of D3's golden-file infrastructure.
 - [x] **T11** 🟡 **Perf baseline tests** [F17] — done v0.53.21, 2026-04-26 — `test/13_perf.sh` times `orhon build` for all 16 golden fixtures, appends results to `test/perf.log`, prints per-fixture wall-time deltas vs. previous run.
-- [ ] **T12** 🟡 **Property-based pipeline tests** [existing TODO item, absorbed] — parse→pretty-print round-trip, type check idempotence, codegen `zig ast-check` validity. Depends on T8.
+- [x] **T12** 🟡 **Property-based pipeline tests** — done v0.53.22, 2026-04-26 — `test/14_props.sh` checks `zig ast-check` validity and formatter idempotence across all 16 golden fixtures; wired into `testall.sh`.
 
 ---
 

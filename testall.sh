@@ -51,6 +51,7 @@ TESTS=(
     "$SCRIPT_DIR/test/10_runtime.sh"
     "$SCRIPT_DIR/test/11_errors.sh"
     "$SCRIPT_DIR/test/12_golden.sh"
+    "$SCRIPT_DIR/test/14_props.sh"
 )
 
 for test_script in "${TESTS[@]}"; do
