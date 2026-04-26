@@ -703,9 +703,6 @@ fn compileOne(
     if (try passes.validateMainReserved(ast, mod_ptr, locs_ptr, file_offsets, reporter))
         return error.AbortBuild;
 
-    // ── Check for unused imports ────────────────────────
-    try passes.checkUnusedImports(arena, ast, mod_ptr, locs_ptr, file_offsets, reporter);
-
     // Compute this module's current interface hash (after pass 4, before
     // skip decision). Stored here so it is available whether or not we
     // recompile.

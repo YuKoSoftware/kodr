@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **Session bookmark** (v0.53.27, 2026-04-26). P4 done — `zigOfRT(ResolvedType)` as pure type emitter; `typeToZig` thin wrapper; `binary_expr` branch deleted. ⬅ **RESUME HERE: Phase 3 (P5)** — rewrite `checkUnusedImports` to use resolver data (independent); or **Phase 4 (X1)** — table-driven CLI parser (independent).
+> **Session bookmark** (v0.53.28, 2026-04-26). P5 done — `checkUnusedImports` now uses `TypeResolver.used_imports` set; no more file I/O or substring search; moved to after pass 5. ⬅ **RESUME HERE: Phase 3 (P6)** — source-location propagation from generated Zig to `.orh`; or **Phase 3 (P7)** — `pre_stmts` interpolation hoisting as stack of frames; or **Phase 4 (X1)** — table-driven CLI parser (independent).
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -211,7 +211,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 ### Sub-project 3b — Codegen quality
 
 - [x] **P4** 🟠 **Rewrite `typeToZig` as pure function over `ResolvedType`** [H2a] — done v0.53.27, 2026-04-26 — `zigOfRT(ResolvedType)` replaces dual AST-walking paths; `binary_expr` branch deleted; `anyopaque` fallbacks replaced by internal error
-- [ ] **P5** 🟠 **Rewrite `checkUnusedImports` to use resolver data** [H2b] — `src/pipeline_passes.zig:120-130`. Currently substring-searches raw source for `"<alias>."` with all the false positives/negatives that implies. Re-reads files every build. Fix: when resolver resolves a qualified `mod.X`, mark import as used on the `AstStore` side. Delete the textual scan.
+- [x] **P5** 🟠 **Rewrite `checkUnusedImports` to use resolver data** [H2b] — done v0.53.28, 2026-04-26 — `TypeResolver.used_imports` set populated when identifier resolves as module name prefix; `checkUnusedImports` does set lookup instead of file I/O + substring search; moved to after pass 5 inside `runSemanticAndCodegen`
 - [ ] **P6** 🟠 **Source-location propagation from generated Zig to `.orh`** [H2c] — all of `src/codegen/*.zig`. Zig errors currently show `.orh-cache/generated/foo.zig:412:9`; users reverse-map. Fix: populate `(generated_file, line) → (orh_file, line)` side-table during emit. `reformatZigErrors` becomes an exact lookup.
 - [ ] **P7** 🟠 **`pre_stmts` interpolation hoisting as stack of frames** [H2g] — `src/codegen/codegen.zig:64`. Global mutable buffer; nested interpolation can clobber. No assertion empty at statement boundaries → silent data loss if new statement codegen forgets `flushPreStmts`. Fix: stack of frames, auto-flush at statement boundaries, assert empty at function boundary.
 

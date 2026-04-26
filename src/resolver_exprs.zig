@@ -84,7 +84,10 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
             if (builtins.CompilerFunc.fromName(id_name) != null) return RT{ .named = id_name };
             // Known module names — used as qualified access prefixes (module.Type, module.func)
             if (self.ctx.all_decls) |ad| {
-                if (ad.contains(id_name)) return RT.unknown;
+                if (ad.contains(id_name)) {
+                    try self.markImportUsed(id_name);
+                    return RT.unknown;
+                }
             }
 
             // Enum variants and the 'else' match pattern are used as bare

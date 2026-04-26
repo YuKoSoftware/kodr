@@ -66,6 +66,10 @@ pub const TypeResolver = struct {
     reverse_map: ?*const std.AutoHashMap(AstNodeIndex, *parser.Node) = null,
     /// Module names imported with `use` — their types are available unqualified.
     included_modules: std.ArrayListUnmanaged([]const u8) = .{},
+    /// Module names that were actually used as qualified-access prefixes during
+    /// resolution (e.g., `mod.X` → marks "mod" used). Keyed by the name as it
+    /// appears in code, which matches all_decls keys. Consumed by checkUnusedImports.
+    used_imports: std.StringHashMapUnmanaged(void) = .{},
 
     pub fn init(ctx: *const sema.SemanticContext) TypeResolver {
         return .{
@@ -79,6 +83,11 @@ pub const TypeResolver = struct {
         self.type_map.deinit(self.ctx.allocator);
         self.ast_type_map.deinit(self.ctx.allocator);
         self.included_modules.deinit(self.ctx.allocator);
+        self.used_imports.deinit(self.ctx.allocator);
+    }
+
+    pub fn markImportUsed(self: *TypeResolver, name: []const u8) !void {
+        try self.used_imports.put(self.ctx.allocator, name, {});
     }
 
     /// Look up the original *parser.Node for a given AstNodeIndex.

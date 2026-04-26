@@ -89,16 +89,13 @@ pub fn validateMainReserved(
 }
 
 /// Check for unused imports and emit warnings.
-/// Scans module source files for "importname." qualifier patterns.
+/// Uses the resolver's used_imports set — populated during pass 5 whenever a
+/// module name is resolved as a qualified-access prefix (e.g., `mod.X`).
 /// `use` (include) imports are always considered used since they merge symbols.
 /// Library root modules (#build = static/dynamic) are skipped — they import
 /// modules to expose them, not necessarily to use them directly.
-///
-/// `allocator` should be the per-module arena (`mc.arena.allocator()`).
-/// All file-content allocations are scratch and freed when the function returns
-/// or when the arena is destroyed.
 pub fn checkUnusedImports(
-    allocator: std.mem.Allocator,
+    used_imports: *const std.StringHashMapUnmanaged(void),
     ast: *parser.Node,
     mod_ptr: *module.Module,
     locs_ptr: ?*const parser.LocMap,
@@ -114,20 +111,6 @@ pub fn checkUnusedImports(
         if (std.mem.indexOf(u8, file, ".orh-cache/std/") != null) return;
     }
 
-    // Read all source files for this module into one buffer
-    var source_parts: std.ArrayListUnmanaged([]const u8) = .{};
-    defer {
-        for (source_parts.items) |s| allocator.free(s);
-        source_parts.deinit(allocator);
-    }
-    for (mod_ptr.files) |file| {
-        const content = std.fs.cwd().readFileAlloc(allocator, file, 10 * 1024 * 1024) catch continue;
-        source_parts.append(allocator, content) catch {
-            allocator.free(content);
-            continue;
-        };
-    }
-
     for (ast.program.imports) |imp_node| {
         if (imp_node.* != .import_decl) continue;
         const imp = imp_node.import_decl;
@@ -139,19 +122,8 @@ pub fn checkUnusedImports(
         if (imp.scope != null and std.mem.eql(u8, imp.scope.?, "std")) continue;
 
         const ref_name = imp.alias orelse imp.path;
-        const prefix = try std.fmt.allocPrint(allocator, "{s}.", .{ref_name});
-        defer allocator.free(prefix);
 
-        // Search source text for "modname." qualifier pattern
-        var used = false;
-        for (source_parts.items) |source| {
-            if (std.mem.indexOf(u8, source, prefix) != null) {
-                used = true;
-                break;
-            }
-        }
-
-        if (!used) {
+        if (!used_imports.contains(ref_name)) {
             const loc = module.resolveNodeLoc(locs_ptr, file_offsets, imp_node);
             _ = try reporter.warnFmt(.unused_import, loc, "unused import: '{s}'", .{ref_name});
         }
@@ -216,6 +188,8 @@ pub fn runSemanticAndCodegen(
 
     try type_resolver.resolve(&conv.store, ast_root);
     if (reporter.hasErrors()) return null;
+
+    try checkUnusedImports(&type_resolver.used_imports, ast, mc.mod_ptr, locs_ptr, file_offsets, reporter);
 
     // Expose the resolver's type_map so downstream passes (borrow, propagation)
     // can look up receiver types and other node-level type info. CB1: borrow
