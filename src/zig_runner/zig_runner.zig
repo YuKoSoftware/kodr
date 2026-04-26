@@ -212,6 +212,9 @@ pub const ZigRunner = struct {
     /// Parse a Zig error line ("path:line:col: …") and return the mapped .orh SourceLoc.
     /// Returns null if the path is not in source_maps or has no entry ≤ zig_line.
     fn mapZigLine(self: *const ZigRunner, line: []const u8) ?errors.SourceLoc {
+        // Note: Windows absolute paths (C:\...) will find the drive-letter colon first,
+        // producing module_name = "C". The source_maps lookup returns null → falls through
+        // to the generic error formatter. Acceptable for now (Linux-only target).
         const first_colon = std.mem.indexOfScalar(u8, line, ':') orelse return null;
         const path = line[0..first_colon];
         const after_path = line[first_colon + 1..];

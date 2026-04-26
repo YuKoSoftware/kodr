@@ -367,6 +367,8 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     try cache.saveUnions(all_union_entries.items, allocator);
 
     if (cli.command == .@"test") {
+        // Note: source_maps not populated for test runner — runTests uses formatTestOutput,
+        // not reformatZigErrors, so the source map is not needed here.
         var runner = zig_runner.ZigRunner.init(allocator, reporter, cli.verbose) catch |err| {
             if (err == error.ZigNotFound) return null;
             return err;
