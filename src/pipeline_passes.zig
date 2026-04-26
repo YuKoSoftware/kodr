@@ -23,6 +23,27 @@ const mir_store_mod = @import("mir_store.zig");
 const mir_builder_mod = @import("mir_builder.zig");
 const pipeline_context = @import("pipeline_context.zig");
 
+/// Named stop points for the per-module compilation pass sequence.
+/// Numeric values match the pass numbers in COMPILER.md; comparison via
+/// `atLeast` determines whether a pass is included in an analysis run.
+/// Used by the LSP to gate how deep analysis runs per request type:
+///   completion  → .decl_collect  (pass 4 — symbol table only)
+///   hover       → .type_resolve  (pass 5 — adds resolved types)
+///   diagnostics → .propagation   (pass 8 — full semantic checks)
+pub const Pass = enum(u8) {
+    decl_collect = 4,
+    type_resolve = 5,
+    ownership = 6,
+    borrow = 7,
+    propagation = 8,
+    mir_build = 9,
+    codegen = 10,
+
+    pub fn atLeast(self: Pass, threshold: Pass) bool {
+        return @intFromEnum(self) >= @intFromEnum(threshold);
+    }
+};
+
 /// Validate 'main' as reserved name in a module's top-level declarations.
 pub fn validateMainReserved(
     ast: *parser.Node,
@@ -273,4 +294,13 @@ pub fn runSemanticAndCodegen(
     try cache.writeGeneratedZig(mc.mod_name, cg.getOutput(), arena);
 
     return cg.getOutput();
+}
+
+test "Pass.atLeast" {
+    try std.testing.expect(Pass.propagation.atLeast(.type_resolve));
+    try std.testing.expect(Pass.propagation.atLeast(.propagation));
+    try std.testing.expect(!Pass.decl_collect.atLeast(.type_resolve));
+    try std.testing.expect(Pass.codegen.atLeast(.codegen));
+    try std.testing.expect(Pass.codegen.atLeast(.decl_collect));
+    try std.testing.expect(!Pass.ownership.atLeast(.borrow));
 }
