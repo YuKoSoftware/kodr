@@ -228,6 +228,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 - [ ] **X4** 🟡 **`orhon check` command** [F22] — passes 1-9 only, no MIR/codegen/Zig invocation. Standard in cargo/swift/go. CI speed-up + pre-commit hook material. Already implemented internally for LSP.
 - [ ] **X5** 🟡 **Safer `addtopath`** [F21] — `src/commands.zig:212-314` edits shell rc files directly with no backup, no `--dry-run`, no Windows handling. Fix: write `<rc>.orhon-backup` before editing, print diff, support `--dry-run`; long-term suggest the user adds the export line themselves.
 - [ ] **X6** 🟡 **Versioning policy doc + CI workflow** — pre-1.0 has no documented breaking-change policy; no `.github/workflows/` or equivalent (releases ship without recorded green run on clean machine). Write `docs/versioning.md`; land a minimal CI config.
+- [ ] **X7** 🟡 **Per-command help** — `orhon build --help` currently shows the generic help page. Fix: each command declares its own flag list and description string; `--help` after a command dispatches to that command's help instead of the global page.
 
 ---
 

@@ -149,7 +149,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         std.process.exit(1);
     }
 
-    // Handle init's project name argument
+    // Handle positional arguments for commands that take them
     if (cli.command == .init) {
         if (args.len >= 3) {
             cli.project_name = try allocator.dupe(u8, args[2]);
@@ -164,10 +164,18 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
             }
             cli.project_name = try allocator.dupe(u8, dir_name);
         }
+    } else if (cli.command == .analysis) {
+        if (args.len >= 3) {
+            cli.source_dir = try allocator.dupe(u8, args[2]);
+        }
     }
 
-    // Parse flags
-    var i: usize = 2;
+    // Parse flags — start past any positional arg consumed above
+    const flags_start: usize = switch (cli.command) {
+        .init, .analysis => 3,
+        else => 2,
+    };
+    var i: usize = flags_start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         const target_map = std.StaticStringMap(BuildTarget).initComptime(.{
@@ -237,8 +245,8 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         } else if (std.mem.eql(u8, arg, "-Werror")) {
             cli.werror = true;
         } else {
-            // Treat as source directory
-            cli.source_dir = try allocator.dupe(u8, arg);
+            std.debug.print("error: unknown argument '{s}'\n", .{arg});
+            std.process.exit(1);
         }
     }
 
