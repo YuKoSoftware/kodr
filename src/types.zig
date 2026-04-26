@@ -397,6 +397,8 @@ pub fn resolveTypeNode(alloc: std.mem.Allocator, node: *parser.Node) anyerror!Re
         // Integer literal in type position (e.g. Vector(4, f32) size arg) — preserve
         // the text so zigOfRTInner can extract it for @Vector(N, T) emission.
         .int_literal => |n| .{ .named = n },
+        // null literal in type-union position: (null | T) binary_expr leaf
+        .null_literal => .null_type,
 
         // Non-type AST nodes (77+ variants) — only type_* nodes resolve to types
         else => .unknown,

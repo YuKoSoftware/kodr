@@ -505,22 +505,6 @@ pub const CodeGen = struct {
         return s;
     }
 
-    /// Collect all leaf members from a tree of binary '|' expressions.
-    fn collectBinaryUnionMembers(self: *CodeGen, b: parser.BinaryOp, out: *std.ArrayListUnmanaged(*parser.Node)) !void {
-        // Recurse left
-        if (b.left.* == .binary_expr and b.left.binary_expr.op == .bit_or) {
-            try self.collectBinaryUnionMembers(b.left.binary_expr, out);
-        } else {
-            try out.append(self.allocator, b.left);
-        }
-        // Recurse right
-        if (b.right.* == .binary_expr and b.right.binary_expr.op == .bit_or) {
-            try self.collectBinaryUnionMembers(b.right.binary_expr, out);
-        } else {
-            try out.append(self.allocator, b.right);
-        }
-    }
-
     /// Sanitize a type string into a valid Zig identifier for union tag names.
     /// Replaces non-alphanumeric/underscore characters with underscores,
     /// collapsing runs of underscores into one.
@@ -545,50 +529,7 @@ pub const CodeGen = struct {
         return try self.allocTypeStr("{s}", .{buf.items});
     }
 
-    /// Build a `_unions.OrhonUnionN(T0, T1, ...)` generic instantiation for a
-    /// set of union member AST nodes. Members are sorted canonically by Orhon
-    /// name so positional tags agree with the annotator and match-arm emitter.
-    /// Sets `needs_unions_import = true` and registers the arity with the
-    /// shared registry as a side effect.
-    fn canonicalUnionRef(self: *CodeGen, members: []const *parser.Node) ![]const u8 {
-        const Pair = struct { name: []const u8, zig: []const u8 };
-        var pairs = std.ArrayListUnmanaged(Pair){};
-        defer pairs.deinit(self.allocator);
-        for (members) |m| {
-            const name = if (m.* == .type_named) m.type_named else try self.typeToZig(m);
-            const zig = try self.typeToZig(m);
-            try pairs.append(self.allocator, .{ .name = name, .zig = zig });
-        }
-
-        // Canonical sort by member name (matches union_sort and the annotator)
-        std.mem.sort(Pair, pairs.items, {}, struct {
-            fn lt(_: void, a: Pair, b: Pair) bool {
-                return std.mem.order(u8, a.name, b.name) == .lt;
-            }
-        }.lt);
-
-        const arity = pairs.items.len;
-
-        // Register arity with the shared registry so codegen_unions emits
-        // enough factories. Safe to skip if the registry is unavailable.
-        if (self.union_registry) |reg| {
-            try reg.registerArity(self.current_module_name, arity);
-        }
-
-        var buf = std.ArrayListUnmanaged(u8){};
-        defer buf.deinit(self.allocator);
-        try buf.writer(self.allocator).print("_unions.OrhonUnion{d}(", .{arity});
-        for (pairs.items, 0..) |p, i| {
-            if (i > 0) try buf.appendSlice(self.allocator, ", ");
-            try buf.appendSlice(self.allocator, p.zig);
-        }
-        try buf.append(self.allocator, ')');
-
-        self.needs_unions_import = true;
-        return try self.allocTypeStr("{s}", .{buf.items});
-    }
-
-    /// Same as canonicalUnionRef but operates on resolved RT members.
+    /// Build a `_unions.OrhonUnionN` instantiation from resolved RT members.
     /// Sort key: RT.name() for flat types (.named, .primitive, .err, .null_type, .type_param),
     /// Zig output string for compound types — matches the annotator's sort order.
     fn canonicalUnionRefRT(self: *CodeGen, members: []const RT) anyerror![]const u8 {
@@ -764,203 +705,48 @@ pub const CodeGen = struct {
     }
 
     pub fn typeToZig(self: *CodeGen, node: *parser.Node) anyerror![]const u8 {
-        return switch (node.*) {
-            .type_named => |name| {
-                if (types.Primitive.fromName(name)) |p| switch (p) {
-                    .err => return "anyerror",
-                    .this, .self_deprecated => if (self.in_struct) return "@This()",
-                    else => {},
-                };
-                // Inside a generic struct, the struct's own name also maps to @This()
-                if (self.generic_struct_name) |gsn| {
-                    if (std.mem.eql(u8, name, gsn)) return "@This()";
+        // compiler_func @typeOf(val) in type-alias position: const T: type = @typeOf(val)
+        if (node.* == .compiler_func) {
+            const cf = node.compiler_func;
+            if (std.mem.eql(u8, cf.name, "typeOf") and cf.args.len > 0) {
+                return try self.allocTypeStr("@TypeOf({s})", .{exprToString(cf.args[0])});
+            }
+            _ = try self.reporter.reportFmt(.internal_zig_codegen, null,
+                "internal: unexpected compiler_func '{s}' in type position", .{cf.name});
+            return error.CompileError;
+        }
+        // type_tuple_named: preserve default field values (RT.TupleField drops them)
+        if (node.* == .type_tuple_named) {
+            const fields = node.type_tuple_named;
+            var buf = std.ArrayListUnmanaged(u8){};
+            defer buf.deinit(self.allocator);
+            try buf.appendSlice(self.allocator, "struct { ");
+            for (fields) |f| {
+                const ft = try self.typeToZig(f.type_node);
+                if (f.default) |d| {
+                    try buf.writer(self.allocator).print("{s}: {s} = {s}, ", .{ f.name, ft, exprToString(d) });
+                } else {
+                    try buf.writer(self.allocator).print("{s}: {s}, ", .{ f.name, ft });
                 }
-                return types.Primitive.nameToZig(name);
-            },
-            .type_slice => |elem| blk: {
-                const inner = try self.typeToZig(elem);
-                break :blk try self.allocTypeStr("[]{s}", .{inner});
-            },
-            .type_array => |a| blk: {
-                const inner = try self.typeToZig(a.elem);
-                const size_text = if (a.size.* == .int_literal) a.size.int_literal else "0";
-                break :blk try self.allocTypeStr("[{s}]{s}", .{ size_text, inner });
-            },
-            .type_union => |u| blk: {
-                // Check for Error/null union patterns first
-                var has_error = false;
-                var has_null = false;
-                var other_types = std.ArrayListUnmanaged(*parser.Node){};
-                defer other_types.deinit(self.allocator);
-                for (u) |t| {
-                    if (t.* == .type_named and types.Primitive.fromName(t.type_named) == .err) {
-                        has_error = true;
-                    } else if (t.* == .type_named and types.Primitive.fromName(t.type_named) == .null_type) {
-                        has_null = true;
-                    } else {
-                        try other_types.append(self.allocator, t);
-                    }
-                }
-                // (Error | T) → anyerror!T, (null | T) → ?T, (null | Error | T) → ?anyerror!T
-                if (has_error or has_null) {
-                    // Build the inner type from remaining members
-                    const inner_zig = if (other_types.items.len == 1)
-                        try self.typeToZig(other_types.items[0])
-                    else inner: {
-                        // Multiple remaining types → _unions.OrhonUnion_*
-                        break :inner try self.canonicalUnionRef(other_types.items);
-                    };
-                    if (has_null and has_error) {
-                        break :blk try self.allocTypeStr("?anyerror!{s}", .{inner_zig});
-                    } else if (has_error) {
-                        break :blk try self.allocTypeStr("anyerror!{s}", .{inner_zig});
-                    } else {
-                        break :blk try self.allocTypeStr("?{s}", .{inner_zig});
-                    }
-                }
-                // Regular arbitrary union: (i32 | f32 | str) → _unions.OrhonUnion_*
-                break :blk try self.canonicalUnionRef(u);
-            },
-            .type_ptr => |p| blk: {
-                const inner = try self.typeToZig(p.elem);
-                break :blk switch (p.kind) {
-                    .const_ref => try self.allocTypeStr("*const {s}", .{inner}),
-                    .mut_ref => try self.allocTypeStr("*{s}", .{inner}),
-                };
-            },
-            .type_func => |f| blk: {
-                var params_str = std.ArrayListUnmanaged(u8){};
-                defer params_str.deinit(self.allocator);
-                for (f.params, 0..) |p, i| {
-                    if (i > 0) try params_str.appendSlice(self.allocator, ", ");
-                    try params_str.appendSlice(self.allocator, try self.typeToZig(p));
-                }
-                const ret = try self.typeToZig(f.ret);
-                break :blk try self.allocTypeStr("*const fn ({s}) {s}",
-                    .{ params_str.items, ret });
-            },
-            .type_generic => |g| blk: {
-                if (types.Primitive.fromName(g.name) == .vector) {
-                    // Vector(N, T) → @Vector(N, T)
-                    if (g.args.len >= 2) {
-                        const size_str = if (g.args[0].* == .int_literal) g.args[0].int_literal else "0";
-                        const elem = try self.typeToZig(g.args[1]);
-                        break :blk try self.allocTypeStr("@Vector({s}, {s})", .{ size_str, elem });
-                    }
-                }
-                // Inside a generic struct, self-references use @This()
-                if (self.generic_struct_name) |gsn| {
-                    if (std.mem.eql(u8, g.name, gsn)) break :blk "@This()";
-                }
-
-                // Generic type — Name(T, U) → Name(zigT, zigU)
-                if (g.args.len > 0) {
-                    var buf = std.ArrayListUnmanaged(u8){};
-                    defer buf.deinit(self.allocator);
-                    try buf.appendSlice(self.allocator, g.name);
-                    try buf.append(self.allocator, '(');
-                    for (g.args, 0..) |arg, ai| {
-                        if (ai > 0) try buf.appendSlice(self.allocator, ", ");
-                        const zig_type = try self.typeToZig(arg);
-                        try buf.appendSlice(self.allocator, zig_type);
-                    }
-                    try buf.append(self.allocator, ')');
-                    break :blk try self.allocTypeStr("{s}", .{buf.items});
-                }
-                break :blk g.name;
-            },
-            .type_tuple_named => |fields| blk: {
-                var buf = std.ArrayListUnmanaged(u8){};
-                defer buf.deinit(self.allocator);
-                try buf.appendSlice(self.allocator, "struct { ");
-                for (fields) |f| {
-                    const ft = try self.typeToZig(f.type_node);
-                    if (f.default) |d| {
-                        // Emit field with default: name: type = value
-                        const dv = exprToString(d);
-                        try buf.writer(self.allocator).print("{s}: {s} = {s}, ", .{ f.name, ft, dv });
-                    } else {
-                        try buf.writer(self.allocator).print("{s}: {s}, ", .{ f.name, ft });
-                    }
-                }
-                try buf.appendSlice(self.allocator, "}");
-                break :blk try self.allocTypeStr("{s}", .{buf.items});
-            },
-            // @typeOf(val) in type-alias position: const T: type = @typeOf(val)
-            .compiler_func => |cf| blk: {
-                if (std.mem.eql(u8, cf.name, "typeOf") and cf.args.len > 0) {
-                    const arg_str = exprToString(cf.args[0]);
-                    break :blk try self.allocTypeStr("@TypeOf({s})", .{arg_str});
-                }
-                break :blk "anyopaque";
-            },
-            // cast(i64, x) — type arg parsed as identifier by parseExpr
-            .identifier => |name| types.Primitive.nameToZig(name),
-            // Generic type constructors in expression position: List(T), Map(K,V), etc.
-            // In type alias context (const Name: type = Ptr(u8)), the RHS is a call_expr.
-            // Reuse the type_generic branch by extracting callee name and arg types.
-            .call_expr => |c| blk: {
-                const callee_name = if (c.callee.* == .identifier) c.callee.identifier else break :blk "anyopaque";
-                // Reuse type_generic logic by treating call_expr as type_generic
-                const g_node = try self.allocator.create(parser.Node);
-                g_node.* = .{ .type_generic = .{ .name = callee_name, .args = c.args } };
-                defer self.allocator.destroy(g_node);
-                break :blk try self.typeToZig(g_node);
-            },
-            // Binary expr in type alias context: (null | T) or (Error | T) parsed as binary '|'
-            // Try to detect error/null union patterns.
-            .binary_expr => |b| blk: {
-                if (b.op != .bit_or) break :blk "anyopaque";
-                // Check for (Error | T) or (null | T) patterns
-                const left_is_error = b.left.* == .identifier and types.Primitive.fromName(b.left.identifier) == .err;
-                const left_is_null = b.left.* == .null_literal;
-                if (left_is_error) {
-                    const inner = try self.typeToZig(b.right);
-                    break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
-                }
-                if (left_is_null) {
-                    const inner = try self.typeToZig(b.right);
-                    break :blk try self.allocTypeStr("?{s}", .{inner});
-                }
-                // Regular arbitrary union: (A | B) → _unions.OrhonUnion_*
-                // For 3+ members, lift null/Error variants to ?/anyerror! wrappers.
-                var members = std.ArrayListUnmanaged(*parser.Node){};
-                defer members.deinit(self.allocator);
-                try self.collectBinaryUnionMembers(b, &members);
-                var has_error = false;
-                var has_null = false;
-                var others = std.ArrayListUnmanaged(*parser.Node){};
-                defer others.deinit(self.allocator);
-                for (members.items) |m| {
-                    if (m.* == .null_literal or
-                        (m.* == .type_named and types.Primitive.fromName(m.type_named) == .null_type))
-                    {
-                        has_null = true;
-                    } else if ((m.* == .identifier and types.Primitive.fromName(m.identifier) == .err) or
-                        (m.* == .type_named and types.Primitive.fromName(m.type_named) == .err))
-                    {
-                        has_error = true;
-                    } else {
-                        try others.append(self.allocator, m);
-                    }
-                }
-                if (has_null or has_error) {
-                    const inner = if (others.items.len == 1)
-                        try self.typeToZig(others.items[0])
-                    else
-                        try self.canonicalUnionRef(others.items);
-                    if (has_null and has_error) {
-                        break :blk try self.allocTypeStr("?anyerror!{s}", .{inner});
-                    } else if (has_error) {
-                        break :blk try self.allocTypeStr("anyerror!{s}", .{inner});
-                    } else {
-                        break :blk try self.allocTypeStr("?{s}", .{inner});
-                    }
-                }
-                break :blk try self.canonicalUnionRef(members.items);
-            },
-            else => "anyopaque",
-        };
+            }
+            try buf.appendSlice(self.allocator, "}");
+            return try self.allocTypeStr("{s}", .{buf.items});
+        }
+        // call_expr in type-alias position where callee is not a bare identifier
+        // (e.g. module.Type(T) RHS). Handled before resolveTypeNode since
+        // resolveTypeNode returns .unknown for non-identifier callees.
+        if (node.* == .call_expr) {
+            const c = node.call_expr;
+            if (c.callee.* != .identifier) return "anyopaque";
+        }
+        // binary_expr in type-alias position with non-bit_or op.
+        if (node.* == .binary_expr and node.binary_expr.op != .bit_or) return "anyopaque";
+        // All other type-position nodes: lower to RT via a scratch arena, then emit.
+        var scratch = std.heap.ArenaAllocator.init(self.allocator);
+        defer scratch.deinit();
+        const rt = try types.resolveTypeNode(scratch.allocator(), node);
+        if (rt == .unknown or rt == .inferred) return "anyopaque";
+        return self.zigOfRT(rt);
     }
 };
 
