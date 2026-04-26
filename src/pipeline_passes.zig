@@ -267,6 +267,8 @@ pub fn runSemanticAndCodegen(
     // Write generated .zig file to cache
     try cache.writeGeneratedZig(mc.mod_name, cg.getOutput(), arena);
 
+    mc.source_map = try arena.dupe(module.SourceMapEntry, cg.getSourceMap());
+
     return cg.getOutput();
 }
 

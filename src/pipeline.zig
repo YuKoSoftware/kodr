@@ -607,6 +607,11 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         }
     }
 
+    // Populate source maps for Zig error remapping
+    for (modules.items) |*mc| {
+        try runner.source_maps.put(allocator, mc.mod_name, mc.source_map);
+    }
+
     // Build all targets via unified multi-target path
     for (cli.targets.items) |build_target| {
         const target_str = build_target.toZigTriple();

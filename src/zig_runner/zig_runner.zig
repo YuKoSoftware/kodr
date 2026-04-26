@@ -38,6 +38,9 @@ pub const ZigRunner = struct {
     reporter: *errors.Reporter,
     allocator: std.mem.Allocator,
     show_zig_output: bool, // -zig flag
+    /// Per-module source maps: module_name → sorted SourceMapEntry slice.
+    /// Slices are arena-owned by ModuleCompile; ZigRunner does not free them.
+    source_maps: std.StringHashMapUnmanaged([]const module.SourceMapEntry) = .{},
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -55,6 +58,7 @@ pub const ZigRunner = struct {
 
     pub fn deinit(self: *ZigRunner) void {
         self.allocator.free(self.zig_path);
+        self.source_maps.deinit(self.allocator);
     }
 
     /// Build all targets in a multi-target project with a single zig build invocation.

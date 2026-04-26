@@ -76,6 +76,9 @@ pub const ModuleCompile = struct {
     mod_name: []const u8,
     mod_ptr: *module.Module,
     decl_collector: *declarations.DeclCollector,
+    /// Source map produced by codegen: zig_line → orh_file:orh_line.
+    /// Slice is arena-owned; populated by pipeline_passes after cg.generate().
+    source_map: []const module.SourceMapEntry = &.{},
 
     /// Initialize a ModuleCompile in place. The caller must provide a pointer
     /// to stable storage (e.g. an ArrayList slot whose capacity has been
