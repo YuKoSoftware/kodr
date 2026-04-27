@@ -22,10 +22,82 @@ const BLUEPRINTS_TEMPLATE       = @embedFile("templates/example/blueprints.orh")
 const HANDLES_TEMPLATE          = @embedFile("templates/example/handles.orh");
 
 // ============================================================
+// STAMP HELPERS
+// ============================================================
+
+const STAMP_PATH = ".orh-cache/init.stamp";
+
+fn writeStamp(version: []const u8) !void {
+    try std.fs.cwd().makePath(".orh-cache");
+    const file = try std.fs.cwd().createFile(STAMP_PATH, .{});
+    defer file.close();
+    try file.writeAll(version);
+}
+
+// Returns null if stamp file is missing. Caller owns returned slice.
+fn readStamp(allocator: std.mem.Allocator) !?[]const u8 {
+    const file = std.fs.cwd().openFile(STAMP_PATH, .{}) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return err,
+    };
+    defer file.close();
+    return file.readToEndAlloc(allocator, 64) catch |err| switch (err) {
+        error.FileTooBig => return null,
+        else => return err,
+    };
+}
+
+// ============================================================
+// UPDATE
+// ============================================================
+
+pub fn updateProject(allocator: std.mem.Allocator, version: []const u8) !void {
+    std.fs.cwd().access("orhon.project", .{}) catch {
+        std.debug.print("error: no orhon.project found — run orhon init -update from a project directory\n", .{});
+        return error.NotAProject;
+    };
+
+    const stamp = try readStamp(allocator);
+    defer if (stamp) |s| allocator.free(s);
+
+    if (stamp != null and std.mem.eql(u8, stamp.?, version)) {
+        std.debug.print("already up to date ({s})\n", .{version});
+        return;
+    }
+
+    const old_version: []const u8 = stamp orelse "(none)";
+
+    const example_files = .{
+        .{ "example.orh",        EXAMPLE_ORH_TEMPLATE },
+        .{ "control_flow.orh",   CONTROL_FLOW_ORH_TEMPLATE },
+        .{ "error_handling.orh", ERROR_HANDLING_TEMPLATE },
+        .{ "data_types.orh",     DATA_TYPES_TEMPLATE },
+        .{ "strings.orh",        STRINGS_TEMPLATE },
+        .{ "advanced.orh",       ADVANCED_TEMPLATE },
+        .{ "blueprints.orh",     BLUEPRINTS_TEMPLATE },
+        .{ "handles.orh",        HANDLES_TEMPLATE },
+    };
+
+    try std.fs.cwd().makePath("src/example");
+
+    inline for (example_files) |entry| {
+        const file_path = try std.fs.path.join(allocator, &.{ "src", "example", entry[0] });
+        defer allocator.free(file_path);
+        const file = try std.fs.cwd().createFile(file_path, .{});
+        defer file.close();
+        try file.writeAll(entry[1]);
+        std.debug.print("updated  {s}\n", .{file_path});
+    }
+
+    try writeStamp(version);
+    std.debug.print("stamp updated: {s} → {s}\n", .{ old_version, version });
+}
+
+// ============================================================
 // PROJECT INITIALIZATION
 // ============================================================
 
-pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool) !void {
+pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: bool, version: []const u8) !void {
     // Validate project name
     if (name.len == 0) {
         std.debug.print("error: project name cannot be empty\n", .{});
@@ -128,4 +200,5 @@ pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: boo
     }
     std.debug.print("  orhon build\n", .{});
     std.debug.print("  orhon run\n", .{});
+    writeStamp(version) catch {};
 }

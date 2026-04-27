@@ -20,7 +20,21 @@ pub const BuildTarget = _cli.BuildTarget;
 const PreHandler = *const fn (allocator: std.mem.Allocator, cli: *_cli.CliArgs) anyerror!void;
 
 fn handleInit(allocator: std.mem.Allocator, cli: *_cli.CliArgs) anyerror!void {
-    _init.initProject(allocator, cli.project_name, cli.init_in_place) catch |err| {
+    if (cli.init_update) {
+        if (!cli.init_in_place) {
+            std.debug.print("error: -update cannot be used with a project name\n", .{});
+            std.process.exit(1);
+        }
+        _init.updateProject(allocator, build_options.version) catch |err| switch (err) {
+            error.NotAProject => std.process.exit(1),
+            else => {
+                std.debug.print("error: update failed: {}\n", .{err});
+                std.process.exit(1);
+            },
+        };
+        return;
+    }
+    _init.initProject(allocator, cli.project_name, cli.init_in_place, build_options.version) catch |err| {
         std.debug.print("error: failed to create project: {}\n", .{err});
         std.process.exit(1);
     };
