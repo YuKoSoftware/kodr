@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **Session bookmark** (v0.53.35, 2026-04-27). X3 done — `orhon init -update`. ⬅ **RESUME HERE: Phase 4 (X5/X6/X7)** or **Phase 5 (I1)**.
+> **Session bookmark** (v0.53.36, 2026-04-27). X5 done — safer `addtopath`. ⬅ **RESUME HERE: Phase 4 (X6/X7)** or **Phase 5 (I1)**.
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -226,7 +226,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 - [x] **X2** 🟠 **`orhon.project` manifest** [H4b / F10] — done v0.53.33, 2026-04-27 — `src/manifest.zig` with `ProjectManifest`/`ManifestTarget`; single-target (`#build` top-level) and multi-target (`#target name` sections); `#build`/`#version` in `.orh` files are hard errors (E1013); E1012 for missing manifest, E1014 for unknown keys; `orhon init` generates `orhon.project`; all test fixtures migrated (380/380 green).
 - [x] **X3** 🟡 **`orhon init -update` migration** [F11] — done v0.53.35, 2026-04-27 — stamp file `.orh-cache/init.stamp` written by `orhon init` (inside project dir for both named and in-place); `orhon init -update` re-writes all 8 example files when stamp differs from running version; user files never touched; 390/390 green.
 - [x] **X4** 🟡 **`orhon check` command** [F22] — done v0.53.34, 2026-04-27 — passes 1-8 only (no MIR/codegen/Zig invocation); fast path in `compileOne` + early return in `runPipeline`; `runSemanticOnly` in `pipeline_passes.zig`; 380/380 green.
-- [ ] **X5** 🟡 **Safer `addtopath`** [F21] — `src/commands.zig:212-314` edits shell rc files directly with no backup, no `--dry-run`, no Windows handling. Fix: write `<rc>.orhon-backup` before editing, print diff, support `--dry-run`; long-term suggest the user adds the export line themselves.
+- [x] **X5** 🟡 **Safer `addtopath`** [F21] — done v0.53.36, 2026-04-27 — `computeAddToPathContent` pure helper + `backupPath`; backup written before any edit; atomic tmp→rename write; `-dry-run` flag shows what would change without writing; already-in-PATH path honours dry-run; 5 unit tests; 392/392 green.
 - [ ] **X6** 🟡 **Versioning policy doc + CI workflow** — pre-1.0 has no documented breaking-change policy; no `.github/workflows/` or equivalent (releases ship without recorded green run on clean machine). Write `docs/versioning.md`; land a minimal CI config.
 - [ ] **X7** 🟡 **Per-command help** — `orhon build --help` currently shows the generic help page. Fix: each command declares its own flag list and description string; `--help` after a command dispatches to that command's help instead of the global page.
 

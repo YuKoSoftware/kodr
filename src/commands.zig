@@ -210,7 +210,64 @@ pub fn runGendoc(allocator: std.mem.Allocator, cli: *const _cli.CliArgs) !void {
     }
 }
 
-pub fn addToPath(allocator: std.mem.Allocator) !void {
+// ============================================================
+// ADDTOPATH HELPERS
+// ============================================================
+
+pub const AddToPathAction = enum { append, replace };
+
+pub const AddToPathResult = struct {
+    action: AddToPathAction,
+    /// New file content — caller owns.
+    new_content: []u8,
+    /// Slice of the old orhon block inside the original `existing` buffer (empty on append).
+    old_entry: []const u8,
+};
+
+const PATH_MARKER = "# orhon compiler";
+
+/// Pure function: given existing rc-file content and the line to write, compute
+/// what the new file should look like. Does no I/O.
+pub fn computeAddToPathContent(
+    allocator: std.mem.Allocator,
+    existing: []const u8,
+    line_to_write: []const u8,
+) !AddToPathResult {
+    if (std.mem.indexOf(u8, existing, PATH_MARKER)) |start| {
+        // Find start of block (trim leading newline before marker)
+        const real_start = if (start > 0 and existing[start - 1] == '\n') start - 1 else start;
+
+        // Find end of block: skip marker line, then skip the export/path line
+        const after_marker = start + PATH_MARKER.len;
+        const after_first_nl = if (after_marker < existing.len and existing[after_marker] == '\n')
+            after_marker + 1
+        else
+            after_marker;
+        const end = if (std.mem.indexOfPos(u8, existing, after_first_nl, "\n")) |nl|
+            nl + 1
+        else
+            existing.len;
+
+        const old_entry = existing[real_start..end];
+
+        // Build new content: prefix + new line + suffix
+        const prefix = existing[0..real_start];
+        const suffix = existing[end..];
+        const new_content = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ prefix, line_to_write, suffix });
+        return .{ .action = .replace, .new_content = new_content, .old_entry = old_entry };
+    } else {
+        // Append to end
+        const new_content = try std.fmt.allocPrint(allocator, "{s}{s}", .{ existing, line_to_write });
+        return .{ .action = .append, .new_content = new_content, .old_entry = "" };
+    }
+}
+
+/// Returns `<path>.orhon-backup` — caller owns.
+pub fn backupPath(allocator: std.mem.Allocator, profile_path: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}.orhon-backup", .{profile_path});
+}
+
+pub fn addToPath(allocator: std.mem.Allocator, dry_run: bool) !void {
     // Get the directory containing the orhon binary
     var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
     const exe_path = try std.fs.selfExePath(&exe_buf);
@@ -221,7 +278,11 @@ pub fn addToPath(allocator: std.mem.Allocator) !void {
     defer if (path_env.len > 0) allocator.free(path_env);
 
     if (std.mem.indexOf(u8, path_env, exe_dir) != null) {
-        std.debug.print("orhon is already in PATH ({s})\n", .{exe_dir});
+        if (dry_run) {
+            std.debug.print("(dry run) orhon is already in PATH ({s}) — no changes needed\n", .{exe_dir});
+        } else {
+            std.debug.print("orhon is already in PATH ({s})\n", .{exe_dir});
+        }
         return;
     }
 
@@ -262,54 +323,56 @@ pub fn addToPath(allocator: std.mem.Allocator) !void {
     else
         export_line;
 
-    // For fish, ensure the config directory exists first
-    if (std.mem.endsWith(u8, shell, "fish")) {
+    // For fish, ensure the config directory exists first (even in dry-run, to check the path)
+    if (std.mem.endsWith(u8, shell, "fish") and !dry_run) {
         const fish_config_dir = try std.fs.path.join(allocator, &.{ home, ".config", "fish" });
         defer allocator.free(fish_config_dir);
         try std.fs.cwd().makePath(fish_config_dir);
     }
 
-    // Read existing profile to check for a previous orhon entry
+    // Read existing profile
     const existing = std.fs.cwd().readFileAlloc(allocator, profile_path, 1024 * 1024) catch "";
     defer if (existing.len > 0) allocator.free(existing);
 
-    const marker = "# orhon compiler";
+    const result = try computeAddToPathContent(allocator, existing, line_to_write);
+    defer allocator.free(result.new_content);
 
-    if (std.mem.indexOf(u8, existing, marker)) |start| {
-        // Find the end of the orhon block (marker line + export/path line)
-        // Look for the next newline after the export line
-        const after_marker = start + marker.len;
-        // Skip the marker line's newline
-        const after_first_nl = if (after_marker < existing.len and existing[after_marker] == '\n')
-            after_marker + 1
-        else
-            after_marker;
-        // Find end of the export/path line
-        const end = if (std.mem.indexOfPos(u8, existing, after_first_nl, "\n")) |nl|
-            nl + 1
-        else
-            existing.len;
-
-        // Also trim a leading newline before the marker if present
-        const real_start = if (start > 0 and existing[start - 1] == '\n') start - 1 else start;
-
-        // Rewrite the file with the old entry replaced
-        const file = try std.fs.cwd().createFile(profile_path, .{ .truncate = true });
-        defer file.close();
-        try file.writeAll(existing[0..real_start]);
-        try file.writeAll(line_to_write);
-        try file.writeAll(existing[end..]);
-
-        std.debug.print("Updated orhon PATH in {s} (replaced old entry)\n", .{profile_path});
-    } else {
-        // No existing entry — append
-        const file = try std.fs.cwd().createFile(profile_path, .{ .truncate = false, .exclusive = false });
-        defer file.close();
-        try file.seekFromEnd(0);
-        try file.writeAll(line_to_write);
-
-        std.debug.print("Added orhon to PATH in {s}\n", .{profile_path});
+    if (dry_run) {
+        std.debug.print("(dry run) Would modify: {s}\n", .{profile_path});
+        std.debug.print("(dry run) Backup would be written to: {s}.orhon-backup\n", .{profile_path});
+        switch (result.action) {
+            .append  => std.debug.print("(dry run) Action: append orhon PATH entry\n", .{}),
+            .replace => {
+                std.debug.print("(dry run) Action: replace existing orhon PATH entry\n", .{});
+                std.debug.print("(dry run) Old entry:\n{s}\n", .{result.old_entry});
+            },
+        }
+        std.debug.print("(dry run) New entry:\n{s}\n", .{line_to_write});
+        return;
     }
+
+    // Write backup before any modification
+    const bak_path = try backupPath(allocator, profile_path);
+    defer allocator.free(bak_path);
+    if (existing.len > 0) {
+        std.fs.cwd().writeFile(.{ .sub_path = bak_path, .data = existing }) catch {};
+    }
+
+    // Write the new content atomically via a tmp file + rename
+    const tmp_path = try std.fmt.allocPrint(allocator, "{s}.orhon-tmp", .{profile_path});
+    defer allocator.free(tmp_path);
+    {
+        const tmp_file = try std.fs.cwd().createFile(tmp_path, .{ .truncate = true });
+        defer tmp_file.close();
+        try tmp_file.writeAll(result.new_content);
+    }
+    try std.fs.cwd().rename(tmp_path, profile_path);
+
+    switch (result.action) {
+        .append  => std.debug.print("Added orhon to PATH in {s}\n", .{profile_path}),
+        .replace => std.debug.print("Updated orhon PATH in {s} (replaced old entry)\n", .{profile_path}),
+    }
+    std.debug.print("Backup saved to: {s}\n", .{bak_path});
     std.debug.print("Run: source {s}\n", .{profile_path});
     std.debug.print("  or open a new terminal\n", .{});
 }
@@ -357,4 +420,59 @@ pub fn moveArtifactsToSubfolder(allocator: std.mem.Allocator, subfolder: []const
             std.fs.cwd().deleteFile(src_path) catch {};
         };
     }
+}
+
+// ============================================================
+// TESTS
+// ============================================================
+
+test "addtopath: backupPath appends .orhon-backup suffix" {
+    const allocator = std.testing.allocator;
+    const bak = try backupPath(allocator, "/home/user/.bashrc");
+    defer allocator.free(bak);
+    try std.testing.expectEqualStrings("/home/user/.bashrc.orhon-backup", bak);
+}
+
+test "addtopath: append when no prior entry exists" {
+    const allocator = std.testing.allocator;
+    const line = "\n# orhon compiler\nexport PATH=\"$PATH:/usr/local/bin\"\n";
+    const result = try computeAddToPathContent(allocator, "", line);
+    defer allocator.free(result.new_content);
+    try std.testing.expect(result.action == .append);
+    try std.testing.expectEqualStrings(line, result.new_content);
+    try std.testing.expectEqualStrings("", result.old_entry);
+}
+
+test "addtopath: append preserves existing file content" {
+    const allocator = std.testing.allocator;
+    const existing = "# prior content\nexport FOO=bar\n";
+    const line = "\n# orhon compiler\nexport PATH=\"$PATH:/bin\"\n";
+    const result = try computeAddToPathContent(allocator, existing, line);
+    defer allocator.free(result.new_content);
+    try std.testing.expect(result.action == .append);
+    // new_content = existing + line
+    try std.testing.expect(std.mem.startsWith(u8, result.new_content, existing));
+    try std.testing.expect(std.mem.endsWith(u8, result.new_content, line));
+}
+
+test "addtopath: replace updates existing orhon entry" {
+    const allocator = std.testing.allocator;
+    const existing = "# header\n\n# orhon compiler\nexport PATH=\"$PATH:/old/bin\"\n# footer\n";
+    const line = "\n# orhon compiler\nexport PATH=\"$PATH:/new/bin\"\n";
+    const result = try computeAddToPathContent(allocator, existing, line);
+    defer allocator.free(result.new_content);
+    try std.testing.expect(result.action == .replace);
+    try std.testing.expect(std.mem.indexOf(u8, result.new_content, "/new/bin") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.new_content, "/old/bin") == null);
+    try std.testing.expect(result.old_entry.len > 0);
+}
+
+test "addtopath: replace preserves surrounding content" {
+    const allocator = std.testing.allocator;
+    const existing = "# header\n\n# orhon compiler\nexport PATH=\"$PATH:/old/bin\"\n# footer\n";
+    const line = "\n# orhon compiler\nexport PATH=\"$PATH:/new/bin\"\n";
+    const result = try computeAddToPathContent(allocator, existing, line);
+    defer allocator.free(result.new_content);
+    try std.testing.expect(std.mem.indexOf(u8, result.new_content, "# header") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.new_content, "# footer") != null);
 }

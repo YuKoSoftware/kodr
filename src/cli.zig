@@ -80,6 +80,7 @@ pub const FlagEffect = union(enum) {
     set_gen_std,
     set_gen_syntax,
     set_init_update,   // -update flag for init command
+    set_dry_run,       // -dry-run flag for addtopath
     set_diag_format,   // takes_value=true
     set_color,         // takes_value=true
     set_line_length,   // takes_value=true
@@ -112,6 +113,7 @@ const flag_gen_api     = FlagSpec{ .name = "-api",         .takes_value = false,
 const flag_gen_std     = FlagSpec{ .name = "-std",         .takes_value = false, .help = "Generate stdlib reference only",         .effect = .set_gen_std };
 const flag_gen_syntax  = FlagSpec{ .name = "-syntax",      .takes_value = false, .help = "Generate syntax reference only",        .effect = .set_gen_syntax };
 const flag_init_update = FlagSpec{ .name = "-update",      .takes_value = false, .help = "Refresh example files to the current compiler version", .effect = .set_init_update };
+const flag_dry_run     = FlagSpec{ .name = "-dry-run",    .takes_value = false, .help = "Show what would change without writing",                .effect = .set_dry_run };
 
 const flag_linux_x64 = FlagSpec{ .name = "-linux_x64", .takes_value = false, .help = "Linux x86-64",              .effect = .{ .append_target = .linux_x64 } };
 const flag_linux_arm = FlagSpec{ .name = "-linux_arm", .takes_value = false, .help = "Linux ARM64",                .effect = .{ .append_target = .linux_arm } };
@@ -130,7 +132,8 @@ const build_flags  = target_flags ++ compile_flags ++ output_flags;
 const run_flags    = compile_flags ++ output_flags;   // reused by run, test, debug
 const gendoc_flags = [_]FlagSpec{ flag_gen_api, flag_gen_std, flag_gen_syntax } ++ output_flags;
 const fmt_flags    = [_]FlagSpec{ flag_line_length } ++ output_flags;
-const init_flags   = [_]FlagSpec{ flag_init_update } ++ output_flags;
+const init_flags       = [_]FlagSpec{ flag_init_update } ++ output_flags;
+const addtopath_flags  = [_]FlagSpec{ flag_dry_run } ++ output_flags;
 
 pub const command_table = [_]CommandSpec{
     .{ .cmd = .build,     .description = "Compile the project in the current directory",                    .positional = null,     .flags = &build_flags },
@@ -141,7 +144,7 @@ pub const command_table = [_]CommandSpec{
     .{ .cmd = .fmt,       .description = "Format all .orh files in the project",                           .positional = null,     .flags = &fmt_flags },
     .{ .cmd = .gendoc,    .description = "Generate documentation",                                         .positional = null,     .flags = &gendoc_flags },
     .{ .cmd = .lsp,       .description = "Start the language server",                                      .positional = null,     .flags = &output_flags },
-    .{ .cmd = .addtopath, .description = "Add orhon to your shell PATH",                                   .positional = null,     .flags = &output_flags },
+    .{ .cmd = .addtopath, .description = "Add orhon to your shell PATH",                                   .positional = null,     .flags = &addtopath_flags },
     .{ .cmd = .debug,     .description = "Show project info — modules, files, source directory",            .positional = null,     .flags = &run_flags },
     .{ .cmd = .analysis,  .description = "Run PEG grammar validation on a single .orh file",               .positional = "<file>", .flags = &output_flags },
     .{ .cmd = .version,   .description = "Print the compiler version",                                     .positional = null,     .flags = &output_flags },
@@ -158,6 +161,7 @@ pub const CliArgs = struct {
     project_name: []const u8, // for init command
     init_in_place: bool, // orhon init (no name) — init in current dir
     init_update: bool, // -update flag for init command (refresh example files)
+    dry_run: bool,     // -dry-run flag for addtopath (show what would change, don't write)
     gen_api: bool, // -api flag for gendoc (generate project API docs only)
     gen_std: bool, // -std flag for gendoc (generate stdlib docs only)
     gen_syntax: bool, // -syntax flag for gendoc (generate syntax reference only)
@@ -188,6 +192,7 @@ fn applyFlag(effect: FlagEffect, value: []const u8, cli: *CliArgs, allocator: st
         .set_gen_std    => cli.gen_std = true,
         .set_gen_syntax => cli.gen_syntax = true,
         .set_init_update => cli.init_update = true,
+        .set_dry_run     => cli.dry_run = true,
         .set_diag_format => {
             if (std.mem.eql(u8, value, "human"))      cli.diag_format = .human
             else if (std.mem.eql(u8, value, "json"))  cli.diag_format = .json
@@ -243,6 +248,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         .project_name  = "",
         .init_in_place = false,
         .init_update   = false,
+        .dry_run       = false,
         .gen_api       = false,
         .gen_std       = false,
         .gen_syntax    = false,
@@ -404,6 +410,7 @@ fn testCli() CliArgs {
         .project_name  = "",
         .init_in_place = false,
         .init_update   = false,
+        .dry_run       = false,
         .gen_api       = false,
         .gen_std       = false,
         .gen_syntax    = false,

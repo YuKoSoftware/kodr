@@ -41,8 +41,7 @@ fn handleInit(allocator: std.mem.Allocator, cli: *_cli.CliArgs) anyerror!void {
 }
 
 fn handleAddToPath(allocator: std.mem.Allocator, cli: *_cli.CliArgs) anyerror!void {
-    _ = cli;
-    _commands.addToPath(allocator) catch |err| {
+    _commands.addToPath(allocator, cli.dry_run) catch |err| {
         std.debug.print("error: failed to add orhon to PATH: {}\n", .{err});
         std.process.exit(1);
     };

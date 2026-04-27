@@ -82,4 +82,20 @@ else
     fail "orhon build -zig creates bin/zig/"
 fi
 
+# orhon addtopath -dry-run should not write any files
+cd "$TESTDIR"
+FAKEHOME="$TESTDIR/fakehome"
+mkdir -p "$FAKEHOME"
+DRY_OUT=$(HOME="$FAKEHOME" SHELL="/bin/bash" "$ORHON" addtopath -dry-run 2>&1 || true)
+if echo "$DRY_OUT" | grep -q "dry run"; then
+    pass "orhon addtopath -dry-run prints dry-run message"
+else
+    fail "orhon addtopath -dry-run prints dry-run message" "$DRY_OUT"
+fi
+if [ ! -f "$FAKEHOME/.bashrc" ]; then
+    pass "orhon addtopath -dry-run does not write rc file"
+else
+    fail "orhon addtopath -dry-run does not write rc file"
+fi
+
 report_results
