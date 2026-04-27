@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 func check(x: i32) i32 {
     if(x > 0) {

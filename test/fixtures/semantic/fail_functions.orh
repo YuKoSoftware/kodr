@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 // default param before required param — parser catches first
 

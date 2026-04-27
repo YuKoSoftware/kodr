@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 // negation on unsigned types — should error
 

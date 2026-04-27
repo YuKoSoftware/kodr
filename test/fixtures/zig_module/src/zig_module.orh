@@ -1,7 +1,5 @@
 module zig_module
 
-#version = (1, 0, 0)
-#build   = exe
 
 import std::console
 import zigmath

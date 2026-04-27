@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 // duplicate field name in struct
 

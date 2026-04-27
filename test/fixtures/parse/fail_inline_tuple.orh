@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 // inline tuple types in return position are not valid syntax
 // tuples must be defined as named type aliases: const T: type = {x: i32, y: i32}

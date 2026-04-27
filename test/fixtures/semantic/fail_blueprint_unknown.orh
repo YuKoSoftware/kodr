@@ -1,6 +1,4 @@
 module fixture
-#version = (1, 0, 0)
-#build   = exe
 
 struct Point: NonExistent {
     x: f32

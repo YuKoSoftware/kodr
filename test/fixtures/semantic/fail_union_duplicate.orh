@@ -1,6 +1,4 @@
 module fixture
-#version = (1, 0, 0)
-#build   = exe
 
 pub struct A { pub x: i32 }
 pub struct B { pub y: i32 }

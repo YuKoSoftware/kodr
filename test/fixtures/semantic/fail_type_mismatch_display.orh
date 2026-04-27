@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 func bad_if() void {
     if(42) { }  //> [E2027]

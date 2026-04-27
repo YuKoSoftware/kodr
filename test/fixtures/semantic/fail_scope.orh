@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 // module-level var is not allowed (must be const) — parser catches first
 

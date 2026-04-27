@@ -1,7 +1,5 @@
 module fixture
 
-#version = (1, 0, 0)
-#build   = exe
 
 // different integer widths
 func mix_int_width(a: i32, b: i64) i64 {

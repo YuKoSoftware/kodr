@@ -1,6 +1,5 @@
 module fail_compile_error
 
-#build = exe
 
 compt func alwaysFail() void {
     @compileError("this should not compile")

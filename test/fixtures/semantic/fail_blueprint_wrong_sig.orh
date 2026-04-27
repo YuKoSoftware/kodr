@@ -1,6 +1,4 @@
 module fixture
-#version = (1, 0, 0)
-#build   = exe
 
 blueprint Eq {
     func eq(self: const& Eq, other: const& Eq) bool

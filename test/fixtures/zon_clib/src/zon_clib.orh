@@ -1,5 +1,4 @@
 module zon_clib
-#build = exe
 
 import mathlib
 import std::console

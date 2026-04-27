@@ -1,6 +1,4 @@
 module union_flat
-#version = (1, 0, 0)
-#build   = exe
 
 pub struct KeyPress { pub key: i32 }
 pub struct KeyRelease { pub key: i32 }
