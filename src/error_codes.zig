@@ -119,6 +119,9 @@ pub const ErrorCode = enum(u16) {
     missing_main_func  = 5003,
     unused_import      = 5004,
     zig_compile_error  = 5005,
+    no_project_manifest  = 5006,
+    metadata_in_source   = 5007,
+    manifest_parse_error = 5008,
 
     // ── E9xxx  Internal compiler errors ───────────────────────────────────────
     internal_grammar_load = 9001,
