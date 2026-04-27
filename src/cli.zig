@@ -326,6 +326,7 @@ pub fn printHelp() void {
         \\  debug               Show project info — modules, files, source directory
         \\  analysis <file>     Run PEG grammar validation on a single .orh file
         \\  version             Print the compiler version
+        \\  which               Print the path to the orhon executable
         \\
         \\Targets (combinable — e.g. orhon build -linux_x64 -win_x64):
         \\  -linux_x64          Linux x86-64
