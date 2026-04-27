@@ -9,6 +9,7 @@ const std = @import("std");
 // Templates are embedded from src/templates/ at compile time.
 // Never put multi-line file content inline in .zig source — use @embedFile instead.
 const PROJECT_ORH_TEMPLATE      = @embedFile("templates/project.orh");
+const PROJECT_MANIFEST_TEMPLATE = @embedFile("templates/project.manifest");
 
 // Example module — split across multiple files in templates/example/
 const EXAMPLE_ORH_TEMPLATE      = @embedFile("templates/example/example.orh");
@@ -71,6 +72,24 @@ pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: boo
         try file.writeAll(remaining);
     }
 
+    // Write orhon.project manifest (skip if exists)
+    const manifest_path = try std.fs.path.join(allocator, &.{ base, "orhon.project" });
+    defer allocator.free(manifest_path);
+    if (std.fs.cwd().access(manifest_path, .{})) |_| {
+        // manifest exists — don't overwrite
+    } else |_| {
+        const mfile = try std.fs.cwd().createFile(manifest_path, .{});
+        defer mfile.close();
+        const mph = "{s}";
+        var mrem: []const u8 = PROJECT_MANIFEST_TEMPLATE;
+        while (std.mem.indexOf(u8, mrem, mph)) |pos| {
+            try mfile.writeAll(mrem[0..pos]);
+            try mfile.writeAll(name);
+            mrem = mrem[pos + mph.len..];
+        }
+        try mfile.writeAll(mrem);
+    }
+
     // Write example module files into src/example/ (skip each if exists)
     const example_files = .{
         .{ "example.orh",        EXAMPLE_ORH_TEMPLATE },
@@ -97,6 +116,7 @@ pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: boo
     }
 
     std.debug.print("Created project '{s}'\n", .{name});
+    std.debug.print("  {s}/orhon.project\n", .{base});
     std.debug.print("  {s}/src/\n", .{base});
     std.debug.print("  {s}/src/{s}.orh\n", .{ base, name });
     std.debug.print("  {s}/src/example/  (8 files — language manual)\n", .{base});
