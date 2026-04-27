@@ -33,11 +33,15 @@ compt func double(n: i32) i32 {
     return n * 2
 }
 
-// ─── Module Metadata Directives ──────────────────────────────────────────────
+// ─── Module Metadata ─────────────────────────────────────────────────────────
 
-// These directives go in the module's anchor file (e.g. main.orh):
-//   #version = (1, 0, 0)   — semantic version
-//   #build   = exe                — build target: exe, static, dynamic
+// Module documentation comment — valid in any .orh file:
+//   #description = "What this module does."
+//
+// Build target, version, and project settings go in orhon.project (project root):
+//   #name    = myapp
+//   #version = (1, 0, 0)
+//   #build   = exe
 
 // ─── Zig Modules ─────────────────────────────────────────────────────────────
 

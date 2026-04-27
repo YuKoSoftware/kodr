@@ -28,9 +28,11 @@ const SYNTAX_DOC =
     \\
     \\### Metadata
     \\
+    \\Project-level metadata lives in `orhon.project`, not in source files.
+    \\The only metadata valid in `.orh` files is `#description` (module doc comment).
+    \\
     \\```orhon
-    \\#build = exe
-    \\#version = (1, 0, 0)
+    \\#description = "This module handles authentication."
     \\```
     \\
     \\### Imports

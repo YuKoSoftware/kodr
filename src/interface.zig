@@ -573,16 +573,6 @@ pub fn generateInterface(
     try buf.appendSlice(alloc, mod_name);
     try buf.appendSlice(alloc, "\n\n");
 
-    // Version from metadata
-    for (ast.program.metadata) |meta| {
-        if (meta.metadata.field == .version) {
-            try buf.appendSlice(alloc, "#version = ");
-            try formatExprSimple(meta.metadata.value, &buf, alloc);
-            try buf.appendSlice(alloc, "\n\n");
-            break;
-        }
-    }
-
     // Public declarations
     for (ast.program.top_level) |node| {
         try emitInterfaceDecl(node, &buf, alloc);

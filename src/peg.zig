@@ -112,8 +112,7 @@ test "peg - validate program with imports and metadata" {
     var lex = lexer.Lexer.init(
         \\module myapp
         \\
-        \\#name = "hello"
-        \\#build = exe
+        \\#description = "hello world module"
         \\
         \\import std::console
         \\
