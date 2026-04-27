@@ -105,4 +105,65 @@ else
     fail "console.zig contains print function"
 fi
 
+section "orhon init -update"
+
+# Set up a fresh project for update tests
+mkdir -p "$TESTDIR/updatetest" && cd "$TESTDIR/updatetest"
+"$ORHON" init >/dev/null 2>&1
+
+if [ -f .orh-cache/init.stamp ]; then
+    pass "init creates .orh-cache/init.stamp"
+else
+    fail "init creates .orh-cache/init.stamp"
+fi
+
+ORHON_VER=$("$ORHON" version 2>&1 | sed 's/orhon //')
+STAMP_VER=$(cat .orh-cache/init.stamp)
+if [ "$STAMP_VER" = "$ORHON_VER" ]; then
+    pass "stamp contains current compiler version"
+else
+    fail "stamp contains current compiler version (got '$STAMP_VER', expected '$ORHON_VER')"
+fi
+
+OUTPUT=$("$ORHON" init -update 2>&1)
+if echo "$OUTPUT" | grep -q "already up to date"; then
+    pass "init -update prints 'already up to date' when stamp matches"
+else
+    fail "init -update prints 'already up to date' when stamp matches" "$OUTPUT"
+fi
+
+echo "0.0.0" > .orh-cache/init.stamp
+OUTPUT=$("$ORHON" init -update 2>&1)
+if echo "$OUTPUT" | grep -q "stamp updated"; then
+    pass "init -update refreshes files when stamp is stale"
+else
+    fail "init -update refreshes files when stamp is stale" "$OUTPUT"
+fi
+
+if echo "$OUTPUT" | grep -q "updated  src/example/example.orh"; then
+    pass "init -update reports each updated file"
+else
+    fail "init -update reports each updated file" "$OUTPUT"
+fi
+
+if [ -f src/example/example.orh ]; then
+    pass "example files present after -update"
+else
+    fail "example files present after -update"
+fi
+
+cd "$TESTDIR"
+if "$ORHON" init myproject -update 2>/dev/null; then
+    fail "-update with name argument should be rejected"
+else
+    pass "-update with name argument is rejected"
+fi
+
+mkdir -p "$TESTDIR/notaproject" && cd "$TESTDIR/notaproject"
+if "$ORHON" init -update 2>/dev/null; then
+    fail "-update outside project dir should be rejected"
+else
+    pass "-update outside project dir is rejected"
+fi
+
 report_results
