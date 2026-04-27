@@ -370,6 +370,11 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         };
     }
 
+    // orhon check — semantic passes done; no codegen or Zig compilation
+    if (cli.command == .check) {
+        return try allocator.dupe(u8, "");
+    }
+
     // Emit shared _unions.zig if any arbitrary unions were registered
     if (!union_registry.isEmpty()) {
         const unions_content = try codegen_unions.generateUnionsFile(&union_registry, allocator);
@@ -715,6 +720,12 @@ fn compileOne(
     // ── Validate 'main' as reserved name ─────────────────
     if (try passes.validateMainReserved(ast, mod_ptr, locs_ptr, file_offsets, reporter))
         return error.AbortBuild;
+
+    // ── orhon check — semantic only, no MIR/codegen/cache ────
+    if (ctx.cli.command == .check) {
+        if (!try passes.runSemanticOnly(arena, ctx, mc, ast)) return error.AbortBuild;
+        return;
+    }
 
     // Compute this module's current interface hash (after pass 4, before
     // skip decision). Stored here so it is available whether or not we

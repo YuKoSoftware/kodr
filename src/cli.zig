@@ -11,6 +11,7 @@ pub const Command = enum {
     build,
     run,
     @"test",
+    check,
     init,
     addtopath,
     debug,
@@ -132,6 +133,7 @@ pub const command_table = [_]CommandSpec{
     .{ .cmd = .build,     .description = "Compile the project in the current directory",                    .positional = null,     .flags = &build_flags },
     .{ .cmd = .run,       .description = "Build and immediately execute the binary",                        .positional = null,     .flags = &run_flags },
     .{ .cmd = .@"test",   .description = "Run all test { } blocks in the project",                         .positional = null,     .flags = &run_flags },
+    .{ .cmd = .check,     .description = "Check the project for errors without producing a binary",         .positional = null,     .flags = &output_flags },
     .{ .cmd = .init,      .description = "Create a new project (in ./<name>/ or current dir if omitted)",  .positional = "[name]", .flags = &output_flags },
     .{ .cmd = .fmt,       .description = "Format all .orh files in the project",                           .positional = null,     .flags = &fmt_flags },
     .{ .cmd = .gendoc,    .description = "Generate documentation",                                         .positional = null,     .flags = &gendoc_flags },
@@ -300,7 +302,7 @@ pub fn printUsage() void {
     const usage =
         \\orhon — The Orhon compiler  (orhon help for more info)
         \\
-        \\  build   run   test   fmt   gendoc   init   lsp   addtopath   debug   analysis   version
+        \\  build   run   test   check   fmt   gendoc   init   lsp   addtopath   debug   analysis   version
         \\
     ;
     std.debug.print("{s}", .{usage});
@@ -314,6 +316,7 @@ pub fn printHelp() void {
         \\  build               Compile the project in the current directory
         \\  run                 Build and immediately execute the binary
         \\  test                Run all test { } blocks in the project
+        \\  check               Check for errors without producing a binary (fast semantic check)
         \\  init [name]         Create a new project (in ./<name>/ or current dir if no name)
         \\  fmt                 Format all .orh files in the project
         \\                        -line-length <n>  Max line length (default: 100)

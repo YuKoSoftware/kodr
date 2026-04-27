@@ -272,6 +272,65 @@ pub fn runSemanticAndCodegen(
     return cg.getOutput();
 }
 
+/// Run semantic passes 5–8 only (type resolution, ownership, borrow, propagation).
+/// Used by `orhon check`. No MIR build, no codegen, no cache writes.
+/// Returns false when errors were reported so the caller can abort.
+pub fn runSemanticOnly(
+    arena: std.mem.Allocator,
+    ctx: *pipeline_context.BuildContext,
+    mc: *pipeline_context.ModuleCompile,
+    ast: *parser.Node,
+) !bool {
+    const reporter = ctx.reporter;
+    const locs_ptr: ?*const parser.LocMap = if (mc.mod_ptr.locs) |*l| l else null;
+    const file_offsets = mc.mod_ptr.file_offsets;
+
+    var conv = ast_conv.ConvContext.init(arena);
+    defer conv.deinit();
+    const ast_root = ast_conv.convertNode(&conv, ast) catch {
+        _ = try reporter.report(.{ .code = .internal_ast_conv, .message = "internal: AST conversion failed" });
+        return false;
+    };
+
+    var sema_ctx = sema.SemanticContext{
+        .allocator = arena,
+        .reporter = reporter,
+        .decls = &mc.decl_collector.table,
+        .locs = locs_ptr,
+        .file_offsets = file_offsets,
+        .all_decls = ctx.all_module_decls,
+        .ast = &conv.store,
+        .reverse_map = &conv.reverse_map,
+    };
+
+    // Pass 5: Type Resolution
+    var type_resolver = resolver.TypeResolver.init(&sema_ctx);
+    defer type_resolver.deinit();
+    try type_resolver.resolve(&conv.store, ast_root);
+    if (reporter.hasErrors()) return false;
+
+    try checkUnusedImports(&type_resolver.used_imports, ast, mc.mod_ptr, locs_ptr, file_offsets, reporter);
+    sema_ctx.type_map = &type_resolver.type_map;
+
+    // Pass 6: Ownership Analysis
+    var ownership_checker = ownership.OwnershipChecker.init(arena, &sema_ctx);
+    try ownership_checker.check(ast);
+    if (reporter.hasErrors()) return false;
+
+    // Pass 7: Borrow Checking
+    var borrow_checker = borrow.BorrowChecker.init(arena, &sema_ctx);
+    defer borrow_checker.deinit();
+    try borrow_checker.check(ast);
+    if (reporter.hasErrors()) return false;
+
+    // Pass 8: Error Propagation
+    var prop_checker = propagation.PropagationChecker.init(arena, &sema_ctx);
+    try prop_checker.check(&conv.store, ast_root);
+    if (reporter.hasErrors()) return false;
+
+    return true;
+}
+
 test "Pass.atLeast" {
     try std.testing.expect(Pass.propagation.atLeast(.type_resolve));
     try std.testing.expect(Pass.propagation.atLeast(.propagation));
