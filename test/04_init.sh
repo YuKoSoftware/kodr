@@ -125,6 +125,26 @@ else
     fail "stamp contains current compiler version (got '$STAMP_VER', expected '$ORHON_VER')"
 fi
 
+# Named-project init should also write the stamp inside the new project dir
+mkdir -p "$TESTDIR/namedstamptest"
+cd "$TESTDIR/namedstamptest"
+"$ORHON" init namedtest >/dev/null 2>&1
+
+if [ -f namedtest/.orh-cache/init.stamp ]; then
+    pass "named init creates stamp inside project dir"
+else
+    fail "named init creates stamp inside project dir"
+fi
+
+STAMP_VER=$(cat namedtest/.orh-cache/init.stamp)
+ORHON_VER=$("$ORHON" version 2>&1 | sed 's/orhon //')
+if [ "$STAMP_VER" = "$ORHON_VER" ]; then
+    pass "named init stamp contains current version"
+else
+    fail "named init stamp contains current version (got '$STAMP_VER', expected '$ORHON_VER')"
+fi
+
+cd "$TESTDIR/updatetest"
 OUTPUT=$("$ORHON" init -update 2>&1)
 if echo "$OUTPUT" | grep -q "already up to date"; then
     pass "init -update prints 'already up to date' when stamp matches"

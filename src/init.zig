@@ -27,9 +27,13 @@ const HANDLES_TEMPLATE          = @embedFile("templates/example/handles.orh");
 
 const STAMP_PATH = ".orh-cache/init.stamp";
 
-fn writeStamp(version: []const u8) !void {
-    try std.fs.cwd().makePath(".orh-cache");
-    const file = try std.fs.cwd().createFile(STAMP_PATH, .{});
+fn writeStamp(allocator: std.mem.Allocator, base: []const u8, version: []const u8) !void {
+    const cache_dir = try std.fs.path.join(allocator, &.{ base, ".orh-cache" });
+    defer allocator.free(cache_dir);
+    try std.fs.cwd().makePath(cache_dir);
+    const stamp_path = try std.fs.path.join(allocator, &.{ base, ".orh-cache", "init.stamp" });
+    defer allocator.free(stamp_path);
+    const file = try std.fs.cwd().createFile(stamp_path, .{});
     defer file.close();
     try file.writeAll(version);
 }
@@ -89,7 +93,7 @@ pub fn updateProject(allocator: std.mem.Allocator, version: []const u8) !void {
         std.debug.print("updated  {s}\n", .{file_path});
     }
 
-    try writeStamp(version);
+    try writeStamp(allocator, ".", version);
     std.debug.print("stamp updated: {s} → {s}\n", .{ old_version, version });
 }
 
@@ -200,5 +204,5 @@ pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: boo
     }
     std.debug.print("  orhon build\n", .{});
     std.debug.print("  orhon run\n", .{});
-    writeStamp(version) catch {};
+    writeStamp(allocator, base, version) catch {};
 }
