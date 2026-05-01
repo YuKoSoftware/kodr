@@ -436,8 +436,12 @@ null_literal    <- 'null'
 void_literal    <- 'void'
 
 string_literal
-    <- STRING_LITERAL                           # plain string — no @{} (unchanged)
-     / STRING_INTERP_START (!STRING_INTERP_END .)* STRING_INTERP_END  # interpolated string
+    <- STRING_LITERAL                           # plain string — no @{}
+     / STRING_INTERP_START interp_segment* STRING_INTERP_END  # interpolated string
+
+interp_segment
+    <- STRING_PART
+     / expr
 
 array_literal
     <- '[' _ (expr (_ ',' _ expr)* (_ ',')?)? _ ']'  {label: "array literal"}
