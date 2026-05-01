@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **Session bookmark** (v0.53.39, 2026-04-27). I1 done — lexer interp tokenization. ⬅ **RESUME HERE: Phase 5 (I2)**.
+> **Session bookmark** (v0.53.40, 2026-05-01). I2 done — grammar rule updated. ⬅ **RESUME HERE: Phase 5 (I3)**.
 
 ### Sub-project 2b — Test runner rewrite
 
