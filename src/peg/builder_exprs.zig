@@ -31,40 +31,55 @@ pub fn buildFloatLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
 }
 
 pub fn buildStringLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    // New token-stream path: the lexer emits string_interp_start / string_part /
-    // expr tokens / string_interp_end for interpolated strings.  Detect this by
-    // checking whether the first token is the start sentinel.
+    // Interpolated string: the grammar parses STRING_INTERP_START interp_segment* STRING_INTERP_END.
+    // Walk the capture tree children (interp_segment nodes) — each is either a STRING_PART
+    // literal or an expr sub-capture. Build real expression AST nodes for expr slots.
     if (cap.start_pos < ctx.tokens.len) {
         const first_kind = ctx.tokens[cap.start_pos].kind;
         if (first_kind == .string_interp_start) {
-            return buildInterpFromTokens(ctx, cap);
+            var parts = std.ArrayListUnmanaged(parser.InterpolatedPart){};
+            for (cap.children) |*child| {
+                if (child.rule) |r| {
+                    if (std.mem.eql(u8, r, "interp_segment")) {
+                        if (child.findChild("expr")) |expr_child| {
+                            // Expression segment: build the full expression AST
+                            const expr_node = try builder.buildNode(ctx, expr_child);
+                            try parts.append(ctx.alloc(), .{ .expr = expr_node });
+                        } else {
+                            // STRING_PART literal segment
+                            const text = ctx.tokens[child.start_pos].text;
+                            const lit = try ctx.alloc().dupe(u8, text);
+                            try parts.append(ctx.alloc(), .{ .literal = lit });
+                        }
+                    }
+                }
+            }
+            return ctx.newNodeAt(.{
+                .interpolated_string = .{ .parts = try parts.toOwnedSlice(ctx.alloc()) },
+            }, cap.start_pos);
         }
     }
 
+    // Plain string path
     const raw = builder.tokenText(ctx, cap.start_pos);
-    // Guard against malformed tokens (need at least opening and closing quote)
     if (raw.len < 2) return ctx.newNode(.{ .string_literal = raw });
     const inner = raw[1 .. raw.len - 1];
 
-    // Fast path: no interpolation — plain string literal (unchanged behavior)
+    // Fast path: no interpolation
     if (std.mem.indexOf(u8, inner, "@{") == null) {
         return ctx.newNode(.{ .string_literal = raw });
     }
 
-    // Slow path: build InterpolatedPart list by scanning for @{...} markers
-    // (legacy path — kept for compatibility; new interpolated strings use the
-    //  token-stream path above)
+    // Legacy slow path for edge cases (e.g. @{ inside a plain string_literal token)
     var parts = std.ArrayListUnmanaged(parser.InterpolatedPart){};
     var pos: usize = 0;
     while (pos < inner.len) {
         if (std.mem.indexOf(u8, inner[pos..], "@{")) |rel| {
             const abs = pos + rel;
-            // Emit literal text before @{
             if (rel > 0) {
                 const lit = try ctx.alloc().dupe(u8, inner[pos..abs]);
                 try parts.append(ctx.alloc(), .{ .literal = lit });
             }
-            // Find the closing }
             const expr_start = abs + 2;
             if (std.mem.indexOfScalarPos(u8, inner, expr_start, '}')) |close| {
                 const expr_text = try ctx.alloc().dupe(u8, inner[expr_start..close]);
@@ -72,64 +87,17 @@ pub fn buildStringLiteral(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
                 try parts.append(ctx.alloc(), .{ .expr = expr_node });
                 pos = close + 1;
             } else {
-                // Unclosed @{ — report error and emit remainder as literal
                 ctx.reportError("unclosed '@{' in string — missing '}'", cap.start_pos);
                 const lit = try ctx.alloc().dupe(u8, inner[abs..]);
                 try parts.append(ctx.alloc(), .{ .literal = lit });
                 break;
             }
         } else {
-            // No more @{ — emit remainder as literal
             const lit = try ctx.alloc().dupe(u8, inner[pos..]);
             try parts.append(ctx.alloc(), .{ .literal = lit });
             break;
         }
     }
-
-    return ctx.newNodeAt(.{
-        .interpolated_string = .{ .parts = try parts.toOwnedSlice(ctx.alloc()) },
-    }, cap.start_pos);
-}
-
-/// Build an interpolated_string node from the new token-stream representation.
-/// Build an interpolated_string node from the new token-stream representation.
-/// Grammar: STRING_INTERP_START (!STRING_INTERP_END .)* STRING_INTERP_END
-/// cap.start_pos points to the string_interp_start token; we skip it and walk
-/// the remaining tokens to collect literal parts and expression slots.
-/// I3 will replace the single-identifier expression placeholder with full parsing.
-fn buildInterpFromTokens(ctx: *BuildContext, cap: *const CaptureNode) !*Node {
-    var parts = std.ArrayListUnmanaged(parser.InterpolatedPart){};
-
-    // Skip the string_interp_start sentinel at cap.start_pos.
-    var tok_pos = cap.start_pos + 1;
-    while (tok_pos < cap.end_pos and tok_pos < ctx.tokens.len) : (tok_pos += 1) {
-        const tok = ctx.tokens[tok_pos];
-        switch (tok.kind) {
-            .string_part => {
-                // Literal text segment between interpolation slots.
-                const lit = try ctx.alloc().dupe(u8, tok.text);
-                try parts.append(ctx.alloc(), .{ .literal = lit });
-            },
-            .string_interp_end => break,
-            else => {
-                // Start of an @{...} expression.  Collect all tokens until the
-                // next string_part or string_interp_end into a minimal expr node.
-                // I3 will replace this with proper sub-expression parsing.
-                const expr_start_pos = tok_pos;
-                // Advance past all expression tokens for this slot.
-                while (tok_pos + 1 < cap.end_pos and tok_pos + 1 < ctx.tokens.len) {
-                    const next_kind = ctx.tokens[tok_pos + 1].kind;
-                    if (next_kind == .string_part or next_kind == .string_interp_end) break;
-                    tok_pos += 1;
-                }
-                // Build a simple identifier node from the first token of the expr.
-                const expr_text = try ctx.alloc().dupe(u8, ctx.tokens[expr_start_pos].text);
-                const expr_node = try ctx.newNodeAt(.{ .identifier = expr_text }, expr_start_pos);
-                try parts.append(ctx.alloc(), .{ .expr = expr_node });
-            },
-        }
-    }
-
     return ctx.newNodeAt(.{
         .interpolated_string = .{ .parts = try parts.toOwnedSlice(ctx.alloc()) },
     }, cap.start_pos);
