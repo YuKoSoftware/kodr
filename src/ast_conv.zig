@@ -626,22 +626,27 @@ fn convertNodeInner(ctx: *ConvContext, node: *const Node) anyerror!AstNodeIndex 
         },
 
         .interpolated_string => |is| {
-            // Each part is encoded as 2 u32 words: tag (0=literal, 1=expr), then payload
-            const parts_start: u32 = @intCast(ctx.store.extra_data.items.len);
+            // Buffer parts to avoid interleaving with extra_data from child expr conversions.
+            // convertNode below appends to ctx.store.extra_data; if we write directly,
+            // child extra_data interleaves with our (tag, payload) pairs.
+            var parts_buf = std.ArrayListUnmanaged(u32){};
+            defer parts_buf.deinit(ctx.allocator);
             for (is.parts) |part| {
                 switch (part) {
                     .literal => |text| {
                         const si = try internStr(ctx, text);
-                        try ctx.store.extra_data.append(ctx.allocator, 0); // tag: literal
-                        try ctx.store.extra_data.append(ctx.allocator, @intFromEnum(si));
+                        try parts_buf.append(ctx.allocator, 0); // tag: literal
+                        try parts_buf.append(ctx.allocator, @intFromEnum(si));
                     },
                     .expr => |expr_node| {
                         const expr_idx = try convertNode(ctx, expr_node);
-                        try ctx.store.extra_data.append(ctx.allocator, 1); // tag: expr
-                        try ctx.store.extra_data.append(ctx.allocator, @intFromEnum(expr_idx));
+                        try parts_buf.append(ctx.allocator, 1); // tag: expr
+                        try parts_buf.append(ctx.allocator, @intFromEnum(expr_idx));
                     },
                 }
             }
+            const parts_start: u32 = @intCast(ctx.store.extra_data.items.len);
+            for (parts_buf.items) |v| try ctx.store.extra_data.append(ctx.allocator, v);
             const parts_end: u32 = @intCast(ctx.store.extra_data.items.len);
             return ast_typed.InterpolatedString.pack(&ctx.store, ctx.allocator, span_none, .{
                 .parts_start = parts_start,

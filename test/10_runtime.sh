@@ -45,7 +45,7 @@ for TEST_NAME in \
     arb_value_positive arb_value_negative arb_value_inside arb_value_match \
     str_upper str_lower str_replace str_repeat str_parse_int str_parse_float \
     default_param tostring_int tostring_bool \
-    interpolation interpolation_int interpolation_if interpolation_multi \
+    interpolation interpolation_expr interpolation_field interpolation_int interpolation_if interpolation_multi \
     string_eq string_ne string_eq_literal string_eq_param \
     thread thread_multi thread_params thread_void thread_done thread_join \
     atomic atomic_fetch atomic_swap atomic_bool \
