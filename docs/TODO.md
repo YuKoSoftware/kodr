@@ -352,3 +352,10 @@ These previously tracked items have been folded into audit-driven entries above:
 | Compound `is` (`and`/`or`) | Narrowing can't handle multiple simultaneous type checks. Use nested ifs |
 | `is` outside if/elif | `is` is a narrowing construct, not a general operator. Use `@typeOf` for type checks |
 | `capture()` / closures | No anonymous functions. State passed as arguments — explicit, obvious |
+
+## Bugs (encountered, deferred)
+
+Bugs found during development that are confirmed but not yet fixed.
+
+- [ ] **B1** 🟡 **Local type alias constructor fails (Perms E2048)** — `const Perms: type = bitfield.Bitfield(...)` inside a `test` block, then `Perms{}` fails with `'Perms' is not callable`. `resolver_exprs.zig:316` only matches `.primitive == .@"type"` for constructor detection but local aliases resolve to `.named` via scope. Affects `src/templates/example/advanced.orh:209` and cascades to 30 `testall.sh` failures across stages 05-09. Introduced in commit `dec891d`.
+- [ ] **B2** 🟡 **Local (function-scoped) type aliases resolve to `.inferred`** — `const Userid: type = i64` inside `main()` followed by `const id: Userid = "hello"` silently passes instead of emitting E2077. Module-level aliases work (fixed in M1); local alias resolution path is separate and returns `.inferred`.
