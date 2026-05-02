@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **Session bookmark** (v0.53.40, 2026-05-01). I3 done — capture-tree expression building. ⬅ **RESUME HERE: Phase 5 (I4)**.
+> **Session bookmark** (v0.53.41, 2026-05-02). I4 done — interpolation arbitrary expression lowering. ⬅ **RESUME HERE: I5**.
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -247,7 +247,7 @@ requires threading the full token stream through `@{...}`. Codegen (P7) is alrea
 - [x] **I1** 🟠 **Lexer: sub-expression tokenization inside string literals** — done v0.53.39, 2026-04-27 — stateful `LexerMode` state machine (`.normal`/`.string_body`/`.string_interp{depth}`); `string_part`/`string_interp_start`/`string_interp_end` token kinds; `containsInterpolation()` fast-path check; `lexStringBody()`/`nextInInterp()` helpers; grammar rule `string_literal` extended with `STRING_INTERP_START (!STRING_INTERP_END .)* STRING_INTERP_END`; token_map updated; builder dispatches to I3 placeholder; 8 unit tests; 392/392 tests passing.
 - [x] **I2** 🟡 **Grammar: update `string_literal` rule for interleaved tokens** — `src/peg/orhon.peg`. Replace `STRING_LITERAL` with a rule that matches `string_part* (@{ expr } string_part*)* string_end` using the new token types from I1.
 - [x] **I3** 🟡 **PEG builder: emit real AST expression nodes from `buildStringLiteral`** — done v0.53.40 — `src/peg/builder_exprs.zig`. Deleted `buildInterpFromTokens` token-stream placeholder; `buildStringLiteral` now walks the capture tree's `interp_segment` children, calls `builder.buildNode` on expr sub-captures to produce real AST nodes per `@{...}` slot. 392/392 green.
-- [ ] **I4** 🟡 **MIR builder: lower arbitrary expression parts in interpolation** — `src/mir_builder_exprs.zig`. Interpolation parts are currently lowered as name lookups. With real AST nodes from I3, call `lowerNode` on each part expression instead — arbitrary expressions fold in naturally; type_class inference for format specifier selection (`{s}` vs `{}`) needs to handle any expression type.
+- [x] **I4** 🟡 **MIR builder: lower arbitrary expression parts in interpolation** — `src/mir_builder_exprs.zig`. Interpolation parts are currently lowered as name lookups. With real AST nodes from I3, call `lowerNode` on each part expression instead — arbitrary expressions fold in naturally; type_class inference for format specifier selection (`{s}` vs `{}`) needs to handle any expression type.
 - [ ] **I5** 🟡 **Resolver: type-check expressions inside `@{}`** — `src/resolver_exprs.zig`. Interpolated string parts currently resolve as identifier lookups. With real expression nodes from I3, call `checkExpr` on each part — type errors inside `@{}` surface with proper locations. Add negative fixture `fail_interp_bad_expr.orh`.
 
 ### Semantic layer — medium
