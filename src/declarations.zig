@@ -474,7 +474,12 @@ pub const DeclCollector = struct {
     fn collectVar(self: *DeclCollector, v: parser.VarDecl, is_const: bool, loc: ?errors.SourceLoc) anyerror!void {
         // Type alias: const Name: type = T — register in types map, not vars
         if (is_const and isTypeAlias(v.type_annotation)) {
-            try self.table.symbols.put(v.name, .{ .type_alias = v.name });
+            // Type aliases to simple named types: extract the target name.
+            // Non-identifier RHS (e.g., @typeOf(expr), tuple literal) uses a
+            // self-referencing sentinel — the resolver treats it as .named, which
+            // is equivalent to deferring to Zig for the final type.
+            const target_name = if (v.value.* == .identifier) v.value.identifier else v.name;
+            try self.table.symbols.put(v.name, .{ .type_alias = target_name });
             return;
         }
 
@@ -857,6 +862,7 @@ test "declaration collector - type alias goes to types map" {
     // Should be stored as type_alias, not as var
     const sym = collector.table.symbols.get("Alias").?;
     try std.testing.expect(sym == .type_alias);
+    try std.testing.expectEqualStrings("SomeType", sym.type_alias);
 }
 
 test "declaration collector - struct methods registered" {

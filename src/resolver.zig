@@ -145,8 +145,9 @@ pub const TypeResolver = struct {
         return false;
     }
 
-    /// Resolve a type node, treating type alias names as opaque (returns .inferred).
-    /// Type aliases are transparent — Zig handles the real type checking at codegen.
+    /// Resolve a type node, resolving type aliases to their target types.
+    /// Builtin types (i32, str, etc.) resolve to their primitive RT.
+    /// Named types (structs, enums, other aliases) resolve as .named.
     /// Pass scope to also detect local type aliases (declared inside function bodies).
     pub fn resolveTypeAnnotation(self: *TypeResolver, idx: AstNodeIndex) !RT {
         return self.resolveTypeAnnotationInScope(idx, null);
@@ -158,14 +159,27 @@ pub const TypeResolver = struct {
         if (resolved == .named) {
             // Module-level type alias
             if (self.ctx.decls.symbols.get(resolved.named)) |sym| switch (sym) {
-                .type_alias => return RT.inferred,
+                .type_alias => |target_name| {
+                    // Resolve the target type name: builtins (i32, str, bool, etc.) or named types (Vec3, MyStruct)
+                    if (types.Primitive.fromName(target_name)) |prim| {
+                        return switch (prim) {
+                            .err => RT.err,
+                            .null_type => RT.null_type,
+                            .any, .this, .self_deprecated, .vector => RT{ .named = target_name },
+                            else => RT{ .primitive = prim },
+                        };
+                    }
+                    return RT{ .named = target_name };
+                },
                 else => {},
             };
             // Local type alias (.primitive = .@"type") or type parameter (.type_param) in scope
             if (scope) |s| {
                 if (s.lookup(resolved.named)) |t| {
-                    if ((t == .primitive and t.primitive == .@"type") or t == .type_param)
-                        return RT.inferred;
+                    if (t == .type_param) return RT.inferred;
+                    if (t == .primitive and t.primitive == .@"type") return RT.inferred;
+                    // Named type resolved from a local type alias — use it directly
+                    return t;
                 }
             }
         }
@@ -245,6 +259,40 @@ pub const TypeResolver = struct {
         // Bridge: pass *parser.Node to validation
         const node = try self.mustReverse(idx);
         return validation_impl.validateType(self, node, scope, rctx);
+    }
+
+    /// Resolve the target type for a type alias value expression.
+    /// When `const T: type = i64`, the value resolves to `.named = "i64"`.
+    /// This converts `.named` to `.primitive` for known primitives and follows
+    /// module-level type alias chains.
+    pub fn resolveAliasTarget(self: *TypeResolver, val_type: RT) RT {
+        if (val_type == .named) {
+            if (types.Primitive.fromName(val_type.named)) |prim| {
+                return switch (prim) {
+                    .err => RT.err,
+                    .null_type => RT.null_type,
+                    .any, .this, .self_deprecated, .vector => RT{ .named = val_type.named },
+                    else => RT{ .primitive = prim },
+                };
+            }
+            // Follow module-level type alias chains
+            if (self.ctx.decls.symbols.get(val_type.named)) |sym| switch (sym) {
+                .type_alias => |target_name| {
+                    if (types.Primitive.fromName(target_name)) |prim2| {
+                        return switch (prim2) {
+                            .err => RT.err,
+                            .null_type => RT.null_type,
+                            .any, .this, .self_deprecated, .vector => RT{ .named = target_name },
+                            else => RT{ .primitive = prim2 },
+                        };
+                    }
+                    return RT{ .named = target_name };
+                },
+                else => {},
+            };
+            return val_type;
+        }
+        return val_type;
     }
 
     pub fn checkAssignCompat(self: *TypeResolver, expected: RT, actual: RT, idx: AstNodeIndex) !void {

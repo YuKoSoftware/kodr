@@ -1,0 +1,7 @@
+module fail_type_alias_mismatch
+
+const Userid: type = i64
+
+pub func main() void {
+    const id: Userid = "hello"  //> [E2077]
+}

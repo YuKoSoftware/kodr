@@ -252,7 +252,7 @@ requires threading the full token stream through `@{...}`. Codegen (P7) is alrea
 
 ### Semantic layer — medium
 
-- [ ] **M1** 🟡 **Type aliases resolve to `.inferred`** — `src/resolver.zig:96-109`. `const Userid: type = i64` + passing a `string` where `Userid` is expected → checker sees `.inferred` and approves. Fix: resolve aliases to target during declaration, store resolved target in `decls.types`, use at use sites.
+- [x] **M1** 🟡 **Type aliases resolve to `.inferred`** — Fixed. `collectVar` in `src/declarations.zig:474-484` extracts target name from identifier RHS and registers as `.type_alias`. `resolveTypeAnnotationInScope` in `src/resolver.zig:156-187` resolves `.type_alias` symbols to their target primitives or named types. Test fixtures: `fail_type_alias_mismatch.orh` (E2077), `fail_type_alias_struct_mismatch.orh` (E5005), `type_alias_basic.orh`. Limitation: local (function-scoped) type aliases still resolve to `.inferred` — deferred to follow-up.
 - [ ] **M2** 🟡 **`inferCaptureType` limited to range/str/slice/array** — `src/resolver.zig:700-710`. Iterating a `List(T)` or `Map(K,V)` yields `.inferred` because those are `.generic`. Needs a generic-aware iterator protocol (depends on S6).
 - [ ] **M3** 🟡 **Scope is hashmap-per-frame with allocation per block** — `src/scope.zig`. Fix: single `vars: ArrayList(Binding)` + `frames: ArrayList(usize)` start-index stack. Pop frame by truncating. Good fit for the arena-allocated scope stack.
 - [ ] **M4** 🟡 **Type arena never freed mid-compile** — `src/declarations.zig:97`. Grows monotonically. Fix: split into permanent arena (types stored in DeclTable signatures) and scratch arena (expression-level temporaries, reset per function).
