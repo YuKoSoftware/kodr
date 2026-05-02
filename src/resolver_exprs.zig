@@ -99,10 +99,8 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
             // Build candidate list from scope chain + module declarations for suggestion
             var candidates: std.ArrayListUnmanaged([]const u8) = .{};
             defer candidates.deinit(self.ctx.allocator);
-            var sc: ?*const Scope = scope;
-            while (sc) |s| : (sc = s.parent) {
-                var it = s.vars.keyIterator();
-                while (it.next()) |k| try candidates.append(self.ctx.allocator, k.*);
+            for (scope.vars.items) |binding| {
+                try candidates.append(self.ctx.allocator, binding.name);
             }
             var sym_it = self.ctx.decls.symbols.keyIterator();
             while (sym_it.next()) |k| try candidates.append(self.ctx.allocator, k.*);

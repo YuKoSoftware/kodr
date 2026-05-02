@@ -26,11 +26,8 @@ pub const VarState = struct {
 pub const OwnershipScope = struct {
     base: scope_mod.ScopeBase(VarState),
 
-    pub fn init(allocator: std.mem.Allocator, parent: ?*OwnershipScope) OwnershipScope {
-        return .{ .base = scope_mod.ScopeBase(VarState).init(
-            allocator,
-            if (parent) |p| &p.base else null,
-        ) };
+    pub fn init(allocator: std.mem.Allocator) OwnershipScope {
+        return .{ .base = scope_mod.ScopeBase(VarState).init(allocator) };
     }
 
     pub fn deinit(self: *OwnershipScope) void {
@@ -167,7 +164,7 @@ pub const OwnershipChecker = struct {
     pub fn check(self: *OwnershipChecker, ast: *parser.Node) !void {
         if (ast.* != .program) return;
 
-        var scope = OwnershipScope.init(self.allocator, null);
+        var scope = OwnershipScope.init(self.allocator);
         defer scope.deinit();
 
         for (ast.program.top_level) |node| {
@@ -178,34 +175,34 @@ pub const OwnershipChecker = struct {
     pub fn checkNode(self: *OwnershipChecker, node: *parser.Node, scope: *OwnershipScope) anyerror!void {
         switch (node.*) {
             .func_decl => |f| {
-                var func_scope = OwnershipScope.init(self.allocator, scope);
-                defer func_scope.deinit();
+                try scope.base.pushFrame();
+                defer scope.base.popFrame();
 
                 for (f.params) |param| {
                     if (param.* == .param) {
                         const type_name = typeNodeName(param.param.type_annotation);
                         const is_prim = types.isPrimitiveName(type_name) or builtins.isValueType(type_name);
-                        try func_scope.define(param.param.name, is_prim);
+                        try scope.define(param.param.name, is_prim);
                     }
                 }
 
-                try self.checkNode(f.body, &func_scope);
+                try self.checkNode(f.body, scope);
             },
 
             .block => |b| {
-                var block_scope = OwnershipScope.init(self.allocator, scope);
-                defer block_scope.deinit();
+                try scope.base.pushFrame();
+                defer scope.base.popFrame();
 
                 for (b.statements) |stmt| {
-                    try self.checkStatement(stmt, &block_scope);
+                    try self.checkStatement(stmt, scope);
                 }
 
             },
 
             .test_decl => |t| {
-                var test_scope = OwnershipScope.init(self.allocator, scope);
-                defer test_scope.deinit();
-                try self.checkNode(t.body, &test_scope);
+                try scope.base.pushFrame();
+                defer scope.base.popFrame();
+                try self.checkNode(t.body, scope);
             },
 
             .struct_decl => |s| {
@@ -236,11 +233,10 @@ pub const OwnershipChecker = struct {
 
     pub fn snapshotScope(self: *OwnershipChecker, scope: *OwnershipScope) ![]StateEntry {
         var entries = std.ArrayListUnmanaged(StateEntry){};
-        var it = scope.base.vars.iterator();
-        while (it.next()) |entry| {
+        for (scope.base.currentFrameBindings()) |binding| {
             try entries.append(self.allocator, .{
-                .name = entry.key_ptr.*,
-                .state = entry.value_ptr.state,
+                .name = binding.name,
+                .state = binding.value.state,
             });
         }
         return entries.toOwnedSlice(self.allocator);
@@ -298,7 +294,7 @@ test "ownership - use after move detected" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 's' as non-primitive (string)
@@ -325,7 +321,7 @@ test "ownership - primitive always copies" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'x' as primitive (i32)
@@ -352,7 +348,7 @@ test "ownership - string is copy type" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'name' as string (primitive — copies, never moves)
@@ -376,7 +372,7 @@ test "ownership - copy borrows without moving" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'data' as non-primitive (struct)
@@ -405,7 +401,7 @@ test "ownership - move marks as moved" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'data' as non-primitive
@@ -441,7 +437,7 @@ test "ownership - primitive field access allowed" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'v' as Vec2 (non-primitive struct, var — can be moved)
@@ -474,7 +470,7 @@ test "ownership - non-primitive field move rejected" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'c' as Container (var — can be moved)
@@ -501,7 +497,7 @@ test "ownership - struct field borrow allowed" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'player' as non-primitive struct
@@ -528,7 +524,7 @@ test "ownership - if branch moves conservatively" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     try scope.define("data", false);
@@ -582,7 +578,7 @@ test "ownership - assignment restores ownership" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'data' as non-primitive, then move it
@@ -619,7 +615,7 @@ test "ownership - type inference from literal values" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // var x = 42 → should infer as primitive
@@ -653,7 +649,7 @@ test "ownership - match arm merging is conservative" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     try scope.define("data", false);
@@ -714,7 +710,7 @@ test "ownership - return marks non-primitive as moved" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     try scope.define("data", false);
@@ -742,7 +738,7 @@ test "ownership - inferIterableElemPrimitive" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Range expression → primitive
@@ -774,7 +770,7 @@ test "ownership - inferIterableElemPrimitive" {
 }
 
 test "ownership - inferPrimitiveFromValue" {
-    var scope = OwnershipScope.init(std.testing.allocator, null);
+    var scope = OwnershipScope.init(std.testing.allocator);
     defer scope.deinit();
 
     // Literals are primitive
@@ -812,7 +808,7 @@ test "ownership - const value reuse allowed" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'v' as const, non-primitive (struct)
@@ -839,7 +835,7 @@ test "ownership - var value still moves" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 'v' as var, non-primitive (struct) — is_const = false
@@ -866,7 +862,7 @@ test "ownership - interpolated string checks embedded exprs" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     // Define 's' as non-primitive, moved
@@ -894,7 +890,7 @@ test "ownership - if with return in then-block does not falsely move" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     try scope.define("result", false);
@@ -927,7 +923,7 @@ test "ownership - if without return still marks moved (conservative)" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     try scope.define("data", false);
@@ -958,7 +954,7 @@ test "ownership - if/else both return discards moves" {
 
     var checker = OwnershipChecker.init(alloc, &ctx);
 
-    var scope = OwnershipScope.init(alloc, null);
+    var scope = OwnershipScope.init(alloc);
     defer scope.deinit();
 
     try scope.define("x", false);

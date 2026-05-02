@@ -71,6 +71,11 @@ pub const TypeResolver = struct {
     /// appears in code, which matches all_decls keys. Consumed by checkUnusedImports.
     used_imports: std.StringHashMapUnmanaged(void) = .{},
 
+    /// Local type aliases: maps names of locally-declared type aliases
+    /// (e.g., `const X: type = i64`) to their target ResolvedType.
+    /// Populated during var_decl resolution, consumed by resolveTypeAnnotationInScope.
+    local_type_aliases: std.StringHashMapUnmanaged(RT) = .{},
+
     pub fn init(ctx: *const sema.SemanticContext) TypeResolver {
         return .{
             .ctx = ctx,
@@ -84,6 +89,7 @@ pub const TypeResolver = struct {
         self.ast_type_map.deinit(self.ctx.allocator);
         self.included_modules.deinit(self.ctx.allocator);
         self.used_imports.deinit(self.ctx.allocator);
+        self.local_type_aliases.deinit(self.ctx.allocator);
     }
 
     pub fn markImportUsed(self: *TypeResolver, name: []const u8) !void {
@@ -122,18 +128,6 @@ pub const TypeResolver = struct {
         return self.reverseNodeMut(idx) orelse return error.MissingReverseNode;
     }
 
-    /// Check if a name exists in a parent scope within the function boundary.
-    /// Walks the parent chain from scope.parent, stopping before the module-level
-    /// root scope (parent == null). Used for cross-scope shadowing detection.
-    pub fn lookupInFuncScope(_: *const TypeResolver, scope: *Scope, name: []const u8) bool {
-        var s = scope.parent orelse return false;
-        while (true) {
-            if (s.vars.contains(name)) return true;
-            if (s.is_func_root or s.parent == null) return false;
-            s = s.parent.?;
-        }
-    }
-
     /// Check if a type name exists as a pub declaration in any `use`-d (included) module's DeclTable.
     pub fn isIncludedType(self: *const TypeResolver, name: []const u8) bool {
         const ad = self.ctx.all_decls orelse return false;
@@ -143,6 +137,42 @@ pub const TypeResolver = struct {
             }
         }
         return false;
+    }
+
+    /// Follow module-level type alias chains transitively.
+    /// Depth-limited to 32 to prevent infinite loops on cyclic aliases.
+    /// Returns the final resolved type after following all .type_alias symbols.
+    /// Emits a diagnostic and returns error.CompileError on cyclic alias chains.
+    fn resolveNamedType(self: *TypeResolver, start_name: []const u8) !RT {
+        var name = start_name;
+        var depth: u8 = 0;
+        while (depth < 32) : (depth += 1) {
+            // Check if the current name is a known primitive type name
+            if (types.Primitive.fromName(name)) |prim| {
+                return types.ResolvedType.fromPrimitive(prim);
+            }
+            // Check if it's a module-level type alias — follow the chain
+            if (self.ctx.decls.symbols.get(name)) |sym| switch (sym) {
+                .type_alias => |target_name| {
+                    // Self-referencing sentinel: const T: type = expr where expr is
+                    // not a simple identifier (tuple literal, @typeOf, etc.).
+                    // This is not a cycle — it means "defer to Zig for the final type."
+                    if (std.mem.eql(u8, target_name, name)) return RT{ .named = name };
+                    name = target_name;
+                    continue;
+                },
+                else => return RT{ .named = name },
+            } else {
+                return RT{ .named = name };
+            }
+        }
+        _ = try self.ctx.reporter.reportFmt(
+            .cyclic_type_alias,
+            null,
+            "cyclic type alias chain detected: '{s}' exceeds maximum depth of 32",
+            .{start_name},
+        );
+        return error.CompileError;
     }
 
     /// Resolve a type node, resolving type aliases to their target types.
@@ -157,28 +187,29 @@ pub const TypeResolver = struct {
         const node = try self.mustReverse(idx);
         const resolved = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), node);
         if (resolved == .named) {
-            // Module-level type alias
-            if (self.ctx.decls.symbols.get(resolved.named)) |sym| switch (sym) {
-                .type_alias => |target_name| {
-                    // Resolve the target type name: builtins (i32, str, bool, etc.) or named types (Vec3, MyStruct)
-                    if (types.Primitive.fromName(target_name)) |prim| {
-                        return switch (prim) {
-                            .err => RT.err,
-                            .null_type => RT.null_type,
-                            .any, .this, .self_deprecated, .vector => RT{ .named = target_name },
-                            else => RT{ .primitive = prim },
-                        };
-                    }
-                    return RT{ .named = target_name };
-                },
-                else => {},
-            };
-            // Local type alias (.primitive = .@"type") or type parameter (.type_param) in scope
+            // Follow module-level type alias chains transitively
+            const chain_result = try self.resolveNamedType(resolved.named);
+            // If resolveNamedType resolved through aliases (returned something different
+            // from the original .named), return immediately. Otherwise, the name was not
+            // found as a module-level symbol — check scope for local type aliases.
+            if (!(chain_result == .named and std.mem.eql(u8, chain_result.named, resolved.named))) {
+                return chain_result;
+            }
+            // Not found as a module-level symbol — check local type aliases in scope
             if (scope) |s| {
                 if (s.lookup(resolved.named)) |t| {
                     if (t == .type_param) return RT.inferred;
-                    if (t == .primitive and t.primitive == .@"type") return RT.inferred;
-                    // Named type resolved from a local type alias — use it directly
+                    if (t == .primitive and t.primitive == .@"type") {
+                        if (self.local_type_aliases.get(resolved.named)) |target| {
+                            // Follow module-level chains on the local alias target too
+                            if (target == .named) {
+                                return try self.resolveNamedType(target.named);
+                            }
+                            return target;
+                        }
+                        return RT.inferred;
+                    }
+                    // Named type resolved from scope (struct, enum, etc.) — use it directly
                     return t;
                 }
             }
@@ -206,7 +237,7 @@ pub const TypeResolver = struct {
             }
         }
 
-        var scope = Scope.init(self.ctx.allocator, null);
+        var scope = Scope.init(self.ctx.allocator);
         defer scope.deinit();
 
         // First pass: register top-level declarations in scope
@@ -264,33 +295,10 @@ pub const TypeResolver = struct {
     /// Resolve the target type for a type alias value expression.
     /// When `const T: type = i64`, the value resolves to `.named = "i64"`.
     /// This converts `.named` to `.primitive` for known primitives and follows
-    /// module-level type alias chains.
-    pub fn resolveAliasTarget(self: *TypeResolver, val_type: RT) RT {
+    /// module-level type alias chains transitively.
+    pub fn resolveAliasTarget(self: *TypeResolver, val_type: RT) !RT {
         if (val_type == .named) {
-            if (types.Primitive.fromName(val_type.named)) |prim| {
-                return switch (prim) {
-                    .err => RT.err,
-                    .null_type => RT.null_type,
-                    .any, .this, .self_deprecated, .vector => RT{ .named = val_type.named },
-                    else => RT{ .primitive = prim },
-                };
-            }
-            // Follow module-level type alias chains
-            if (self.ctx.decls.symbols.get(val_type.named)) |sym| switch (sym) {
-                .type_alias => |target_name| {
-                    if (types.Primitive.fromName(target_name)) |prim2| {
-                        return switch (prim2) {
-                            .err => RT.err,
-                            .null_type => RT.null_type,
-                            .any, .this, .self_deprecated, .vector => RT{ .named = target_name },
-                            else => RT{ .primitive = prim2 },
-                        };
-                    }
-                    return RT{ .named = target_name };
-                },
-                else => {},
-            };
-            return val_type;
+            return try self.resolveNamedType(val_type.named);
         }
         return val_type;
     }
@@ -408,6 +416,9 @@ pub fn inferCaptureType(iterable: *parser.Node, iter_type: RT) RT {
     // Slice/array of known type — element type is the inner type
     if (iter_type == .slice) return iter_type.slice.*;
     if (iter_type == .array) return iter_type.array.elem.*;
+    // Generic type (e.g., List(T), Set(T), Map(K,V)) — element type is first generic arg
+    if (iter_type == .generic and iter_type.generic.args.len >= 1)
+        return iter_type.generic.args[0];
     return RT.inferred;
 }
 
@@ -421,6 +432,9 @@ pub fn inferCaptureTypeIdx(self: *const TypeResolver, iterable_idx: AstNodeIndex
     // Slice/array of known type — element type is the inner type
     if (iter_type == .slice) return iter_type.slice.*;
     if (iter_type == .array) return iter_type.array.elem.*;
+    // Generic type (e.g., List(T), Set(T), Map(K,V)) — element type is first generic arg
+    if (iter_type == .generic and iter_type.generic.args.len >= 1)
+        return iter_type.generic.args[0];
     return RT.inferred;
 }
 
@@ -629,7 +643,7 @@ test "resolver - function return type resolves" {
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
 
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     const callee = try a.create(parser.Node);
@@ -672,7 +686,7 @@ test "resolver - struct field type resolves" {
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
 
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
     try scope.define("p", RT{ .named = "Point" });
 
@@ -704,7 +718,7 @@ test "resolver - explicit type annotation preferred" {
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
 
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -742,7 +756,7 @@ test "resolver - compiler func cast resolves to target type" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
     try scope.define("x", RT{ .primitive = .i32 });
 
@@ -777,7 +791,7 @@ test "resolver - compiler func copy preserves type" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
     try scope.define("data", RT{ .named = "Player" });
 
@@ -809,7 +823,7 @@ test "resolver - compiler func assert returns void" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -863,7 +877,7 @@ test "resolver - struct constructor resolves to named type" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -904,7 +918,7 @@ test "resolver - positional struct constructor rejected" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -940,7 +954,7 @@ test "resolver - validateType catches unknown generic" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -971,7 +985,7 @@ test "resolver - array literal resolves to array type" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -1098,7 +1112,7 @@ test "resolver - validateType catches unknown qualified generic" {
     };
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -1231,6 +1245,47 @@ test "inferCaptureType - slice produces element type" {
     try std.testing.expectEqual(types.Primitive.i32, result.primitive);
 }
 
+test "inferCaptureType - generic List(T) produces element type" {
+    const alloc = std.testing.allocator;
+    const args_buf = try alloc.alloc(RT, 1);
+    defer alloc.free(args_buf);
+    args_buf[0] = RT{ .primitive = .i32 };
+    const rt = RT{ .generic = .{ .name = "List", .args = args_buf } };
+    var dummy = parser.Node{ .int_literal = "0" };
+    const result = inferCaptureType(&dummy, rt);
+    try std.testing.expectEqual(types.Primitive.i32, result.primitive);
+}
+
+test "inferCaptureType - generic Set(T) produces element type" {
+    const alloc = std.testing.allocator;
+    const args_buf = try alloc.alloc(RT, 1);
+    defer alloc.free(args_buf);
+    args_buf[0] = RT{ .primitive = .string };
+    const rt = RT{ .generic = .{ .name = "Set", .args = args_buf } };
+    var dummy = parser.Node{ .int_literal = "0" };
+    const result = inferCaptureType(&dummy, rt);
+    try std.testing.expectEqual(types.Primitive.string, result.primitive);
+}
+
+test "inferCaptureType - generic Map(K,V) produces key type (first arg)" {
+    const alloc = std.testing.allocator;
+    const args_buf = try alloc.alloc(RT, 2);
+    defer alloc.free(args_buf);
+    args_buf[0] = RT{ .primitive = .string };
+    args_buf[1] = RT{ .primitive = .i32 };
+    const rt = RT{ .generic = .{ .name = "Map", .args = args_buf } };
+    var dummy = parser.Node{ .int_literal = "0" };
+    const result = inferCaptureType(&dummy, rt);
+    try std.testing.expectEqual(types.Primitive.string, result.primitive);
+}
+
+test "inferCaptureType - generic with no args falls through to inferred" {
+    var dummy = parser.Node{ .int_literal = "0" };
+    const rt = RT{ .generic = .{ .name = "Bad", .args = &.{} } };
+    const result = inferCaptureType(&dummy, rt);
+    try std.testing.expect(result == .inferred);
+}
+
 test "isLiteralCompatible" {
     try std.testing.expect(isLiteralCompatible(RT{ .primitive = .numeric_literal }, RT{ .primitive = .i32 }));
     try std.testing.expect(isLiteralCompatible(RT{ .primitive = .float_literal }, RT{ .primitive = .f64 }));
@@ -1268,7 +1323,7 @@ test "resolver - validateType accepts known qualified generic" {
     };
     var resolver = TypeResolver.init(&ctx);
     defer resolver.deinit();
-    var scope = Scope.init(alloc, null);
+    var scope = Scope.init(alloc);
     defer scope.deinit();
 
     var arena = std.heap.ArenaAllocator.init(alloc);

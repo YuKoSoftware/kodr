@@ -890,5 +890,19 @@ func main() void {
         console.println("FAIL array_to_slice")
     }
 
+    // Test: transitive type alias chain to primitive
+    if(tester.test_type_alias_chain() == 1) {
+        console.println("PASS type_alias_chain")
+    } else {
+        console.println("FAIL type_alias_chain")
+    }
+
+    // Test: transitive struct type alias chain
+    if(tester.test_type_alias_struct_chain() == 1) {
+        console.println("PASS type_alias_struct_chain")
+    } else {
+        console.println("FAIL type_alias_struct_chain")
+    }
+
     console.println("TESTER:DONE")
 }

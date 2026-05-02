@@ -67,9 +67,9 @@ pub fn registerDecl(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope) anyer
 /// Reports an error if name already exists in scope (duplicate) or in any
 /// enclosing scope up to the function boundary (shadowing).
 fn defineUnique(self: *TypeResolver, scope: *Scope, name: []const u8, t: RT, idx: AstNodeIndex) !void {
-    if (scope.vars.contains(name)) {
+    if (scope.containsInCurrentFrame(name)) {
         _ = try self.ctx.reporter.reportFmt(.already_declared, self.nodeLocFromIdx(idx), "'{s}' already declared in this scope", .{name});
-    } else if (self.lookupInFuncScope(scope, name)) {
+    } else if (scope.containsInEnclosingFrames(name)) {
         _ = try self.ctx.reporter.reportFmt(.shadowing_not_allowed, self.nodeLocFromIdx(idx), "'{s}' shadows a declaration in an outer scope — shadowing is not allowed", .{name});
     }
     try scope.define(name, t);
@@ -81,9 +81,8 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
         .func_decl => {
             const f = ast_typed.FuncDecl.unpack(self.store, idx);
             const fname = self.store.strings.get(f.name);
-            var func_scope = Scope.init(self.ctx.allocator, scope);
-            func_scope.is_func_root = true;
-            defer func_scope.deinit();
+            try scope.pushFuncFrame();
+            defer scope.popFrame();
 
             var has_type_param = false;
             const params_slice = self.store.extra_data.items[f.params_start..f.params_end];
@@ -97,25 +96,25 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                         std.mem.eql(u8, self.store.strings.get(ast_typed.TypeNamed.unpack(self.store, p.type_annotation).name), "type");
                     if (is_type_param) {
                         has_type_param = true;
-                        try defineUnique(self, &func_scope, pname,
+                        try defineUnique(self, scope, pname,
                             .{ .type_param = .{ .name = pname, .binder = idx } }, p_idx);
                     } else {
-                        try self.validateType(p.type_annotation, &func_scope, rctx);
+                        try self.validateType(p.type_annotation, scope, rctx);
                         const t: RT = blk: {
                             if (ta_tag == .type_named) {
                                 const tname = self.store.strings.get(
                                     ast_typed.TypeNamed.unpack(self.store, p.type_annotation).name);
-                                if (func_scope.lookup(tname)) |st| {
+                                if (scope.lookup(tname)) |st| {
                                     if (st == .type_param) break :blk st;
                                 }
                             }
                             const ta_node = try self.mustReverse(p.type_annotation);
                             break :blk try types.resolveTypeNode(self.ctx.decls.typeAllocator(), ta_node);
                         };
-                        try defineUnique(self, &func_scope, pname, t, p_idx);
+                        try defineUnique(self, scope, pname, t, p_idx);
                         // Type-check default value against declared param type
                         if (p.default_value != .none) {
-                            const dv_type = try self.resolveExpr(p.default_value, &func_scope, rctx);
+                            const dv_type = try self.resolveExpr(p.default_value, scope, rctx);
                             try self.checkAssignCompat(t, dv_type, p_idx);
                         }
                     }
@@ -134,7 +133,7 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
             }
 
             // Validate return type in func_scope so type params (T: type) are visible
-            try self.validateType(f.return_type, &func_scope, rctx);
+            try self.validateType(f.return_type, scope, rctx);
 
             // Check: `any` return type requires at least one `any`-typed parameter
             // Skip for methods inside generic structs — `any` may be a fallback for unmappable types
@@ -167,14 +166,14 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
             func_rctx.current_return_type = if (has_type_param)
                 RT.inferred
             else
-                try self.resolveTypeAnnotationInScope(f.return_type, &func_scope);
+                try self.resolveTypeAnnotationInScope(f.return_type, scope);
 
-            try self.resolveNode(f.body, &func_scope, func_rctx);
+            try self.resolveNode(f.body, scope, func_rctx);
         },
         .struct_decl => {
             const s = ast_typed.StructDecl.unpack(self.store, idx);
-            var struct_scope = Scope.init(self.ctx.allocator, scope);
-            defer struct_scope.deinit();
+            try scope.pushFrame();
+            defer scope.popFrame();
             // Add type params to scope (T: type → T is a known type)
             var has_struct_type_params = false;
             const tp_slice = self.store.extra_data.items[s.type_params_start..s.type_params_end];
@@ -187,7 +186,7 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                     if (is_tp) {
                         has_struct_type_params = true;
                         const tpname = self.store.strings.get(p.name);
-                        try struct_scope.define(tpname,
+                        try scope.define(tpname,
                             .{ .type_param = .{ .name = tpname, .binder = idx } });
                     }
                 }
@@ -198,7 +197,7 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
             const members_slice = self.store.extra_data.items[s.members_start..s.members_end];
             for (members_slice) |m_u32| {
                 const m_idx: AstNodeIndex = @enumFromInt(m_u32);
-                try self.resolveNode(m_idx, &struct_scope, struct_rctx);
+                try self.resolveNode(m_idx, scope, struct_rctx);
             }
             // Check blueprint conformance — uses *parser.Node StructDecl via reverse_map
             if (self.reverseNodeMut(idx)) |n| {
@@ -210,22 +209,22 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
         .blueprint_decl => {
             const b = ast_typed.BlueprintDecl.unpack(self.store, idx);
             // Validate method signatures resolve correctly
-            var bp_scope = Scope.init(self.ctx.allocator, scope);
-            defer bp_scope.deinit();
+            try scope.pushFrame();
+            defer scope.popFrame();
             // Blueprint name is a valid type within its own methods
-            try bp_scope.define(self.store.strings.get(b.name), .{ .primitive = .@"type" });
+            try scope.define(self.store.strings.get(b.name), .{ .primitive = .@"type" });
             const methods_slice = self.store.extra_data.items[b.methods_start..b.methods_end];
             for (methods_slice) |m_u32| {
                 const m_idx: AstNodeIndex = @enumFromInt(m_u32);
-                try self.resolveNode(m_idx, &bp_scope, rctx);
+                try self.resolveNode(m_idx, scope, rctx);
             }
         },
         .enum_decl => {},
         .handle_decl => {},
         .block => {
             const stmts = ast_typed.Block.getStmts(self.store, idx);
-            var block_scope = Scope.init(self.ctx.allocator, scope);
-            defer block_scope.deinit();
+            try scope.pushFrame();
+            defer scope.popFrame();
             var found_exit = false;
             for (stmts) |stmt_idx| {
                 if (found_exit) {
@@ -237,7 +236,7 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                     // Only warn once per block, but keep resolving for other diagnostics
                     found_exit = false;
                 }
-                try self.resolveStatement(stmt_idx, &block_scope, rctx);
+                try self.resolveStatement(stmt_idx, scope, rctx);
                 // Check early exit via reverse_map bridge
                 if (self.reverseNodeMut(stmt_idx)) |n| {
                     if (parser.blockHasEarlyExit(n)) found_exit = true;
@@ -256,10 +255,10 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                 }
             }
             // Duplicate/shadowing check (only inside functions/blocks, not top-level)
-            if (scope.parent != null) {
-                if (scope.vars.contains(vname)) {
+            if (scope.isInsideFunction()) {
+                if (scope.containsInCurrentFrame(vname)) {
                     _ = try self.ctx.reporter.reportFmt(.already_declared, self.nodeLocFromIdx(idx), "variable '{s}' already declared in this scope", .{vname});
-                } else if (self.lookupInFuncScope(scope, vname)) {
+                } else if (scope.containsInEnclosingFrames(vname)) {
                     _ = try self.ctx.reporter.reportFmt(.shadowing_not_allowed, self.nodeLocFromIdx(idx), "variable '{s}' shadows a declaration in an outer scope — shadowing is not allowed", .{vname});
                 }
             }
@@ -284,6 +283,15 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                     try self.checkAssignCompat(resolved, val_type, idx);
                 }
                 try scope.define(vname, resolved);
+                // Record local type aliases for type annotation resolution
+                if (resolved == .primitive and resolved.primitive == .@"type") {
+                    if (self.store.getNode(v.value).tag == .identifier and
+                        !(val_type == .primitive and val_type.primitive == .@"type"))
+                    {
+                        const resolved_target = try self.resolveAliasTarget(val_type);
+                        try self.local_type_aliases.put(self.ctx.allocator, vname, resolved_target);
+                    }
+                }
                 try self.ast_type_map.put(self.ctx.allocator, idx, resolved);
             }
         },
@@ -372,8 +380,8 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
         },
         .for_stmt => {
             const f = ast_typed.ForStmt.unpack(self.store, idx);
-            var for_scope = Scope.init(self.ctx.allocator, scope);
-            defer for_scope.deinit();
+            try scope.pushFrame();
+            defer scope.popFrame();
 
             // Resolve all iterables
             var iter_types = std.ArrayListUnmanaged(RT){};
@@ -408,7 +416,7 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
                 if (capture_type == .inferred or capture_type == .unknown) {
                     for (caps_slice) |c_u32| {
                         const cap_si: ast_store_mod.StringIndex = @enumFromInt(c_u32);
-                        try defineUnique(self, &for_scope, self.store.strings.get(cap_si), RT.inferred, idx);
+                        try defineUnique(self, scope, self.store.strings.get(cap_si), RT.inferred, idx);
                     }
                 } else if (struct_sig) |sig| {
                     const expected = sig.fields.len + extra_iterables;
@@ -421,13 +429,13 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
                         );
                         for (caps_slice) |c_u32| {
                             const cap_si: ast_store_mod.StringIndex = @enumFromInt(c_u32);
-                            try defineUnique(self, &for_scope, self.store.strings.get(cap_si), RT.inferred, idx);
+                            try defineUnique(self, scope, self.store.strings.get(cap_si), RT.inferred, idx);
                         }
                     } else {
                         // Struct field captures
                         for (caps_slice[0..sig.fields.len], sig.fields) |c_u32, field| {
                             const cap_si: ast_store_mod.StringIndex = @enumFromInt(c_u32);
-                            try defineUnique(self, &for_scope, self.store.strings.get(cap_si), field.type_, idx);
+                            try defineUnique(self, scope, self.store.strings.get(cap_si), field.type_, idx);
                         }
                         // Extra captures from additional iterables (e.g., 0.. → usize)
                         for (caps_slice[sig.fields.len..], iter_types.items[1..]) |c_u32, it| {
@@ -436,7 +444,7 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
                                 const sec_iter_idx: AstNodeIndex = @enumFromInt(iters_slice[1]);
                                 break :blk resolver_mod.inferCaptureTypeIdx(self, sec_iter_idx, it);
                             } else RT.inferred;
-                            try defineUnique(self, &for_scope, self.store.strings.get(cap_si), et, idx);
+                            try defineUnique(self, scope, self.store.strings.get(cap_si), et, idx);
                         }
                     }
                 } else {
@@ -448,7 +456,7 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
                     );
                     for (caps_slice) |c_u32| {
                         const cap_si: ast_store_mod.StringIndex = @enumFromInt(c_u32);
-                        try defineUnique(self, &for_scope, self.store.strings.get(cap_si), RT.inferred, idx);
+                        try defineUnique(self, scope, self.store.strings.get(cap_si), RT.inferred, idx);
                     }
                 }
             } else {
@@ -462,20 +470,20 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
                     );
                     for (caps_slice) |c_u32| {
                         const cap_si: ast_store_mod.StringIndex = @enumFromInt(c_u32);
-                        try defineUnique(self, &for_scope, self.store.strings.get(cap_si), RT.inferred, idx);
+                        try defineUnique(self, scope, self.store.strings.get(cap_si), RT.inferred, idx);
                     }
                 } else {
                     for (caps_slice, iters_slice, iter_types.items) |c_u32, it_u32, it| {
                         const cap_si: ast_store_mod.StringIndex = @enumFromInt(c_u32);
                         const it_idx: AstNodeIndex = @enumFromInt(it_u32);
-                        try defineUnique(self, &for_scope, self.store.strings.get(cap_si), resolver_mod.inferCaptureTypeIdx(self, it_idx, it), idx);
+                        try defineUnique(self, scope, self.store.strings.get(cap_si), resolver_mod.inferCaptureTypeIdx(self, it_idx, it), idx);
                     }
                 }
             }
 
             var loop_rctx = rctx;
             loop_rctx.loop_depth += 1;
-            try self.resolveNode(f.body, &for_scope, loop_rctx);
+            try self.resolveNode(f.body, scope, loop_rctx);
         },
         .match_stmt => {
             const m = ast_typed.MatchStmt.unpack(self.store, idx);
@@ -513,14 +521,14 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
                     // Resolve guard expression
                     if (ma.guard != .none) {
                         has_guard = true;
-                        var guard_scope = Scope.init(self.ctx.allocator, scope);
-                        defer guard_scope.deinit();
+                        try scope.pushFrame();
+                        defer scope.popFrame();
                         if (pat_tag == .identifier) {
                             const pat_name = self.store.strings.get(ast_typed.Identifier.unpack(self.store, ma.pattern).name);
-                            try defineUnique(self, &guard_scope, pat_name, match_type, arm_idx);
+                            try scope.define(pat_name, match_type);
                         }
-                        _ = try self.resolveExpr(ma.guard, &guard_scope, rctx);
-                        try self.resolveNode(ma.body, &guard_scope, rctx);
+                        _ = try self.resolveExpr(ma.guard, scope, rctx);
+                        try self.resolveNode(ma.body, scope, rctx);
                     } else {
                         try self.resolveNode(ma.body, scope, rctx);
                     }
@@ -573,10 +581,10 @@ pub fn resolveStatement(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, r
             for (names_slice) |n_u32| {
                 const name_si: ast_store_mod.StringIndex = @enumFromInt(n_u32);
                 const name = self.store.strings.get(name_si);
-                if (scope.parent != null) {
-                    if (scope.vars.contains(name)) {
+                if (scope.isInsideFunction()) {
+                    if (scope.containsInCurrentFrame(name)) {
                         _ = try self.ctx.reporter.reportFmt(.already_declared, self.nodeLocFromIdx(idx), "variable '{s}' already declared in this scope", .{name});
-                    } else if (self.lookupInFuncScope(scope, name)) {
+                    } else if (scope.containsInEnclosingFrames(name)) {
                         _ = try self.ctx.reporter.reportFmt(.shadowing_not_allowed, self.nodeLocFromIdx(idx), "variable '{s}' shadows a declaration in an outer scope — shadowing is not allowed", .{name});
                     }
                 }

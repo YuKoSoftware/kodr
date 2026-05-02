@@ -1,0 +1,8 @@
+module fail_type_alias_chain_mismatch
+
+const A: type = i64
+const B: type = A
+
+pub func main() void {
+    const x: B = "hello"  //> [E2077]
+}

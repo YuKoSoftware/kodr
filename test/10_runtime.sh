@@ -67,7 +67,8 @@ for TEST_NAME in \
     neu_value_after_null_narrow neu_value_after_error_narrow \
     neu_value_after_both_narrow \
     neu_match_all_arms neu_match_with_else \
-    array_to_slice; do
+    array_to_slice \
+    type_alias_chain type_alias_struct_chain; do
     if echo "$BINOUT" | grep -q "PASS $TEST_NAME"; then pass "runtime: $TEST_NAME"
     else fail "runtime: $TEST_NAME"; fi
 done

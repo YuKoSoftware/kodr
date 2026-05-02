@@ -82,7 +82,7 @@ pub const ErrorCode = enum(u16) {
     wrap_op_not_supported      = 2060,
     array_elem_type_mismatch   = 2061,
 
-    // Resolver — validation (2070–2086)
+    // Resolver — validation (2070–2087)
     match_non_exhaustive       = 2070,
     match_non_enum_needs_else  = 2071,
     match_arm_not_member       = 2072,
@@ -100,6 +100,7 @@ pub const ErrorCode = enum(u16) {
     blueprint_param_type       = 2084,
     blueprint_return_type      = 2085,
     self_deprecated            = 2086,
+    cyclic_type_alias          = 2087,
 
     // ── E3xxx  Ownership / borrow ─────────────────────────────────────────────
     use_of_moved_value   = 3001,

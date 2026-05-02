@@ -314,6 +314,19 @@ pub const ResolvedType = union(enum) {
             .type_param => |tp| tp.name,
         };
     }
+
+    /// Convert a Primitive to the appropriate ResolvedType.
+    /// Most primitives map to .primitive; special pseudo-types
+    /// (any, this, self_deprecated, vector) map to .named because
+    /// they are placeholders resolved later in the pipeline.
+    pub fn fromPrimitive(prim: Primitive) ResolvedType {
+        return switch (prim) {
+            .err => .err,
+            .null_type => .null_type,
+            .any, .this, .self_deprecated, .vector => .{ .named = prim.toName() },
+            else => .{ .primitive = prim },
+        };
+    }
 };
 
 /// Convert a parser type AST node into a ResolvedType.
@@ -407,14 +420,7 @@ pub fn resolveTypeNode(alloc: std.mem.Allocator, node: *parser.Node) anyerror!Re
 
 /// Classify a named type string into the appropriate ResolvedType variant
 fn classifyNamed(n: []const u8) ResolvedType {
-    if (Primitive.fromName(n)) |prim| return switch (prim) {
-        .err => .err,
-        .null_type => .null_type,
-        // Special compiler-known types exist in Primitive only for comparison;
-        // they remain .named in the type system so anytype/self-ref semantics hold.
-        .any, .this, .self_deprecated, .vector => .{ .named = n },
-        else => .{ .primitive = prim },
-    };
+    if (Primitive.fromName(n)) |prim| return ResolvedType.fromPrimitive(prim);
     return .{ .named = n };
 }
 

@@ -29,12 +29,9 @@ pub const UnionVar = struct {
 pub const PropagationScope = struct {
     base: scope_mod.ScopeBase(UnionVar),
 
-    pub fn init(allocator: std.mem.Allocator, parent: ?*PropagationScope) PropagationScope {
+    pub fn init(allocator: std.mem.Allocator) PropagationScope {
         return .{
-            .base = scope_mod.ScopeBase(UnionVar).init(
-                allocator,
-                if (parent) |p| &p.base else null,
-            ),
+            .base = scope_mod.ScopeBase(UnionVar).init(allocator),
         };
     }
 
@@ -113,7 +110,7 @@ pub const PropagationChecker = struct {
                 // Skip body-less declarations (e.g., auto-mapped zig sidecar functions)
                 if (f.body.* == .block and f.body.block.statements.len == 0) return;
 
-                var scope = PropagationScope.init(self.allocator, null);
+                var scope = PropagationScope.init(self.allocator);
                 defer scope.deinit();
 
                 // Register function parameters with union types
@@ -136,7 +133,7 @@ pub const PropagationChecker = struct {
             .enum_decl => {},
             .handle_decl => {},
             .test_decl => |t| {
-                var scope = PropagationScope.init(self.allocator, null);
+                var scope = PropagationScope.init(self.allocator);
                 defer scope.deinit();
                 try self.checkNode(t.body, &scope);
                 try self.checkScopeExit(&scope);
@@ -148,15 +145,15 @@ pub const PropagationChecker = struct {
     fn checkNode(self: *PropagationChecker, node: *parser.Node, scope: *PropagationScope) anyerror!void {
         switch (node.*) {
             .block => |b| {
-                var block_scope = PropagationScope.init(self.allocator, scope);
-                defer block_scope.deinit();
+                try scope.base.pushFrame();
+                defer scope.base.popFrame();
 
                 for (b.statements) |stmt| {
-                    try self.checkStatement(stmt, &block_scope);
+                    try self.checkStatement(stmt, scope);
                 }
 
                 // Check scope exit — all unhandled unions must propagate
-                try self.checkScopeExit(&block_scope);
+                try self.checkScopeExit(scope);
             },
             else => {},
         }
@@ -390,9 +387,8 @@ pub const PropagationChecker = struct {
 
     /// Check scope exit — all unhandled unions are rejected
     fn checkScopeExit(self: *PropagationChecker, scope: *PropagationScope) anyerror!void {
-        var it = scope.base.vars.iterator();
-        while (it.next()) |entry| {
-            const uvar = entry.value_ptr.*;
+        for (scope.base.currentFrameBindings()) |binding| {
+            const uvar = binding.value;
             if (!uvar.handled) {
                 const kind = if (uvar.is_error_union) K.Type.ERROR else K.Type.NULL;
                 const loc: ?errors.SourceLoc = if (uvar.line > 0) blk: {
@@ -436,7 +432,7 @@ test "propagation - handled error union" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
 
-    var scope = PropagationScope.init(alloc, null);
+    var scope = PropagationScope.init(alloc);
     defer scope.deinit();
 
     // Define a union var and mark it handled
@@ -457,7 +453,7 @@ test "propagation - unhandled union is always rejected" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
 
-    var scope = PropagationScope.init(alloc, null);
+    var scope = PropagationScope.init(alloc);
     defer scope.deinit();
 
     try scope.define("result", true, 1, 1);
@@ -569,7 +565,7 @@ test "propagation - is not check marks union as handled" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
 
-    var scope = PropagationScope.init(alloc, null);
+    var scope = PropagationScope.init(alloc);
     defer scope.deinit();
 
     // Define a null union variable
@@ -593,7 +589,7 @@ test "propagation - is not check marks union as handled" {
     try checker.checkStatement(&if_stmt, &scope);
 
     // result should be marked as handled
-    const uvar = scope.base.vars.get("result").?;
+    const uvar = scope.base.lookup("result").?;
     try std.testing.expect(uvar.handled);
 }
 
@@ -607,7 +603,7 @@ test "propagation - return marks union as handled" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
 
-    var scope = PropagationScope.init(alloc, null);
+    var scope = PropagationScope.init(alloc);
     defer scope.deinit();
 
     // Define a union var
@@ -618,7 +614,7 @@ test "propagation - return marks union as handled" {
     var ret = parser.Node{ .return_stmt = .{ .value = &result_id } };
     try checker.checkStatement(&ret, &scope);
 
-    const uvar = scope.base.vars.get("result").?;
+    const uvar = scope.base.lookup("result").?;
     try std.testing.expect(uvar.handled);
 }
 
@@ -632,7 +628,7 @@ test "propagation - assignment propagation tracks union" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
 
-    var scope = PropagationScope.init(alloc, null);
+    var scope = PropagationScope.init(alloc);
     defer scope.deinit();
 
     // Define x as an error union
@@ -648,7 +644,7 @@ test "propagation - assignment propagation tracks union" {
     } };
     try checker.checkStatement(&y_decl, &scope);
 
-    const y_var = scope.base.vars.get("y").?;
+    const y_var = scope.base.lookup("y").?;
     try std.testing.expect(!y_var.handled);
     try std.testing.expect(y_var.is_error_union);
 }
@@ -687,13 +683,13 @@ test "propagation - reassignment resets handled status" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
 
-    var scope = PropagationScope.init(alloc, null);
+    var scope = PropagationScope.init(alloc);
     defer scope.deinit();
 
     // Define result, mark as handled
     try scope.define("result", true, 1, 1);
     scope.markHandled("result");
-    try std.testing.expect(scope.base.vars.get("result").?.handled);
+    try std.testing.expect(scope.base.lookup("result").?.handled);
 
     // Reassign: result = divide(5, 0) — should reset to unhandled
     var result_id = parser.Node{ .identifier = "result" };
@@ -706,7 +702,7 @@ test "propagation - reassignment resets handled status" {
     var assign = parser.Node{ .assignment = .{ .op = .assign, .left = &result_id, .right = &call_node } };
     try checker.checkStatement(&assign, &scope);
 
-    try std.testing.expect(!scope.base.vars.get("result").?.handled);
+    try std.testing.expect(!scope.base.lookup("result").?.handled);
 }
 
 test "propagation - compound condition handles multiple unions" {
@@ -719,7 +715,7 @@ test "propagation - compound condition handles multiple unions" {
     const ctx = sema.SemanticContext.initForTest(alloc, &reporter, &decl_table);
     var checker = PropagationChecker.init(alloc, &ctx);
 
-    var scope = PropagationScope.init(alloc, null);
+    var scope = PropagationScope.init(alloc);
     defer scope.deinit();
 
     // Define two union variables
@@ -752,26 +748,26 @@ test "propagation - compound condition handles multiple unions" {
     try checker.checkStatement(&if_stmt, &scope);
 
     // Both should be marked as handled
-    try std.testing.expect(scope.base.vars.get("x").?.handled);
-    try std.testing.expect(scope.base.vars.get("y").?.handled);
+    try std.testing.expect(scope.base.lookup("x").?.handled);
+    try std.testing.expect(scope.base.lookup("y").?.handled);
 }
 
 test "propagation - scope isTracked walks parents" {
     const alloc = std.testing.allocator;
 
-    var parent = PropagationScope.init(alloc, null);
+    var parent = PropagationScope.init(alloc);
     defer parent.deinit();
 
     try parent.define("x", true, 1, 1);
 
-    var child = PropagationScope.init(alloc, &parent);
-    defer child.deinit();
+    try parent.base.pushFrame();
+    defer parent.base.popFrame();
 
     // x should be visible from child scope
-    const tracked = child.isTracked("x");
+    const tracked = parent.isTracked("x");
     try std.testing.expect(tracked != null);
     try std.testing.expect(tracked.?.is_error_union);
 
     // y should not be tracked
-    try std.testing.expect(child.isTracked("y") == null);
+    try std.testing.expect(parent.isTracked("y") == null);
 }

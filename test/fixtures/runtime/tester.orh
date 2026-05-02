@@ -1880,3 +1880,29 @@ pub func test_array_to_slice() i32 {
     }
     return 0
 }
+
+// ─── Type alias chains ────────────────────────────────────────
+
+// Transitive type alias chain: AliasC → AliasB → AliasA → str
+const AliasA: type = str
+const AliasB: type = AliasA
+const AliasC: type = AliasB
+
+pub func test_type_alias_chain() i32 {
+    const msg: AliasC = "chain works"
+    return 1
+}
+
+// Transitive struct type alias chain: AliasQ → AliasP → Vec2AliasTest
+pub struct Vec2AliasTest {
+    pub x: f32
+    pub y: f32
+}
+
+const AliasP: type = Vec2AliasTest
+const AliasQ: type = AliasP
+
+pub func test_type_alias_struct_chain() i32 {
+    const v: AliasQ = Vec2AliasTest{x: 1.0, y: 2.0}
+    return 1
+}
