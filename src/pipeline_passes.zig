@@ -131,7 +131,7 @@ pub fn checkUnusedImports(
 }
 
 /// Run semantic passes 5–8 and codegen passes 10–11 for a single module.
-/// `arena` is the per-module arena (`mc.arena.allocator()`); all internal
+/// `arena` is the per-module body arena (`mc.bodyAllocator()`); all internal
 /// scratch allocates from it. `ctx` carries cross-module shared state;
 /// `mc` carries module identity, source data, and the decl collector.
 /// Returns the generated Zig output string slice (owned by the codegen
@@ -267,7 +267,7 @@ pub fn runSemanticAndCodegen(
     // Write generated .zig file to cache
     try cache.writeGeneratedZig(mc.mod_name, cg.getOutput(), arena);
 
-    mc.source_map = try arena.dupe(module.SourceMapEntry, cg.getSourceMap());
+    mc.source_map = try mc.ifaceAllocator().dupe(module.SourceMapEntry, cg.getSourceMap());
 
     return cg.getOutput();
 }

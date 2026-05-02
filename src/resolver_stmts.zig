@@ -20,7 +20,7 @@ pub fn registerDecl(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope) anyer
         .func_decl => {
             const f = ast_typed.FuncDecl.unpack(self.store, idx);
             const ret_node = try self.mustReverse(f.return_type);
-            const ret_type = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), ret_node);
+            const ret_type = try types.resolveTypeNode(self.scratchAllocator(), ret_node);
             try scope.define(self.store.strings.get(f.name), ret_type);
         },
         .struct_decl => {
@@ -109,7 +109,7 @@ pub fn resolveNode(self: *TypeResolver, idx: AstNodeIndex, scope: *Scope, rctx: 
                                 }
                             }
                             const ta_node = try self.mustReverse(p.type_annotation);
-                            break :blk try types.resolveTypeNode(self.ctx.decls.typeAllocator(), ta_node);
+                            break :blk try types.resolveTypeNode(self.scratchAllocator(), ta_node);
                         };
                         try defineUnique(self, scope, pname, t, p_idx);
                         // Type-check default value against declared param type

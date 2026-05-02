@@ -54,36 +54,53 @@ pub const BuildContext = struct {
     cached_unions: *const std.ArrayListUnmanaged(cache.CachedUnionEntry),
 };
 
-/// Per-module lifetime container. Owns the arena that backs all per-module
-/// allocations (AST conversion, decl collector, type resolver, MIR builder,
-/// codegen scratch). Lives in `runPipeline`'s outer `ArrayList(ModuleCompile)`
-/// from initialization until end of build.
+/// Per-module lifetime container with a two-arena design:
+///
+///   * `iface_arena` — whole-build lifetime. Holds the `decl_collector` and
+///     its `DeclTable`, which is referenced across modules via
+///     `BuildContext.all_module_decls`. Never freed until all modules are
+///     compiled. Also holds `source_map` (needed after the module is done).
+///
+///   * `body_arena` — per-module scratch. Holds AST conversion, type resolver,
+///     ownership/borrow/propagation checker state, MIR builder, and codegen
+///     scratch. Freed at the end of `compileOne` so peak memory is bounded to
+///     the largest single module rather than the whole build.
 ///
 /// Lifetime contract:
-///   * `arena` outlives every other field on this struct.
-///   * `decl_collector` is heap-allocated *inside* the arena; the table it
-///     contains is referenced by `BuildContext.all_module_decls` across
-///     modules. Therefore `arena` must not be reset/deinit'd until all later
-///     modules have been compiled.
+///   * `body_arena` is deinitialized first (body never references iface).
+///   * `iface_arena` outlives every other module's body_arena because
+///     `BuildContext.all_module_decls` holds pointers into it.
 ///   * `mod_name` and `mod_ptr` are borrowed from `module.Resolver` (which
 ///     outlives `ModuleCompile`).
 ///
-/// Future work (M4): split into `iface_arena` (whole-build, holds decl table)
-/// and `body_arena` (freed at end of `compileOne`, holds AST/MIR/codegen).
-/// Out of scope for P1.
+/// Goes in `runPipeline`'s outer `ArrayList(ModuleCompile)` from
+/// initialization until end of build.
 pub const ModuleCompile = struct {
-    arena: std.heap.ArenaAllocator,
+    iface_arena: std.heap.ArenaAllocator, // whole-build — decl table, symbols, type_arena
+    body_arena: std.heap.ArenaAllocator, // per-module — AST, resolver, MIR, codegen scratch
     mod_name: []const u8,
     mod_ptr: *module.Module,
     decl_collector: *declarations.DeclCollector,
     /// Source map produced by codegen: zig_line → orh_file:orh_line.
-    /// Slice is arena-owned; populated by pipeline_passes after cg.generate().
+    /// Slice is iface-arena-owned; populated by pipeline_passes after cg.generate().
     source_map: []const module.SourceMapEntry = &.{},
+
+    /// Whole-build interface allocator — for data that must survive across
+    /// modules (decl tables, source maps).
+    pub fn ifaceAllocator(self: *ModuleCompile) std.mem.Allocator {
+        return self.iface_arena.allocator();
+    }
+
+    /// Per-module body allocator — for scratch data freed at end of
+    /// `compileOne` (AST conversion, resolver state, MIR, codegen).
+    pub fn bodyAllocator(self: *ModuleCompile) std.mem.Allocator {
+        return self.body_arena.allocator();
+    }
 
     /// Initialize a ModuleCompile in place. The caller must provide a pointer
     /// to stable storage (e.g. an ArrayList slot whose capacity has been
-    /// reserved); the returned `decl_collector` and arena allocator both
-    /// capture the address of `self.arena`, so moving the struct after
+    /// reserved); the returned `decl_collector` and arena allocators both
+    /// capture the address of `self`, so moving the struct after
     /// initialization would invalidate them.
     pub fn init(
         self: *ModuleCompile,
@@ -93,29 +110,35 @@ pub const ModuleCompile = struct {
         mod_ptr: *module.Module,
     ) !void {
         self.* = .{
-            .arena = std.heap.ArenaAllocator.init(gpa),
+            .iface_arena = std.heap.ArenaAllocator.init(gpa),
+            .body_arena = std.heap.ArenaAllocator.init(gpa),
             .mod_name = mod_name,
             .mod_ptr = mod_ptr,
             .decl_collector = undefined,
         };
-        errdefer self.arena.deinit();
+        errdefer {
+            self.body_arena.deinit();
+            self.iface_arena.deinit();
+        }
 
-        const arena_alloc = self.arena.allocator();
-        const dc = try arena_alloc.create(declarations.DeclCollector);
-        dc.* = declarations.DeclCollector.init(arena_alloc, reporter);
+        const iface_alloc = self.iface_arena.allocator();
+        const dc = try iface_alloc.create(declarations.DeclCollector);
+        dc.* = declarations.DeclCollector.init(iface_alloc, reporter);
         self.decl_collector = dc;
     }
 
     pub fn deinit(self: *ModuleCompile) void {
-        // decl_collector is arena-allocated; arena.deinit() reclaims it
-        // along with all of its internal structures.
-        self.arena.deinit();
+        // Body first (never references iface), then iface.
+        // decl_collector is iface-arena-allocated; iface_arena.deinit()
+        // reclaims it along with all of its internal structures.
+        self.body_arena.deinit();
+        self.iface_arena.deinit();
     }
 };
 
 // ---------- tests ----------
 
-test "ModuleCompile.init creates arena and decl collector" {
+test "ModuleCompile.init creates arenas and decl collector" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
 
@@ -126,9 +149,17 @@ test "ModuleCompile.init creates arena and decl collector" {
 
     try std.testing.expectEqualStrings("test_mod", mc.mod_name);
     try std.testing.expect(@intFromPtr(mc.decl_collector) != 0);
+
+    // Verify both allocators work
+    const iface_buf = try mc.ifaceAllocator().alloc(u8, 4);
+    @memset(iface_buf, 0x11);
+    const body_buf = try mc.bodyAllocator().alloc(u8, 4);
+    @memset(body_buf, 0x22);
+    try std.testing.expectEqual(@as(u8, 0x11), iface_buf[0]);
+    try std.testing.expectEqual(@as(u8, 0x22), body_buf[0]);
 }
 
-test "ModuleCompile.deinit frees arena (no leaks)" {
+test "ModuleCompile.deinit frees arenas (no leaks)" {
     var reporter = errors.Reporter.init(std.testing.allocator, .debug);
     defer reporter.deinit();
 
@@ -136,12 +167,12 @@ test "ModuleCompile.deinit frees arena (no leaks)" {
     var mc: ModuleCompile = undefined;
     try mc.init(std.testing.allocator, &reporter, "m", &fake_mod);
 
-    // Allocate something inside the arena to verify it's freed by deinit.
-    const arena_alloc = mc.arena.allocator();
-    _ = try arena_alloc.alloc(u8, 4096);
+    // Allocate inside both arenas to verify both are freed by deinit.
+    _ = try mc.ifaceAllocator().alloc(u8, 4096);
+    _ = try mc.bodyAllocator().alloc(u8, 4096);
 
     mc.deinit();
-    // If the arena leaked, std.testing.allocator would catch it at test end.
+    // If either arena leaked, std.testing.allocator would catch it at test end.
 }
 
 test "two ModuleCompiles have independent arenas" {
@@ -154,15 +185,19 @@ test "two ModuleCompiles have independent arenas" {
     var b: ModuleCompile = undefined;
     try b.init(std.testing.allocator, &reporter, "b", &fake_mod);
 
-    const a_buf = try a.arena.allocator().alloc(u8, 8);
-    @memset(a_buf, 0xAA);
-    const b_buf = try b.arena.allocator().alloc(u8, 8);
-    @memset(b_buf, 0xBB);
+    // Test body arena independence
+    {
+        const a_buf = try a.bodyAllocator().alloc(u8, 8);
+        @memset(a_buf, 0xAA);
+        const b_buf = try b.bodyAllocator().alloc(u8, 8);
+        @memset(b_buf, 0xBB);
+        a.deinit();
 
-    a.deinit();
-
-    // b's allocation must still be valid after a is freed.
-    try std.testing.expectEqual(@as(u8, 0xBB), b_buf[0]);
-
+        // b's body allocation must still be valid after a is freed.
+        try std.testing.expectEqual(@as(u8, 0xBB), b_buf[0]);
+        // b's iface allocation must also still be valid.
+        const b_iface = try b.ifaceAllocator().alloc(u8, 8);
+        @memset(b_iface, 0xCC);
+    }
     b.deinit();
 }

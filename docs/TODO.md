@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 3 (Parallelism + LSP + Codegen Quality) — P1 done (v0.53.23), P2 done (v0.53.25), P3 done (v0.53.26), P4 done (v0.53.27), P5 done (v0.53.28), P6 done (v0.53.30)
+- **Active project:** Phase 5 (Medium/Low Cleanup Sweep) — M4 done (v0.53.49). P1-P7, I1-I5, M1-M3, B1-B6 all done.
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph
@@ -185,7 +185,7 @@ Invariants to preserve during fusion. Tracked from the 2026-04-16 readiness audi
 
 - [x] **T7** 🟡 **Top-level `main()` ICE handler** [F24] — done v0.53.14, 2026-04-25 — `writeIceMessage` in `errors.zig`; pipeline `else` branch now prints "internal compiler error: {err}" + report URL + exits 70 instead of leaking Zig stack traces.
 
-> **Session bookmark** (v0.53.48, 2026-05-02). M1b/M1c/M2/M3/B1-B6 all done. Type alias chain resolution, scope rewrite, generic for-loop capture, and all review findings addressed.
+> **Session bookmark** (v0.53.49, 2026-05-02). M4 done — two-arena split in ModuleCompile + TypeResolver.scratch_arena. M1b/M1c/M2/M3/B1-B6 all done. Type alias chain resolution, scope rewrite, generic for-loop capture, and all review findings addressed.
 
 ### Sub-project 2b — Test runner rewrite
 
@@ -257,7 +257,7 @@ requires threading the full token stream through `@{...}`. Codegen (P7) is alrea
 - [x] **M1c** 🟢 **Duplicated `Primitive→RT` switch** — `resolver.zig:164-170` and `:271-276` have identical logic. Extract to a shared helper. — done v0.53.44, 2026-05-02 — extracted `ResolvedType.fromPrimitive()` shared helper; `classifyNamed` and `resolveNamedType` both delegate to it.
 - [x] **M2** 🟡 **`inferCaptureType` limited to range/str/slice/array** — `src/resolver.zig:700-710`. Iterating a `List(T)` or `Map(K,V)` yields `.inferred` because those are `.generic`. Needs a generic-aware iterator protocol (depends on S6). — done v0.53.45, 2026-05-02 — `inferCaptureType`/`inferCaptureTypeIdx` now handle `.generic` types: returns first generic arg as element type (works for List(T), Set(T), Map(K,V), and any user-defined single-arg generic). No hardcoded stdlib names — follows zero-magic rule.
 - [x] **M3** 🟡 **Scope is hashmap-per-frame with allocation per block** — done v0.53.46, 2026-05-02 — replaced per-frame `StringHashMap` + parent chain with single flat `ArrayList(Binding)` + `frames: ArrayList(FrameInfo)` start-index stack. New API: `pushFrame()`/`pushFuncFrame()`/`popFrame()`, `containsInCurrentFrame()`, `containsInEnclosingFrames()`, `currentFrameBindings()`, `isInsideFunction()`. All 6 consumer files updated (resolver.zig, resolver_stmts.zig, resolver_exprs.zig, propagation.zig, ownership.zig, ownership_checks.zig). 396/396 tests passing.
-- [ ] **M4** 🟡 **Type arena never freed mid-compile** — `src/declarations.zig:97`. Grows monotonically. Fix: split into permanent arena (types stored in DeclTable signatures) and scratch arena (expression-level temporaries, reset per function).
+- [x] **M4** 🟡 **Type arena never freed mid-compile** — `src/declarations.zig:97`. Grows monotonically. Fix: split into permanent arena (types stored in DeclTable signatures) and scratch arena (expression-level temporaries, reset per function). — done v0.53.49, 2026-05-02 — `ModuleCompile` arena split into `iface_arena` (whole-build, holds DeclTable signatures) and `body_arena` (per-module scratch); `TypeResolver.scratch_arena` added for expression-level ResolvedType allocations; resolver satellites use `scratchAllocator()`.
 - [ ] **M5** 🟡 **Linear scans in union helpers** — `src/types.zig:223-251`. `unionContainsError`, `unionContainsNull`, `unionInnerType`, `findDuplicateUnionMember` (O(n²)) called hot. Fix: store `is_error_union: bool` and `is_null_union: bool` on union variant at construction.
 - [ ] **M6** 🟡 **`topologicalOrder` recursive DFS; single back-edge reported** — `src/module.zig:386-438`. Stack-overflow risk on adversarial inputs; bad cycle UX (prints `A → B` instead of `A → B → C → A`). Fix: iterative DFS with explicit stack, full cycle path recording.
 - [ ] **M7** 🟡 **Cross-module "did you mean" loops are O(mod × kinds)** — `src/resolver_validation.zig:189-206`, mirrored in `src/resolver_exprs.zig:86-104`. Per unknown identifier. Fix: single global `name → (module, kind, is_pub)` reverse index built once after pass 4.

@@ -636,7 +636,7 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
             if (elem_type == .inferred or elems.len == 0) return RT.inferred;
 
             // Return [N]T array type
-            const alloc = self.ctx.decls.typeAllocator();
+            const alloc = self.scratchAllocator();
             const inner = try alloc.create(RT);
             inner.* = elem_type;
             const size_node = try alloc.create(parser.Node);
@@ -648,7 +648,7 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
 
         // Tuple type literal in expression position: const Point: type = {x: f32, y: f32}
         .type_tuple_named => |fields| {
-            const alloc = self.ctx.decls.typeAllocator();
+            const alloc = self.scratchAllocator();
             const resolved = try alloc.alloc(RT.TupleField, fields.len);
             for (fields, 0..) |f, i| {
                 resolved[i] = .{

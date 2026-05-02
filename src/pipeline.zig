@@ -359,7 +359,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
         // Append an undefined slot first, then init in place. Capacity was
         // reserved above so the slot's address is stable; init captures
-        // &mc_ptr.arena, so the struct must not move after initialization.
+        // &mc_ptr (the allocators capture self), so the struct must not move after initialization.
         try modules.append(allocator, undefined);
         const mc_ptr = &modules.items[modules.items.len - 1];
         try mc_ptr.init(allocator, reporter, mod_name, mod_ptr);
@@ -687,7 +687,7 @@ fn compileOne(
     mc: *pipeline_context.ModuleCompile,
 ) !void {
     const allocator = ctx.gpa;
-    const arena = mc.arena.allocator();
+    const body_alloc = mc.bodyAllocator();
     const reporter = ctx.reporter;
     const mod_name = mc.mod_name;
     const mod_ptr = mc.mod_ptr;
@@ -704,7 +704,7 @@ fn compileOne(
     mc.decl_collector.locs = locs_ptr;
     mc.decl_collector.file_offsets = file_offsets;
 
-    var decl_conv = ast_conv.ConvContext.init(arena);
+    var decl_conv = ast_conv.ConvContext.init(body_alloc);
     defer decl_conv.deinit();
     const decl_ast_root = ast_conv.convertNode(&decl_conv, ast) catch {
         _ = try reporter.report(.{ .code = .internal_ast_conv_p4, .message = "internal: AST conversion failed (pass 4)" });
@@ -723,7 +723,7 @@ fn compileOne(
 
     // ── orhon check — semantic only, no MIR/codegen/cache ────
     if (ctx.cli.command == .check) {
-        if (!try passes.runSemanticOnly(arena, ctx, mc, ast)) return error.AbortBuild;
+        if (!try passes.runSemanticOnly(body_alloc, ctx, mc, ast)) return error.AbortBuild;
         return;
     }
 
@@ -821,8 +821,8 @@ fn compileOne(
         if (mod_ptr.zig_source_path) |zig_src| {
             if (!std.mem.startsWith(u8, zig_src, cache.CACHE_DIR)) {
                 try cache.ensureGeneratedDir();
-                const zig_dst = try std.fmt.allocPrint(arena, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, mod_name });
-                const content = try std.fs.cwd().readFileAlloc(arena, zig_src, 1024 * 1024);
+                const zig_dst = try std.fmt.allocPrint(body_alloc, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, mod_name });
+                const content = try std.fs.cwd().readFileAlloc(body_alloc, zig_src, 1024 * 1024);
                 const dst_file = try std.fs.cwd().createFile(zig_dst, .{});
                 defer dst_file.close();
                 try dst_file.writeAll(content);
@@ -832,7 +832,7 @@ fn compileOne(
 
     // ── Passes 5–11: Type Resolution through Zig Code Generation ──
     _ = try passes.runSemanticAndCodegen(
-        arena, ctx, mc, ast,
+        body_alloc, ctx, mc, ast,
         mod_ptr.is_zig_module, mod_ptr.has_zig_sidecar,
     ) orelse return error.AbortBuild;
 

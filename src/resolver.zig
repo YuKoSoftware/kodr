@@ -76,11 +76,23 @@ pub const TypeResolver = struct {
     /// Populated during var_decl resolution, consumed by resolveTypeAnnotationInScope.
     local_type_aliases: std.StringHashMapUnmanaged(RT) = .{},
 
+    /// Scratch arena for expression-level ResolvedType inner allocations.
+    /// Allocated from ctx.allocator. Freed in deinit() so that tests on
+    /// std.testing.allocator don't leak, and production bodies are cleaned up.
+    scratch_arena: std.heap.ArenaAllocator,
+
+    /// Allocator for expression-level ResolvedType inner allocations.
+    /// Backed by scratch_arena, which is freed in deinit().
+    pub fn scratchAllocator(self: *TypeResolver) std.mem.Allocator {
+        return self.scratch_arena.allocator();
+    }
+
     pub fn init(ctx: *const sema.SemanticContext) TypeResolver {
         return .{
             .ctx = ctx,
             .type_map = .{},
             .ast_type_map = .{},
+            .scratch_arena = std.heap.ArenaAllocator.init(ctx.allocator),
         };
     }
 
@@ -90,6 +102,7 @@ pub const TypeResolver = struct {
         self.included_modules.deinit(self.ctx.allocator);
         self.used_imports.deinit(self.ctx.allocator);
         self.local_type_aliases.deinit(self.ctx.allocator);
+        self.scratch_arena.deinit();
     }
 
     pub fn markImportUsed(self: *TypeResolver, name: []const u8) !void {
@@ -185,7 +198,7 @@ pub const TypeResolver = struct {
 
     pub fn resolveTypeAnnotationInScope(self: *TypeResolver, idx: AstNodeIndex, scope: ?*Scope) !RT {
         const node = try self.mustReverse(idx);
-        const resolved = try types.resolveTypeNode(self.ctx.decls.typeAllocator(), node);
+        const resolved = try types.resolveTypeNode(self.scratchAllocator(), node);
         if (resolved == .named) {
             // Follow module-level type alias chains transitively
             const chain_result = try self.resolveNamedType(resolved.named);

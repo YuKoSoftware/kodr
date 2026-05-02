@@ -219,7 +219,7 @@ pub fn runAnalysis(
         try mc.init(a, &reporter, mod_name, mod_ptr);
         mc.decl_collector.locs = locs_ptr;
         mc.decl_collector.file_offsets = file_offsets;
-        const ma = mc.arena.allocator();
+        const ma = mc.bodyAllocator();
 
         // Pass 4: Declaration collection (always runs)
         var conv = ast_conv.ConvContext.init(ma);
