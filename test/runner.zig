@@ -160,7 +160,7 @@ fn compareResults(
     return list.toOwnedSlice(allocator);
 }
 
-/// Parse orhon's --diag-format=json output into a flat list of error-severity diagnostics.
+/// Parse orhon's -diag-format json output into a flat list of error-severity diagnostics.
 /// Non-error severities (warning, note, hint) are skipped.
 /// Returns empty slice if the output is not valid JSON or has no diagnostics array.
 fn parseJsonDiagnostics(json: []const u8, allocator: std.mem.Allocator) ![]Diag {
@@ -254,8 +254,8 @@ fn runFixture(orhon_path: []const u8, fixture_path: []const u8, gpa: std.mem.All
     const manifest_content = try std.fmt.allocPrint(alloc, "#name  = {s}\n#build = exe\n", .{module_name});
     try mf.writeAll(manifest_content);
 
-    // Spawn orhon build --diag-format=json
-    const child_args = &[_][]const u8{ orhon_path, "build", "--diag-format=json" };
+    // Spawn orhon build -diag-format json
+    const child_args = &[_][]const u8{ orhon_path, "build", "-diag-format", "json" };
     var child = std.process.Child.init(child_args, alloc);
     child.cwd             = project_path;
     child.stdout_behavior = .Ignore;
@@ -316,7 +316,7 @@ fn runFixtureSidecar(
     const manifest_content = try std.fmt.allocPrint(alloc, "#name  = {s}\n#build = exe\n", .{module_name});
     try mf.writeAll(manifest_content);
 
-    const child_args = &[_][]const u8{ orhon_path, "build", "--diag-format=json" };
+    const child_args = &[_][]const u8{ orhon_path, "build", "-diag-format", "json" };
     var child = std.process.Child.init(child_args, alloc);
     child.cwd             = project_path;
     child.stdout_behavior = .Ignore;

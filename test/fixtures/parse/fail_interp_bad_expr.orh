@@ -1,0 +1,8 @@
+module fail_interp_bad_expr
+
+
+pub func main() void {
+    const x: i32 = 42
+    // Type error: adding i32 and bool inside @{}
+    const msg: str = "result: @{x + true}"  //> [E2077]
+}

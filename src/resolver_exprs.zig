@@ -181,6 +181,25 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
                         .{ lp.toName(), rp.toName(), lp.toName() });
                 }
             }
+            // Reject arithmetic on non-numeric types (beyond str which is handled above)
+            if (is_arithmetic) {
+                if (left == .primitive) {
+                    const lp = left.primitive;
+                    if (!lp.isNumeric() and !l_is_str) {
+                        _ = try self.ctx.reporter.reportFmt(.type_mismatch, self.ctx.nodeLoc(node),
+                            "type mismatch: expected numeric type, got '{s}'",
+                            .{lp.toName()});
+                    }
+                }
+                if (right == .primitive) {
+                    const rp = right.primitive;
+                    if (!rp.isNumeric() and !r_is_str) {
+                        _ = try self.ctx.reporter.reportFmt(.type_mismatch, self.ctx.nodeLoc(node),
+                            "type mismatch: expected numeric type, got '{s}'",
+                            .{rp.toName()});
+                    }
+                }
+            }
             if (b.op.isLogical() or b.op.isComparison()) return RT{ .primitive = .bool };
             if (b.op == .concat) return left;
             return left;
