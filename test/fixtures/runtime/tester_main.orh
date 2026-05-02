@@ -531,6 +531,20 @@ func main() void {
         console.println("FAIL interpolation_multi")
     }
 
+    // Test: interpolation with non-identifier expression
+    if(tester.test_interpolation_expr() == 1) {
+        console.println("PASS interpolation_expr")
+    } else {
+        console.println("FAIL interpolation_expr")
+    }
+
+    // Test: interpolation with field access
+    if(tester.test_interpolation_field() == 1) {
+        console.println("PASS interpolation_field")
+    } else {
+        console.println("FAIL interpolation_field")
+    }
+
     if(tester.test_string_eq() == 1) {
         console.println("PASS string_eq")
     } else {
