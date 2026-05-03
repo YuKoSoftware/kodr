@@ -390,7 +390,7 @@ pub fn generateStatementMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
             } else if (assign_op == .assign and lhs_type_class == .arbitrary_union) {
                 const lhs_rt = if (lhs_entry.type_id != .none) store.types.get(lhs_entry.type_id) else .unknown;
                 const members_rt = if (lhs_rt == .union_type)
-                    lhs_rt.union_type
+                    lhs_rt.union_type.members
                 else
                     null;
                 try cg.generateExprMir(lhs_idx);

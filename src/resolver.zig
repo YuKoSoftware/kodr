@@ -395,11 +395,11 @@ pub fn typesMatchWithSubstitution(struct_type: RT, bp_type: RT, bp_name: []const
                 else => false,
             };
         },
-        .union_type => |bp_members| {
+        .union_type => |bp_u| {
             return switch (struct_type) {
-                .union_type => |sm| {
-                    if (bp_members.len != sm.len) return false;
-                    for (bp_members, sm) |bp_m, sm_m| {
+                .union_type => |sm_u| {
+                    if (bp_u.members.len != sm_u.members.len) return false;
+                    for (bp_u.members, sm_u.members) |bp_m, sm_m| {
                         if (!typesMatchWithSubstitution(sm_m, bp_m, bp_name, struct_name)) return false;
                     }
                     return true;
@@ -469,7 +469,7 @@ pub fn typesCompatible(a: RT, b: RT) bool {
     // This includes (Error | T) accepting Error/T and (null | T) accepting null/T.
     if (b == .union_type) {
         if (a == .inferred or a == .unknown) return true;
-        for (b.union_type) |member| {
+        for (b.union_type.members) |member| {
             if (std.mem.eql(u8, a_name, member.name())) return true;
             if (isLiteralCompatible(a, member)) return true;
         }
@@ -477,7 +477,7 @@ pub fn typesCompatible(a: RT, b: RT) bool {
     }
     if (a == .union_type) {
         if (b == .inferred or b == .unknown) return true;
-        for (a.union_type) |member| {
+        for (a.union_type.members) |member| {
             if (std.mem.eql(u8, b_name, member.name())) return true;
             if (isLiteralCompatible(b, member)) return true;
         }
@@ -1047,7 +1047,7 @@ test "resolver - match exhaustiveness with many arms" {
         const name = try std.fmt.allocPrint(a, "T{d}", .{i});
         members[i] = .{ .named = name };
     }
-    const union_type: RT = .{ .union_type = members };
+    const union_type: RT = .{ .union_type = .{ .members = members, .has_error = false, .has_null = false } };
 
     // Build match arms covering only 18 of 20 members (missing T18, T19)
     const n_arms = 18;
@@ -1178,7 +1178,7 @@ test "typesCompatible - named union member" {
     defer alloc.free(members);
     members[0] = RT{ .named = "Error" };
     members[1] = RT{ .named = "i32" };
-    const union_t = RT{ .union_type = members };
+    const union_t = RT{ .union_type = .{ .members = members, .has_error = false, .has_null = false } };
 
     try std.testing.expect(typesCompatible(RT{ .named = "Error" }, union_t));
     try std.testing.expect(typesCompatible(RT{ .named = "i32" }, union_t));

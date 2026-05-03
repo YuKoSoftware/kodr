@@ -509,8 +509,8 @@ fn hashResolvedType(seed: u64, rt: types.ResolvedType) u64 {
             const size_text = if (arr.size.* == .int_literal) arr.size.int_literal else "?";
             s = XxHash3.hash(s, size_text);
         },
-        .union_type => |variants| {
-            for (variants) |v| {
+        .union_type => |u| {
+            for (u.members) |v| {
                 s = hashResolvedType(s, v);
             }
         },

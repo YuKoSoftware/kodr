@@ -201,7 +201,7 @@ fn lowerVarDecl(b: *MirBuilder, idx: AstNodeIndex) anyerror!MirNodeIndex {
     try b.var_types.put(b.allocator, name_str, tid);
 
     // Register union arities (for _unions.zig codegen sizing).
-    if (rt == .union_type) try registerUnionArities(b, rt.union_type);
+    if (rt == .union_type) try registerUnionArities(b, rt.union_type.members);
 
     const name = try internStr(b, ast_rec.name);
 

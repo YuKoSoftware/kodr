@@ -19,6 +19,9 @@ pub const SemanticContext = struct {
     file_offsets: []const module.FileOffset,
     /// All module DeclTables — for cross-module qualified generic type validation.
     all_decls: ?*const std.StringHashMap(*declarations.DeclTable) = null,
+    /// Cross-module reverse index: name → (module_name, decls_ptr) for O(1)
+    /// "did you mean?" hints. Incrementally built as modules complete Pass 4.
+    cross_module_index: ?*const declarations.CrossModuleIndex = null,
     /// Node-to-ResolvedType map produced by pass 5. Set after the type resolver runs
     /// so later passes (borrow, propagation) can look up receiver types by AST node.
     type_map: ?*const std.AutoHashMapUnmanaged(*parser.Node, types.ResolvedType) = null,

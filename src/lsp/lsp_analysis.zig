@@ -197,6 +197,7 @@ pub fn runAnalysis(
 
     // Cross-module decl accumulator for pass 5 type resolution.
     var all_module_decls = std.StringHashMap(*declarations.DeclTable).init(a);
+    var cross_module_index: declarations.CrossModuleIndex = .{};
 
     var modules: std.ArrayList(pipeline_context.ModuleCompile) = .{};
     try modules.ensureTotalCapacity(a, order.len);
@@ -228,6 +229,21 @@ pub fn runAnalysis(
         mc.decl_collector.collect(&conv.store, ast_root, &conv.reverse_map) catch {};
         try all_module_decls.put(mod_name, &mc.decl_collector.table);
 
+        // Incrementally populate the cross-module reverse index.
+        {
+            var sym_it = mc.decl_collector.table.symbols.iterator();
+            while (sym_it.next()) |s_entry| {
+                const name = s_entry.key_ptr.*;
+                const sym = s_entry.value_ptr.*;
+                if (!sym.isPub()) continue;
+                if (cross_module_index.contains(name)) continue;
+                cross_module_index.put(allocator, name, .{
+                    .module_name = mod_name,
+                    .decls_ptr = &mc.decl_collector.table,
+                }) catch {};
+            }
+        }
+
         extractSymbols(allocator, &all_symbols, &mc.decl_collector.table, ast, locs_ptr, source_file, project_root, mod_name) catch {};
 
         if (!stop_after.atLeast(.type_resolve)) continue;
@@ -246,6 +262,7 @@ pub fn runAnalysis(
             .locs = locs_ptr,
             .file_offsets = file_offsets,
             .all_decls = &all_module_decls,
+            .cross_module_index = &cross_module_index,
             .ast = &conv.store,
             .reverse_map = &conv.reverse_map,
         };

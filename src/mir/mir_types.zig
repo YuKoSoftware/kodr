@@ -77,7 +77,7 @@ pub fn positionalTagOf(union_rt: RT, member_name: []const u8) ?u8 {
     const max_arity = 32;
     var buf: [max_arity][]const u8 = undefined;
     var n: usize = 0;
-    for (union_rt.union_type) |mem| {
+    for (union_rt.union_type.members) |mem| {
         const name = mem.name();
         if (isErrorTypeName(name) or isNullTypeName(name)) continue;
         if (n >= max_arity) return null;
@@ -191,16 +191,16 @@ test "classifyType - primitives" {
 test "classifyType - unions" {
     // (Error | i32) → error_union
     const err_members = &[_]RT{ RT.err, RT{ .primitive = .i32 } };
-    try std.testing.expectEqual(TypeClass.error_union, classifyType(RT{ .union_type = err_members }));
+    try std.testing.expectEqual(TypeClass.error_union, classifyType(RT{ .union_type = .{ .members = err_members, .has_error = true, .has_null = false } }));
     // (null | i32) → null_union
     const null_members = &[_]RT{ RT.null_type, RT{ .primitive = .i32 } };
-    try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .union_type = null_members }));
+    try std.testing.expectEqual(TypeClass.null_union, classifyType(RT{ .union_type = .{ .members = null_members, .has_error = false, .has_null = true } }));
     // (null | Error | i32) → null_error_union
     const null_err_members = &[_]RT{ RT.null_type, RT.err, RT{ .primitive = .i32 } };
-    try std.testing.expectEqual(TypeClass.null_error_union, classifyType(RT{ .union_type = null_err_members }));
+    try std.testing.expectEqual(TypeClass.null_error_union, classifyType(RT{ .union_type = .{ .members = null_err_members, .has_error = true, .has_null = true } }));
     // (i32 | str) → arbitrary_union
     const arb_members = &[_]RT{ RT{ .primitive = .i32 }, RT{ .primitive = .string } };
-    try std.testing.expectEqual(TypeClass.arbitrary_union, classifyType(RT{ .union_type = arb_members }));
+    try std.testing.expectEqual(TypeClass.arbitrary_union, classifyType(RT{ .union_type = .{ .members = arb_members, .has_error = false, .has_null = false } }));
 }
 
 test "classifyType - named types" {
@@ -227,7 +227,7 @@ test "positionalTagOf - basic lookup" {
         RT{ .primitive = .i32 },
         RT{ .primitive = .f64 },
     };
-    const u = RT{ .union_type = members };
+    const u = RT{ .union_type = .{ .members = members, .has_error = false, .has_null = false } };
     try std.testing.expectEqual(@as(?u8, 0), positionalTagOf(u, "f64"));
     try std.testing.expectEqual(@as(?u8, 1), positionalTagOf(u, "i32"));
     try std.testing.expectEqual(@as(?u8, 2), positionalTagOf(u, "str"));
@@ -236,7 +236,7 @@ test "positionalTagOf - basic lookup" {
 test "positionalTagOf - filters Error and null sentinels" {
     // (Error | null | i32 | str) → sorted (i32, str) → i32 at 0, str at 1
     const members = &[_]RT{ RT.err, RT.null_type, RT{ .primitive = .i32 }, RT{ .primitive = .string } };
-    const u = RT{ .union_type = members };
+    const u = RT{ .union_type = .{ .members = members, .has_error = true, .has_null = true } };
     try std.testing.expectEqual(@as(?u8, 0), positionalTagOf(u, "i32"));
     try std.testing.expectEqual(@as(?u8, 1), positionalTagOf(u, "str"));
 }
@@ -247,7 +247,7 @@ test "positionalTagOf - non-union returns null" {
 
 test "positionalTagOf - missing member returns null" {
     const members = &[_]RT{ RT{ .primitive = .i32 }, RT{ .primitive = .string } };
-    const u = RT{ .union_type = members };
+    const u = RT{ .union_type = .{ .members = members, .has_error = false, .has_null = false } };
     try std.testing.expectEqual(@as(?u8, null), positionalTagOf(u, "f64"));
 }
 

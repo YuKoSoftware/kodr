@@ -68,9 +68,9 @@ fn writeCanonical(writer: anytype, type_: ResolvedType) !void {
             try writer.print("7:{x}:", .{@intFromPtr(a.size)});
             try writeCanonical(writer, a.elem.*);
         },
-        .union_type => |members| {
+        .union_type => |u| {
             try writer.writeAll("8:[");
-            for (members, 0..) |m, i| {
+            for (u.members, 0..) |m, i| {
                 if (i > 0) try writer.writeByte(',');
                 try writeCanonical(writer, m);
             }

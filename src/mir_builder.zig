@@ -207,13 +207,13 @@ pub fn detectCoercion(src: RT, dst: RT) ?Coercion {
         return .error_wrap;
     if (dst == .union_type and src != .union_type) {
         if (src == .null_type) {
-            for (dst.union_type) |member| {
+            for (dst.union_type.members) |member| {
                 if (member == .null_type) return null;
             }
         }
         if (src == .err and dst.unionContainsError()) return null;
         if (src == .primitive and src.primitive == .numeric_literal) {
-            for (dst.union_type) |member| {
+            for (dst.union_type.members) |member| {
                 if (member == .primitive and member.primitive.isInteger()) {
                     const tag = mir_types.positionalTagOf(dst, member.name()) orelse return null;
                     return .{ .arbitrary_union_wrap = tag };
@@ -221,7 +221,7 @@ pub fn detectCoercion(src: RT, dst: RT) ?Coercion {
             }
         }
         if (src == .primitive and src.primitive == .float_literal) {
-            for (dst.union_type) |member| {
+            for (dst.union_type.members) |member| {
                 if (member == .primitive and member.primitive.isFloat()) {
                     const tag = mir_types.positionalTagOf(dst, member.name()) orelse return null;
                     return .{ .arbitrary_union_wrap = tag };
@@ -1000,7 +1000,7 @@ test "MirBuilder B7: field_expr emits MirKind.field_access, stamps union_tag via
         RT{ .primitive = .string },
         RT{ .primitive = .i32 },
     };
-    const union_rt = RT{ .union_type = union_members };
+    const union_rt = RT{ .union_type = .{ .members = union_members, .has_error = false, .has_null = false } };
     const tid = try ms.types.intern(allocator, union_rt);
 
     // Register the union TypeId in var_types under the key "x".

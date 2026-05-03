@@ -167,6 +167,19 @@ pub const DeclTable = struct {
     }
 };
 
+/// Reverse-index entry for O(1) cross-module "did you mean?" lookups.
+pub const CrossModuleEntry = struct {
+    module_name: []const u8,
+    /// Points to the module's DeclTable. Used to skip the current module
+    /// at lookup time (matching the old `mod_decls == self.ctx.decls` guard).
+    decls_ptr: *const DeclTable,
+};
+
+/// Name → CrossModuleEntry reverse lookup.
+/// Keys borrow from DeclTable symbol StringHashMap keys; values borrow
+/// module_name from the all_decls StringHashMap keys.
+pub const CrossModuleIndex = std.StringHashMapUnmanaged(CrossModuleEntry);
+
 /// Returns true if the type annotation is the `type` keyword — indicating a type alias declaration.
 fn isTypeAlias(type_annotation: ?*parser.Node) bool {
     const ta = type_annotation orelse return false;

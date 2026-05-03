@@ -28,6 +28,9 @@ pub const BuildContext = struct {
     comp_cache: *cache.Cache,
     union_registry: *mir.UnionRegistry,
     all_module_decls: *std.StringHashMap(*declarations.DeclTable),
+    /// Cross-module reverse index: name → (module_name, decls_ptr).
+    /// Incrementally populated as modules complete Pass 4.
+    cross_module_index: declarations.CrossModuleIndex = .{},
     prev_iface_hashes: *std.StringHashMap(u64),
     module_builds: *std.StringHashMapUnmanaged(module.BuildType),
     /// Transitive dep closure for each module: module_name → all reachable dep names.

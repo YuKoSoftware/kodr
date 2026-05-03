@@ -112,7 +112,7 @@ pub const CodeGen = struct {
                 const entry = store.getNode(self.current_func_idx);
                 if (entry.type_id != .none) {
                     const rt = store.types.get(entry.type_id);
-                    if (rt == .union_type) return rt.union_type;
+                    if (rt == .union_type) return rt.union_type.members;
                 }
             }
         }
@@ -683,16 +683,16 @@ pub const CodeGen = struct {
                 }
                 try w.writeAll("}");
             },
-            .union_type => |members| {
-                var has_error = false;
-                var has_null = false;
+            .union_type => |u| {
+                const has_error = u.has_error;
+                const has_null = u.has_null;
                 var others = std.ArrayListUnmanaged(RT){};
                 defer others.deinit(self.allocator);
-                for (members) |m| {
+                for (u.members) |m| {
                     if (m == .err) {
-                        has_error = true;
+                        // already counted via has_error
                     } else if (m == .null_type) {
-                        has_null = true;
+                        // already counted via has_null
                     } else {
                         try others.append(self.allocator, m);
                     }
@@ -719,7 +719,7 @@ pub const CodeGen = struct {
                         try w.writeAll(try self.canonicalUnionRefRT(others.items));
                     }
                 } else {
-                    try w.writeAll(try self.canonicalUnionRefRT(members));
+                    try w.writeAll(try self.canonicalUnionRefRT(u.members));
                 }
             },
             .type_param => |tp| try w.writeAll(tp.name),
@@ -1107,7 +1107,7 @@ test "codegen - zigOfRT error union" {
     defer gen.deinit();
     const members = [_]RT{ .err, .{ .primitive = .i32 } };
     try std.testing.expectEqualStrings("anyerror!i32",
-        try gen.zigOfRT(.{ .union_type = &members }));
+        try gen.zigOfRT(.{ .union_type = .{ .members = &members, .has_error = true, .has_null = false } }));
 }
 
 test "codegen - zigOfRT null union" {
@@ -1118,7 +1118,7 @@ test "codegen - zigOfRT null union" {
     defer gen.deinit();
     const members = [_]RT{ .null_type, .{ .primitive = .string } };
     try std.testing.expectEqualStrings("?[]const u8",
-        try gen.zigOfRT(.{ .union_type = &members }));
+        try gen.zigOfRT(.{ .union_type = .{ .members = &members, .has_error = false, .has_null = true } }));
 }
 
 test "codegen - zigOfRT ptr" {

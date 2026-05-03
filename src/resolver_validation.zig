@@ -39,10 +39,10 @@ pub fn checkMatchExhaustiveness(self: *TypeResolver, match_type_raw: RT, arms: [
     const covered_slice = covered.items;
 
     switch (match_type) {
-        .union_type => |members| {
+        .union_type => |u| {
             var missing: std.ArrayListUnmanaged([]const u8) = .{};
             defer missing.deinit(self.ctx.allocator);
-            for (members) |member| {
+            for (u.members) |member| {
                 var found = false;
                 for (covered_slice) |c| {
                     if (std.mem.eql(u8, c, member.name())) {
@@ -123,9 +123,9 @@ fn reportMissingArms(self: *TypeResolver, missing: []const []const u8, match_nod
 /// Validate that a match arm pattern is a valid member of the matched union type
 pub fn validateMatchArm(self: *TypeResolver, pattern_name: []const u8, match_type: RT, arm_node: *parser.Node) !void {
     switch (match_type) {
-        .union_type => |members| {
+        .union_type => |u| {
             // Valid arms: any member type name
-            for (members) |member| {
+            for (u.members) |member| {
                 if (std.mem.eql(u8, pattern_name, member.name())) return;
             }
             _ = try self.ctx.reporter.reportFmt(.match_arm_not_member, self.ctx.nodeLoc(arm_node), "match arm '{s}' is not a member of this union type", .{pattern_name});
@@ -197,22 +197,12 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
 
                 // Check if the type exists as a pub declaration in any other loaded module
                 var cross_module_hint: ?[]const u8 = null;
-                if (self.ctx.all_decls) |ad| {
-                    var mod_it = ad.iterator();
-                    while (mod_it.next()) |entry| {
-                        const mod_name = entry.key_ptr.*;
-                        const mod_decls = entry.value_ptr.*;
-                        if (mod_decls == self.ctx.decls) continue;
-                        const found = if (mod_decls.symbols.get(type_name)) |sym| switch (sym) {
-                            .@"struct" => |s| s.is_pub,
-                            .@"enum" => |e| e.is_pub,
-                            .type_alias => true,
-                            else => false,
-                        } else false;
-                        if (found) {
+                if (self.ctx.cross_module_index) |idx| {
+                    if (idx.get(type_name)) |entry| {
+                        // Skip if the entry points back to the current module
+                        if (entry.decls_ptr != self.ctx.decls) {
                             cross_module_hint = try std.fmt.allocPrint(self.ctx.allocator,
-                                " \u{2014} '{s}' exists in module '{s}' (add 'use {s}')", .{ type_name, mod_name, mod_name });
-                            break;
+                                " \u{2014} '{s}' exists in module '{s}' (add 'use {s}')", .{ type_name, entry.module_name, entry.module_name });
                         }
                     }
                 }

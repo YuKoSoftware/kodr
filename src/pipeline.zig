@@ -340,6 +340,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
         .cached_warnings = &cached_warnings,
         .cached_unions = &cached_unions,
     };
+    defer ctx.cross_module_index.deinit(allocator);
 
     // One ModuleCompile per module being compiled this build. Capacity
     // reserved up front so &modules.items[i] pointers stay valid across
@@ -716,6 +717,22 @@ fn compileOne(
     // Cross-module decl access: store the table reference under the borrowed
     // mod_name (which lives in mod_resolver, outliving this build).
     try ctx.all_module_decls.put(mod_name, &mc.decl_collector.table);
+
+    // Incrementally populate the cross-module reverse index for O(1) "did you mean?" lookups.
+    {
+        var sym_it = mc.decl_collector.table.symbols.iterator();
+        while (sym_it.next()) |s_entry| {
+            const name = s_entry.key_ptr.*;
+            const sym = s_entry.value_ptr.*;
+            if (!sym.isPub()) continue;
+            // Only store the first occurrence across modules.
+            if (ctx.cross_module_index.contains(name)) continue;
+            ctx.cross_module_index.put(allocator, name, .{
+                .module_name = mod_name,
+                .decls_ptr = &mc.decl_collector.table,
+            }) catch {};
+        }
+    }
 
     // ── Validate 'main' as reserved name ─────────────────
     if (try passes.validateMainReserved(ast, mod_ptr, locs_ptr, file_offsets, reporter))

@@ -306,7 +306,7 @@ fn extractNarrowing(b: *MirBuilder, cond_idx: AstNodeIndex, then_idx: AstNodeInd
         else => return .none,
     };
 
-    const members_rt = if (source_rt == .union_type) source_rt.union_type else null;
+    const members_rt = if (source_rt == .union_type) source_rt.union_type.members else null;
     const remaining = remainingUnionTypeName(members_rt, type_name);
     const has_early_exit = if (then_idx != .none) blockHasEarlyExit(b.ast, then_idx) else false;
 

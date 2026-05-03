@@ -403,18 +403,43 @@ pub const Resolver = struct {
         in_stack: *std.StringHashMap(bool),
         path: *std.ArrayList([]const u8),
     ) anyerror!void {
-        try visited.put(mod_name, true);
-        try in_stack.put(mod_name, true);
-        try path.append(self.allocator, mod_name);
-
-        const mod = self.modules.get(mod_name) orelse {
-            _ = path.pop();
-            try in_stack.put(mod_name, false);
-            return;
+        const DfsFrame = struct {
+            mod_name: []const u8,
+            import_idx: usize,
         };
-        for (mod.imports) |imp| {
+        var stack: std.ArrayListUnmanaged(DfsFrame) = .{};
+        defer stack.deinit(self.allocator);
+
+        try stack.append(self.allocator, .{ .mod_name = mod_name, .import_idx = 0 });
+
+        while (stack.items.len > 0) {
+            const frame = &stack.items[stack.items.len - 1];
+
+            if (frame.import_idx == 0) {
+                try visited.put(frame.mod_name, true);
+                try in_stack.put(frame.mod_name, true);
+                try path.append(self.allocator, frame.mod_name);
+            }
+
+            const mod = self.modules.get(frame.mod_name) orelse {
+                _ = path.pop();
+                try in_stack.put(frame.mod_name, false);
+                _ = stack.pop();
+                continue;
+            };
+
+            if (frame.import_idx >= mod.imports.len) {
+                _ = path.pop();
+                try in_stack.put(frame.mod_name, false);
+                _ = stack.pop();
+                continue;
+            }
+
+            const imp = mod.imports[frame.import_idx];
+            frame.import_idx += 1;
+
             if (!visited.contains(imp)) {
-                try self.dfsCircularCheck(imp, visited, in_stack, path);
+                try stack.append(self.allocator, .{ .mod_name = imp, .import_idx = 0 });
             } else if (in_stack.get(imp) orelse false) {
                 // Build the full cycle path from where `imp` first appears in
                 // the DFS stack through to the current node, then close the cycle.
@@ -432,9 +457,6 @@ pub const Resolver = struct {
                 _ = try self.reporter.reportFmt(.circular_import, null, "circular import: {s}", .{cycle_buf.items});
             }
         }
-
-        _ = path.pop();
-        try in_stack.put(mod_name, false);
     }
 
     /// Get modules in topological order (dependencies first)
@@ -460,14 +482,40 @@ pub const Resolver = struct {
         result: *std.ArrayListUnmanaged([]const u8),
         allocator: std.mem.Allocator,
     ) anyerror!void {
-        try visited.put(mod_name, true);
-        const mod = self.modules.get(mod_name) orelse return;
-        for (mod.imports) |imp| {
+        const TopoFrame = struct {
+            mod_name: []const u8,
+            import_idx: usize,
+        };
+        var stack: std.ArrayListUnmanaged(TopoFrame) = .{};
+        defer stack.deinit(allocator);
+
+        try stack.append(allocator, .{ .mod_name = mod_name, .import_idx = 0 });
+
+        while (stack.items.len > 0) {
+            const frame = &stack.items[stack.items.len - 1];
+
+            if (frame.import_idx == 0) {
+                try visited.put(frame.mod_name, true);
+            }
+
+            const mod = self.modules.get(frame.mod_name) orelse {
+                _ = stack.pop();
+                continue;
+            };
+
+            if (frame.import_idx >= mod.imports.len) {
+                try result.append(allocator, frame.mod_name);
+                _ = stack.pop();
+                continue;
+            }
+
+            const imp = mod.imports[frame.import_idx];
+            frame.import_idx += 1;
+
             if (!visited.contains(imp)) {
-                try self.topoVisit(imp, visited, result, allocator);
+                try stack.append(allocator, .{ .mod_name = imp, .import_idx = 0 });
             }
         }
-        try result.append(allocator, mod_name);
     }
 
     /// Run the post-parse validation sequence: circular import check, import validation,

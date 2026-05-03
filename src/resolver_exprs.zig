@@ -107,18 +107,12 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
 
             // Check if the identifier exists as a pub declaration in any other loaded module
             var cross_module_hint: ?[]const u8 = null;
-            if (self.ctx.all_decls) |ad| {
-                var mod_it = ad.iterator();
-                while (mod_it.next()) |entry| {
-                    const mod_name = entry.key_ptr.*;
-                    const mod_decls = entry.value_ptr.*;
-                    // Skip current module — its decls were already checked above
-                    if (mod_decls == self.ctx.decls) continue;
-                    const found = if (mod_decls.symbols.get(id_name)) |sym| sym.isPub() else false;
-                    if (found) {
+            if (self.ctx.cross_module_index) |idx| {
+                if (idx.get(id_name)) |entry| {
+                    // Skip if the entry points back to the current module
+                    if (entry.decls_ptr != self.ctx.decls) {
                         cross_module_hint = try std.fmt.allocPrint(self.ctx.allocator,
-                            " \u{2014} '{s}' exists in module '{s}' (add 'import {s}')", .{ id_name, mod_name, mod_name });
-                        break;
+                            " \u{2014} '{s}' exists in module '{s}' (add 'import {s}')", .{ id_name, entry.module_name, entry.module_name });
                     }
                 }
             }

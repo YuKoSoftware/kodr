@@ -177,6 +177,7 @@ pub fn runSemanticAndCodegen(
         .locs = locs_ptr,
         .file_offsets = file_offsets,
         .all_decls = ctx.all_module_decls,
+        .cross_module_index = &ctx.cross_module_index,
         .ast = &conv.store,
         .reverse_map = &conv.reverse_map,
     };

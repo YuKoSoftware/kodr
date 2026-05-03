@@ -465,12 +465,12 @@ test "propagation - unhandled union is always rejected" {
 
 test "propagation - ResolvedType detects Error and null unions" {
     // Error union: (Error | i32)
-    const err_union = types.ResolvedType{ .union_type = &.{ types.ResolvedType.err, types.ResolvedType{ .primitive = .i32 } } };
+    const err_union = types.ResolvedType{ .union_type = .{ .members = &.{ types.ResolvedType.err, types.ResolvedType{ .primitive = .i32 } }, .has_error = true, .has_null = false } };
     try std.testing.expect(err_union.unionContainsError());
     try std.testing.expect(!err_union.unionContainsNull());
 
     // Null union: (null | i32)
-    const null_union = types.ResolvedType{ .union_type = &.{ types.ResolvedType.null_type, types.ResolvedType{ .primitive = .i32 } } };
+    const null_union = types.ResolvedType{ .union_type = .{ .members = &.{ types.ResolvedType.null_type, types.ResolvedType{ .primitive = .i32 } }, .has_error = false, .has_null = true } };
     try std.testing.expect(null_union.unionContainsNull());
     try std.testing.expect(!null_union.unionContainsError());
 
@@ -532,7 +532,7 @@ test "propagation - call expr resolved via decl table" {
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
-        .return_type = .{ .union_type = err_members },
+        .return_type = .{ .union_type = .{ .members = err_members, .has_error = true, .has_null = false } },
         .context = .normal,
         .is_pub = false,
         .is_instance = false,
@@ -674,7 +674,7 @@ test "propagation - reassignment resets handled status" {
         .name = "divide",
         .params = params,
         .param_nodes = &.{},
-        .return_type = .{ .union_type = err_members },
+        .return_type = .{ .union_type = .{ .members = err_members, .has_error = true, .has_null = false } },
         .context = .normal,
         .is_pub = false,
         .is_instance = false,

@@ -204,8 +204,8 @@ pub const ResolvedType = union(enum) {
     slice: *const ResolvedType,
     /// Fixed-size array: [N]T
     array: Array,
-    /// General union: (A | B | C) — not error or null specific
-    union_type: []const ResolvedType,
+    /// General union: (A | B | C) — with pre-computed error/null flags
+    union_type: UnionType,
     /// Named tuple: (a: T, b: U)
     tuple: []const TupleField,
     /// Function pointer: func(T) R
@@ -249,6 +249,12 @@ pub const ResolvedType = union(enum) {
         elem: *const ResolvedType,
     };
 
+    pub const UnionType = struct {
+        members: []const ResolvedType,
+        has_error: bool,
+        has_null: bool,
+    };
+
     /// Returns true if this type is a primitive (copy semantics, no ownership transfer)
     pub fn isPrimitive(self: ResolvedType) bool {
         return switch (self) {
@@ -266,30 +272,24 @@ pub const ResolvedType = union(enum) {
 
     /// Returns true if this union contains Error as a member: (Error | T)
     pub fn unionContainsError(self: ResolvedType) bool {
-        if (self != .union_type) return false;
-        for (self.union_type) |m| {
-            if (m == .err) return true;
-        }
-        return false;
+        return self == .union_type and self.union_type.has_error;
     }
 
     /// Returns true if this union contains null as a member: (null | T)
     pub fn unionContainsNull(self: ResolvedType) bool {
-        if (self != .union_type) return false;
-        for (self.union_type) |m| {
-            if (m == .null_type) return true;
-        }
-        return false;
+        return self == .union_type and self.union_type.has_null;
     }
 
     /// Get the non-Error/non-null inner type of a union like (Error | T) or (null | T).
     /// Returns null if there are multiple non-special members.
     pub fn unionInnerType(self: ResolvedType) ?ResolvedType {
         if (self != .union_type) return null;
+        const u = self.union_type;
+        if (!u.has_error and !u.has_null and u.members.len > 1) return null;
         var inner: ?ResolvedType = null;
-        for (self.union_type) |m| {
+        for (u.members) |m| {
             if (m == .err or m == .null_type) continue;
-            if (inner != null) return null; // multiple non-special members
+            if (inner != null) return null;
             inner = m;
         }
         return inner;
@@ -445,13 +445,20 @@ fn resolveUnion(alloc: std.mem.Allocator, members: []*parser.Node) !ResolvedType
     var flat = std.ArrayListUnmanaged(ResolvedType){};
     defer flat.deinit(alloc);
 
+    var has_error = false;
+    var has_null = false;
+
     for (members) |m| {
         const resolved = try resolveTypeNode(alloc, m);
         if (resolved == .union_type) {
-            for (resolved.union_type) |inner| {
+            for (resolved.union_type.members) |inner| {
+                if (inner == .err) has_error = true;
+                if (inner == .null_type) has_null = true;
                 try flat.append(alloc, inner);
             }
         } else {
+            if (resolved == .err) has_error = true;
+            if (resolved == .null_type) has_null = true;
             try flat.append(alloc, resolved);
         }
     }
@@ -469,7 +476,7 @@ fn resolveUnion(alloc: std.mem.Allocator, members: []*parser.Node) !ResolvedType
     // Phase 3: Build union
     const result = try alloc.alloc(ResolvedType, flat.items.len);
     @memcpy(result, flat.items);
-    return .{ .union_type = result };
+    return .{ .union_type = .{ .members = result, .has_error = has_error, .has_null = has_null } };
 }
 
 /// Find the name of the first duplicate member in a union type node.
@@ -481,7 +488,7 @@ pub fn findDuplicateUnionMember(alloc: std.mem.Allocator, members: []*parser.Nod
     for (members) |m| {
         const r = resolveTypeNode(alloc, m) catch continue;
         if (r == .union_type) {
-            for (r.union_type) |inner| {
+            for (r.union_type.members) |inner| {
                 resolved.append(alloc, inner) catch continue;
             }
         } else {
@@ -526,19 +533,19 @@ test "resolvedtype - primitive detection" {
 
 test "resolvedtype - union detection" {
     // (Error | i32) union
-    const err_union = ResolvedType{ .union_type = &.{ ResolvedType.err, ResolvedType{ .primitive = .i32 } } };
+    const err_union = ResolvedType{ .union_type = .{ .members = &.{ ResolvedType.err, ResolvedType{ .primitive = .i32 } }, .has_error = true, .has_null = false } };
     try std.testing.expect(err_union.unionContainsError());
     try std.testing.expect(!err_union.unionContainsNull());
     try std.testing.expect(err_union.unionInnerType().?.primitive == .i32);
 
     // (null | i32) union
-    const null_union = ResolvedType{ .union_type = &.{ ResolvedType.null_type, ResolvedType{ .primitive = .i32 } } };
+    const null_union = ResolvedType{ .union_type = .{ .members = &.{ ResolvedType.null_type, ResolvedType{ .primitive = .i32 } }, .has_error = false, .has_null = true } };
     try std.testing.expect(null_union.unionContainsNull());
     try std.testing.expect(!null_union.unionContainsError());
     try std.testing.expect(null_union.unionInnerType().?.primitive == .i32);
 
     // Plain union (i32 | str)
-    const plain_union = ResolvedType{ .union_type = &.{ ResolvedType{ .primitive = .i32 }, ResolvedType{ .primitive = .string } } };
+    const plain_union = ResolvedType{ .union_type = .{ .members = &.{ ResolvedType{ .primitive = .i32 }, ResolvedType{ .primitive = .string } }, .has_error = false, .has_null = false } };
     try std.testing.expect(!plain_union.unionContainsError());
     try std.testing.expect(!plain_union.unionContainsNull());
 }
@@ -609,7 +616,7 @@ test "resolveUnion - allows Error in union" {
     const result = try resolveUnion(alloc, &members);
     try std.testing.expect(result == .union_type);
     try std.testing.expect(result.unionContainsError());
-    alloc.free(result.union_type);
+    alloc.free(result.union_type.members);
 }
 
 test "resolveUnion - allows null in union" {
@@ -624,7 +631,7 @@ test "resolveUnion - allows null in union" {
     const result = try resolveUnion(alloc, &members);
     try std.testing.expect(result == .union_type);
     try std.testing.expect(result.unionContainsNull());
-    alloc.free(result.union_type);
+    alloc.free(result.union_type.members);
 }
 
 test "resolveUnion - errors on duplicate type" {
@@ -669,10 +676,10 @@ test "resolveTypeNode - binary_expr union (null | i32)" {
     var b_expr = parser.Node{ .binary_expr = .{ .left = &left, .right = &right, .op = .bit_or } };
     const rt = try resolveTypeNode(a, &b_expr);
     try std.testing.expect(rt == .union_type);
-    try std.testing.expectEqual(@as(usize, 2), rt.union_type.len);
+    try std.testing.expectEqual(@as(usize, 2), rt.union_type.members.len);
     var found_null = false;
     var found_i32 = false;
-    for (rt.union_type) |m| {
+    for (rt.union_type.members) |m| {
         if (m == .null_type) found_null = true;
         if (m == .primitive and m.primitive == .i32) found_i32 = true;
     }

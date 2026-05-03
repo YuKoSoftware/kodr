@@ -564,7 +564,7 @@ pub fn generateTypeMatchMir(cg: *CodeGen, idx: MirNodeIndex, is_null_union: bool
     var sorted_len: usize = 0;
     const val_rt = if (val_entry.type_id != .none) store.types.get(val_entry.type_id) else @import("../types.zig").ResolvedType.unknown;
     if (val_rt == .union_type) {
-        for (val_rt.union_type) |mem| {
+        for (val_rt.union_type.members) |mem| {
             const n = mem.name();
             if (types.Primitive.fromName(n) == .err or types.Primitive.fromName(n) == .null_type) continue;
             if (sorted_len >= max_arity) break;
