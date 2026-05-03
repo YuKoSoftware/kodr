@@ -248,10 +248,16 @@ pub fn generateStatementMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
             if (is_const) {
                 const type_ann_node = if (rec.type_annotation != .none) cg.getAstNode(rec.type_annotation) else null;
                 if (codegen.isTypeAlias(type_ann_node)) {
-                    const val_ast = if (rec.value != .none) cg.getAstNode(store.getNode(rec.value).span) else null;
+                    // Type alias RHS: use the resolved type_id from the type_expr MIR node.
+                    const val_entry = store.getNode(rec.value);
                     try cg.emitFmt("const {s} = ", .{var_name});
-                    if (val_ast) |va| {
-                        try cg.emit(try cg.typeToZig(va));
+                    if (val_entry.type_id != .none) {
+                        const rt = store.types.get(val_entry.type_id);
+                        try cg.emit(try cg.zigOfRT(rt));
+                    } else if (rec.value != .none) {
+                        // Fallback: walk AST node if type_id was not set
+                        const val_ast = cg.getAstNode(val_entry.span) orelse return;
+                        try cg.emit(try cg.typeToZig(val_ast));
                     }
                     try cg.emit(";");
                     return;

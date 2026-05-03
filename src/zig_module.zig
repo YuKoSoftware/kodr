@@ -1072,6 +1072,101 @@ fn scanZigImports(source: []const u8, source_dir: []const u8, allocator: Allocat
     return imports.toOwnedSlice(allocator);
 }
 
+/// Walk ALL AST nodes to find @import("stem.zig") calls where stem is a known
+/// sibling module (from entries). Returns sorted list of rewrites by source position.
+/// Caller owns the list and each ImportRewrite.new_stem.
+pub fn collectImportRewrites(
+    tree: *const Ast,
+    known_modules: *const std.StringHashMapUnmanaged(void),
+    allocator: Allocator,
+) !std.ArrayListUnmanaged(ImportRewrite) {
+    var rewrites: std.ArrayListUnmanaged(ImportRewrite) = .{};
+    errdefer {
+        for (rewrites.items) |rw| allocator.free(rw.new_stem);
+        rewrites.deinit(allocator);
+    }
+
+    for (0..tree.nodes.len) |i| {
+        const node: Node.Index = @enumFromInt(i);
+        const tag = tree.nodeTag(node);
+
+        // Only builtin calls can be @import
+        if (tag != .builtin_call_two and tag != .builtin_call_two_comma and
+            tag != .builtin_call and tag != .builtin_call_comma) continue;
+
+        const builtin_token = tree.nodeMainToken(node);
+        if (!std.mem.eql(u8, tree.tokenSlice(builtin_token), "@import")) continue;
+
+        // Get first argument — must be a string literal
+        const arg_node = if (tag == .builtin_call_two or tag == .builtin_call_two_comma)
+            tree.nodeData(node).opt_node_and_opt_node[0].unwrap() orelse continue
+        else
+            continue;
+
+        if (tree.nodeTag(arg_node) != .string_literal) continue;
+
+        const str_token = tree.nodeMainToken(arg_node);
+        const raw = tree.tokenSlice(str_token);
+
+        // Must be a quoted string: "foo.zig"
+        if (raw.len < 2 or raw[0] != '"' or raw[raw.len - 1] != '"') continue;
+        const import_path = raw[1 .. raw.len - 1];
+
+        // Must be "stem.zig" (no path separators)
+        if (!std.mem.endsWith(u8, import_path, ".zig")) continue;
+        if (std.mem.indexOf(u8, import_path, "/") != null) continue;
+
+        const stem = import_path[0 .. import_path.len - 4];
+        if (std.mem.eql(u8, stem, "std")) continue;
+        if (!known_modules.contains(stem)) continue;
+
+        // Compute source positions. tree.tokens.get(str_token).start is the
+        // byte offset of the opening quote. Add 1 for the first char inside.
+        const token_start = tree.tokens.get(str_token).start;
+        const stem_start = token_start + 1;           // after opening quote
+        const stem_end = stem_start + import_path.len; // after last char before closing quote
+
+        const new_stem = try std.fmt.allocPrint(allocator, "{s}_zig", .{stem});
+
+        try rewrites.append(allocator, .{
+            .stem_start = stem_start,
+            .stem_end = stem_end,
+            .new_stem = new_stem,
+        });
+    }
+
+    // Sort by position for sequential application (must not overlap)
+    std.mem.sort(ImportRewrite, rewrites.items, {}, struct {
+        fn lessThan(_: void, a: ImportRewrite, b: ImportRewrite) bool {
+            return a.stem_start < b.stem_start;
+        }
+    }.lessThan);
+
+    return rewrites;
+}
+
+/// Apply sorted import rewrites to source text, producing a new owned string.
+pub fn applyImportRewrites(
+    source: []const u8,
+    rewrites: []const ImportRewrite,
+    allocator: Allocator,
+) ![]const u8 {
+    var result: std.ArrayListUnmanaged(u8) = .{};
+    errdefer result.deinit(allocator);
+
+    var pos: usize = 0;
+    for (rewrites) |rw| {
+        // Sanity: rewrites must be sorted and non-overlapping
+        if (rw.stem_start < pos) continue;
+        try result.appendSlice(allocator, source[pos..rw.stem_start]);
+        try result.appendSlice(allocator, rw.new_stem);
+        pos = rw.stem_end;
+    }
+    try result.appendSlice(allocator, source[pos..]);
+
+    return result.toOwnedSlice(allocator);
+}
+
 // ---------------------------------------------------------------------------
 // File discovery and cache writing
 // ---------------------------------------------------------------------------
@@ -1145,6 +1240,25 @@ pub const ConvertedModule = struct {
     }
 };
 
+/// A single import rewrite: records the position of a module name stem in source
+/// text and its replacement. Used for AST-based @import path rewriting.
+pub const ImportRewrite = struct {
+    /// Byte offset of first char of the module stem + ".zig" suffix within the source
+    stem_start: usize,
+    /// Byte offset after the last char of the stem + ".zig" suffix
+    stem_end: usize,
+    /// Replacement text for the stem (e.g., "allocator_zig")
+    new_stem: []const u8,
+};
+
+/// Optional configuration for rewriting @import paths during discoverAndConvert.
+pub const RewriteConfig = struct {
+    /// Destination directory for rewritten .zig files (e.g., ".orh-cache/generated")
+    dest_dir: []const u8,
+    /// Cache for freshness checking — if null, always rewrite (no caching)
+    comp_cache: ?*cache.Cache = null,
+};
+
 /// C/C++ source file extensions recognised during auto-detection.
 const C_SOURCE_EXTENSIONS = [_][]const u8{ ".c", ".cpp", ".cc", ".cxx" };
 
@@ -1153,7 +1267,7 @@ const C_SOURCE_EXTENSIONS = [_][]const u8{ ".c", ".cpp", ".cc", ".cxx" };
 /// For each converted module, reads a paired `.zon` config (if present) and auto-detects
 /// adjacent C/C++ source files.
 /// Returns an owned slice of ConvertedModule. Caller owns the slice and all inner allocations.
-pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_dir: ?[]const u8) ![]ConvertedModule {
+pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_dir: ?[]const u8, rewrite: ?RewriteConfig) ![]ConvertedModule {
     const entries = try discoverZigFiles(allocator, source_dir);
     defer {
         for (entries) |entry| {
@@ -1228,6 +1342,61 @@ pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_d
         const out_file = std.fs.cwd().createFile(out_filename, .{}) catch continue;
         defer out_file.close();
         out_file.writeAll(final_orh) catch continue;
+
+        // Rewrite @import paths for the Zig build system if requested.
+        // Uses the already-parsed AST for structural precision (handles
+        // whitespace variations and multi-line imports correctly).
+        if (rewrite) |cfg| {
+            const zig_dst = try std.fmt.allocPrint(allocator, "{s}/{s}_zig.zig", .{ cfg.dest_dir, entry.module_name });
+            defer allocator.free(zig_dst);
+
+            // Cache check: skip rewrite if source hasn't changed
+            const needs_rewrite = if (cfg.comp_cache) |cc| blk: {
+                const current_hash = std.hash.XxHash3.hash(0, source_bytes);
+                const cache_key = try std.fmt.allocPrint(allocator, "zig:{s}", .{entry.file_path});
+                defer allocator.free(cache_key);
+                if (cc.hashes.get(cache_key)) |cached_hash| {
+                    break :blk current_hash != cached_hash;
+                }
+                break :blk true;
+            } else true;
+
+            if (needs_rewrite) {
+                // Build known-module set from all discovered entries in this directory
+                var known_set = std.StringHashMapUnmanaged(void){};
+                defer known_set.deinit(allocator);
+                for (entries) |e| {
+                    try known_set.put(allocator, e.module_name, {});
+                }
+
+                // Collect @import rewrites from the AST
+                var import_rewrites = try collectImportRewrites(&tree, &known_set, allocator);
+                defer {
+                    for (import_rewrites.items) |rw| allocator.free(rw.new_stem);
+                    import_rewrites.deinit(allocator);
+                }
+
+                // Apply rewrites and write
+                const rewritten = try applyImportRewrites(source_bytes, import_rewrites.items, allocator);
+                defer allocator.free(rewritten);
+
+                const dst_file = std.fs.cwd().createFile(zig_dst, .{}) catch continue;
+                defer dst_file.close();
+                dst_file.writeAll(rewritten) catch continue;
+
+                // Update cache hash
+                if (cfg.comp_cache) |cc| {
+                    const current_hash = std.hash.XxHash3.hash(0, source_bytes);
+                    const cache_key = try std.fmt.allocPrint(allocator, "zig:{s}", .{entry.file_path});
+                    defer allocator.free(cache_key);
+                    const result = try cc.hashes.getOrPut(cache_key);
+                    if (!result.found_existing) {
+                        result.key_ptr.* = try allocator.dupe(u8, cache_key);
+                    }
+                    result.value_ptr.* = current_hash;
+                }
+            }
+        }
 
         // Read paired .zon config (replace .zig extension with .zon)
         var config = readZonForZigFile(allocator, entry.file_path) catch ZonConfig{};
@@ -1929,7 +2098,7 @@ test "discoverAndConvert — end-to-end" {
     std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
     defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
 
-    const modules = try discoverAndConvert(allocator, tmp_dir, null);
+    const modules = try discoverAndConvert(allocator, tmp_dir, null, null);
     defer {
         for (modules) |*cm| cm.deinit(allocator);
         allocator.free(modules);
@@ -1968,7 +2137,7 @@ test "discoverAndConvert — reads paired .zon config" {
     std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
     defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
 
-    const modules = try discoverAndConvert(allocator, tmp_dir, null);
+    const modules = try discoverAndConvert(allocator, tmp_dir, null, null);
     defer {
         for (modules) |*cm| cm.deinit(allocator);
         allocator.free(modules);
@@ -2010,7 +2179,7 @@ test "discoverAndConvert — auto-detects adjacent C files" {
     std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
     defer std.fs.cwd().deleteTree(cache.ZIG_MODULES_DIR) catch {};
 
-    const modules = try discoverAndConvert(allocator, tmp_dir, null);
+    const modules = try discoverAndConvert(allocator, tmp_dir, null, null);
     defer {
         for (modules) |*cm| cm.deinit(allocator);
         allocator.free(modules);

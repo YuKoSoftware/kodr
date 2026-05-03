@@ -447,6 +447,22 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
                         }
                     }
                 }
+                // Type constructor: module.StructName(args) → qualified named type.
+                // e.g. collections.List(i32), bitfield.Bitfield(u32, @tuple(...))
+                if (fe.object.* == .identifier) {
+                    const obj_id = fe.object.identifier;
+                    if (self.ctx.all_decls) |ad| {
+                        if (ad.get(obj_id)) |mod_decls| {
+                            if (mod_decls.symbols.get(fe.field)) |sym| switch (sym) {
+                                .@"struct", .type_alias => {
+                                    const name = try std.fmt.allocPrint(self.ctx.allocator, "{s}.{s}", .{ obj_id, fe.field });
+                                    return RT{ .named = name };
+                                },
+                                else => {},
+                            };
+                        }
+                    }
+                }
             }
             // Generic constructor call: Vec2(f32)(...) — callee is itself a call
             if (c.callee.* == .call_expr) {

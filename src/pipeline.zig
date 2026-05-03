@@ -49,81 +49,28 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     // Ensure embedded std files exist in .orh-cache/std/
     try _std_bundle.ensureStdFiles(allocator);
 
+    // Pre-load content hashes for import rewrite freshness checks.
+    // Dependencies and interface hashes are loaded after module resolution.
+    var comp_cache = cache.Cache.init(allocator);
+    defer comp_cache.deinit();
+    try comp_cache.loadHashes();
+
     // ── Stdlib Zig Conversion ────────────────────────────────
     // Convert stdlib .zig files (in .orh-cache/std/) to .orh declarations,
     // writing generated .orh back to .orh-cache/std/ so preScanImports finds them.
     const std_dir = cache.CACHE_DIR ++ "/std";
-    const std_zig_converted = try zig_module.discoverAndConvert(allocator, std_dir, std_dir);
+    const std_zig_converted = try zig_module.discoverAndConvert(allocator, std_dir, std_dir, .{
+        .dest_dir = cache.GENERATED_DIR,
+        .comp_cache = &comp_cache,
+    });
     defer {
         for (std_zig_converted) |*cm| cm.deinit(allocator);
         allocator.free(std_zig_converted);
     }
 
-    // Build set of converted std module names for import rewriting
-    var std_mod_names = std.StringHashMapUnmanaged(void){};
-    defer std_mod_names.deinit(allocator);
-    for (std_zig_converted) |cm| {
-        try std_mod_names.put(allocator, cm.name, {});
-    }
-
-    // Copy stdlib .zig files to .orh-cache/generated/{name}_zig.zig for the build system.
-    // Rewrite @import("sibling.zig") → @import("sibling_zig") for sibling std modules,
-    // since the files are renamed to {name}_zig.zig in the generated dir.
-    try cache.ensureGeneratedDir();
-    for (std_zig_converted) |cm| {
-        const name = cm.name;
-        const src_path = try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ std_dir, name });
-        defer allocator.free(src_path);
-        const dst_path = try std.fmt.allocPrint(allocator, "{s}/{s}_zig.zig", .{ cache.GENERATED_DIR, name });
-        defer allocator.free(dst_path);
-
-        const content = std.fs.cwd().readFileAlloc(allocator, src_path, 1024 * 1024) catch continue;
-        defer allocator.free(content);
-
-        // Rewrite sibling @import("x.zig") → @import("x_zig") for known std modules
-        var rewritten: std.ArrayListUnmanaged(u8) = .{};
-        defer rewritten.deinit(allocator);
-        var pos: usize = 0;
-        while (pos < content.len) {
-            const needle = "@import(\"";
-            const idx = std.mem.indexOfPos(u8, content, pos, needle) orelse {
-                try rewritten.appendSlice(allocator, content[pos..]);
-                break;
-            };
-            // Copy everything up to and including @import("
-            try rewritten.appendSlice(allocator, content[pos .. idx + needle.len]);
-            const start = idx + needle.len;
-            const end = std.mem.indexOfPos(u8, content, start, "\"") orelse {
-                try rewritten.appendSlice(allocator, content[start..]);
-                break;
-            };
-            const import_path = content[start..end];
-
-            if (std.mem.endsWith(u8, import_path, ".zig") and
-                std.mem.indexOf(u8, import_path, "/") == null)
-            {
-                const stem = import_path[0 .. import_path.len - 4];
-                if (!std.mem.eql(u8, stem, "std") and std_mod_names.contains(stem)) {
-                    // Rewrite: "allocator.zig" → "allocator_zig"
-                    try rewritten.appendSlice(allocator, stem);
-                    try rewritten.appendSlice(allocator, "_zig");
-                    pos = end; // skip the old import path, keep the closing "
-                    continue;
-                }
-            }
-            // No rewrite — copy the import path as-is
-            try rewritten.appendSlice(allocator, import_path);
-            pos = end;
-        }
-
-        const dst_file = std.fs.cwd().createFile(dst_path, .{}) catch continue;
-        defer dst_file.close();
-        try dst_file.writeAll(rewritten.items);
-    }
-
     // ── Zig Module Discovery ─────────────────────────────────
     // Discover .zig files in src/, parse them, generate .orh into .orh-cache/zig_modules/
-    const zig_mod_converted = try zig_module.discoverAndConvert(allocator, cli.source_dir, null);
+    const zig_mod_converted = try zig_module.discoverAndConvert(allocator, cli.source_dir, null, null);
     defer {
         for (zig_mod_converted) |*cm| cm.deinit(allocator);
         allocator.free(zig_mod_converted);
@@ -174,10 +121,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
     if (reporter.hasErrors()) return null;
 
-    // Load incremental cache
-    var comp_cache = cache.Cache.init(allocator);
-    defer comp_cache.deinit();
-    try comp_cache.loadHashes();
+    // Hashes already loaded; load dependency graph and interface hashes
     try comp_cache.loadDeps();
     try comp_cache.loadInterfaceHashes();
 

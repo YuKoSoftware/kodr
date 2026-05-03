@@ -442,10 +442,20 @@ fn generateTopLevelDeclMirFromStore(cg: *CodeGen, store: *const MirStore, idx: M
     if (is_const and isTypeAlias(type_annotation)) {
         if (is_pub) try cg.emit("pub ");
         try cg.emitFmt("const {s} = ", .{name});
-        // type_expr span points to the AST node for the RHS type expression
-        const value_span = store.getNode(rec.value).span;
-        const value_ast = cg.getAstNode(value_span) orelse return;
-        try cg.emit(try cg.typeToZig(value_ast));
+        // Type alias RHS: use the resolved type_id from the type_expr MIR node.
+        // The resolver already resolved this type; re-deriving from the AST node
+        // fails for module-qualified generics (field_expr callee on call_expr).
+        const value_entry = store.getNode(rec.value);
+        if (value_entry.type_id != .none) {
+            const rt = store.types.get(value_entry.type_id);
+            try cg.emit(try cg.zigOfRT(rt));
+        } else {
+            // Fallback: if type_id was not set, walk the AST node directly.
+            // This preserves behavior for any edge case where the resolver
+            // didn't produce a resolved type for the type_expr.
+            const value_ast = cg.getAstNode(value_entry.span) orelse return;
+            try cg.emit(try cg.typeToZig(value_ast));
+        }
         try cg.emit(";\n");
         return;
     }

@@ -329,6 +329,27 @@ pub const ResolvedType = union(enum) {
     }
 };
 
+/// Walk a field_expr chain to build a dot-separated qualified name.
+/// For `a.b.c.Type`, returns allocated string "a.b.c.Type".
+/// Returns null if the chain is not a valid field_expr/identifier chain
+/// or on allocation failure.
+fn resolveQualifiedName(alloc: std.mem.Allocator, node: *parser.Node) ?[]const u8 {
+    switch (node.*) {
+        .identifier => |n| {
+            return alloc.dupe(u8, n) catch return null;
+        },
+        .field_expr => |f| {
+            const prefix = resolveQualifiedName(alloc, f.object) orelse return null;
+            defer alloc.free(prefix);
+            return std.fmt.allocPrint(alloc, "{s}.{s}", .{ prefix, f.field }) catch {
+                alloc.free(prefix);
+                return null;
+            };
+        },
+        else => return null,
+    }
+}
+
 /// Convert a parser type AST node into a ResolvedType.
 /// Uses the arena allocator for any heap-allocated inner types.
 pub fn resolveTypeNode(alloc: std.mem.Allocator, node: *parser.Node) anyerror!ResolvedType {
@@ -398,12 +419,17 @@ pub fn resolveTypeNode(alloc: std.mem.Allocator, node: *parser.Node) anyerror!Re
 
         // Generic type constructor in expression position: List(T), Map(K,V).
         .call_expr => |c| {
-            if (c.callee.* != .identifier) return .unknown;
+            const generic_name: ?[]const u8 = switch (c.callee.*) {
+                .identifier => |n| n,
+                .field_expr => resolveQualifiedName(alloc, c.callee),
+                else => null,
+            };
+            const name = generic_name orelse return .unknown;
             var args = try alloc.alloc(ResolvedType, c.args.len);
             for (c.args, 0..) |a, i| {
                 args[i] = try resolveTypeNode(alloc, a);
             }
-            return .{ .generic = .{ .name = c.callee.identifier, .args = args } };
+            return .{ .generic = .{ .name = name, .args = args } };
         },
         // Bare identifier in type position: cast(i64, x) type arg, or unknown type name.
         .identifier => |n| classifyNamed(n),
@@ -412,6 +438,28 @@ pub fn resolveTypeNode(alloc: std.mem.Allocator, node: *parser.Node) anyerror!Re
         .int_literal => |n| .{ .named = n },
         // null literal in type-union position: (null | T) binary_expr leaf
         .null_literal => .null_type,
+
+        // Compiler function in type position: @tuple("A", "B"), @typeOf(expr)
+        .compiler_func => |cf| {
+            if (std.mem.eql(u8, cf.name, "tuple")) {
+                var fields = try alloc.alloc(ResolvedType.TupleField, cf.args.len);
+                for (cf.args, 0..) |arg, i| {
+                    var field_name: []const u8 = "";
+                    if (arg.* == .string_literal) {
+                        const raw = arg.string_literal;
+                        if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') {
+                            field_name = raw[1 .. raw.len - 1];
+                        } else {
+                            field_name = raw;
+                        }
+                    }
+                    fields[i] = .{ .name = field_name, .type_ = .{ .named = "comptime_int" } };
+                }
+                return .{ .tuple = fields };
+            }
+            // @typeOf(expr) and other unknown compiler_funcs — cannot resolve at type level
+            return .unknown;
+        },
 
         // Non-type AST nodes (77+ variants) — only type_* nodes resolve to types
         else => .unknown,

@@ -87,10 +87,14 @@ pub fn generateCompilerFuncMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
                 const arg1: MirNodeIndex = @enumFromInt(args_extra[1]);
                 const arg0_entry = store.getNode(arg0);
                 const arg1_entry = store.getNode(arg1);
-                // typeToZig walks AST — get *parser.Node via span back-pointer
-                const span0 = arg0_entry.span;
-                const ast_node0 = cg.getAstNode(span0) orelse return;
-                const target_type = try cg.typeToZig(ast_node0);
+                // Use resolved MIR type when available; fall back to AST walk otherwise
+                const target_type = if (arg0_entry.type_id != .none)
+                    try cg.zigOfRT(store.types.get(arg0_entry.type_id))
+                else blk: {
+                    const span0 = arg0_entry.span;
+                    const ast_node0 = cg.getAstNode(span0) orelse return;
+                    break :blk try cg.typeToZig(ast_node0);
+                };
                 const target_is_float = target_type.len > 0 and target_type[0] == 'f';
                 const target_is_enum = arg0_entry.tag == .identifier and
                     mir_typed.Identifier.unpack(store, arg0).resolved_kind == 2; // enum_type_name

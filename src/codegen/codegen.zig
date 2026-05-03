@@ -770,12 +770,13 @@ pub const CodeGen = struct {
             try buf.appendSlice(self.allocator, "}");
             return try self.allocTypeStr("{s}", .{buf.items});
         }
-        // call_expr in type-alias position where callee is not a bare identifier
-        // (e.g. module.Type(T) RHS). Handled before resolveTypeNode since
-        // resolveTypeNode returns .unknown for non-identifier callees.
+        // call_expr in type-alias position where callee is neither a bare identifier
+        // nor a field expression (e.g. module.Type(T)). Non-identifier/non-field_expr
+        // callees cannot be lowered; identifier and field_expr callees are handled
+        // by resolveTypeNode below.
         if (node.* == .call_expr) {
             const c = node.call_expr;
-            if (c.callee.* != .identifier) {
+            if (c.callee.* != .identifier and c.callee.* != .field_expr) {
                 _ = try self.reporter.reportFmt(.internal_zig_codegen, null,
                     "internal: typeToZig cannot lower non-identifier call expression", .{});
                 return error.CompileError;
