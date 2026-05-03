@@ -2,10 +2,32 @@
 // Generates the unified build.zig content for multi-target (multi-lib/exe) projects.
 
 const std = @import("std");
-const errors = @import("../errors.zig");
-const cache = @import("../cache.zig");
 const module = @import("../module.zig");
 const _build = @import("zig_runner_build.zig");
+
+/// Write a comptime template string, substituting {s} markers with values from
+/// the `vals` slice in order. The template is a comptime string literal — {s}
+/// is just three literal characters, NOT a format specifier. No allocPrint, no
+/// brace escaping needed. The template can contain literal { and } that will
+/// appear in the output unchanged.
+fn writeSub(
+    buf: *std.ArrayListUnmanaged(u8),
+    allocator: std.mem.Allocator,
+    comptime template: []const u8,
+    vals: []const []const u8,
+) !void {
+    var remaining: []const u8 = template;
+    for (vals) |val| {
+        const pos = std.mem.indexOf(u8, remaining, "{s}") orelse {
+            std.debug.assert(false); // mismatched vals/template count
+            return;
+        };
+        try buf.appendSlice(allocator, remaining[0..pos]);
+        try buf.appendSlice(allocator, val);
+        remaining = remaining[pos + 3 ..];
+    }
+    try buf.appendSlice(allocator, remaining);
+}
 
 /// A dependency between two zig-backed modules: mod_name's sidecar @imports dep_name's sidecar.
 pub const ZigDep = struct {
@@ -50,7 +72,8 @@ pub fn buildZigContentMulti(
         \\
     );
 
-    // Build a map from module_name → project_name for lib targets (used by exe linking)
+    // Build a map from module_name → project_name for lib targets (used by exe linking).
+    // Values are borrowed from `targets` — map must not outlive the caller's targets slice.
     var lib_targets = std.StringHashMapUnmanaged([]const u8){};
     defer lib_targets.deinit(allocator);
 
@@ -90,15 +113,24 @@ pub fn buildZigContentMulti(
             }
         }
         const after = sorted_libs.items.len;
-        // If no progress in a full pass, there is a circular lib dependency — emit remainder as-is
+        // If no progress in a full pass, there is a circular lib dependency — report error
         if (after == before) {
+            var cycle_targets = std.ArrayListUnmanaged([]const u8){};
+            defer cycle_targets.deinit(allocator);
             for (all_lib_targets.items) |t| {
                 if (!emitted_libs.contains(t.module_name)) {
-                    try sorted_libs.append(allocator, t);
-                    try emitted_libs.put(allocator, t.module_name, {});
+                    try cycle_targets.append(allocator, t.module_name);
                 }
             }
-            break;
+            if (cycle_targets.items.len > 0) {
+                std.debug.print("error: circular library dependency detected: ", .{});
+                for (cycle_targets.items, 0..) |name, idx| {
+                    if (idx > 0) std.debug.print(" → ", .{});
+                    std.debug.print("{s}", .{name});
+                }
+                std.debug.print("\n", .{});
+            }
+            return error.CircularLibDependency;
         }
         remaining = all_lib_targets.items.len - sorted_libs.items.len;
     }
@@ -120,21 +152,21 @@ pub fn buildZigContentMulti(
             for (t.mod_imports) |mod_name| {
                 if (zig_mod_set.contains(mod_name) and !needed_zig.contains(mod_name)) {
                     try needed_zig.put(allocator, mod_name, {});
-                    try _build.appendFmt(&buf, allocator,
-                        \\    const zig_{s} = b.createModule(.{{
+                    try writeSub(&buf, allocator,
+                        \\    const zig_{s} = b.createModule(.{
                         \\        .root_source_file = b.path("{s}_zig.zig"),
                         \\        .target = target,
                         \\        .optimize = optimize,
-                        \\    }});
+                        \\    });
                         \\
-                    , .{ mod_name, mod_name });
+                    , &.{ mod_name, mod_name });
 
                     // Apply .zon include dirs to zig module so @cInclude resolves
                     for (t.include_dirs) |dir| {
-                        try _build.appendFmt(&buf, allocator,
-                            \\    zig_{s}.addIncludePath(.{{ .cwd_relative = "{s}" }});
+                        try writeSub(&buf, allocator,
+                            \\    zig_{s}.addIncludePath(.{ .cwd_relative = "{s}" });
                             \\
-                        , .{ mod_name, dir });
+                        , &.{ mod_name, dir });
                     }
                 }
             }
@@ -157,10 +189,10 @@ pub fn buildZigContentMulti(
                 defer allocator.free(key);
                 if (emitted_zig_deps.contains(key)) continue;
                 try emitted_zig_deps.put(allocator, try allocator.dupe(u8, key), {});
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    zig_{s}.addImport("{s}_zig", zig_{s});
                     \\
-                , .{ dep.mod_name, dep.dep_name, dep.dep_name });
+                , &.{ dep.mod_name, dep.dep_name, dep.dep_name });
             }
         }
     }
@@ -204,14 +236,14 @@ pub fn buildZigContentMulti(
             const stem_result = _build.sanitizeHeaderStem(hdr);
             const safe_stem = stem_result.slice();
 
-            try _build.appendFmt(&buf, allocator,
-                \\    const cimport_{s} = b.createModule(.{{
+            try writeSub(&buf, allocator,
+                \\    const cimport_{s} = b.createModule(.{
                 \\        .root_source_file = b.path("_{s}_c.zig"),
                 \\        .target = target,
                 \\        .optimize = optimize,
-                \\    }});
+                \\    });
                 \\
-            , .{ safe_stem, safe_stem });
+            , &.{ safe_stem, safe_stem });
         }
     }
 
@@ -223,30 +255,31 @@ pub fn buildZigContentMulti(
         for (t.mod_imports) |mod_name| {
             if (!shared_set.contains(mod_name) and !lib_targets.contains(mod_name)) {
                 try shared_set.put(allocator, mod_name, {});
-                try _build.appendFmt(&buf, allocator,
-                    \\    const mod_{s} = b.createModule(.{{
+                try writeSub(&buf, allocator,
+                    \\    const mod_{s} = b.createModule(.{
                     \\        .root_source_file = b.path("{s}.zig"),
                     \\        .target = target,
                     \\        .optimize = optimize,
-                    \\    }});
+                    \\    });
                     \\
-                , .{ mod_name, mod_name });
+                , &.{ mod_name, mod_name });
 
                 // If this shared module is zig-backed, add self _zig import
                 // so its generated re-export code can @import("name_zig")
                 if (zig_mod_set.contains(mod_name)) {
-                    try _build.appendFmt(&buf, allocator,
+                    try writeSub(&buf, allocator,
                         \\    mod_{s}.addImport("{s}_zig", zig_{s});
                         \\
-                    , .{ mod_name, mod_name, mod_name });
+                    , &.{ mod_name, mod_name, mod_name });
                 }
             }
         }
     }
 
-    // Cross-wire shared modules: each shared module gets addImport for all
-    // other shared modules, enabling transitive @import resolution.
-    // (e.g. tester.zig can @import("collections") when both are shared modules)
+    // Cross-wire shared modules: a shared module needs addImport for another
+    // shared module only when they are imported by the same target. This way
+    // a shared module's generated Zig sidecar can @import the other shared
+    // module's sidecar, but we don't bloat with all-pairs cross-wires.
     {
         var smod_it = shared_set.keyIterator();
         while (smod_it.next()) |smod_key| {
@@ -255,9 +288,23 @@ pub fn buildZigContentMulti(
             while (other_it.next()) |other_key| {
                 const other_name = other_key.*;
                 if (std.mem.eql(u8, smod_name, other_name)) continue;
-                try _build.appendFmt(&buf, allocator,
+
+                // Only cross-wire if some target imports both modules
+                const both_imported = for (targets) |t| {
+                    const has_a = for (t.mod_imports) |mi| {
+                        if (std.mem.eql(u8, mi, smod_name)) break true;
+                    } else false;
+                    const has_b = for (t.mod_imports) |mi| {
+                        if (std.mem.eql(u8, mi, other_name)) break true;
+                    } else false;
+                    if (has_a and has_b) break true;
+                } else false;
+
+                if (!both_imported) continue;
+
+                try writeSub(&buf, allocator,
                     "    mod_{s}.addImport(\"{s}\", mod_{s});\n",
-                    .{ smod_name, other_name, other_name });
+                    &.{ smod_name, other_name, other_name });
             }
         }
     }
@@ -266,47 +313,47 @@ pub fn buildZigContentMulti(
     for (sorted_libs.items) |t| {
         const linkage: []const u8 = if (t.build_type == .dynamic) ".dynamic" else ".static";
 
-        try _build.appendFmt(&buf, allocator,
-            \\    const lib_{s} = b.addLibrary(.{{
+        try writeSub(&buf, allocator,
+            \\    const lib_{s} = b.addLibrary(.{
             \\        .name = "{s}",
             \\        .linkage = {s},
-            \\        .root_module = b.createModule(.{{
+            \\        .root_module = b.createModule(.{
             \\            .root_source_file = b.path("{s}.zig"),
             \\            .target = target,
             \\            .optimize = optimize,
-            \\        }}),
-            \\    }});
+            \\        }),
+            \\    });
             \\
-        , .{ t.module_name, t.project_name, linkage, t.module_name });
+        , &.{ t.module_name, t.project_name, linkage, t.module_name });
 
         // Emit addImport for lib-to-lib dependencies so Zig resolves them via the
         // build system module graph rather than falling back to file-path lookup.
         for (t.lib_imports) |dep_name| {
             if (lib_targets.contains(dep_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    lib_{s}.root_module.addImport("{s}", lib_{s}.root_module);
                     \\
-                , .{ t.module_name, dep_name, dep_name });
+                , &.{ t.module_name, dep_name, dep_name });
             }
         }
 
         // Add shared (non-lib) module imports
         for (t.mod_imports) |mod_name| {
             if (shared_set.contains(mod_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    lib_{s}.root_module.addImport("{s}", mod_{s});
                     \\
-                , .{ t.module_name, mod_name, mod_name });
+                , &.{ t.module_name, mod_name, mod_name });
             }
         }
 
         // Add zig-backed module imports
         for (t.mod_imports) |mod_name| {
             if (zig_mod_set.contains(mod_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    lib_{s}.root_module.addImport("{s}_zig", zig_{s});
                     \\
-                , .{ t.module_name, mod_name, mod_name });
+                , &.{ t.module_name, mod_name, mod_name });
             }
         }
 
@@ -328,10 +375,10 @@ pub fn buildZigContentMulti(
 
         // Apply .zon include directories (addIncludePath for each dir)
         for (t.include_dirs) |dir| {
-            try _build.appendFmt(&buf, allocator,
-                \\    lib_{s}.root_module.addIncludePath(.{{ .cwd_relative = "{s}" }});
+            try writeSub(&buf, allocator,
+                \\    lib_{s}.root_module.addIncludePath(.{ .cwd_relative = "{s}" });
                 \\
-            , .{ t.module_name, dir });
+            , &.{ t.module_name, dir });
         }
 
         // Apply C source files to this lib artifact
@@ -341,10 +388,10 @@ pub fn buildZigContentMulti(
             try _build.emitCSourceFiles(&buf, allocator, t.c_source_files, t.needs_cpp, lib_art_name);
         }
 
-        try _build.appendFmt(&buf, allocator,
+        try writeSub(&buf, allocator,
             \\    b.installArtifact(lib_{s});
             \\
-        , .{t.module_name});
+        , &.{t.module_name});
     }
 
     // Pass 2: emit all exe targets, linking against libs
@@ -357,46 +404,46 @@ pub fn buildZigContentMulti(
         else
             "";
 
-        try _build.appendFmt(&buf, allocator,
-            \\    const exe_{s} = b.addExecutable(.{{
+        try writeSub(&buf, allocator,
+            \\    const exe_{s} = b.addExecutable(.{
             \\        .name = "{s}",{s}
-            \\        .root_module = b.createModule(.{{
+            \\        .root_module = b.createModule(.{
             \\            .root_source_file = b.path("{s}.zig"),
             \\            .target = target,
             \\            .optimize = optimize,
-            \\        }}),
-            \\    }});
+            \\        }),
+            \\    });
             \\
-        , .{ t.module_name, t.project_name, ver_line, t.module_name });
+        , &.{ t.module_name, t.project_name, ver_line, t.module_name });
 
         // Link imported lib modules
         for (t.lib_imports) |lib_name| {
             if (lib_targets.contains(lib_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    exe_{s}.root_module.addImport("{s}", lib_{s}.root_module);
                     \\    exe_{s}.linkLibrary(lib_{s});
                     \\
-                , .{ t.module_name, lib_name, lib_name, t.module_name, lib_name });
+                , &.{ t.module_name, lib_name, lib_name, t.module_name, lib_name });
             }
         }
 
         // Add shared (non-lib) module imports
         for (t.mod_imports) |mod_name| {
             if (shared_set.contains(mod_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    exe_{s}.root_module.addImport("{s}", mod_{s});
                     \\
-                , .{ t.module_name, mod_name, mod_name });
+                , &.{ t.module_name, mod_name, mod_name });
             }
         }
 
         // Add zig-backed module imports
         for (t.mod_imports) |mod_name| {
             if (zig_mod_set.contains(mod_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    exe_{s}.root_module.addImport("{s}_zig", zig_{s});
                     \\
-                , .{ t.module_name, mod_name, mod_name });
+                , &.{ t.module_name, mod_name, mod_name });
             }
         }
 
@@ -418,10 +465,10 @@ pub fn buildZigContentMulti(
 
         // Apply .zon include directories (addIncludePath for each dir)
         for (t.include_dirs) |dir| {
-            try _build.appendFmt(&buf, allocator,
-                \\    exe_{s}.root_module.addIncludePath(.{{ .cwd_relative = "{s}" }});
+            try writeSub(&buf, allocator,
+                \\    exe_{s}.root_module.addIncludePath(.{ .cwd_relative = "{s}" });
                 \\
-            , .{ t.module_name, dir });
+            , &.{ t.module_name, dir });
         }
 
         // Apply C source files to this exe artifact
@@ -431,7 +478,7 @@ pub fn buildZigContentMulti(
             try _build.emitCSourceFiles(&buf, allocator, t.c_source_files, t.needs_cpp, exe_art_name);
         }
 
-        try _build.appendFmt(&buf, allocator,
+        try writeSub(&buf, allocator,
             \\    b.installArtifact(exe_{s});
             \\
             \\    const run_cmd_{s} = b.addRunArtifact(exe_{s});
@@ -439,7 +486,7 @@ pub fn buildZigContentMulti(
             \\    const run_step = b.step("run", "Run");
             \\    run_step.dependOn(&run_cmd_{s}.step);
             \\
-        , .{ t.module_name, t.module_name, t.module_name, t.module_name, t.module_name });
+        , &.{ t.module_name, t.module_name, t.module_name, t.module_name, t.module_name });
     }
 
     // Test step — prefer first exe target, fall back to first target for lib-only builds
@@ -453,34 +500,34 @@ pub fn buildZigContentMulti(
     if (test_target == null and targets.len > 0) test_target = targets[0];
 
     if (test_target) |t| {
-        try _build.appendFmt(&buf, allocator,
-            \\    const unit_tests = b.addTest(.{{
-            \\        .root_module = b.createModule(.{{
+        try writeSub(&buf, allocator,
+            \\    const unit_tests = b.addTest(.{
+            \\        .root_module = b.createModule(.{
             \\            .root_source_file = b.path("{s}.zig"),
             \\            .target = target,
             \\            .optimize = optimize,
-            \\        }}),
-            \\    }});
+            \\        }),
+            \\    });
             \\
-        , .{t.module_name});
+        , &.{t.module_name});
 
         // Add shared module imports to test target
         for (t.mod_imports) |mod_name| {
             if (shared_set.contains(mod_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    unit_tests.root_module.addImport("{s}", mod_{s});
                     \\
-                , .{ mod_name, mod_name });
+                , &.{ mod_name, mod_name });
             }
         }
 
         // Add zig-backed module imports to test target
         for (t.mod_imports) |mod_name| {
             if (zig_mod_set.contains(mod_name)) {
-                try _build.appendFmt(&buf, allocator,
+                try writeSub(&buf, allocator,
                     \\    unit_tests.root_module.addImport("{s}_zig", zig_{s});
                     \\
-                , .{ mod_name, mod_name });
+                , &.{ mod_name, mod_name });
             }
         }
 

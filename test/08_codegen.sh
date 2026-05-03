@@ -88,9 +88,10 @@ else fail "bare call discards return value"; fi
 
 CODEGEN_SRC="$REPO_DIR/src/codegen/codegen.zig"
 CODEGEN_MATCH="$REPO_DIR/src/codegen/codegen_match.zig"
+CODEGEN_STRINGS="$REPO_DIR/src/codegen/codegen_strings.zig"
 
-# MIR interpolation functions are in codegen_match.zig
-INTERP_SAFE_COUNT=$(grep -c 'catch |err| return err' "$CODEGEN_MATCH" 2>/dev/null || echo 0)
+# MIR interpolation functions are in codegen_strings.zig
+INTERP_SAFE_COUNT=$(grep -c 'catch |err| return err' "$CODEGEN_STRINGS" 2>/dev/null || echo 0)
 if [ "$INTERP_SAFE_COUNT" -ge 1 ]; then
     pass "interpolation propagates OOM (no catch unreachable)"
 else

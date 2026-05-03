@@ -259,6 +259,7 @@ pub fn runAnalysis(
             .allocator = ma,
             .reporter = &reporter,
             .decls = &mc.decl_collector.table,
+            .is_zig_module = mc.mod_ptr.is_zig_module,
             .locs = locs_ptr,
             .file_offsets = file_offsets,
             .all_decls = &all_module_decls,

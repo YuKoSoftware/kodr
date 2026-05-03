@@ -9,7 +9,6 @@ const module = @import("module.zig");
 const builtins = @import("builtins.zig");
 const types = @import("types.zig");
 const K = @import("constants.zig");
-const cache = @import("cache.zig");
 const ast_store_mod = @import("ast_store.zig");
 const ast_typed = @import("ast_typed.zig");
 pub const AstNodeIndex = ast_store_mod.AstNodeIndex;
@@ -191,6 +190,7 @@ pub const DeclCollector = struct {
     table: DeclTable,
     reporter: *errors.Reporter,
     allocator: std.mem.Allocator,
+    is_zig_module: bool = false,
     locs: ?*const parser.LocMap,
     file_offsets: []const module.FileOffset,
     store: *const AstStore = undefined,
@@ -310,9 +310,7 @@ pub const DeclCollector = struct {
         };
 
         if (self.table.symbols.contains(f.name)) {
-            if (loc) |l| {
-                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
-            }
+            if (self.is_zig_module) return;
             _ = try self.reporter.reportFmt(.duplicate_function, loc, "duplicate function declaration: '{s}'", .{f.name});
             return;
         }
@@ -322,9 +320,7 @@ pub const DeclCollector = struct {
 
     fn collectStruct(self: *DeclCollector, s: parser.StructDecl, loc: ?errors.SourceLoc) anyerror!void {
         if (self.table.symbols.contains(s.name)) {
-            if (loc) |l| {
-                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
-            }
+            if (self.is_zig_module) return;
             _ = try self.reporter.reportFmt(.duplicate_struct, loc, "duplicate struct declaration: '{s}'", .{s.name});
             return;
         }
@@ -408,9 +404,7 @@ pub const DeclCollector = struct {
         }
 
         if (self.table.symbols.contains(b.name)) {
-            if (loc) |l| {
-                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
-            }
+            if (self.is_zig_module) return;
             _ = try self.reporter.reportFmt(.duplicate_blueprint, loc, "duplicate blueprint declaration: '{s}'", .{b.name});
             return;
         }
@@ -463,9 +457,7 @@ pub const DeclCollector = struct {
         };
 
         if (self.table.symbols.contains(e.name)) {
-            if (loc) |l| {
-                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
-            }
+            if (self.is_zig_module) return;
             _ = try self.reporter.reportFmt(.duplicate_enum, loc, "duplicate enum declaration: '{s}'", .{e.name});
             return;
         }
@@ -475,9 +467,7 @@ pub const DeclCollector = struct {
 
     fn collectHandle(self: *DeclCollector, h: parser.HandleDecl, loc: ?errors.SourceLoc) anyerror!void {
         if (self.table.symbols.contains(h.name)) {
-            if (loc) |l| {
-                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
-            }
+            if (self.is_zig_module) return;
             _ = try self.reporter.reportFmt(.duplicate_handle, loc, "duplicate handle declaration: '{s}'", .{h.name});
             return;
         }
@@ -514,9 +504,7 @@ pub const DeclCollector = struct {
         if (self.table.symbols.contains(v.name)) {
             // Sidecar auto-mapped declarations may duplicate user declarations — skip silently.
             // User definitions (scanned first) take precedence.
-            if (loc) |l| {
-                if (std.mem.startsWith(u8, l.file, cache.ZIG_MODULES_DIR)) return;
-            }
+            if (self.is_zig_module) return;
             _ = try self.reporter.reportFmt(.duplicate_variable, loc, "duplicate variable declaration: '{s}'", .{v.name});
             return;
         }

@@ -15,6 +15,7 @@ pub const SemanticContext = struct {
     allocator: std.mem.Allocator,
     reporter: *errors.Reporter,
     decls: *declarations.DeclTable,
+    is_zig_module: bool = false,
     locs: ?*const parser.LocMap,
     file_offsets: []const module.FileOffset,
     /// All module DeclTables — for cross-module qualified generic type validation.

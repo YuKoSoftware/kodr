@@ -2,7 +2,8 @@
 // Contains: generateExprMir (dispatch hub), generateBinaryMir, generateCallMir, generateFieldAccessMir,
 //           generateIdentifierMir, generateCoercedExprMir,
 //           continue/range/interpolation/for/destruct generators (MIR path).
-// Match generators, compiler-func generators, and arithmetic overflow helpers are in codegen_match.zig.
+// Match generators are in codegen_match.zig, compiler-function generators are in codegen_intrinsics.zig,
+// and string interpolation is in codegen_strings.zig.
 // All functions receive *CodeGen as first parameter — cross-file calls route through stubs in codegen.zig.
 
 const std = @import("std");
@@ -16,7 +17,7 @@ const types = @import("../types.zig");
 const RT = types.ResolvedType;
 const mir_store_mod = @import("../mir_store.zig");
 const mir_typed = @import("../mir_typed.zig");
-const match_impl = @import("codegen_match.zig");
+const strings_impl = @import("codegen_strings.zig");
 const decls_impl = @import("codegen_decls.zig");
 
 const CodeGen = codegen.CodeGen;
@@ -83,7 +84,7 @@ pub fn generateExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
                         }
                     },
                     .bool_lit => try cg.emit(if (rec.bool_val != 0) "true" else "false"),
-                    .null_lit => try cg.emit("null"),
+                    .null_lit => try cg.emit(types.Primitive.null_type.toZig()),
                     .error_lit => {
                         if (rec.text != .none) {
                             const msg = store.strings.get(rec.text);
@@ -153,7 +154,7 @@ pub fn generateExprMir(cg: *CodeGen, idx: MirNodeIndex) anyerror!void {
             },
             .interpolation => {
                 const rec = mir_typed.Interpolation.unpack(store, idx);
-                try match_impl.generateInterpolatedStringMirFromStore(cg, store, rec.parts_start, rec.parts_end);
+                try strings_impl.generateInterpolatedStringMirFromStore(cg, store, rec.parts_start, rec.parts_end);
             },
             .compiler_fn => try cg.generateCompilerFuncMir(idx),
             .array_lit => {

@@ -127,6 +127,7 @@ pub const ModuleCompile = struct {
         const iface_alloc = self.iface_arena.allocator();
         const dc = try iface_alloc.create(declarations.DeclCollector);
         dc.* = declarations.DeclCollector.init(iface_alloc, reporter);
+        dc.is_zig_module = mod_ptr.is_zig_module;
         self.decl_collector = dc;
     }
 

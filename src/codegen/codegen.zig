@@ -16,6 +16,8 @@ const decls_impl = @import("codegen_decls.zig");
 const stmts_impl = @import("codegen_stmts.zig");
 const exprs_impl = @import("codegen_exprs.zig");
 const match_impl = @import("codegen_match.zig");
+const intrinsics_impl = @import("codegen_intrinsics.zig");
+const strings_impl = @import("codegen_strings.zig");
 const mir_store_mod = @import("../mir_store.zig");
 const mir_typed = @import("../mir_typed.zig");
 const type_store_mod = @import("../type_store.zig");
@@ -518,15 +520,15 @@ pub const CodeGen = struct {
 
     pub fn generateStringMatchMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return match_impl.generateStringMatchMir(self, idx); }
 
-    pub fn generateInterpolatedStringMirFromStore(self: *CodeGen, store: *const mir_store_mod.MirStore, parts_start: u32, parts_end: u32) anyerror!void { return match_impl.generateInterpolatedStringMirFromStore(self, store, parts_start, parts_end); }
+    pub fn generateInterpolatedStringMirFromStore(self: *CodeGen, store: *const mir_store_mod.MirStore, parts_start: u32, parts_end: u32) anyerror!void { return strings_impl.generateInterpolatedStringMirFromStore(self, store, parts_start, parts_end); }
 
-    pub fn generateCompilerFuncMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return match_impl.generateCompilerFuncMir(self, idx); }
+    pub fn generateCompilerFuncMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return intrinsics_impl.generateCompilerFuncMir(self, idx); }
 
-    pub fn generateWrappingExprMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return match_impl.generateWrappingExprMir(self, idx); }
+    pub fn generateWrappingExprMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return intrinsics_impl.generateWrappingExprMir(self, idx); }
 
-    pub fn generateSaturatingExprMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return match_impl.generateSaturatingExprMir(self, idx); }
+    pub fn generateSaturatingExprMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return intrinsics_impl.generateSaturatingExprMir(self, idx); }
 
-    pub fn generateOverflowExprMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return match_impl.generateOverflowExprMir(self, idx); }
+    pub fn generateOverflowExprMir(self: *CodeGen, idx: mir_store_mod.MirNodeIndex) anyerror!void { return intrinsics_impl.generateOverflowExprMir(self, idx); }
 
     pub fn fillDefaultArgsMir(self: *CodeGen, callee_idx: mir_store_mod.MirNodeIndex, actual_arg_count: usize) anyerror!void { return match_impl.fillDefaultArgsMir(self, callee_idx, actual_arg_count); }
 
@@ -616,8 +618,8 @@ pub const CodeGen = struct {
                 }
                 try w.writeAll(types.Primitive.nameToZig(n));
             },
-            .err => try w.writeAll("anyerror"),
-            .null_type => try w.writeAll("null"),
+            .err => try w.writeAll(types.Primitive.err.toZig()),
+            .null_type => try w.writeAll(types.Primitive.null_type.toZig()),
             .slice => |elem| {
                 try w.writeAll("[]");
                 try self.zigOfRTInner(elem.*, w);
@@ -773,15 +775,27 @@ pub const CodeGen = struct {
         // resolveTypeNode returns .unknown for non-identifier callees.
         if (node.* == .call_expr) {
             const c = node.call_expr;
-            if (c.callee.* != .identifier) return "anyopaque";
+            if (c.callee.* != .identifier) {
+                _ = try self.reporter.reportFmt(.internal_zig_codegen, null,
+                    "internal: typeToZig cannot lower non-identifier call expression", .{});
+                return error.CompileError;
+            }
         }
         // binary_expr in type-alias position with non-bit_or op.
-        if (node.* == .binary_expr and node.binary_expr.op != .bit_or) return "anyopaque";
+        if (node.* == .binary_expr and node.binary_expr.op != .bit_or) {
+            _ = try self.reporter.reportFmt(.internal_zig_codegen, null,
+                "internal: typeToZig cannot lower binary expression with non-bit_or operator", .{});
+            return error.CompileError;
+        }
         // All other type-position nodes: lower to RT via a scratch arena, then emit.
         var scratch = std.heap.ArenaAllocator.init(self.allocator);
         defer scratch.deinit();
         const rt = try types.resolveTypeNode(scratch.allocator(), node);
-        if (rt == .unknown or rt == .inferred) return "anyopaque";
+        if (rt == .unknown or rt == .inferred) {
+            _ = try self.reporter.reportFmt(.internal_zig_codegen, null,
+                "internal: typeToZig cannot lower unresolved type", .{});
+            return error.CompileError;
+        }
         return self.zigOfRT(rt);
     }
 };

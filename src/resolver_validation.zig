@@ -8,7 +8,6 @@ const types = @import("types.zig");
 const builtins = @import("builtins.zig");
 const errors = @import("errors.zig");
 const K = @import("constants.zig");
-const cache = @import("cache.zig");
 const declarations = @import("declarations.zig");
 
 const TypeResolver = resolver_mod.TypeResolver;
@@ -175,9 +174,7 @@ pub fn validateType(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
                 // Auto-mapped zig module declarations may reference Zig-internal types
                 // that don't exist in Orhon. Skip validation for these — the re-export
                 // codegen passes them through to Zig which handles them natively.
-                if (self.ctx.nodeLoc(node)) |loc| {
-                    if (std.mem.startsWith(u8, loc.file, cache.ZIG_MODULES_DIR)) return;
-                }
+                if (self.ctx.is_zig_module) return;
 
                 // @this / Self outside struct gets a specific error message
                 if (types.Primitive.fromName(type_name) == .this or types.Primitive.fromName(type_name) == .self_deprecated) {
