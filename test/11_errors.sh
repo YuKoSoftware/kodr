@@ -362,7 +362,7 @@ fi
 cd "$TESTDIR"
 mkdir -p neg_type_display/src
 printf '#name  = neg_type_display\n#build = exe\n' > neg_type_display/orhon.project
-cp "$FIXTURES/semantic/fail_type_mismatch_display.orh" neg_type_display/src/neg_type_display.orh
+cp "$FIXTURES/semantic/fail_types.orh" neg_type_display/src/neg_type_display.orh
 sed -i '1s/^module [a-zA-Z_][a-zA-Z0-9_]*/module neg_type_display/' neg_type_display/src/neg_type_display.orh
 cd neg_type_display
 NEG_OUT=$("$ORHON" build 2>&1 || true)

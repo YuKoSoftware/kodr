@@ -54,6 +54,10 @@ TESTS=(
     "$SCRIPT_DIR/test/14_props.sh"
 )
 
+# Clean up stale build artifacts before running tests
+find test/fixtures -type d -name ".orh-cache" -exec rm -rf {} + 2>/dev/null || true
+find test/snapshots -type d -name ".orh-cache" -exec rm -rf {} + 2>/dev/null || true
+
 for test_script in "${TESTS[@]}"; do
     OUTPUT=$(bash "$test_script" 2>&1)
     EXIT_CODE=$?

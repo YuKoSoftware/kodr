@@ -1,11 +1,44 @@
 # Orhon — TODO
 
-Master tracking file. Everything is organized into phases ordered by dependency. Each phase has explicit blockers and a brief rationale. Severity tags: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low. Deferred/future work lives in [[future]].
+## 🔍 Project Audit — 2026-05-04
+
+Issues found during comprehensive project audit (OpenCode config, build system, test infra, docs, hygiene). Fix these before continuing Phase 5 tasks.
+
+### 🔴 High
+- [x] **AH1** — `test/11_errors.sh:365` references deleted fixture `fail_type_mismatch_display.orh` — ERR-02 "type mismatch display" test is permanently broken. This file was deleted as a duplicate in a prior cleanup but the script was not updated.
+
+### 🟡 Medium
+- [x] **AM1** — 39 LSP test blocks unreachable via `zig build test`. `src/lsp/` has 9 files with test blocks but `src/main.zig` (the only importer) is not in `build.zig`'s `test_files` array. Add `"src/lsp/lsp.zig"` to `test_files`.
+- [x] **AM2** — 84 stale build artifacts in `test/fixtures/.orh-cache/`. Leftovers from local test runs; runner walks over them harmlessly but adds overhead. Add cleanup to `testall.sh` startup or exclude from runner.
+- [x] **AM3** — No CHANGELOG. Project at v0.53.56 with active development has no release history file. TODO.md serves as partial substitute but isn't user-facing.
+- [x] **AM4** — No `.editorconfig`. Missing for a multi-contributor project — no enforcement of consistent indentation/charset across editors.
+
+### 🟢 Low
+- [ ] **AL1** — Typo in AGENTS.md: `STRING_LITERAL` should be `STRING_LITERAL` (missing 'A').
+- [ ] **AL2** — AGENTS.md says "11 passes in `src/pipeline_passes.zig`" but only passes 4-10 are in that file. File's own comment says "4–11" while enum stops at 10.
+- [ ] **AL3** — AGENTS.md example error code `.E0001` is fictional — real codes start at E0101.
+- [ ] **AL4** — No `.zig-version` pinning file. Version only in `build.zig.zon` — tooling like `zvm`/`asdf-zig` won't auto-switch.
+- [ ] **AL5** — No `.opencodeignore` file — no OpenCode-specific exclusion rules.
+- [ ] **AL6** — No `.opencode/hooks/` directory — no lifecycle hooks active.
+- [ ] **AL7** — Dead code: `run_test()` function in `testall.sh:17-29` defined but never called.
+- [ ] **AL8** — Fragile PASS/FAIL counting in `testall.sh:35` — `grep -c "PASS"` could match output artifact content.
+- [ ] **AL9** — `run_fixture()` helper in `11_errors.sh:317-328` never called (intentional per TODO.md, but dead code).
+- [ ] **AL10** — `test/perf.log` on disk, grows unbounded with no rotation in `13_perf.sh`.
+- [ ] **AL11** — README has no version number or badge — can't tell which version it documents.
+- [ ] **AL12** — Stale `docs/superpowers/` pattern in `.gitignore` — directory doesn't exist on disk.
+- [ ] **AL13** — Overly broad `*.txt` pattern in `.gitignore` — could silently exclude legitimate project files.
+- [ ] **AL14** — `src/peg.zig` embeds 7 of 8 example templates — `handles.orh` is missing from PEG validation tests.
+- [ ] **AL15** — Empty `docs/plans/` directory (only `.gitkeep` file).
+- [ ] **AL16** — VS Code extension version (`0.8.5`) diverges from compiler version (`0.53.56`) with no documented relationship.
+- [ ] **AL17** — `editors/vscode/node_modules/` and `orhon-0.8.5.vsix` exist on disk — verify not git-tracked.
+- [ ] **AL18** — Template file named `project.manifest` but runtime manifest is always `orhon.project` — slightly confusing.
+- [ ] **AL19** — ~220 `src/std/` test blocks unreachable via `zig build test` — `std_bundle.zig` uses `@embedFile` (string embedding), not `@import`. May be intentional (tested via `orhon test`).
+- [ ] **AL20** — Golden fixture directories include stale build artifacts (`.orh-cache/`, `bin/`) alongside golden snapshots.
 
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 5 (Medium/Low Cleanup Sweep) — M4-M14 done, E9005 resolved (v0.53.56). P1-P7, I1-I5, M1-M3, B1-B6 all done. testall.sh: 219/165 pass/fail. NB-01: borrow negative fixtures added (E3003/E3004/E3005), use negative fixtures added (E0101/E1007), resolver/borrow checker bugs fixed, orphaned fixtures pruned.
+- **Active project:** Phase 5 (Medium/Low Cleanup Sweep) — M4-M14 done, E9005 resolved (v0.53.57). P1-P7, I1-I5, M1-M3, B1-B6 all done. testall.sh: 219/165 pass/fail. NB-02: project audit (2026-05-04) — fixed broken ERR-02 test, added LSP test wrapper (3869/3869 pass), stale cache cleanup, CHANGELOG created, editorconfig added. 20 low audit items tracked as AL1-AL20.
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph

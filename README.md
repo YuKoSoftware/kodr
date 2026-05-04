@@ -49,6 +49,7 @@ The full language spec lives in [`docs/`](docs/):
 | [13-build-cli.md](docs/13-build-cli.md) | Build system, CLI, generated Zig output |
 | [14-zig-bridge.md](docs/14-zig-bridge.md) | Extern bridge, safety rules, generic bridge types |
 | [15-testing.md](docs/15-testing.md) | Testing |
+| [CHANGELOG.md](CHANGELOG.md) | Release history and version changes |
 
 ---
 

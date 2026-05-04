@@ -637,12 +637,7 @@ test "runAnalysis arena does not leak or corrupt returned data" {
     // runAnalysis creates a scratch arena internally; returned diagnostics/symbols
     // must be allocated with the long-lived allocator (std.testing.allocator here)
     // and survive the arena deinit.
-    const result = runAnalysis(std.testing.allocator, ".", .propagation) catch |err| {
-        // Analysis may fail on missing project structure -- that's OK.
-        // The important thing is that the arena was cleaned up without error.
-        _ = err;
-        return;
-    };
+    const result = runAnalysis(std.testing.allocator, ".", .propagation) catch return;
     // If we got results, verify they can be read and freed without allocator errors.
     // std.testing.allocator will panic on use-after-free or double-free.
     lsp_types.freeDiagnostics(std.testing.allocator, result.diagnostics);

@@ -75,6 +75,7 @@ pub fn build(b: *std.Build) void {
         "src/mir_store.zig",
         "src/mir_typed.zig",
         "src/mir_builder.zig",
+        "src/lsp_test.zig",
         "test/runner.zig",
     };
 
