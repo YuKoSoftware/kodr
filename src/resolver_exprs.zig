@@ -207,8 +207,18 @@ fn resolveExprInner(self: *TypeResolver, node: *parser.Node, scope: *Scope, rctx
             }
             return operand_type;
         },
-        .mut_borrow_expr => |b| try resolveExprNode(self, b, scope, rctx),
-        .const_borrow_expr => |b| try resolveExprNode(self, b, scope, rctx),
+        .mut_borrow_expr => |b| {
+            const inner_type = try resolveExprNode(self, b, scope, rctx);
+            const elem = try self.ctx.allocator.create(RT);
+            elem.* = inner_type;
+            return RT{ .ptr = .{ .kind = .mut_ref, .elem = elem } };
+        },
+        .const_borrow_expr => |b| {
+            const inner_type = try resolveExprNode(self, b, scope, rctx);
+            const elem = try self.ctx.allocator.create(RT);
+            elem.* = inner_type;
+            return RT{ .ptr = .{ .kind = .const_ref, .elem = elem } };
+        },
 
         .call_expr => |c| {
             const callee_type = try resolveExprNode(self, c.callee, scope, rctx);

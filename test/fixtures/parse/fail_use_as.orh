@@ -1,0 +1,5 @@
+module fail_use_as
+
+use std::console as c  //> [E0101]
+
+func main() void { }

@@ -5,7 +5,7 @@ Master tracking file. Everything is organized into phases ordered by dependency.
 ## Current status
 
 - **Completed:** Phase 0 — Correctness blockers ✓ | Phase A — AST/SoA rebuild ✓ | Phase B — MIR rebuild ✓ | Phase C — Codegen migration ✓ | Phase D — Cleanup ✓
-- **Active project:** Phase 5 (Medium/Low Cleanup Sweep) — M4-M14 done, E9005 resolved (v0.53.55). P1-P7, I1-I5, M1-M3, B1-B6 all done. testall.sh: 219/165 pass/fail.
+- **Active project:** Phase 5 (Medium/Low Cleanup Sweep) — M4-M14 done, E9005 resolved (v0.53.56). P1-P7, I1-I5, M1-M3, B1-B6 all done. testall.sh: 219/165 pass/fail. NB-01: borrow negative fixtures added (E3003/E3004/E3005), use negative fixtures added (E0101/E1007), resolver/borrow checker bugs fixed, orphaned fixtures pruned.
 - **Tracking source:** Audit findings from `2026-04-14` recorded as **CB#** (correctness blockers), **H#** (architectural walls), **M#** (medium cleanup). Preserved so each item is traceable to its audit origin.
 
 ## Phase dependency graph

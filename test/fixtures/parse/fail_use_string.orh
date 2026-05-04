@@ -1,0 +1,5 @@
+module fail_use_string
+
+use "header.h"  //> [E1007]
+
+func main() void { }

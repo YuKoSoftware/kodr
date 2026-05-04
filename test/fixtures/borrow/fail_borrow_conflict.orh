@@ -1,0 +1,15 @@
+module fail_borrow_conflict
+
+
+struct Point {
+    pub x: i32
+    pub y: i32
+    pub func get_x(self: const& Point, val: i32) i32 { return self.x + val }
+}
+
+func mut_and_const_conflict() void {
+    var p: Point = Point{x: 1, y: 2}
+    const result: i32 = p.get_x(mut& p.y)  //> [E3005]
+}
+
+func main() void { }

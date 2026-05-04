@@ -94,18 +94,20 @@ pub fn checkExpr(self: *BorrowChecker, node: *parser.Node) anyerror!void {
         .mut_borrow_expr => |inner| {
             // mut& in expression context (e.g. function call arg) — mutable borrow
             // NLL: null ref — temporary borrow, not tracked for NLL
+            // Check inner first — the target of the borrow is not a separate "use"
+            try checkExpr(self, inner);
             if (borrow.extractBorrowTarget(inner)) |target| {
                 try self.addBorrow(target.variable, target.field, true, null);
             }
-            try checkExpr(self, inner);
         },
         .const_borrow_expr => |inner| {
             // Explicit const& in expression context — always immutable
             // NLL: null ref — temporary borrow, not tracked for NLL
+            // Check inner first — the target of the borrow is not a separate "use"
+            try checkExpr(self, inner);
             if (borrow.extractBorrowTarget(inner)) |target| {
                 try self.addBorrow(target.variable, target.field, false, null);
             }
-            try checkExpr(self, inner);
         },
         .identifier => |name| {
             // Check if this variable is mutably borrowed — can't use it

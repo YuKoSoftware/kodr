@@ -1,0 +1,17 @@
+module fail_use_while_borrowed
+
+
+struct Point {
+    pub x: i32
+    pub y: i32
+    pub func set_x(self: mut& Point, val: i32) void {
+        self.x = val
+    }
+}
+
+func use_after_mut_borrow() void {
+    var p: Point = Point{x: 1, y: 2}
+    p.set_x(p.x)  //> [E3004]
+}
+
+func main() void { }

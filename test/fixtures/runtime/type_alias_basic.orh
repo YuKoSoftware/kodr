@@ -1,9 +1,0 @@
-module type_alias_basic
-
-const Userid: type = i64
-const Idx: type = i32
-
-pub func main() void {
-    const id: Userid = 42
-    const idx: Idx = 1
-}

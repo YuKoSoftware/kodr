@@ -1,8 +1,0 @@
-module fixture
-
-
-func bad_if() void {
-    if(42) { }  //> [E2027]
-}
-
-func main() void { }

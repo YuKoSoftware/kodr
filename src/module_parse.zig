@@ -73,8 +73,7 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                     if (trimmed_line.len > 0 and trimmed_line[0] == '#' and
                         !std.mem.startsWith(u8, trimmed_line, "//"))
                     {
-                        _ = try self.reporter.reportFmt(.metadata_in_non_anchor, null, "metadata (#{s}...) only allowed in anchor file '{s}.orh', found in '{s}'",
-                            .{ trimmed_line[1..@min(trimmed_line.len, 10)], mod_name, file_path });
+                        _ = try self.reporter.reportFmt(.metadata_in_non_anchor, null, "metadata (#{s}...) only allowed in anchor file '{s}.orh', found in '{s}'", .{ trimmed_line[1..@min(trimmed_line.len, 10)], mod_name, file_path });
                         break;
                     }
                 }
@@ -142,8 +141,8 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                 else
                     break :blk try std.fmt.allocPrint(alloc, "unexpected '{s}'", .{err_info.found});
             } else if (err_info.found_kind == .kw_if and err_info.pos > 0 and
-                tokens.items[err_info.pos - 1].kind == .kw_else) blk:
-            {
+                tokens.items[err_info.pos - 1].kind == .kw_else)
+            blk: {
                 break :blk try std.fmt.allocPrint(alloc, "'else if' is not valid \u{2014} use 'elif' for chained conditions", .{});
             } else if (err_info.found_kind == .semicolon) blk: {
                 break :blk try std.fmt.allocPrint(alloc, "unexpected ';' \u{2014} Orhon does not use semicolons", .{});
@@ -153,11 +152,10 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                 err_info.found_kind == .kw_false) and
                 err_info.pos > 0 and
                 (tokens.items[err_info.pos - 1].kind == .kw_if or
-                tokens.items[err_info.pos - 1].kind == .kw_while or
-                tokens.items[err_info.pos - 1].kind == .kw_for)) blk:
-            {
-                break :blk try std.fmt.allocPrint(alloc,
-                    "missing '(' after '{s}' \u{2014} conditions require parentheses: {s}(...)", .{
+                    tokens.items[err_info.pos - 1].kind == .kw_while or
+                    tokens.items[err_info.pos - 1].kind == .kw_for))
+            blk: {
+                break :blk try std.fmt.allocPrint(alloc, "missing '(' after '{s}' \u{2014} conditions require parentheses: {s}(...)", .{
                     tokens.items[err_info.pos - 1].text,
                     tokens.items[err_info.pos - 1].text,
                 });
@@ -218,17 +216,18 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
         var imports: std.ArrayListUnmanaged([]const u8) = .{};
         for (build_result.node.program.imports) |imp| {
             const decl = imp.import_decl;
-            // String-literal imports (import "header.h") are not supported
-            if (decl.path.len > 0 and decl.path[0] == '"') {
-                _ = try self.reporter.reportFmt(.c_import_not_supported, null, "import \"{s}\" is not supported — use a .zig + .zon module for C interop (see docs/14-zig-bridge.md)", .{constants.stripQuotes(decl.path)});
-                continue;
-            }
 
             const imp_loc = module.resolveNodeLoc(
                 if (mod_locs != null) &mod_locs.? else null,
                 mod_file_offsets,
                 imp,
             );
+
+            // String-literal imports (import "header.h") are not supported
+            if (decl.path.len > 0 and decl.path[0] == '"') {
+                _ = try self.reporter.reportFmt(.c_import_not_supported, imp_loc, "import \"{s}\" is not supported — use a .zig + .zon module for C interop (see docs/14-zig-bridge.md)", .{constants.stripQuotes(decl.path)});
+                continue;
+            }
 
             if (decl.scope) |sc| {
                 // std::mem is a built-in compiler module — no .orh file needed
@@ -244,13 +243,11 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                 const scope_dir = try std.fs.path.join(self.allocator, &.{ cache.CACHE_DIR, "std" });
                 defer self.allocator.free(scope_dir);
 
-                const file_path = try std.fmt.allocPrint(self.allocator,
-                    "{s}/{s}.orh", .{ scope_dir, decl.path });
+                const file_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.orh", .{ scope_dir, decl.path });
 
                 // Check the .orh file exists
                 std.fs.cwd().access(file_path, .{}) catch {
-                    _ = try self.reporter.reportFmt(.std_module_not_found, imp_loc, "module '{s}::{s}' not found",
-                        .{ sc, decl.path });
+                    _ = try self.reporter.reportFmt(.std_module_not_found, imp_loc, "module '{s}::{s}' not found", .{ sc, decl.path });
                     self.allocator.free(file_path);
                     continue;
                 };
@@ -279,8 +276,7 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
                             // Skip internal files
                             if (dir_entry.name[0] == '_') continue;
 
-                            const extra_path = try std.fmt.allocPrint(self.allocator,
-                                "{s}/{s}", .{ scope_dir, dir_entry.name });
+                            const extra_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ scope_dir, dir_entry.name });
                             const extra_mod = try self.readModuleName(extra_path) orelse {
                                 self.allocator.free(extra_path);
                                 continue;
@@ -347,15 +343,10 @@ pub fn parseModules(self: *Resolver, alloc: std.mem.Allocator) !void {
             if (meta.metadata.field == .build or meta.metadata.field == .version) {
                 const key = if (meta.metadata.field == .build) "build" else "version";
                 const anchor = if (mod.files.len > 0) mod.files[0] else mod_name;
-                _ = try self.reporter.reportFmt(.metadata_in_source,
-                    .{ .file = anchor, .line = 1, .col = 1 },
-                    "#{s} belongs in orhon.project, not in source files — move it to orhon.project",
-                    .{key});
+                _ = try self.reporter.reportFmt(.metadata_in_source, .{ .file = anchor, .line = 1, .col = 1 }, "#{s} belongs in orhon.project, not in source files — move it to orhon.project", .{key});
             }
         }
-
     }
-
 }
 
 /// Returns true if the file path is under the std cache directory (.orh-cache/std/).
@@ -402,5 +393,3 @@ fn addStdModule(self: *Resolver, worklist: *std.ArrayListUnmanaged([]const u8), 
         self.allocator.free(file_path);
     }
 }
-
-
