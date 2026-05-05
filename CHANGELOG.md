@@ -5,6 +5,33 @@ All notable changes to the Orhon compiler.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.58] — 2026-05-05
+
+### Fixed
+- E9005 cascade: stdlib zig-backed modules emitted empty function bodies instead of re-exports.
+  Root cause: `discoverAndConvert` wrote `_zig.zig` sidecars to `.orh-cache/generated/` before
+  the directory existed. Fix: `makePath` before file writes in `zig_module.zig`.
+- zig_runner double-free: stderr `OutputTooLarge` path could double-free `stdout` allocation
+  via errdefer. Added `stdout_freed` flag guard.
+- Pipeline source-dir-not-found errors now go through `reporter.reportFmt` instead of
+  `std.debug.print`.
+- M15: Deduplicated init.zig template list (single comptime array replaces 8 `@embedFile` consts).
+
+### Added
+- Verbosity/quiet flag system: `-q` (quiet), `-vv` (very_verbose), `ORHON_VERBOSE` env var
+  accepting `0/quiet`, `1/normal`, `2/verbose`, `3/very_verbose`.
+- Error code `E5009` (`source_dir_not_found`) for pipeline file-not-found diagnostics.
+
+### Changed
+- M19: Replaced 3 POSIX `STDOUT_FILENO`/`STDIN_FILENO` hardcoded handles with portable
+  `std.fs.File.stdout()` / `std.fs.File.stdin()` in `main.zig` and `lsp.zig`.
+- M18: Zig runner stdout/stderr capture replaced with chunked 4KB streaming reads, cap
+  lowered from 10MB to 1MB.
+- M23: `orhon analysis` command hidden from user help (remains functional via CLI lookup).
+- M24: Updated `orhon analysis` description in docs to "PEG grammar validation".
+- M25: Added note to testing doc distinguishing Orhon `test` blocks from compiler test suite.
+- zig_runner: `show_zig_output: bool` → `verbosity: Verbosity` field; raw Zig output gated on level≥2; "Built:"/test output suppressed in quiet mode.
+
 ## [0.53.57] — 2026-05-04
 
 ### Fixed
