@@ -123,6 +123,7 @@ pub const ErrorCode = enum(u16) {
     no_project_manifest  = 5006,
     metadata_in_source   = 5007,
     manifest_parse_error = 5008,
+    source_dir_not_found   = 5009,
 
     // ── E9xxx  Internal compiler errors ───────────────────────────────────────
     internal_grammar_load = 9001,

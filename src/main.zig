@@ -70,7 +70,7 @@ fn handleWhich(allocator: std.mem.Allocator, cli: *_cli.CliArgs) anyerror!void {
         std.debug.print("error: could not resolve executable path\n", .{});
         std.process.exit(1);
     };
-    const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+    const stdout_file = std.fs.File.stdout();
     var buf2: [4096]u8 = undefined;
     var w = stdout_file.writer(&buf2);
     const writer = &w.interface;

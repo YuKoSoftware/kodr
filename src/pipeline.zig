@@ -99,9 +99,12 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
 
     // Check source dir exists before scanning — give a clear error if not
     std.fs.cwd().access(cli.source_dir, .{}) catch {
-        std.debug.print("error: source directory '{s}' not found\n", .{cli.source_dir});
-        std.debug.print("  run `orhon build` from inside an orhon project directory\n", .{});
-        std.debug.print("  expected: src/ directory with orhon.project in project root\n", .{});
+        const diag_id = try reporter.reportFmt(.source_dir_not_found, null,
+            "source directory '{s}' not found", .{cli.source_dir});
+        _ = try reporter.noteFmt(diag_id, .source_dir_not_found, null,
+            "run `orhon build` from inside an orhon project directory", .{});
+        _ = try reporter.noteFmt(diag_id, .source_dir_not_found, null,
+            "expected: src/ directory with orhon.project in project root", .{});
         return null;
     };
 
@@ -337,7 +340,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     if (cli.command == .@"test") {
         // Note: source_maps not populated for test runner — runTests uses formatTestOutput,
         // not reformatZigErrors, so the source map is not needed here.
-        var runner = zig_runner.ZigRunner.init(allocator, reporter, cli.verbose) catch |err| {
+        var runner = zig_runner.ZigRunner.init(allocator, reporter, cli.verbosity) catch |err| {
             if (err == error.ZigNotFound) return null;
             return err;
         };
@@ -389,7 +392,7 @@ pub fn runPipeline(allocator: std.mem.Allocator, cli: *_cli.CliArgs, reporter: *
     }
 
     // ── Pass 12: Zig Compiler ──────────────────────────────────
-    var runner = zig_runner.ZigRunner.init(allocator, reporter, cli.verbose) catch |err| {
+    var runner = zig_runner.ZigRunner.init(allocator, reporter, cli.verbosity) catch |err| {
         if (err == error.ZigNotFound) return null;
         return err;
     };

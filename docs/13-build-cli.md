@@ -78,7 +78,7 @@ orhon init <name>                    // create a new project in ./<name>/
 orhon init                           // init in current dir, use folder name as project name
 orhon addtopath                      // add orhon to PATH in your shell profile
 orhon debug                          // dump project info: source dir, modules found, files
-orhon analysis                       // dump parse tree analysis for debugging
+orhon analysis                       // PEG grammar validation on a single .orh file
 orhon fmt                            // format all .orh files in the project
 orhon gendoc                         // generate all docs (api + std + syntax)
 orhon gendoc -api                    // project API docs only (docs/api/)

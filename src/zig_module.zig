@@ -1347,6 +1347,8 @@ pub fn discoverAndConvert(allocator: Allocator, source_dir: []const u8, output_d
         // Uses the already-parsed AST for structural precision (handles
         // whitespace variations and multi-line imports correctly).
         if (rewrite) |cfg| {
+            // Ensure destination directory exists before writing sidecar files
+            std.fs.cwd().makePath(cfg.dest_dir) catch {};
             const zig_dst = try std.fmt.allocPrint(allocator, "{s}/{s}_zig.zig", .{ cfg.dest_dir, entry.module_name });
             defer allocator.free(zig_dst);
 

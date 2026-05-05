@@ -168,10 +168,10 @@ const runAnalysis = lsp_analysis.runAnalysis;
 // ============================================================
 
 pub fn serve(allocator: std.mem.Allocator) !void {
-    const stdin_file = std.fs.File{ .handle = std.posix.STDIN_FILENO };
+    const stdin_file = std.fs.File.stdin();
     var stdin_buf: [65536]u8 = undefined;
     var stdin_r = stdin_file.reader(&stdin_buf);
-    const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+    const stdout_file = std.fs.File.stdout();
     var stdout_buf: [65536]u8 = undefined;
     var stdout_w = stdout_file.writer(&stdout_buf);
 

@@ -1,5 +1,10 @@
 # Testing
 
+This document covers writing tests **in the Orhon language** — `test "..." { }` blocks
+that live in `.orh` source files and run via `orhon test`. For the **Orhon compiler's**
+own test suite (Zig `test` blocks in compiler source, run via `zig build test` or
+`testall.sh`), see `CONTRIBUTING.md`.
+
 ## Test Declaration
 
 Tests are declared with the `test` keyword followed by a description string and a block.

@@ -67,12 +67,25 @@ pub const OptLevel = enum {
     small,
 };
 
+pub const Verbosity = enum(u2) {
+    quiet = 0,
+    normal = 1,
+    verbose = 2,
+    very_verbose = 3,
+
+    pub fn level(self: Verbosity) u2 {
+        return @intFromEnum(self);
+    }
+};
+
 // ============================================================
 // COMMAND + FLAG TABLE
 // ============================================================
 
 pub const FlagEffect = union(enum) {
+    set_quiet,
     set_verbose,
+    set_very_verbose,
     set_fast,
     set_small,
     set_werror,
@@ -102,7 +115,9 @@ pub const CommandSpec = struct {
 };
 
 // --- Shared flag constants ---
+const flag_quiet       = FlagSpec{ .name = "-q",           .takes_value = false, .help = "Quiet mode — suppress non-error output",      .effect = .set_quiet };
 const flag_verbose     = FlagSpec{ .name = "-verbose",     .takes_value = false, .help = "Show raw Zig compiler output",            .effect = .set_verbose };
+const flag_very_verbose = FlagSpec{ .name = "-vv",          .takes_value = false, .help = "Very verbose — show extra diagnostics",     .effect = .set_very_verbose };
 const flag_fast        = FlagSpec{ .name = "-fast",        .takes_value = false, .help = "Maximum speed optimization",              .effect = .set_fast };
 const flag_small       = FlagSpec{ .name = "-small",       .takes_value = false, .help = "Minimum binary size optimization",        .effect = .set_small };
 const flag_werror      = FlagSpec{ .name = "-werror",      .takes_value = false, .help = "Treat all warnings as errors",            .effect = .set_werror };
@@ -125,7 +140,7 @@ const flag_zig_emit  = FlagSpec{ .name = "-zig",       .takes_value = false, .he
 
 // --- Grouped flag arrays (comptime ++ concatenation) ---
 const output_flags  = [_]FlagSpec{ flag_diag_format, flag_color, flag_werror };
-const compile_flags = [_]FlagSpec{ flag_fast, flag_small, flag_verbose };
+const compile_flags = [_]FlagSpec{ flag_fast, flag_small, flag_verbose, flag_quiet, flag_very_verbose };
 const target_flags  = [_]FlagSpec{ flag_linux_x64, flag_linux_arm, flag_win_x64, flag_mac_x64, flag_mac_arm, flag_wasm, flag_zig_emit };
 
 const build_flags  = target_flags ++ compile_flags ++ output_flags;
@@ -156,7 +171,7 @@ pub const CliArgs = struct {
     command: Command,
     targets: std.ArrayListUnmanaged(BuildTarget),
     optimize: OptLevel,
-    verbose: bool,        // -verbose flag (show Zig compiler output)
+    verbosity: Verbosity,  // -q / -verbose / -vv flags + ORHON_VERBOSE env var
     source_dir: []const u8,
     project_name: []const u8, // for init command
     init_in_place: bool, // orhon init (no name) — init in current dir
@@ -184,7 +199,9 @@ pub const CliArgs = struct {
 
 fn applyFlag(effect: FlagEffect, value: []const u8, cli: *CliArgs, allocator: std.mem.Allocator) !void {
     switch (effect) {
-        .set_verbose    => cli.verbose = true,
+        .set_quiet         => cli.verbosity = .quiet,
+        .set_verbose       => cli.verbosity = .verbose,
+        .set_very_verbose  => cli.verbosity = .very_verbose,
         .set_fast       => cli.optimize = .fast,
         .set_small      => cli.optimize = .small,
         .set_werror     => cli.werror = true,
@@ -264,7 +281,7 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         .command       = spec.cmd,
         .targets       = .{},
         .optimize      = .debug,
-        .verbose       = false,
+        .verbosity     = .normal,
         .source_dir    = "src",
         .project_name  = "",
         .init_in_place = false,
@@ -279,6 +296,15 @@ pub fn parseArgs(allocator: std.mem.Allocator) !CliArgs {
         .werror        = false,
         .allocator     = allocator,
     };
+
+    // Read ORHON_VERBOSE env var as baseline (CLI flags override)
+    if (std.process.getEnvVarOwned(allocator, "ORHON_VERBOSE")) |env_val| {
+        defer allocator.free(env_val);
+        if (std.mem.eql(u8, env_val, "0") or std.mem.eql(u8, env_val, "quiet")) cli.verbosity = .quiet
+        else if (std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "normal")) cli.verbosity = .normal
+        else if (std.mem.eql(u8, env_val, "2") or std.mem.eql(u8, env_val, "verbose")) cli.verbosity = .verbose
+        else if (std.mem.eql(u8, env_val, "3") or std.mem.eql(u8, env_val, "very_verbose")) cli.verbosity = .very_verbose;
+    } else |_| {}
 
     // Consume positional argument if declared for this command
     var flags_start: usize = 2;
@@ -335,7 +361,7 @@ pub fn printUsage() void {
     const usage =
         \\orhon — The Orhon compiler  (orhon help for more info)
         \\
-        \\  build   run   test   check   fmt   gendoc   init   lsp   addtopath   debug   analysis   version
+        \\  build   run   test   check   fmt   gendoc   init   lsp   addtopath   debug   version
         \\
     ;
     std.debug.print("{s}", .{usage});
@@ -360,7 +386,6 @@ pub fn printHelp() void {
         \\  lsp                 Start the language server (for editor integration)
         \\  addtopath           Add orhon to your shell PATH
         \\  debug               Show project info — modules, files, source directory
-        \\  analysis <file>     Run PEG grammar validation on a single .orh file
         \\  version             Print the compiler version
         \\  which               Print the path to the orhon executable
         \\
@@ -377,6 +402,8 @@ pub fn printHelp() void {
         \\  -fast               Maximum speed optimization
         \\  -small              Minimum binary size optimization
         \\  -verbose            Show raw Zig compiler output
+        \\  -q                  Quiet mode — suppress non-error output
+        \\  -vv                 Very verbose — show extra diagnostics
         \\
         \\Output flags:
         \\  -diag-format <val>  Diagnostic format: human (default), json, short
@@ -453,7 +480,7 @@ fn testCli() CliArgs {
         .command       = .help,
         .targets       = .{},
         .optimize      = .debug,
-        .verbose       = false,
+        .verbosity     = .normal,
         .source_dir    = "src",
         .project_name  = "",
         .init_in_place = false,
@@ -474,8 +501,14 @@ test "applyFlag - bool effects" {
     var cli = testCli();
     defer cli.deinit();
 
+    try applyFlag(.set_quiet, "", &cli, std.testing.allocator);
+    try std.testing.expect(cli.verbosity == .quiet);
+
     try applyFlag(.set_verbose, "", &cli, std.testing.allocator);
-    try std.testing.expect(cli.verbose);
+    try std.testing.expect(cli.verbosity == .verbose);
+
+    try applyFlag(.set_very_verbose, "", &cli, std.testing.allocator);
+    try std.testing.expect(cli.verbosity == .very_verbose);
 
     try applyFlag(.set_fast, "", &cli, std.testing.allocator);
     try std.testing.expectEqual(OptLevel.fast, cli.optimize);

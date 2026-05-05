@@ -11,15 +11,17 @@ const std = @import("std");
 const PROJECT_ORH_TEMPLATE      = @embedFile("templates/project.orh");
 const PROJECT_MANIFEST_TEMPLATE = @embedFile("templates/project.manifest");
 
-// Example module — split across multiple files in templates/example/
-const EXAMPLE_ORH_TEMPLATE      = @embedFile("templates/example/example.orh");
-const CONTROL_FLOW_ORH_TEMPLATE = @embedFile("templates/example/control_flow.orh");
-const ERROR_HANDLING_TEMPLATE   = @embedFile("templates/example/error_handling.orh");
-const DATA_TYPES_TEMPLATE       = @embedFile("templates/example/data_types.orh");
-const STRINGS_TEMPLATE          = @embedFile("templates/example/strings.orh");
-const ADVANCED_TEMPLATE         = @embedFile("templates/example/advanced.orh");
-const BLUEPRINTS_TEMPLATE       = @embedFile("templates/example/blueprints.orh");
-const HANDLES_TEMPLATE          = @embedFile("templates/example/handles.orh");
+// Example module — single comptime array replaces individual @embedFile consts
+const example_templates = [_]struct { name: []const u8, content: []const u8 }{
+    .{ .name = "example.orh",        .content = @embedFile("templates/example/example.orh") },
+    .{ .name = "control_flow.orh",   .content = @embedFile("templates/example/control_flow.orh") },
+    .{ .name = "error_handling.orh", .content = @embedFile("templates/example/error_handling.orh") },
+    .{ .name = "data_types.orh",     .content = @embedFile("templates/example/data_types.orh") },
+    .{ .name = "strings.orh",        .content = @embedFile("templates/example/strings.orh") },
+    .{ .name = "advanced.orh",       .content = @embedFile("templates/example/advanced.orh") },
+    .{ .name = "blueprints.orh",     .content = @embedFile("templates/example/blueprints.orh") },
+    .{ .name = "handles.orh",        .content = @embedFile("templates/example/handles.orh") },
+};
 
 // ============================================================
 // STAMP HELPERS
@@ -71,25 +73,14 @@ pub fn updateProject(allocator: std.mem.Allocator, version: []const u8) !void {
 
     const old_version: []const u8 = stamp orelse "(none)";
 
-    const example_files = .{
-        .{ "example.orh",        EXAMPLE_ORH_TEMPLATE },
-        .{ "control_flow.orh",   CONTROL_FLOW_ORH_TEMPLATE },
-        .{ "error_handling.orh", ERROR_HANDLING_TEMPLATE },
-        .{ "data_types.orh",     DATA_TYPES_TEMPLATE },
-        .{ "strings.orh",        STRINGS_TEMPLATE },
-        .{ "advanced.orh",       ADVANCED_TEMPLATE },
-        .{ "blueprints.orh",     BLUEPRINTS_TEMPLATE },
-        .{ "handles.orh",        HANDLES_TEMPLATE },
-    };
-
     try std.fs.cwd().makePath("src/example");
 
-    inline for (example_files) |entry| {
-        const file_path = try std.fs.path.join(allocator, &.{ "src", "example", entry[0] });
+    inline for (example_templates) |entry| {
+        const file_path = try std.fs.path.join(allocator, &.{ "src", "example", entry.name });
         defer allocator.free(file_path);
         const file = try std.fs.cwd().createFile(file_path, .{});
         defer file.close();
-        try file.writeAll(entry[1]);
+        try file.writeAll(entry.content);
         std.debug.print("updated  {s}\n", .{file_path});
     }
 
@@ -167,19 +158,8 @@ pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: boo
     }
 
     // Write example module files into src/example/ (skip each if exists)
-    const example_files = .{
-        .{ "example.orh",        EXAMPLE_ORH_TEMPLATE },
-        .{ "control_flow.orh",   CONTROL_FLOW_ORH_TEMPLATE },
-        .{ "error_handling.orh", ERROR_HANDLING_TEMPLATE },
-        .{ "data_types.orh",     DATA_TYPES_TEMPLATE },
-        .{ "strings.orh",        STRINGS_TEMPLATE },
-        .{ "advanced.orh",       ADVANCED_TEMPLATE },
-        .{ "blueprints.orh",    BLUEPRINTS_TEMPLATE },
-        .{ "handles.orh",       HANDLES_TEMPLATE },
-    };
-
-    inline for (example_files) |entry| {
-        const file_path = try std.fs.path.join(allocator, &.{ base, "src", "example", entry[0] });
+    inline for (example_templates) |entry| {
+        const file_path = try std.fs.path.join(allocator, &.{ base, "src", "example", entry.name });
         defer allocator.free(file_path);
 
         if (std.fs.cwd().access(file_path, .{})) |_| {
@@ -187,7 +167,7 @@ pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: boo
         } else |_| {
             const file = try std.fs.cwd().createFile(file_path, .{});
             defer file.close();
-            try file.writeAll(entry[1]);
+            try file.writeAll(entry.content);
         }
     }
 
@@ -195,7 +175,7 @@ pub fn initProject(allocator: std.mem.Allocator, name: []const u8, in_place: boo
     std.debug.print("  {s}/orhon.project\n", .{base});
     std.debug.print("  {s}/src/\n", .{base});
     std.debug.print("  {s}/src/{s}.orh\n", .{ base, name });
-    std.debug.print("  {s}/src/example/  (8 files — language manual)\n", .{base});
+    std.debug.print("  {s}/src/example/  ({d} files — language manual)\n", .{ base, example_templates.len });
     if (!in_place) {
         std.debug.print("\nGet started:\n", .{});
         std.debug.print("  cd {s}\n", .{name});

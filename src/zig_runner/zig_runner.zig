@@ -7,6 +7,7 @@ const std = @import("std");
 const errors = @import("../errors.zig");
 const cache = @import("../cache.zig");
 const module = @import("../module.zig");
+const cli_mod2 = @import("../cli.zig");
 
 const _zig_runner_build = @import("zig_runner_build.zig");
 const _zig_runner_multi = @import("zig_runner_multi.zig");
@@ -37,7 +38,7 @@ pub const ZigRunner = struct {
     zig_path: []const u8,
     reporter: *errors.Reporter,
     allocator: std.mem.Allocator,
-    show_zig_output: bool, // -zig flag
+    verbosity: cli_mod2.Verbosity,
     /// Per-module source maps: module_name → sorted SourceMapEntry slice.
     /// Slices are arena-owned by ModuleCompile; ZigRunner does not free them.
     source_maps: std.StringHashMapUnmanaged([]const module.SourceMapEntry) = .{},
@@ -45,14 +46,14 @@ pub const ZigRunner = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         reporter: *errors.Reporter,
-        show_zig_output: bool,
+        verbosity: cli_mod2.Verbosity,
     ) !ZigRunner {
         const zig_path = try _zig_runner_discovery.findZig(allocator);
         return .{
             .zig_path = zig_path,
             .reporter = reporter,
             .allocator = allocator,
-            .show_zig_output = show_zig_output,
+            .verbosity = verbosity,
         };
     }
 
@@ -104,13 +105,13 @@ pub const ZigRunner = struct {
         var result = try self.runZigIn(args.items, cache.GENERATED_DIR);
         defer result.deinit(self.allocator);
 
-        if (self.show_zig_output) {
+        if (self.verbosity.level() >= 2) {
             try self.printRaw(result.stdout);
             try self.printRaw(result.stderr);
         }
 
         if (!result.success) {
-            if (!self.show_zig_output) {
+            if (self.verbosity.level() < 2) {
                 try self.reformatZigErrors(result.stderr);
             }
             return false;
@@ -144,7 +145,9 @@ pub const ZigRunner = struct {
 
             try std.fs.cwd().copyFile(src_bin, std.fs.cwd(), dst_name, .{});
 
-            std.debug.print("Built: {s}\n", .{dst_name});
+            if (self.verbosity != .quiet) {
+                std.debug.print("Built: {s}\n", .{dst_name});
+            }
         }
 
         // Clean up generated zig-out and zig-cache
@@ -164,7 +167,14 @@ pub const ZigRunner = struct {
         return true;
     }
 
-    /// Run Zig from a specific working directory and capture output
+    /// Maximum bytes of stdout/stderr to capture from a zig subprocess.
+    /// Build output exceeding this cap is detected by chunked reads (Zig 0.15's
+    /// readToEndAlloc silently truncates) and produces a clear error message.
+    const max_zig_output: usize = 1 * 1024 * 1024; // 1MB
+
+    /// Run Zig from a specific working directory and capture output.
+    /// Reads stdout/stderr in 4KB chunks — avoids the large allocation of
+    /// readToEndAlloc that risks OOM, and detects cap-exceeded explicitly.
     fn runZigIn(self: *ZigRunner, args: []const []const u8, cwd: []const u8) !ZigResult {
         var child = std.process.Child.init(args, self.allocator);
         child.stdout_behavior = .Pipe;
@@ -173,8 +183,35 @@ pub const ZigRunner = struct {
 
         try child.spawn();
 
-        const stdout = try child.stdout.?.readToEndAlloc(self.allocator, 10 * 1024 * 1024);
-        const stderr = try child.stderr.?.readToEndAlloc(self.allocator, 10 * 1024 * 1024);
+        var stdout_freed = false;
+
+        const stdout = readPipeFile(child.stdout.?, self.allocator, max_zig_output) catch |err| {
+            if (err == error.OutputTooLarge) {
+                drainAndWait(child.stdout.?, child.stderr.?, &child);
+                const msg = try std.fmt.allocPrint(self.allocator,
+                    "zig build produced too much stdout output (>{d} bytes) — build may have failed",
+                    .{max_zig_output});
+                return ZigResult{ .success = false, .stdout = msg, .stderr = &.{}, .exit_code = 1 };
+            }
+            return err;
+        };
+        errdefer if (!stdout_freed) self.allocator.free(stdout);
+
+        const stderr_bytes = readPipeFile(child.stderr.?, self.allocator, max_zig_output) catch |err| {
+            if (err == error.OutputTooLarge) {
+                // Must free stdout explicitly — returning ZigResult (non-error) so errdefer won't fire.
+                self.allocator.free(stdout);
+                stdout_freed = true;
+                drainAndWait(child.stdout.?, child.stderr.?, &child);
+                const msg = try std.fmt.allocPrint(self.allocator,
+                    "zig build produced too much stderr output (>{d} bytes) — build may have failed",
+                    .{max_zig_output});
+                return ZigResult{ .success = false, .stdout = msg, .stderr = &.{}, .exit_code = 1 };
+            }
+            // Non-OutputTooLarge error: let errdefer above free stdout. Don't double-free.
+            return err;
+        };
+        errdefer self.allocator.free(stderr_bytes);
 
         const term = try child.wait();
         const exit_code: u32 = switch (term) {
@@ -185,9 +222,36 @@ pub const ZigRunner = struct {
         return ZigResult{
             .success = exit_code == 0,
             .stdout = stdout,
-            .stderr = stderr,
+            .stderr = stderr_bytes,
             .exit_code = exit_code,
         };
+    }
+
+    /// Read all bytes from a pipe file into an allocated buffer, up to max_size.
+    /// Reads in 4KB chunks via File.read() — avoids a single large allocation and
+    /// returns error.OutputTooLarge if max_size is exceeded.
+    fn readPipeFile(file: std.fs.File, allocator: std.mem.Allocator, max_size: usize) ![]u8 {
+        var buf = std.ArrayListUnmanaged(u8){};
+        errdefer buf.deinit(allocator);
+
+        var chunk: [4096]u8 = undefined;
+        var total: usize = 0;
+        while (true) {
+            const n = try file.read(&chunk);
+            if (n == 0) break;
+            if (total + n > max_size) return error.OutputTooLarge;
+            try buf.appendSlice(allocator, chunk[0..n]);
+            total += n;
+        }
+        return buf.toOwnedSlice(allocator);
+    }
+
+    /// Drain any remaining pipe data and wait for the child process.
+    fn drainAndWait(stdout: std.fs.File, stderr: std.fs.File, child: *std.process.Child) void {
+        var drain: [4096]u8 = undefined;
+        while (stdout.read(&drain) catch 0 > 0) {}
+        while (stderr.read(&drain) catch 0 > 0) {}
+        _ = child.wait() catch {};
     }
 
     /// Print raw output to stderr (for -zig flag)
@@ -285,13 +349,15 @@ pub const ZigRunner = struct {
         var result = try self.runZigIn(args.items, cache.GENERATED_DIR);
         defer result.deinit(self.allocator);
 
-        if (self.show_zig_output) {
+        if (self.verbosity.level() >= 2) {
             try self.printRaw(result.stdout);
             try self.printRaw(result.stderr);
             return result.success;
         }
 
-        try self.formatTestOutput(result.stderr, result.success);
+        if (self.verbosity != .quiet) {
+            try self.formatTestOutput(result.stderr, result.success);
+        }
         return result.success;
     }
 
